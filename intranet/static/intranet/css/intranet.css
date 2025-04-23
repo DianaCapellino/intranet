@@ -1,0 +1,27 @@
+body {
+    color: #373434;
+    font-family: Tahoma, Verdana, sans-serif;
+    font-style: normal;
+    font-weight: 300;
+}
+
+h2 {
+    font-family: Tahoma, Verdana, sans-serif;
+    font-style: normal;
+    font-weight: 700;
+}
+
+nav ul li {
+    padding: 0 5px 0 5px;
+}
+
+.fa-brands {
+    color: #fff;
+}
+
+
+@media (min-width: 400px) {
+    #brand-name {
+      font-size: 2rem;
+    }
+}

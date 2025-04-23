@@ -1,0 +1,110 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="new_trip" class="d-none">
+    <h2>Crear Nuevo Viaje</h2>
+
+    {% if message %}
+        <div>{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <br>
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'trips' %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="client" name="client">
+                            <option selected>Cliente</option>
+                            {% for client in clients %}
+                            <option value="{{ client.id }}">{{ client.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="contact" name="contact">
+                            <option selected>Contact</option>
+                            {% for contact in contacts %}
+                            <option value="{{ contact.id }}">{{ contact.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="client_reference" id="client_reference" placeholder="Referencia Cliente">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="status" name="status">
+                            <option selected>Status</option>
+                            {% for option in status %}
+                            <option value="{{ option.0 }}">{{ option.1 }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div id="new_trip_container" class="container text-center">
+    <button id="new_trip_btn" class="btn btn-dark btn-lg">NUEVO VIAJE</button>
+</div>
+<div id="trip_list">
+    <div class="container">
+        <br>
+        <h2>Viajes</h2>
+    
+        {% if message %}
+            <div>{{ message }}</div>
+        {% endif %}
+    
+        <br>
+        <div class="row">
+            <div class="col-12">
+                <div class="table table-striped" style="width:100%">
+                    <table id="trips" class="table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Status</th>
+                                <th>Version</th>
+                                <th>Monto</th>
+                                <th>Cliente</th>
+                                <th>Ref Cliente</th>
+                                <th>Contacto</th>
+                                <th>Fecha Viaje</th>
+                            </tr>
+                            <tbody>
+                                {% for trip in trips %}
+                                <tr>
+                                    <td>{{ trip.name }}</td>
+                                    <td>{{ trip.status }}</td>
+                                    <td>{{ trip.version }}</td>
+                                    <td>{{ trip.amount }}</td>
+                                    <td>{{ trip.client }}</td>
+                                    <td>{{ trip.client_reference }}</td>
+                                    <td>{{ trip.contact }}</td>
+                                    <td>{{ trip.travelling_date }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </thead>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+{% endblock %}

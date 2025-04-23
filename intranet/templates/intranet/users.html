@@ -1,0 +1,54 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <h2>Crear Nuevo Usuario</h2>
+
+    {% if message %}
+        <div>{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <br>
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'users' %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="username" id="username" placeholder="Usuario">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="password" name="password" id="password" placeholder="Contraseña">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="department" name="department">
+                            <option selected>Departamento</option>
+                            {% for department in departments %}
+                            <option value="{{ department.0 }}">{{ department.1 }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check-sm mb-3">
+                        <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
+                        <label class="form-check-label" for="checkDefault">
+                          Administrador
+                        </label>
+                      </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+    <br>
+
+    {% for user in users %}
+    <div>{{ user.other_name }} - {{ user.username }} - {{ user.department }} - {{ user.isAdmin }} - {{ user.email}}</div>
+    {% endfor %}
+    <br>
+{% endblock %}

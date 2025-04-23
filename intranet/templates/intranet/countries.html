@@ -1,0 +1,22 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <h2>Crear Nuevo País</h2>
+    <br>
+
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'countries' %}" method="post">
+                {% csrf_token %}
+                {{ form }}
+                <input class="btn btn-dark" type="submit" value="GUARDAR">
+            </form>
+        </div>
+    </div>
+    <br>
+
+    {% for country in countries %}
+        <div>{{ country.code }} - {{ country.name }}</div>
+    {% endfor %}
+
+{% endblock %}

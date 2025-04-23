@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Intranet</title>
+    <link rel="icon" href="../../static/intranet/images/sello.ico" sizes="32x32">
+    <link href="https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/2.2.2/css/dataTables.bootstrap5.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="../../static/intranet/css/intranet.css" rel="stylesheet">
+  </head>
+  <body>
+    <div id="header">
+      <nav class="navbar navbar-expand-lg navbar-dark fixed-top bg-dark px-4 py-3">
+        <div class="nav-item d-lg-none">
+          <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/logo.png" style="width:40px"></a>
+        </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+          <div class="collapse navbar-collapse justify-content-between" id="navbarSupportedContent">
+            <div class="nav-item d-none d-lg-block">
+              <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/logo.png" style="width:80px"></a>
+            </div>
+            {% if user.is_authenticated %}
+            <ul class="navbar-nav mb-3 mb-lg-0">
+              <li class="nav-item">
+                  <a class="nav-link" href="{% url 'trips' %}">Todos</a>
+              </li>
+              <li class="nav-item">
+                  <a class="nav-link" href="" id="pendings">Pendientes</a>
+              </li>
+              <li class="nav-item">
+                  <a class="nav-link" href="">Estadísticas</a>
+              </li>
+              {% if user.isAdmin %}
+              <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                  Gestionar
+                </a>
+                <ul class="dropdown-menu">
+                  <div class="dropdown show">
+                    <li><a class="dropdown-item" href="{% url 'countries' %}">Países</a></li>
+                    <li><a class="dropdown-item" href="{% url 'clients' %}">Clientes</a></li>
+                    <li><a class="dropdown-item" href="{% url 'client_contacts' %}">Contacto Clientes</a></li>
+                    <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
+                    <li><a class="dropdown-item" href="">Feriados</a></li>
+                  </div>
+                </ul>
+              </li>
+              {% else %}
+              {% endif %}
+            </ul>
+            <ul class="nav navbar-nav">
+              <li>
+                <form role="search">
+                  <input type="search" class="form-control" placeholder="Buscar..." aria-label="Search">
+                </form>
+              </li>
+              <li class="nav-item d-none d-lg-block">
+                <a class="nav-link" href=""><i class="fa-solid fa-magnifying-glass"></i></a>
+              </li>
+              <li class="nav-item d-none d-lg-block">
+                <a id="new_trip_plus" href="{% url 'trips' %}" class="nav-link"><i class="fa-solid fa-plus"></i></a>
+              </li>
+              
+              <li class="nav-item d-none d-lg-block dropdown">
+                <a class="nav-link" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                  {{ user.username }}
+                </a>
+                <ul class="dropdown-menu">
+                  <div class="dropdown show">
+                    <li><a class="dropdown-item" href="{% url 'logout' %}">Log Out</a></li>
+                  </div>
+                </ul>
+              </li>
+              <li class="nav-item">
+                
+              </li>
+            {% else %}
+            <ul class="nav navbar-nav">
+              <li class="nav-item d-none d-lg-block">
+                <a class="nav-link" href="{% url 'login' %}">Log In</a>
+              </li>
+            </ul>
+            {% endif %}
+          </div>
+      </nav>
+    </div>
+    <br>
+    <br>
+    <br>
+    <br>
+    <div class="container">
+    {% block body %}
+    {% endblock %}
+    </div>
+    <br>
+    <div class="container-fluid bg-dark text-white-50 px-4 py-1 fixed-bottom">
+      <footer class="text-center">
+        <div className="ms-auto">
+            <img src="../../static/intranet/images/logo.png" style="width:60px">
+        </div>
+      </footer>
+    </div>
+    <script src="https://kit.fontawesome.com/6f082d5aab.js" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.js" crossorigin="anonymous"></script>
+    <script src="https:////cdn.datatables.net/2.2.2/js/dataTables.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.datatables.net/2.2.2/js/dataTables.bootstrap5.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <script src="../../static/intranet/js/trip.js"></script>
+  </body>      
+</html>

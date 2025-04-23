@@ -1,0 +1,43 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <h2>Crear Nuevo Contacto</h2>
+    <br>
+
+    {% if message %}
+        <div>{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <br>
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'client_contacts' %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="client" name="client">
+                            <option selected>Cliente</option>
+                            {% for client in clients %}
+                            <option value="{{ client.id }}">{{ client.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+    <br>
+
+    {% for contact in contacts %}
+    <div>{{ contact.name }} - {{ contact.email }} - {{ contact.client }} - {{ contact.isActivated }}</div>
+    {% endfor %}
+
+{% endblock %}
