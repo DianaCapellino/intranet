@@ -1,0 +1,13 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="container text-center">
+        
+        <img src="../../static/intranet/images/error.jpg" height="300rem">
+        <br>
+        <h3>Se acabó la sesión...</h3>
+        <br>
+        <button class="btn btn-black"><a href="{% url 'login' %}">Loguearse nuevamente</a></button>
+    </div>
+    <br>
+{% endblock %}

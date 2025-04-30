@@ -9,6 +9,7 @@ from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
 from .models import User, Country, Client, Trip, Entry, Notes, CountryForm, ClientForm, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS
 import json
+import datetime
 
 def index (request):
     return render(request, "intranet/index.html", {
@@ -37,6 +38,9 @@ def login_view (request):
 def logout_view(request):
     logout(request)
     return HttpResponseRedirect(reverse("index"))
+
+def error (request):
+    return render(request, "intranet/error.html")
 
 @login_required
 def create_country(request):
@@ -194,6 +198,7 @@ def create_user(request):
     
 
 def create_trip(request):
+    
     if request.method == "POST":
         name = request.POST["name"]
         starting_date = request.POST["starting_date"]
@@ -249,11 +254,23 @@ def create_trip(request):
             "trips": Trip.objects.all()
         })
     
+def pendings(request):
+    return render(request, "intranet/pendings.html", {
+        "entries": Entry.objects.all(),
+        "trips": Trip.objects.all(),
+    })
+
+def new_entry(request):
+    return render(request, "intranet/pendings.html", {
+        "entries": Entry.objects.all(),
+        "trips": Trip.objects.all(),
+    })
 
 @login_required
 @csrf_exempt
 def jsontrips(_request):
 
+    # Get the list of the trips
     trips = list(Trip.objects.values())
     data = {'trips': trips}
     return JsonResponse(data)
@@ -293,6 +310,84 @@ def jsontrip(request, trip_id):
         return HttpResponse(status=204)
 
     # Trip requests must be via GET or PUT or DELETE
+    else:
+        return JsonResponse({
+            "error": "GET or PUT or DELETE request required."
+        }, status=400)
+    
+
+@login_required
+@csrf_exempt
+def json_entries(_request):
+
+    # Get the list of the entries
+    entries = list(Entry.objects.values())
+    data = {'entries': entries}
+    return JsonResponse(data)
+
+
+@login_required
+@csrf_exempt
+def json_entry(request, entry_id):
+    
+    # Query for entry
+    try:
+        entry_object = Entry.objects.get(pk=entry_id)
+        entry = model_to_dict(entry_object)
+    except Entry.DoesNotExist:
+        return JsonResponse({"error": "Entry not found"}, status=404)
+
+    # Return entry contents
+    if request.method == "GET":
+        return JsonResponse(entry, safe=False)
+
+    # Update entry
+    elif request.method == "PUT":
+
+        # Get json information
+        data = json.loads(request.body)
+
+        # Update information of the entry
+        entry_object.version = data["version"]
+
+        # Save the changes of the entry
+        entry_object.save()
+        return HttpResponse(status=204)
+    
+    # Deletes the entry
+    elif request.method == "DELETE":
+        entry_object.delete()
+        return HttpResponse(status=204)
+
+    # Entry requests must be via GET or PUT or DELETE
+    else:
+        return JsonResponse({
+            "error": "GET or PUT or DELETE request required."
+        }, status=400)
+
+
+@login_required
+@csrf_exempt
+def jsontrip_entries(request, trip_id):
+
+    # Query for entries for the trip
+    try:
+        trip_object = Trip.objects.get(pk=trip_id)
+        entries_object_list = Entry.objects.filter(trip=trip_object)
+        if entries_object_list:
+            entries = list(entries_object_list.values())
+        else:
+            return JsonResponse({"empty": "No entries"})
+
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Trip not found"}, status=404)
+
+
+    # Return entries contents
+    if request.method == "GET":
+        return JsonResponse(entries, safe=False)
+
+    # Entry requests must be via GET or PUT or DELETE
     else:
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."

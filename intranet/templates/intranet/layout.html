@@ -26,10 +26,10 @@
             {% if user.is_authenticated %}
             <ul class="navbar-nav mb-3 mb-lg-0">
               <li class="nav-item">
-                  <a class="nav-link" href="{% url 'trips' %}">Todos</a>
+                  <a class="nav-link" href="{% url 'trips' %}">Viajes</a>
               </li>
               <li class="nav-item">
-                  <a class="nav-link" href="" id="pendings">Pendientes</a>
+                  <a class="nav-link" href="{% url 'pendings' %}" id="pendings">Pendientes</a>
               </li>
               <li class="nav-item">
                   <a class="nav-link" href="">Estadísticas</a>
@@ -53,13 +53,8 @@
               {% endif %}
             </ul>
             <ul class="nav navbar-nav">
-              <li>
-                <form role="search">
-                  <input type="search" class="form-control" placeholder="Buscar..." aria-label="Search">
-                </form>
-              </li>
               <li class="nav-item d-none d-lg-block">
-                <a class="nav-link" href=""><i class="fa-solid fa-magnifying-glass"></i></a>
+                <a class="nav-link" href="{% url 'trips' %}"><i class="fa-solid fa-magnifying-glass"></i></a>
               </li>
               <li class="nav-item d-none d-lg-block">
                 <a id="new_trip_plus" href="{% url 'trips' %}" class="nav-link"><i class="fa-solid fa-plus"></i></a>
@@ -98,10 +93,8 @@
     </div>
     <br>
     <div class="container-fluid bg-dark text-white-50 px-4 py-1 fixed-bottom">
-      <footer class="text-center">
-        <div className="ms-auto">
-            <img src="../../static/intranet/images/logo.png" style="width:60px">
-        </div>
+      <footer class="d-flex justify-content-end">
+        <div id="brand-name">Diana Laura</div>
       </footer>
     </div>
     <script src="https://kit.fontawesome.com/6f082d5aab.js" crossorigin="anonymous"></script>
@@ -109,6 +102,6 @@
     <script src="https:////cdn.datatables.net/2.2.2/js/dataTables.js" crossorigin="anonymous"></script>
     <script src="https://cdn.datatables.net/2.2.2/js/dataTables.bootstrap5.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
-    <script src="../../static/intranet/js/trip.js"></script>
+    <script src="../../static/intranet/js/trip.js?n=1"></script>
   </body>      
 </html>

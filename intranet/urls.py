@@ -10,8 +10,14 @@ urlpatterns = [
     path("client_contacts", views.create_client_contact, name="client_contacts"),
     path("users", views.create_user, name="users"),
     path("trips", views.create_trip, name="trips"),
+    path("error", views.error, name="error"),
+    path("pendings", views.pendings, name="pendings"),
+    path("new_entry", views.new_entry, name="new_entry"),
 
     # API routes
     path("trip/json", views.jsontrips, name="jsontrips"),
     path("trip/json/<int:trip_id>", views.jsontrip, name="jsontrip"),
+    path("json_entries", views.json_entries, name="json_entries"),
+    path("jsontrip_entries/<int:trip_id>", views.jsontrip_entries, name="jsontrip_entries"),
+    path("json_entry", views.json_entry, name="json_entry"),
 ]

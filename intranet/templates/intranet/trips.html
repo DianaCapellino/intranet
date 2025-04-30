@@ -19,10 +19,10 @@
                         <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
                     </div>
                     <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                        <input autofocus class="form-control-sm date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
                     </div>
                     <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                        <input autofocus class="form-control-sm date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
                     </div>
                     <div class="mb-3">
                         <select class="form-control-sm" aria-label="client" name="client">
@@ -87,16 +87,46 @@
                             </tr>
                             <tbody>
                                 {% for trip in trips %}
-                                <tr>
+                                <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}">
                                     <td>{{ trip.name }}</td>
                                     <td>{{ trip.status }}</td>
-                                    <td>{{ trip.version }}</td>
-                                    <td>{{ trip.amount }}</td>
+                                    {% if trip.version == none %}
+                                        <td>n/a</td>
+                                    {% else %}
+                                        <td>{{ trip.version }}</td>
+                                    {% endif %}
+                                    {% if trip.amount == none %}
+                                        <td>n/a</td>
+                                    {% else %}
+                                        <td>{{ trip.amount }}</td>
+                                    {% endif %}
                                     <td>{{ trip.client }}</td>
-                                    <td>{{ trip.client_reference }}</td>
+                                    {% if trip.client_reference == none %}
+                                        <td>n/a</td>
+                                    {% else %}
+                                        <td>{{ trip.client_reference }}</td>
+                                    {% endif %}
                                     <td>{{ trip.contact }}</td>
                                     <td>{{ trip.travelling_date }}</td>
                                 </tr>
+                                <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                                    <div class="modal-dialog modal-dialog-scrollable">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h3 class="modal-title fs-5" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h3>
+                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>Notas</h3>
+                                                <div class="table table-striped" id="notes-{{ trip.id }}"></div>
+                                                <br>
+                                                <h3>Entradas</h3>
+                                                <div class="table table-striped" id="entries-{{ trip.id }}"></div>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 {% endfor %}
                             </tbody>
                         </thead>

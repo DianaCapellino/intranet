@@ -5,6 +5,11 @@ body {
     font-weight: 300;
 }
 
+@font-face {
+    font-family: branditalic;
+    src: url("../Qwigley-Regular.ttf");
+}
+
 h2 {
     font-family: Tahoma, Verdana, sans-serif;
     font-style: normal;
@@ -19,9 +24,13 @@ nav ul li {
     color: #fff;
 }
 
+#brand-name {
+    font-family: branditalic, arial;
+    font-size: 1rem;
+}
 
 @media (min-width: 400px) {
     #brand-name {
-      font-size: 2rem;
+      font-size: 1.5rem;
     }
 }

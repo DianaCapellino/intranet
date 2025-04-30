@@ -1,0 +1,126 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="new_entry" class="d-none">
+    <h2>Crear Nueva Entrada</h2>
+
+    {% if message %}
+        <div>{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <br>
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'new_entry' %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="trip" name="trip">
+                            <option selected>Viaje</option>
+                            {% for trip in trips %}
+                            <option value="{{ trip.id }}">{{ trip.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="contact" name="contact">
+                            <option selected>Contact</option>
+                            {% for contact in contacts %}
+                            <option value="{{ contact.id }}">{{ contact.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <input autofocus class="form-control-sm" type="text" name="client_reference" id="client_reference" placeholder="Referencia Cliente">
+                    </div>
+                    <div class="mb-3">
+                        <select class="form-control-sm" aria-label="status" name="status">
+                            <option selected>Status</option>
+                            {% for option in status %}
+                            <option value="{{ option.0 }}">{{ option.1 }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div id="new_entry_container" class="container text-center">
+    <button id="new_entry_btn" class="btn btn-dark btn-lg">NUEVA ENTRADA</button>
+</div>
+<div id="entry_list">
+    <div class="container">
+        <br>
+        <h2 class="d-inline">Pendientes</h2> <i class="fa-solid fa-eye-slash m-3" id="pending-eye" aria-hidden="true"></i>
+    
+        {% if message %}
+            <div>{{ message }}</div>
+        {% endif %}
+    
+        <br>
+        <div class="row">
+            <div class="col-12">
+                <div class="table table-striped" style="width:100%">
+                    <table id="entries" class="table">
+                        <thead>
+                            <tr>
+                                <th>Fecha Pedido</th>
+                                <th>Fecha Respuesta</th>
+                                <th>Viaje</th>
+                                <th>Status</th>
+                                <th>Versión</th>
+                                <th>Monto</th>
+                                <th>Creado por</th>
+                                <th>Trabajado por</th>
+                                <th>Progreso</th>
+                                <th>Valoración</th>
+                            </tr>
+                            <tbody>
+                                {% for entry in entries %}
+                                    {% if entry.closing_date != None %}
+                                        <tr class="d-none pending-entry">
+                                    {% else %}
+                                        <tr>
+                                    {% endif %}
+                                        <td>{{entry.starting_date}}</td>
+                                        {% if entry.closing_date == none %}
+                                            <td>n/a</td>
+                                        {% else %}
+                                            <td>{{entry.closing_date}}</td>
+                                        {% endif %}
+                                        <td>{{entry.trip}}</td>
+                                        <td>{{entry.status}}</td>
+                                        <td>{{entry.version}}</td>
+                                        {% if entry.amount == none %}
+                                            <td>Pendiente</td>
+                                        {% else %}
+                                            <td>{{entry.amount}}</td>
+                                        {% endif %}
+                                        <td>{{entry.user_creator}}</td>
+                                        <td>{{entry.user_working}}</td>
+                                        <td>{{entry.progress}}</td>
+                                        <td>{{entry.importance}}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </thead>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+{% endblock %}

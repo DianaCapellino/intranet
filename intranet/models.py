@@ -34,12 +34,12 @@ DEPARTMENTS = [
 ]
 
 PROGRESS_OPTIONS = [
-    ("0", "No comenzado"),
-    ("1", "Analizado"),
-    ("2", "Contactados proveedores"),
-    ("3", "Enviado status"),
-    ("4", "Falta respuesta proveedor/cliente"),
-    ("5", "Finalizado")
+    ("0 - No comenzado", "No comenzado"),
+    ("1 - Analizado", "Analizado"),
+    ("2 - Contactados proveedores", "Contactados proveedores"),
+    ("3 - Enviado Status", "Enviado status"),
+    ("4 - Falta respuesta proveedor/cliente", "Falta respuesta proveedor/cliente"),
+    ("5 - Finalizado", "Finalizado")
 ]
 
 class User(AbstractUser):
@@ -119,14 +119,15 @@ class Trip(models.Model):
     amount = models.FloatField(null=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="trip_clients")
     client_reference = models.CharField(max_length=64, null=True)
-    starting_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
+    starting_date = models.DateField(default=django.utils.timezone.now, verbose_name='starting date')
+    creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
     conversion_date = models.DateTimeField(null=True, verbose_name='conversion date')
-    travelling_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='travelling date')
+    travelling_date = models.DateField(default=django.utils.timezone.now, verbose_name='travelling date')
     contact = models.ForeignKey(ClientContact, on_delete=models.CASCADE, related_name="trip_contacts")
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
 
     def __str__(self):
-        return f"{self.name} de {self.client} - {self.status} {self.version}"
+        return f"{self.name}"
 
 
 class Notes(models.Model):
@@ -143,10 +144,10 @@ class Entry(models.Model):
     user_working = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entry_working_users")
     starting_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
     last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date')
-    closing_date = models.DateTimeField(null=True, verbose_name='closing date')
+    closing_date = models.DateTimeField(null=True, blank=True, verbose_name='closing date')
     response_days = models.IntegerField()
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
-    amount = models.FloatField(null=True)
+    amount = models.FloatField(null=True, blank=True)
     isClosed = models.BooleanField(default=False)
     importance = models.CharField(max_length=64, choices=IMPORTANCE_OPTIONS)
     progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS, default=PROGRESS_OPTIONS[0])
