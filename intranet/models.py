@@ -16,16 +16,16 @@ STATUS_OPTIONS = [
 ]
 
 IMPORTANCE_OPTIONS = [
-    ("1", "BAJA - min"),
-    ("2", "BAJA - standard"),
-    ("3", "BAJA - plus"),
-    ("4", "MED - min"),
-    ("5", "MED - standard"),
-    ("6", "MED - pide urgente"),
-    ("7", "ALTA - standard"),
-    ("8", "ALTA - pide urgente"),
-    ("9", "ALTA - cliente nuevo"),
-    ("10", "ALTA - last minute")
+    ("1 - BAJA - min", "BAJA - min"),
+    ("2 - BAJA - standard", "BAJA - standard"),
+    ("3 - BAJA - plus", "BAJA - plus"),
+    ("4 - MED - min", "MED - min"),
+    ("5 - MED - standard", "MED - standard"),
+    ("6 - MED - pide urgente", "MED - pide urgente"),
+    ("7 - ALTA - standard", "ALTA - standard"),
+    ("8 - ALTA - pide urgente", "ALTA - pide urgente"),
+    ("9 - ALTA - cliente nuevo", "ALTA - cliente nuevo"),
+    ("10 - ALTA - last minute", "ALTA - last minute")
 ]
 
 DEPARTMENTS = [
@@ -86,19 +86,10 @@ class Client(models.Model):
     name = models.CharField(max_length=64)
     isActivated = models.BooleanField(default=True)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="client_countries")
+    department = models.CharField(max_length=64, choices=DEPARTMENTS)
 
     def __str__(self):
         return f"{self.name}"
-    
-
-class ClientForm(ModelForm):
-    class Meta:
-        model = Client
-        fields = [
-            'name',
-            'isActivated',
-            'country',
-        ]
 
 
 class ClientContact(models.Model):
@@ -139,19 +130,46 @@ class Notes(models.Model):
 
 class Entry(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="entry_trips")
-    version = models.IntegerField()
+    version = models.IntegerField(default=1)
     user_creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entry_creator_users")
     user_working = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entry_working_users")
     starting_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
     last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date')
     closing_date = models.DateTimeField(null=True, blank=True, verbose_name='closing date')
-    response_days = models.IntegerField()
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
     amount = models.FloatField(null=True, blank=True)
     isClosed = models.BooleanField(default=False)
     importance = models.CharField(max_length=64, choices=IMPORTANCE_OPTIONS)
     progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS, default=PROGRESS_OPTIONS[0])
 
+    @property
+    def response_days(self):
+        if self.closing_date != None:
+            return self.closing_date - self.starting_date
+        else:
+            return django.utils.timezone.now - self.starting_date
+
+    class Meta:
+        ordering = ["-starting_date"]
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "trip": self.trip.name,
+            "version": self.version,
+            "user_creator": self.user_creator.username,
+            "user_working": self.user_working.username,
+            "starting_date": self.starting_date.strftime("%d %b %Y, %I:%M %p"),
+            "last_modification_date": self.last_modification_date.strftime("%d %b %Y, %I:%M %p"),
+            "closing_date": self.closing_date.strftime("%d %b %Y, %I:%M %p"),
+            "status": self.status,
+            "amount": self.amount,
+            "isClosed": self.isClosed,
+            "importance": self.importance,
+            "progress": self.progress,
+        }
+        
 
 class Holidays(models.Model):
     date = models.DateField(verbose_name="holidays date")
+    working_user = models.ManyToManyField(User, related_name="working_users", blank=True)

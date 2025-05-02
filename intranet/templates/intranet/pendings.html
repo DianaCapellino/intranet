@@ -12,31 +12,33 @@
     <br>
     <div class="container">
         <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'new_entry' %}" method="post">
+            <form class="rw-3 text-center" action="{% url 'pendings' %}" method="post">
                 {% csrf_token %}
                 <div class="form">
                     <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                        <select class="form-control-sm" aria-label="trip" name="trip">
+                            <option selected>Viaje</option>
+                            {% for trip in trips %}
+                            <option value="{{ trip.id }}">{{ trip.name }} - {{ trip.client}} - {{ trip.client_reference }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="mb-3">
                         <input autofocus class="form-control-sm date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
                     </div>
                     <div class="mb-3">
-                        <input autofocus class="form-control-sm date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="trip" name="trip">
-                            <option selected>Viaje</option>
-                            {% for trip in trips %}
-                            <option value="{{ trip.id }}">{{ trip.name }}</option>
+                        <select class="form-control-sm" aria-label="contact" name="contact">
+                            <option selected>Contact</option>
+                            {% for progres_options in option %}
+                            <option value="{{ option.0 }}">{{ option.0 }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
                         <select class="form-control-sm" aria-label="contact" name="contact">
                             <option selected>Contact</option>
-                            {% for contact in contacts %}
-                            <option value="{{ contact.id }}">{{ contact.name }}</option>
+                            {% for importance_options in option %}
+                            <option value="{{ option.0 }}">{{ option.0 }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -63,7 +65,10 @@
 <div id="entry_list">
     <div class="container">
         <br>
-        <h2 class="d-inline">Pendientes</h2> <i class="fa-solid fa-eye-slash m-3" id="pending-eye" aria-hidden="true"></i>
+        <div>
+            <h2 class="d-inline">Pendientes</h2>
+            <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
+        </div>
     
         {% if message %}
             <div>{{ message }}</div>
@@ -73,7 +78,7 @@
         <div class="row">
             <div class="col-12">
                 <div class="table table-striped" style="width:100%">
-                    <table id="entries" class="table">
+                    <table id="entries" class="table table-hover">
                         <thead>
                             <tr>
                                 <th>Fecha Pedido</th>
@@ -86,6 +91,7 @@
                                 <th>Trabajado por</th>
                                 <th>Progreso</th>
                                 <th>Valoración</th>
+                                <th>Acciones</th>
                             </tr>
                             <tbody>
                                 {% for entry in entries %}
@@ -112,6 +118,12 @@
                                         <td>{{entry.user_working}}</td>
                                         <td>{{entry.progress}}</td>
                                         <td>{{entry.importance}}</td>
+                                        <td>
+                                            <div class="justify-content-around d-flex">
+                                                <i class="fa-solid fa-pencil" id="pencil-entry-{{entry.id}}" aria-hidden="true"></i>
+                                                <i class="fa-solid fa-trash" id="trash-entry-{{entry.id}}" aria-hidden="true"></i>
+                                            </div>
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>

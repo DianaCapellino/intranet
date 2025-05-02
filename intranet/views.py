@@ -7,7 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, CountryForm, ClientForm, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS
+from django.core.serializers.json import DjangoJSONEncoder
+from .models import User, Country, Client, Trip, Entry, Notes, CountryForm, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS
 import json
 import datetime
 
@@ -77,27 +78,42 @@ def create_client(request):
     # If method is POST it will create the new client
     if request.method == "POST":
 
-        form = ClientForm(request.POST)
+        # Attempt to create contact
+        name = request.POST["name"]
+        country_form = request.POST["country"]
 
-        if form.is_valid():
-            new_client = form.save(commit=False)
-            new_client.save()
-            form.save_m2m()
-
-            # After saving the listing it redirects to the main page
-            return HttpResponseRedirect(reverse("clients"))
-        
-        # If there are any errors in the form, it will display the form again
-        else:
+        # Validations
+        if not name or not country_form:
             return render(request, "intranet/clients.html", {
-                "form": form
+                "message": "Todos los campos deben ser completados",
+                "clients": Client.objects.all(),
+                "countries": Country.objects.all(),
             })
+        
+        # Defines the department as the user department
+        department = request.user.department        
+
+        # Get the country from the country ID of the form
+        country = Country.objects.get(id=country_form)
+
+        # Creates the model of the client from the form information
+        new_client = Client.objects.create(
+            name=name,
+            country=country,
+            department=department,
+        )
+        new_client.save()
+
+        return render(request, "intranet/clients.html", {
+            "clients": Client.objects.all(),
+            "countries": Country.objects.all(),
+        })
     
     # If method is GET it displays the form to add new client
     else:
         return render(request, "intranet/clients.html", {
-            "form": ClientForm(),
-            "clients": Client.objects.all()
+            "clients": Client.objects.all(),
+            "countries": Country.objects.all(),
         })
     
 
@@ -120,6 +136,7 @@ def create_client_contact(request):
         
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
+
 
         # Creates the model of the contact from the form information
         new_contact = ClientContact.objects.create(
@@ -255,16 +272,30 @@ def create_trip(request):
         })
     
 def pendings(request):
-    return render(request, "intranet/pendings.html", {
-        "entries": Entry.objects.all(),
-        "trips": Trip.objects.all(),
-    })
 
-def new_entry(request):
-    return render(request, "intranet/pendings.html", {
-        "entries": Entry.objects.all(),
-        "trips": Trip.objects.all(),
-    })
+    # Creates new entry
+    if request.method == "POST":
+
+        return render(request, "intranet/pendings.html", {
+            "entries": Entry.objects.all(),
+            "trips": Trip.objects.all(),
+            "status": STATUS_OPTIONS,
+            "importance_options": IMPORTANCE_OPTIONS,
+            "progress_options": PROGRESS_OPTIONS,
+        })
+    
+    # Shows all entries
+    else:
+        return render(request, "intranet/pendings.html", {
+            "entries": Entry.objects.all(),
+            "trips": Trip.objects.all(),
+            "status": STATUS_OPTIONS,
+            "importance_options": IMPORTANCE_OPTIONS,
+            "progress_options": PROGRESS_OPTIONS,
+        })
+    
+def stats(request):
+    return render(request, "intranet/stats.html")
 
 @login_required
 @csrf_exempt
@@ -374,9 +405,7 @@ def jsontrip_entries(request, trip_id):
     try:
         trip_object = Trip.objects.get(pk=trip_id)
         entries_object_list = Entry.objects.filter(trip=trip_object)
-        if entries_object_list:
-            entries = list(entries_object_list.values())
-        else:
+        if not entries_object_list:          
             return JsonResponse({"empty": "No entries"})
 
     except Trip.DoesNotExist:
@@ -385,7 +414,7 @@ def jsontrip_entries(request, trip_id):
 
     # Return entries contents
     if request.method == "GET":
-        return JsonResponse(entries, safe=False)
+        return JsonResponse([entry.serialize() for entry in entries_object_list], safe=False)
 
     # Entry requests must be via GET or PUT or DELETE
     else:

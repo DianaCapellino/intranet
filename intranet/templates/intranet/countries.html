@@ -5,18 +5,48 @@
     <br>
 
     <div class="container">
-        <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'countries' %}" method="post">
-                {% csrf_token %}
-                {{ form }}
-                <input class="btn btn-dark" type="submit" value="GUARDAR">
-            </form>
+        <div class="row">
+            <div class="text-center col-4">
+                <form class="rw-3 text-center" action="{% url 'countries' %}" method="post">
+                    {% csrf_token %}
+                    <div class="form">
+                        <div class="mb-3">
+                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
+                        <div class="mb-3">
+                            <input autofocus class="form-control-sm" type="text" name="code" id="code" placeholder="Código">
+                        </div>
+                        <input class="btn btn-dark" type="submit" value="GUARDAR">
+                    </div>
+                </form>
+            </div>
+
+            <div class="col-8">
+                <table id="countries" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Código</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for country in countries %}
+                        <tr>
+                            <td>{{ country.name }}</td>
+                            <td>{{ country.code }}</td>
+                            <td>
+                                <div class="justify-content-around d-flex">
+                                    <i class="fa-solid fa-pencil" width="1px"" id="pencil-country-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" width="1px"" id="trash-country-{{client.id}}" aria-hidden="true"></i>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     <br>
-
-    {% for country in countries %}
-        <div>{{ country.code }} - {{ country.name }}</div>
-    {% endfor %}
-
 {% endblock %}

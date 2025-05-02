@@ -12,7 +12,7 @@ urlpatterns = [
     path("trips", views.create_trip, name="trips"),
     path("error", views.error, name="error"),
     path("pendings", views.pendings, name="pendings"),
-    path("new_entry", views.new_entry, name="new_entry"),
+    path("stats", views.stats, name="stats"),
 
     # API routes
     path("trip/json", views.jsontrips, name="jsontrips"),

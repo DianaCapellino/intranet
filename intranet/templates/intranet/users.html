@@ -4,51 +4,89 @@
     <h2>Crear Nuevo Usuario</h2>
 
     {% if message %}
-        <div>{{ message }}</div>
+        <p class="text-danger-emphasis">{{ message }}</p>
     {% endif %}
 
     <br>
     <br>
     <div class="container">
-        <div class="text-center">
+        <div class="text-center d-flex justify-content-around">
             <form class="rw-3 text-center" action="{% url 'users' %}" method="post">
                 {% csrf_token %}
                 <div class="form">
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
+                        <div class="mb-3 col">
+                            <input class="form-control-sm" type="text" name="username" id="username" placeholder="Usuario">
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="username" id="username" placeholder="Usuario">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <input class="form-control-sm" type="password" name="password" id="password" placeholder="Contraseña">
+                        </div>
+                        <div class="mb-3 col">
+                            <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="password" name="password" id="password" placeholder="Contraseña">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <select class="form-control" aria-label="department" name="department">
+                                <option selected>Departamento</option>
+                                {% for department in departments %}
+                                <option value="{{ department.0 }}">{{ department.1 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-check-sm mb-3 col">
+                            <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
+                            <label class="form-check-label" for="checkDefault">
+                            Administrador
+                            </label>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="department" name="department">
-                            <option selected>Departamento</option>
-                            {% for department in departments %}
-                            <option value="{{ department.0 }}">{{ department.1 }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="form-check-sm mb-3">
-                        <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
-                        <label class="form-check-label" for="checkDefault">
-                          Administrador
-                        </label>
-                      </div>
                     <input class="btn btn-dark" type="submit" value="GUARDAR">
                 </div>
             </form>
         </div>
+        <br>
+        <hr class="mb-5">
+        <div class="col-8 text-center">
+            <table id="users" class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Departamento</th>
+                        <th>Administrador</th>
+                        <th>Visible</th>
+                        <th>Activado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.other_name }}</td>
+                        <td>{{ user.email }}</td>
+                        <td>{{ user.department }}</td>
+                        <td>{{ user.isAdmin }}</td>
+                        <td>{{ user.isActivated }}</td>
+                        <td>{{ user.is_active }}</td>
+                        <td>
+                            <div class="justify-content-around d-flex">
+                                <i class="fa-solid fa-pencil" width="1px"" id="pencil-country-{{client.id}}" aria-hidden="true"></i>
+                                <i class="fa-solid fa-trash" width="1px"" id="trash-country-{{client.id}}" aria-hidden="true"></i>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-    <br>
-
-    {% for user in users %}
-    <div>{{ user.other_name }} - {{ user.username }} - {{ user.department }} - {{ user.isAdmin }} - {{ user.email}}</div>
-    {% endfor %}
     <br>
 {% endblock %}

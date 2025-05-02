@@ -1,18 +1,11 @@
-trip_displayed = [];
-
 document.addEventListener('DOMContentLoaded', () => {
-    // Gets the datatable format with the spanish language activated
-    new DataTable('#trips', {
-        language: {
-            url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
-        },
-    });
-
-    new DataTable('#entries', {
-        language: {
-            url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
-        },
-    });
+    // Gets the datatable format to the tables with the spanish language activated
+    create_datatable("trips");
+    create_datatable("entries");
+    create_datatable("countries");
+    create_datatable("contacts");
+    create_datatable("clients");
+    create_datatable("users");
 
     // Modifies the date format to be shown in the form
     let today = new Date().toISOString().slice(0, 10);
@@ -22,25 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
         date.value = today;
     });
 
-    // Display form when clicking button
-    const new_trip_btn = document.querySelector('#new_trip_btn');
-    if (new_trip_btn != null) {
-        new_trip_btn.addEventListener("click", () => {
-            document.querySelector('#new_trip').className = 'd-block';
-            document.querySelector('#trip_list').className = 'd-none';
-            document.querySelector('#new_trip_btn').className = 'd-none';
-        });
-    };
-
-    // Display form when clicking button
-    const new_entry_btn = document.querySelector('#new_entry_btn');
-    if (new_entry_btn != null) {
-        new_entry_btn.addEventListener("click", () => {
-            document.querySelector('#new_entry').className = 'd-block';
-            document.querySelector('#entry_list').className = 'd-none';
-            document.querySelector('#new_entry_btn').className = 'd-none';
-        });
-    };
+    // Display forms when clicking button
+    btn_display("trip");
+    btn_display("entry");
 
     // Creates the functionality when pressing the eye
     eye_funcionality();
@@ -49,6 +26,37 @@ document.addEventListener('DOMContentLoaded', () => {
     modal_funcionality();
 
 })
+
+function create_datatable (type) {
+    if (type == "entries") {
+        new DataTable(`#${type}`, {
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
+            },
+            responsive: true,
+            order: [[0, 'desc']],
+        });
+
+    } else {
+        new DataTable(`#${type}`, {
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
+                responsive: true,
+            },
+        });
+    };
+}
+
+function btn_display (type) {
+    const new_btn = document.querySelector(`#new_${type}_btn`);
+    if (new_btn != null) {
+        new_btn.addEventListener("click", () => {
+            document.querySelector(`#new_${type}`).className = 'd-block';
+            document.querySelector(`#${type}_list`).className = 'd-none';
+            document.querySelector(`#new_${type}_btn`).className = 'd-none';
+        });
+    };
+}
 
 function modal_funcionality() {
     
@@ -62,7 +70,7 @@ function modal_funcionality() {
         })
     });
 
-    // Delete table when it is close
+    // Delete table when it is closed
     all_modal_trips.forEach((item) => {
         $(item).on('hidden.bs.modal', function() {
             let trip_id_string = item.id.match(/\d+/);
@@ -110,10 +118,12 @@ function display_entries(trip_id) {
         const table_body = create_table("entries", trip_id);
 
         // Creates all the rows
-        list.forEach(element => {
-            const entry_row = create_entry_row(element);
-            table_body.appendChild(entry_row);
-        });
+        if (Array.isArray(list)) {
+            list.forEach(element => {
+                const entry_row = create_entry_row(element);
+                table_body.appendChild(entry_row);
+            });
+        };
     });
 }
 
@@ -135,7 +145,7 @@ function clear_old_table (type, trip_id) {
 }
 
 function create_table(type, reference) {
-    // Get the entry div where the table will be displayed
+    // Get the div where the table will be displayed
     const div = document.querySelector(`#${type}-${reference}`);
 
     // Creates the table inside the modal
@@ -168,6 +178,6 @@ function create_entry_row(element) {
     
     // Creates table row
     const entry_row = document.createElement('tr');
-    entry_row.innerHTML = `<td>${element.starting_date}</td><td>${element.closing_date}</td><td>${element.status}</td><td>${element.version}</td><td>${element.amount}</td><td>${element.user_creator_id}</td><td>${element.user_working_id}</td><td>${element.progress}</td><td>${element.importance}</td>`;
+    entry_row.innerHTML = `<td>${element.starting_date}</td><td>${element.closing_date}</td><td>${element.status}</td><td>${element.version}</td><td>${element.amount}</td><td>${element.user_creator}</td><td>${element.user_working}</td><td>${element.progress}</td><td>${element.importance}</td>`;
     return entry_row;
 }

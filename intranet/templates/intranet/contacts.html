@@ -9,35 +9,62 @@
     {% endif %}
 
     <br>
-    <br>
     <div class="container">
-        <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'client_contacts' %}" method="post">
-                {% csrf_token %}
-                <div class="form">
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+        <div class="row">
+            <div class="text-center col-4">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'client_contacts' %}" method="post">
+                    {% csrf_token %}
+                    <div class="form">
+                        <div class="mb-3">
+                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
+                        <div class="mb-3">
+                            <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                        </div>
+                        <div class="mb-3">
+                            <label>Cliente</label>
+                            <select class="form-control-sm" aria-label="client" name="client">
+                                {% for client in clients %}
+                                <option value="{{ client.id }}">{{ client.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <input class="btn btn-dark" type="submit" value="GUARDAR">
                     </div>
-                    <div class="mb-3">
-                        <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="client" name="client">
-                            <option selected>Cliente</option>
-                            {% for client in clients %}
-                            <option value="{{ client.id }}">{{ client.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR">
-                </div>
-            </form>
+                </form>
+            </div>
+            <div class="col-8">
+                <table id="contacts" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Cliente</th>
+                            <th>Email</th>
+                            <th>Activado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for contact in contacts %}
+                        <tr>
+                            <td>{{ contact.name }}</td>
+                            <td>{{ contact.client }}</td>
+                            <td>{{ contact.email }}</td>
+                            <td>{{ contact.isActivated }}</td>
+                            <td>
+                                <div class="justify-content-around d-flex mu-2">
+                                    <i class="fa-solid fa-pencil" id="pencil-contact-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" id="trash-contact-{{client.id}}" aria-hidden="true"></i>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     <br>
-
-    {% for contact in contacts %}
-    <div>{{ contact.name }} - {{ contact.email }} - {{ contact.client }} - {{ contact.isActivated }}</div>
-    {% endfor %}
 
 {% endblock %}

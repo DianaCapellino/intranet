@@ -29,6 +29,18 @@ nav ul li {
     font-size: 1rem;
 }
 
+.fa-pencil:hover,
+.fa-pencil:focus,
+.fa-trash:hover,
+.fa-trash:focus,
+.fa-eye-slash:hover,
+.fa-eye-slash:focus,
+.fa-eye:hover,
+.fa-eye:focus {
+    filter: invert(54%) sepia(4%) saturate(6%) hue-rotate(331deg) brightness(92%) contrast(81%);
+    cursor:pointer;
+}
+
 @media (min-width: 400px) {
     #brand-name {
       font-size: 1.5rem;

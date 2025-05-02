@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Intranet</title>
+    <title>{% block title %}Intranet{% endblock %}</title>
     <link rel="icon" href="../../static/intranet/images/sello.ico" sizes="32x32">
     <link href="https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.min.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/2.2.2/css/dataTables.bootstrap5.css" rel="stylesheet">
@@ -32,7 +32,7 @@
                   <a class="nav-link" href="{% url 'pendings' %}" id="pendings">Pendientes</a>
               </li>
               <li class="nav-item">
-                  <a class="nav-link" href="">Estadísticas</a>
+                  <a class="nav-link" href="{% url 'stats' %}">Estadísticas</a>
               </li>
               {% if user.isAdmin %}
               <li class="nav-item dropdown">
@@ -45,7 +45,7 @@
                     <li><a class="dropdown-item" href="{% url 'clients' %}">Clientes</a></li>
                     <li><a class="dropdown-item" href="{% url 'client_contacts' %}">Contacto Clientes</a></li>
                     <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
-                    <li><a class="dropdown-item" href="">Feriados</a></li>
+                    <li><a class="dropdown-item" href="{% url 'stats' %}">Feriados</a></li>
                   </div>
                 </ul>
               </li>
@@ -87,7 +87,7 @@
     <br>
     <br>
     <br>
-    <div class="container">
+    <div class="m-3">
     {% block body %}
     {% endblock %}
     </div>

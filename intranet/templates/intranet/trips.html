@@ -73,7 +73,7 @@
         <div class="row">
             <div class="col-12">
                 <div class="table table-striped" style="width:100%">
-                    <table id="trips" class="table">
+                    <table id="trips" class="table table-hover">
                         <thead>
                             <tr>
                                 <th>Nombre</th>
@@ -84,6 +84,7 @@
                                 <th>Ref Cliente</th>
                                 <th>Contacto</th>
                                 <th>Fecha Viaje</th>
+                                <th>Acciones</th>
                             </tr>
                             <tbody>
                                 {% for trip in trips %}
@@ -108,6 +109,12 @@
                                     {% endif %}
                                     <td>{{ trip.contact }}</td>
                                     <td>{{ trip.travelling_date }}</td>
+                                    <td>
+                                        <div class="justify-content-around d-flex">
+                                            <i class="fa-solid fa-pencil" id="pencil-trip-{{trip.id}}" aria-hidden="true"></i>
+                                            <i class="fa-solid fa-trash" id="trash-trip-{{trip.id}}" aria-hidden="true"></i>
+                                        </div>
+                                    </td>
                                 </tr>
                                 <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
                                     <div class="modal-dialog modal-dialog-scrollable">

@@ -4,18 +4,61 @@
     <h2>Crear Nuevo Cliente</h2>
     <br>
 
+    {% if message %}
+        <div>{{ message }}</div>
+    {% endif %}
+
+    <br>
     <div class="container">
-        <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'clients' %}" method="post">
-                {% csrf_token %}
-                {{ form }}
-                <input class="btn btn-dark" type="submit" value="GUARDAR">
-            </form>
+        <div class="row">
+            <div class="text-center col-4">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'clients' %}" method="post">
+                    {% csrf_token %}
+                    <div class="form">
+                        <div class="mb-3">
+                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
+                        <div class="mb-3 form-control-sm form-group">
+                            <label>País</label>
+                            <select class="form-control-sm" aria-label="country" name="country">
+                                {% for country in countries %}
+                                <option value="{{ country.id }}">{{ country.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <input class="btn btn-dark" type="submit" value="GUARDAR">
+                    </div>
+                </form>
+            </div>
+            <div class="col-8">
+                <table id="clients" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>País</th>
+                            <th>Activado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in clients %}
+                        <tr>
+                            <td>{{ client.name }}</td>
+                            <td>{{ client.country }}</td>
+                            <td>{{ client.isActivated }}</td>
+                            <td>
+                                <div class="justify-content-around d-flex">
+                                    <i class="fa-solid fa-pencil" width="1px"" id="pencil-client-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" width="1px"" id="trash-client-{{client.id}}" aria-hidden="true"></i>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     <br>
-
-    {% for client in clients %}
-        <div>{{ client.name }} - {{ client.country }} - {{ client.isActivated }}</div>
-    {% endfor %}
 {% endblock %}
