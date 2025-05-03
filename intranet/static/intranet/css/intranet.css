@@ -1,5 +1,5 @@
 body {
-    color: #373434;
+    color: var(--bs-grey-900);
     font-family: Tahoma, Verdana, sans-serif;
     font-style: normal;
     font-weight: 300;
@@ -39,6 +39,20 @@ nav ul li {
 .fa-eye:focus {
     filter: invert(54%) sepia(4%) saturate(6%) hue-rotate(331deg) brightness(92%) contrast(81%);
     cursor:pointer;
+}
+
+.fa-plus:focus,
+.fa-plus:hover {
+    filter: sepia(50%) saturate(50%) hue-rotate(331deg) brightness(100%) contrast(100%);
+    cursor:pointer;
+}
+
+
+.message {
+    background-color: var(--bs-primary);
+    font-weight: bold;
+    margin: 0.5rem;
+    padding: 0.5rem;
 }
 
 @media (min-width: 400px) {

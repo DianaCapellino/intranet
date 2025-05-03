@@ -4,7 +4,7 @@
     <h2>Crear Nuevo Usuario</h2>
 
     {% if message %}
-        <p class="text-danger-emphasis">{{ message }}</p>
+        <div class="message text-center">{{ message }}</div>
     {% endif %}
 
     <br>
@@ -73,9 +73,21 @@
                         <td>{{ user.other_name }}</td>
                         <td>{{ user.email }}</td>
                         <td>{{ user.department }}</td>
-                        <td>{{ user.isAdmin }}</td>
-                        <td>{{ user.isActivated }}</td>
-                        <td>{{ user.is_active }}</td>
+                        {% if user.isAdmin == True %}
+                            <td>Sí</td>
+                        {% else %}
+                            <td>No</td>
+                        {% endif %}
+                        {% if user.isActivated == True %}
+                            <td>Sí</td>
+                        {% else %}
+                            <td>No</td>
+                        {% endif %}
+                        {% if user.is_active == True %}
+                            <td>Sí</td>
+                        {% else %}
+                            <td>No</td>
+                        {% endif %}
                         <td>
                             <div class="justify-content-around d-flex">
                                 <i class="fa-solid fa-pencil" width="1px"" id="pencil-country-{{client.id}}" aria-hidden="true"></i>
