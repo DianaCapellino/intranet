@@ -8,17 +8,19 @@
         <div class="message text-center">{{ message }}</div>
     {% endif %}
 
+    <br>
     <div class="container">
         <div class="row">
             <div class="text-center col-4">
+                <br>
                 <form class="rw-3 text-center" action="{% url 'countries' %}" method="post">
                     {% csrf_token %}
                     <div class="form">
                         <div class="mb-3">
-                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
                         <div class="mb-3">
-                            <input autofocus class="form-control-sm" type="text" name="code" id="code" placeholder="Código">
+                            <input autofocus class="form-control" type="text" name="code" id="code" placeholder="Código" minlength="2" maxlength="2">
                         </div>
                         <input class="btn btn-dark" type="submit" value="GUARDAR">
                     </div>
@@ -41,8 +43,25 @@
                             <td>{{ country.code }}</td>
                             <td>
                                 <div class="justify-content-around d-flex">
-                                    <i class="fa-solid fa-pencil" width="1px"" id="pencil-country-{{client.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" width="1px"" id="trash-country-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-country-{{country.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" width="1px" id="trash-country-{{country.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowCountryTrash{{ country.id }}"></i>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowCountryTrash{{ country.id }}" tabindex="-1" aria-labelledby="label{{ country.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ country.id }}">Eliminando {{ country.name }} - {{ country.code }}</h1>
+                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>¿Está seguro que desea eliminar el país {{ country.name }}?</h3>
+                                                <br>
+                                                <div class="container text-center">
+                                                    <button id="delete-country-{{ country.id }}" class="btn btn-dark btn-lg delete-countries-btn">ELIMINAR</button></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </td>
                         </tr>

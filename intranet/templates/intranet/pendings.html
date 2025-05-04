@@ -15,43 +15,46 @@
             <form class="rw-3 text-center" action="{% url 'pendings' %}" method="post">
                 {% csrf_token %}
                 <div class="form">
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="trip" name="trip">
-                            <option selected>Viaje</option>
-                            {% for trip in trips %}
-                            <option value="{{ trip.id }}">{{ trip.name }} - {{ trip.client}} - {{ trip.client_reference }}</option>
-                            {% endfor %}
-                        </select>
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <select autofocus class="form-control" aria-label="trip" name="trip">
+                                <option selected value="">Viaje</option>
+                                {% for trip in trips %}
+                                <option value="{{ trip.id }}">{{ trip.name }} - {{ trip.client}} - {{ trip.client_reference }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <input class="form-control date-input" type="date" name="starting_date" id="starting_date" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                        </div>
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="status" name="status">
+                                <option selected value="">Status</option>
+                                {% for option in status %}
+                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="contact" name="contact">
-                            <option selected>Contact</option>
-                            {% for progres_options in option %}
-                            <option value="{{ option.0 }}">{{ option.0 }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="contact" name="contact">
-                            <option selected>Contact</option>
-                            {% for importance_options in option %}
-                            <option value="{{ option.0 }}">{{ option.0 }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="client_reference" id="client_reference" placeholder="Referencia Cliente">
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="status" name="status">
-                            <option selected>Status</option>
-                            {% for option in status %}
-                            <option value="{{ option.0 }}">{{ option.1 }}</option>
-                            {% endfor %}
-                        </select>
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="importance" name="importance">
+                                <option selected value="">Importancia</option>
+                                {% for option in importance_options %}
+                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="user_working" name="user_working">
+                                <option selected value="">Trabajado por</option>
+                                {% for user in users %}
+                                <option value="{{ user.id }}">{{ user.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                     <input class="btn btn-dark" type="submit" value="GUARDAR">
                 </div>
@@ -95,20 +98,24 @@
                             </tr>
                             <tbody>
                                 {% for entry in entries %}
-                                    {% if entry.closing_date != None %}
+                                    {% if entry.isClosed != False %}
                                         <tr class="d-none pending-entry">
                                     {% else %}
                                         <tr>
                                     {% endif %}
                                         <td>{{entry.starting_date}}</td>
-                                        {% if entry.closing_date == none %}
+                                        {% if entry.isClosed == False %}
                                             <td>n/a</td>
                                         {% else %}
                                             <td>{{entry.closing_date}}</td>
                                         {% endif %}
                                         <td>{{entry.trip}}</td>
                                         <td>{{entry.status}}</td>
-                                        <td>{{entry.version}}</td>
+                                        {% if entry.status == "Quote" %}
+                                            <td>{{entry.version_quote}}</td>
+                                        {% else %}
+                                            <td>{{entry.version}}</td>
+                                        {% endif %}
                                         {% if entry.amount == none %}
                                             <td>Pendiente</td>
                                         {% else %}

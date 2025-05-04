@@ -1,18 +1,16 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 import django.utils.timezone
-from django.forms import ModelForm
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
     ("Booking", "Booking"),
-    ("Quote Modification", "Quote Modification"),
-    ("Booking Modification", "Booking Modification"),
     ("Final Itinerary", "Final Itinerary"),
     ("Void", "Void"),
-    ("Cancelled", "Cancelled"),
-    ("Program", "Program"),
-    ("Other", "Other")
+    ("Cancelado", "Cancelado"),
+    ("Programa", "Programa"),
+    ("Bloqueo", "Bloqueo"),
+    ("Otro", "Otro")
 ]
 
 IMPORTANCE_OPTIONS = [
@@ -39,7 +37,7 @@ PROGRESS_OPTIONS = [
     ("2 - Contactados proveedores", "Contactados proveedores"),
     ("3 - Enviado Status", "Enviado status"),
     ("4 - Falta respuesta proveedor/cliente", "Falta respuesta proveedor/cliente"),
-    ("5 - Finalizado", "Finalizado")
+    ("5 - Finalizado", "Finalizado"),
 ]
 
 class User(AbstractUser):
@@ -64,22 +62,6 @@ class Country(models.Model):
 
     def __str__(self):
         return f"{self.code} - {self.name}"
-    
-
-class CountryForm(ModelForm):
-    class Meta:
-        model = Country
-        fields = [
-            'name',
-            'code',
-        ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['name'].widget.attrs.update({'class': 'form-control-sm'})
-        self.fields['code'].widget.attrs.update({'class': 'form-control-sm'})
-        self.fields['name'].widget.attrs.update({'placeholder': 'Nombre'})
-        self.fields['code'].widget.attrs.update({'placeholder': 'Código'})
 
 
 class Client(models.Model):
@@ -106,10 +88,11 @@ class Trip(models.Model):
     name = models.CharField(max_length=64)
     tourplanId = models.CharField(max_length=64, null=True)
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
-    version = models.CharField(max_length=64, null=True)
+    version = models.IntegerField(blank=True, null=True, default=0)
+    version_quote = models.CharField(max_length=64, null=True, default="A")
     amount = models.FloatField(null=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="trip_clients")
-    client_reference = models.CharField(max_length=64, null=True)
+    client_reference = models.CharField(max_length=64, null=True, default="n/a")
     starting_date = models.DateField(default=django.utils.timezone.now, verbose_name='starting date')
     creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
     conversion_date = models.DateTimeField(null=True, verbose_name='conversion date')
@@ -130,17 +113,18 @@ class Notes(models.Model):
 
 class Entry(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="entry_trips")
-    version = models.IntegerField(default=1)
+    version_quote = models.CharField(max_length=64, default="A")
+    version = models.IntegerField(blank=True, null=True, default=0)
     user_creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entry_creator_users")
     user_working = models.ForeignKey(User, on_delete=models.CASCADE, related_name="entry_working_users")
     starting_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
     last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date')
-    closing_date = models.DateTimeField(null=True, blank=True, verbose_name='closing date')
+    closing_date = models.DateTimeField(null=True, blank=True, verbose_name='closing date', default=django.utils.timezone.now)
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
     amount = models.FloatField(null=True, blank=True)
     isClosed = models.BooleanField(default=False)
     importance = models.CharField(max_length=64, choices=IMPORTANCE_OPTIONS)
-    progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS, default=PROGRESS_OPTIONS[0])
+    progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS)
 
     @property
     def response_days(self):
@@ -152,10 +136,12 @@ class Entry(models.Model):
     class Meta:
         ordering = ["-starting_date"]
 
+    
     def serialize(self):
         return {
             "id": self.id,
             "trip": self.trip.name,
+            "version_quote": self.version_quote,
             "version": self.version,
             "user_creator": self.user_creator.username,
             "user_working": self.user_working.username,

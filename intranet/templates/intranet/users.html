@@ -16,24 +16,24 @@
                 <div class="form">
                     <div class="row">
                         <div class="mb-3 col">
-                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
                         <div class="mb-3 col">
-                            <input class="form-control-sm" type="text" name="username" id="username" placeholder="Usuario">
+                            <input class="form-control" type="text" name="username" id="username" minlength="2" maxlength="3" placeholder="Usuario">
                         </div>
                     </div>
                     <div class="row">
                         <div class="mb-3 col">
-                            <input class="form-control-sm" type="password" name="password" id="password" placeholder="Contraseña">
+                            <input class="form-control" type="password" name="password" id="password" placeholder="Contraseña">
                         </div>
                         <div class="mb-3 col">
-                            <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                            <input class="form-control" type="email" name="email" id="email" placeholder="E-mail">
                         </div>
                     </div>
                     <div class="row">
                         <div class="mb-3 col">
                             <select class="form-control" aria-label="department" name="department">
-                                <option selected>Departamento</option>
+                                <option selected value="">Departamento</option>
                                 {% for department in departments %}
                                 <option value="{{ department.0 }}">{{ department.1 }}</option>
                                 {% endfor %}
@@ -90,8 +90,25 @@
                         {% endif %}
                         <td>
                             <div class="justify-content-around d-flex">
-                                <i class="fa-solid fa-pencil" width="1px"" id="pencil-country-{{client.id}}" aria-hidden="true"></i>
-                                <i class="fa-solid fa-trash" width="1px"" id="trash-country-{{client.id}}" aria-hidden="true"></i>
+                                <i class="fa-solid fa-pencil" width="1px"" id="pencil-user-{{user.id}}" aria-hidden="true"></i>
+                                <i class="fa-solid fa-trash" width="1px"" id="trash-user-{{user.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowUserTrash{{ user.id }}"></i>
+                            </div>
+                            <div class="modal fade modal-lg" id="windowUserTrash{{ user.id }}" tabindex="-1" aria-labelledby="label{{ user.id }}">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ user.id }}">Eliminando {{ user.other_name }} - {{ user.username }}</h1>
+                                            <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <h3>¿Está seguro que desea eliminar el usuario {{ user.other_name }}?</h3>
+                                            <br>
+                                            <div class="container text-center">
+                                                <button id="delete-user-{{ user.id }}" class="btn btn-dark btn-lg delete-users-btn">ELIMINAR</button></a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </td>
                     </tr>

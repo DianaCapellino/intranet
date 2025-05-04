@@ -17,11 +17,11 @@
                     {% csrf_token %}
                     <div class="form">
                         <div class="mb-3">
-                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
-                        <div class="mb-3 form-control-sm form-group">
-                            <label>País</label>
-                            <select class="form-control-sm" aria-label="country" name="country">
+                        <div class="mb-3">
+                            <select class="form-control" aria-label="country" name="country">
+                                <option selected value="">País</option>
                                 {% for country in countries %}
                                 <option value="{{ country.id }}">{{ country.name }}</option>
                                 {% endfor %}
@@ -50,7 +50,24 @@
                             <td>
                                 <div class="justify-content-around d-flex">
                                     <i class="fa-solid fa-pencil" width="1px"" id="pencil-client-{{client.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" width="1px"" id="trash-client-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" width="1px"" id="trash-client-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientTrash{{ client.id }}"></i>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowClientTrash{{ client.id }}" tabindex="-1" aria-labelledby="label{{ client.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ client.id }}">Eliminando {{ client.name }}</h1>
+                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>¿Está seguro que desea eliminar el cliente {{ client.name }}?</h3>
+                                                <br>
+                                                <div class="container text-center">
+                                                    <button id="delete-client-{{ client.id }}" class="btn btn-dark btn-lg delete-clients-btn">ELIMINAR</button></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </td>
                         </tr>

@@ -15,41 +15,51 @@
             <form class="rw-3 text-center" action="{% url 'trips' %}" method="post">
                 {% csrf_token %}
                 <div class="form">
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <label for="starting_date">Fecha Pedido</label>
+                            <input class="form-control date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="travelling_date">Fecha Viaje</label>
+                            <input class="form-control date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="client" name="client">
+                                <option selected>Cliente</option>
+                                {% for client in clients %}
+                                <option value="{{ client.id }}">{{ client.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>                    
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="contact" name="contact">
+                                <option selected>Contacto</option>
+                                {% for contact in contacts %}
+                                <option value="{{ contact.id }}">{{ contact.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="client" name="client">
-                            <option selected>Cliente</option>
-                            {% for client in clients %}
-                            <option value="{{ client.id }}">{{ client.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="contact" name="contact">
-                            <option selected>Contact</option>
-                            {% for contact in contacts %}
-                            <option value="{{ contact.id }}">{{ contact.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="client_reference" id="client_reference" placeholder="Referencia Cliente">
-                    </div>
-                    <div class="mb-3">
-                        <select class="form-control-sm" aria-label="status" name="status">
-                            <option selected>Status</option>
-                            {% for option in status %}
-                            <option value="{{ option.0 }}">{{ option.1 }}</option>
-                            {% endfor %}
-                        </select>
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <input autofocus class="form-control" type="text" name="client_reference" id="client_reference" placeholder="Referencia Cliente">
+                        </div>
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="status" name="status">
+                                <option selected>Status</option>
+                                {% for option in status %}
+                                <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                     <input class="btn btn-dark" type="submit" value="GUARDAR">
                 </div>
@@ -72,7 +82,7 @@
         <br>
         <div class="row">
             <div class="col-12">
-                <div class="table table-striped" style="width:100%">
+                <div style="width:100%">
                     <table id="trips" class="table table-hover">
                         <thead>
                             <tr>
@@ -120,16 +130,18 @@
                                     <div class="modal-dialog modal-dialog-scrollable">
                                         <div class="modal-content">
                                             <div class="modal-header">
-                                                <h3 class="modal-title fs-5" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h3>
+                                                <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
                                                 <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                             </div>
                                             <div class="modal-body">
-                                                <h3>Notas</h3>
-                                                <div class="table table-striped" id="notes-{{ trip.id }}"></div>
-                                                <br>
+                                                <div id="new_entry_container" class="container text-center">
+                                                    <a href="{% url 'create_entry' trip.id %}" ><button id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg">NUEVA ENTRADA</button></a>
+                                                </div>
                                                 <h3>Entradas</h3>
-                                                <div class="table table-striped" id="entries-{{ trip.id }}"></div>
-
+                                                <div id="entries-{{ trip.id }}"></div>
+                                                <br>
+                                                <h3>Notas</h3>
+                                                <div id="notes-{{ trip.id }}"></div>
                                             </div>
                                         </div>
                                     </div>

@@ -13,18 +13,18 @@
         <div class="row">
             <div class="text-center col-4">
                 <br>
-                <form class="rw-3 text-center" action="{% url 'client_contacts' %}" method="post">
+                <form class="rw-3 text-center" action="{% url 'contacts' %}" method="post">
                     {% csrf_token %}
                     <div class="form">
                         <div class="mb-3">
-                            <input autofocus class="form-control-sm" type="text" name="name" id="name" placeholder="Nombre">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
                         <div class="mb-3">
-                            <input class="form-control-sm" type="email" name="email" id="email" placeholder="E-mail">
+                            <input class="form-control" type="email" name="email" id="email" placeholder="E-mail">
                         </div>
                         <div class="mb-3">
-                            <label>Cliente</label>
-                            <select class="form-control-sm" aria-label="client" name="client">
+                            <select class="form-control" aria-label="client" name="client">
+                                <option selected value="">Cliente</option>
                                 {% for client in clients %}
                                 <option value="{{ client.id }}">{{ client.name }}</option>
                                 {% endfor %}
@@ -54,8 +54,25 @@
                             <td>{{ contact.isActivated }}</td>
                             <td>
                                 <div class="justify-content-around d-flex mu-2">
-                                    <i class="fa-solid fa-pencil" id="pencil-contact-{{client.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" id="trash-contact-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-pencil" id="pencil-contact-{{contact.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" id="trash-contact-{{contact.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowContactTrash{{ contact.id }}"></i>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowContactTrash{{ contact.id }}" tabindex="-1" aria-labelledby="label{{ contact.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ contact.id }}">Eliminando {{ contact.name }}</h1>
+                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>¿Está seguro que desea eliminar el contacto {{ contact.name }}?</h3>
+                                                <br>
+                                                <div class="container text-center">
+                                                    <button id="delete-contact-{{ contact.id }}" class="btn btn-dark btn-lg delete-contacts-btn">ELIMINAR</button></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </td>
                         </tr>

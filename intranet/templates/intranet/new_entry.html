@@ -1,0 +1,124 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="modify_entry">
+    <h2>Creando Nueva Entrada para
+        <u>{{ trip.name }} - {{ trip.client }}</u></h2>
+
+    {% if message %}
+        <div class="message text-center">{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <br>
+    <div class="container">
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'create_entry' trip.id %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="row">
+                                <label for="starting_date" class="col">Fecha Pedido</label>
+                                <input class="form-control datetime-input col" type="datetime-local" name="starting_date" id="starting_date" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <select autofocus class="form-select" aria-label="status" name="status">
+                                <option selected value="">Status</option>
+                                {% for option in status %}
+                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <select class="form-select" aria-label="importance" name="importance">
+                                <option selected value="">Importancia</option>
+                                {% for option in importance_options %}
+                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <select class="form-select" aria-label="user_working" name="user_working" id="user_working_select">
+                                <option selected value="">Trabajado por</option>
+                                {% for user in users %}
+                                <option value="{{ user.username }}">{{ user.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<br>
+
+<div class="container">
+    <br>
+    <div>
+        <h2 class="d-inline">Pendientes</h2>
+        <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
+    </div>
+    <br>
+    <div class="row">
+        <div class="col-12">
+            <div class="table table-striped" style="width:100%">
+                <table id="entries-creating" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Fecha Pedido</th>
+                            <th>Fecha Respuesta</th>
+                            <th>Viaje</th>
+                            <th>Status</th>
+                            <th>Versión</th>
+                            <th>Monto</th>
+                            <th>Creado por</th>
+                            <th>Trabajado por</th>
+                            <th>Progreso</th>
+                            <th>Valoración</th>
+                        </tr>
+                        <tbody>
+                            {% for entry in entries %}
+                                {% if entry.isClosed != False %}
+                                    <tr class="d-none pending-entry">
+                                {% else %}
+                                    <tr>
+                                {% endif %}
+                                    <td>{{entry.starting_date}}</td>
+                                    {% if entry.isClosed == False %}
+                                        <td>n/a</td>
+                                    {% else %}
+                                        <td>{{entry.closing_date}}</td>
+                                    {% endif %}
+                                    <td>{{entry.trip}}</td>
+                                    <td>{{entry.status}}</td>
+                                    {% if entry.status == "Quote" %}
+                                        <td>{{entry.version_quote}}</td>
+                                    {% else %}
+                                        <td>{{entry.version_booking}}</td>
+                                    {% endif %}
+                                    {% if entry.amount == none %}
+                                        <td>Pendiente</td>
+                                    {% else %}
+                                        <td>{{entry.amount}}</td>
+                                    {% endif %}
+                                    <td>{{entry.user_creator}}</td>
+                                    <td>{{entry.user_working}}</td>
+                                    <td>{{entry.progress}}</td>
+                                    <td>{{entry.importance}}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </thead>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<br>
+{% endblock %}
