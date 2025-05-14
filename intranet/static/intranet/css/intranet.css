@@ -47,6 +47,22 @@ nav ul li {
     cursor:pointer;
 }
 
+#pencil-edit-entry {
+    color: inherit
+}
+
+@keyframes hide {
+    0% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+.row-delete {
+    animation: forwards 2s ease-in-out;
+}
 
 .message {
     background-color: var(--bs-primary);

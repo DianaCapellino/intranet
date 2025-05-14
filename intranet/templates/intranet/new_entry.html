@@ -2,16 +2,21 @@
 
 {% block body %}
 <div id="modify_entry">
-    <h2>Creando Nueva Entrada para
-        <u>{{ trip.name }} - {{ trip.client }}</u></h2>
-
-    {% if message %}
-        <div class="message text-center">{{ message }}</div>
-    {% endif %}
-
-    <br>
-    <br>
     <div class="container">
+        <div class="d-flex justify-content-between">
+            <h2>Creando Nueva Entrada para
+                <u>{{ trip.name }} - {{ trip.client }}</u></h2>
+            <div>
+                <a href="{% url 'trips' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+
+        {% if message %}
+            <div class="message text-center">{{ message }}</div>
+        {% endif %}
+
+        <br>
+        <br>
         <div class="text-center">
             <form class="rw-3 text-center" action="{% url 'create_entry' trip.id %}" method="post">
                 {% csrf_token %}
@@ -45,17 +50,40 @@
                             <select class="form-select" aria-label="user_working" name="user_working" id="user_working_select">
                                 <option selected value="">Trabajado por</option>
                                 {% for user in users %}
-                                <option value="{{ user.username }}">{{ user.username }}</option>
+                                    {% if user.isActivated %}
+                                        <option value="{{ user.username }}">{{ user.username }}</option>
+                                    {% endif %}
                                 {% endfor %}
                             </select>
                         </div>
                     </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                    <input class="btn btn-dark" type="submit" value="GUARDAR" data-bs-toggle="modal" data-bs-target="#windowEditEntry{{ trip.id }}">
                 </div>
             </form>
         </div>
+        <div class="modal fade modal-lg editing-entry" id="windowEditEntry{{ trip.id }}" tabindex="-1" aria-labelledby="labelEditEntry">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-8" id="labelEditEntry">Modificar entrada</h1>
+                        <button id="btn-close-edit-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3>¿Desea editar ahora los demás campos de la entrada?</h3>
+                        <p>Se podrán agregar en esta opción más detalles.</p>
+                        <br>
+                        <div class="container text-center">
+                            <a href="" id="link-edit-entry{{trip.id}}"><button id="create-entry" class="btn btn-dark btn-lg">EDITAR</button></a>
+                            <a href="{% url 'trips' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CERRAR</button></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+<br>
+<hr>
 <br>
 
 <div class="container">

@@ -1,0 +1,139 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="modify_entry">
+    <div class="container">
+        <div class="d-flex justify-content-between">
+            <h2>Editando Entrada para
+                <u>{{ entry.trip.name }} - {{ entry.trip.client }}</u></h2>
+            <div>
+                <a href="{% url 'entries' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+
+        {% if message %}
+            <div class="message text-center">{{ message }}</div>
+        {% endif %}
+
+        <br>
+        <br>
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'modify_entry' entry.id %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="row align-items-center">
+                        <div class="mb-3 col">
+                            <label for="starting_date" class="form-label">Fecha Pedido</label>
+                            <input class="form-control" type="datetime-local" name="starting_date" data-mdb-inline="true" value="{{ formated_starting_date }}" required>
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="amount" class="form-label">Monto</label>
+                            {% if entry.amount == none %}
+                                <input autofocus class="form-control" type="number" name="amount" id="amount" value="">
+                            {% else %}
+                                <input autofocus class="form-control" type="number" name="amount" id="amount" value="{{ entry.amount }}">
+                            {% endif %}
+                        </div>
+                        <div class="form-check-sm mb-3 col">
+                            {% if entry.isClosed == True %}
+                                <input class="form-check-input" type="checkbox" id="isClosed" name="isClosed" checked>
+                            {% else %}
+                                <input class="form-check-input" type="checkbox" id="isClosed" name="isClosed">
+                            {% endif %}
+                            <label class="form-check-label" for="isClosed">
+                            Cerrar entrada (enviada)
+                            </label>
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="closing_date" class="form-label">Fecha Cierre/Envío</label>
+                            {% if entry.closing_date != entry.starting_date %}
+                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" data-mdb-inline="true" value="{{ closing_date }}" required>
+                            {% else %}
+                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" id="closing_date" data-mdb-inline="true">
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" aria-label="status" name="status">
+                                {% for option in status %}
+                                    {% if option.0 == entry.status %}
+                                        <option value="{{ option.0 }}" selected>{{ option.0 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="version" class="form-label">Versión</label>
+                            {% if entry.status == "Quote" %}
+                                <input class="form-control" type="text" name="version" id="version" maxlength="2" value="{{ entry.version_quote }}">
+                            {% else %}
+                                <input class="form-control" type="text" name="version" id="version" maxlength="2" value="{{ entry.version }}">
+                            {% endif %}
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="importance" class="form-label">Importancia</label>
+                            <select class="form-select" aria-label="importance" name="importance">
+                                {% for option in importance_options %}
+                                    {% if option.0 == entry.importance %}
+                                        <option value="{{ option.0 }}" selected>{{ option.0 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="progress" class="form-label">Progreso</label>
+                            <select class="form-select" aria-label="progress" name="progress">
+                                {% for option in progress_options %}
+                                    {% if option.0 == entry.progress %}
+                                        <option value="{{ option.0 }}" selected>{{ option.0 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col">
+                            <label for="user_working" class="form-label">Trabajado Por</label>
+                            <select class="form-select" aria-label="user_working" name="user_working" id="user_working_select">
+                                {% for user in users %}
+                                    {% if user.isActivated %}
+                                        {% if user.id == entry.user_working.id %}
+                                            <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% else %}
+                                            <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col">
+                            <label for="user_creator" class="form-label">Cotizado Por</label>
+                            <select class="form-select" aria-label="user_creator" name="user_creator" id="user_creator_select">
+                                {% for user in users %}
+                                    {% if user.isActivated %}
+                                        {% if user.id == entry.user_creator.id %}
+                                            <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% else %}
+                                            <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<br>
+{% endblock %}

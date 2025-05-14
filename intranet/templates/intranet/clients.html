@@ -37,27 +37,34 @@
                         <tr>
                             <th>Nombre</th>
                             <th>País</th>
+                            <th>Unidad de Negocio</th>
                             <th>Activado</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for client in clients %}
-                        <tr>
-                            <td>{{ client.name }}</td>
-                            <td>{{ client.country }}</td>
-                            <td>{{ client.isActivated }}</td>
+                        <tr id="row-clients-{{client.id}}">
+                            <td id="clients-name-{{client.id}}">{{ client.name }}</td>
+                            <td id="clients-country-{{client.id}}">{{ client.country }}</td>
+                            <td id="clients-department-{{client.id}}">{{ client.department }}</td>
+                            {% if client.isActivated == True %}
+                                <td id="clients-isActivated-{{client.id}}">Sí</td>
+                            {% else %}
+                                <td id="clients-isActivated-{{client.id}}">No</td>
+                            {% endif %}
                             <td>
                                 <div class="justify-content-around d-flex">
-                                    <i class="fa-solid fa-pencil" width="1px"" id="pencil-client-{{client.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" width="1px"" id="trash-client-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientTrash{{ client.id }}"></i>
+                                    <i class="fa-solid fa-pencil pencil-clients" width="1px"" id="pencil-clients-{{client.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" width="1px"" id="trash-clients-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientTrash{{ client.id }}"></i>
+                                    <button class="btn btn-dark d-none" id="save-btn-clients-{{client.id}}">GUARDAR</button>
                                 </div>
                                 <div class="modal fade modal-lg" id="windowClientTrash{{ client.id }}" tabindex="-1" aria-labelledby="label{{ client.id }}">
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <div class="modal-header">
                                                 <h1 class="modal-title fs-8" id="label{{ client.id }}">Eliminando {{ client.name }}</h1>
-                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                                <button id="btn-close-clients-{{ client.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                             </div>
                                             <div class="modal-body">
                                                 <h3>¿Está seguro que desea eliminar el cliente {{ client.name }}?</h3>

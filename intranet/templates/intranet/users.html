@@ -1,58 +1,85 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-    <h2>Crear Nuevo Usuario</h2>
-
-    {% if message %}
-        <div class="message text-center">{{ message }}</div>
-    {% endif %}
-
-    <br>
-    <br>
-    <div class="container">
-        <div class="text-center d-flex justify-content-around">
-            <form class="rw-3 text-center" action="{% url 'users' %}" method="post">
-                {% csrf_token %}
-                <div class="form">
-                    <div class="row">
-                        <div class="mb-3 col">
-                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
-                        </div>
-                        <div class="mb-3 col">
-                            <input class="form-control" type="text" name="username" id="username" minlength="2" maxlength="3" placeholder="Usuario">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="mb-3 col">
-                            <input class="form-control" type="password" name="password" id="password" placeholder="Contraseña">
-                        </div>
-                        <div class="mb-3 col">
-                            <input class="form-control" type="email" name="email" id="email" placeholder="E-mail">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="mb-3 col">
-                            <select class="form-control" aria-label="department" name="department">
-                                <option selected value="">Departamento</option>
-                                {% for department in departments %}
-                                <option value="{{ department.0 }}">{{ department.1 }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-check-sm mb-3 col">
-                            <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
-                            <label class="form-check-label" for="checkDefault">
-                            Administrador
-                            </label>
-                        </div>
-                    </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+    <div id="new_user" class="d-none">
+        <div class="container">
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nuevo Usuario</h2>
+                <div>
+                    <a href="{% url 'users' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
                 </div>
-            </form>
+            </div>
+    
+            {% if message_new %}
+                <div class="message text-center">{{ message_new }}</div>
+            {% endif %}
+        
+            <br>
+            <br>
+            <div class="text-center d-flex justify-content-around">
+                <form class="rw-3 text-center" action="{% url 'users' %}" method="post">
+                    {% csrf_token %}
+                    <div class="form">
+                        <div class="row">
+                            <div class="mb-3 col">
+                                <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
+                            </div>
+                            <div class="mb-3 col">
+                                <input class="form-control" type="text" name="username" id="username" minlength="2" maxlength="3" placeholder="Usuario">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="mb-3 col">
+                                <input class="form-control" type="password" name="password" id="password" placeholder="Contraseña">
+                            </div>
+                            <div class="mb-3 col">
+                                <input class="form-control" type="email" name="email" id="email" placeholder="E-mail">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="mb-3 col">
+                                <select class="form-control" aria-label="department" name="department">
+                                    <option selected value="">Departamento</option>
+                                    {% for department in departments %}
+                                    <option value="{{ department.0 }}">{{ department.1 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3 col">
+                                <select class="form-control" aria-label="type" name="type">
+                                    <option selected value="">Área</option>
+                                    {% for option in user_types %}
+                                    <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-check-sm mb-3 col">
+                                <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
+                                <label class="form-check-label" for="checkDefault">
+                                Administrador
+                                </label>
+                            </div>
+                        </div>
+                        <input class="btn btn-dark" type="submit" value="GUARDAR">
+                        <button class="btn btn-dark">VOLVER</button>
+                    </div>
+                </form>
+            </div>
         </div>
-        <br>
-        <hr class="mb-5">
-        <div class="col-8 text-center">
+    </div>
+    <div id="user_list">
+        <div class="container">
+            <br>
+            <div class="d-flex align-items-center justify-content-between">
+                <h2>Usuarios</h2>
+                <div id="new_trip_container">
+                    <button type="button" id="new_user_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo usuario"><i class="fa-solid fa-plus"></i></button>
+                </div>
+            </div>
+            {% if message_modify %}
+                <div class="message text-center">{{ message_modify }}</div>
+            {% endif %}
+            <br>
             <table id="users" class="table table-hover">
                 <thead>
                     <tr>
@@ -68,7 +95,7 @@
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    <tr>
+                    <tr id="row-users-{{user.id}}">
                         <td>{{ user.username }}</td>
                         <td>{{ user.other_name }}</td>
                         <td>{{ user.email }}</td>
@@ -90,15 +117,111 @@
                         {% endif %}
                         <td>
                             <div class="justify-content-around d-flex">
-                                <i class="fa-solid fa-pencil" width="1px"" id="pencil-user-{{user.id}}" aria-hidden="true"></i>
+                                <i class="fa-solid fa-pencil" width="1px"" id="pencil-user-{{user.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowUserPencil{{ user.id }}"></i>
                                 <i class="fa-solid fa-trash" width="1px"" id="trash-user-{{user.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowUserTrash{{ user.id }}"></i>
+                            </div>
+                            <div class="modal fade modal-lg" id="windowUserPencil{{ user.id }}" tabindex="-1" aria-labelledby="label{{ user.id }}">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ user.id }}">Modificando {{ user.other_name }} - {{ user.username }}</h1>
+                                            <button id="btn-close-users-modify-{{ user.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <form class="rw-3 text-center" action="{% url 'modify_user' user.id %}" method="post">
+                                                {% csrf_token %}
+                                                <div class="form">
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_name{{user.id}}" class="form-label">Nombre</label>
+                                                            <input autofocus class="form-control" type="text" name="name" id="modify_name{{user.id}}" value="{{ user.other_name }}">
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_username{{user.id}}" class="form-label">Usuario</label>
+                                                            <input class="form-control" type="text" name="username" id="modify_username{{user.id}}" minlength="2" maxlength="3" value="{{ user.username }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_select{{user.id}}" class="form-label">Departamento</label>
+                                                            <select class="form-control" aria-label="department" name="department" id="modify_select{{user.id}}">
+                                                                {% for department in departments %}
+                                                                    {% if department == user.department %}
+                                                                        <option selected value="{{ department.0 }}">{{ user.department.1 }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ department.0 }}">{{ department.1 }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_email{{user.id}}" class="form-label">E-mail</label>
+                                                            <input class="form-control" type="email" name="email" id="modify_email{{user.id}}" value="{{ user.email }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="form-check-sm mb-3 col">
+                                                            {% if user.is_active == True %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive" checked>
+                                                            {% else %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive">
+                                                            {% endif %}
+                                                            <label class="form-check-label" for="modify_isActive{{user.id}}">
+                                                            Activado
+                                                            </label>
+                                                        </div>
+                                                        <div class="form-check-sm mb-3 col">
+                                                            {% if user.isAdmin == True %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_admin{{user.id}}" name="admin" checked>
+                                                            {% else %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_admin{{user.id}}" name="admin">
+                                                            {% endif %}
+                                                            <label class="form-check-label" for="modify_admin{{user.id}}">
+                                                            Administrador
+                                                            </label>
+                                                        </div>
+                                                        <div class="form-check-sm mb-3 col">
+                                                            {% if user.isActivated == True %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActivated{{user.id}}" name="isActivated" checked>
+                                                            {% else %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActivated{{user.id}}" name="isActivated">
+                                                            {% endif %}
+                                                            <label class="form-check-label" for="modify_isActivated{{user.id}}">
+                                                            Visible
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_type{{user.id}}" class="form-label">Área</label>
+                                                            <select class="form-control" aria-label="type" name="type" id="modify_type{{user.id}}">
+                                                                {% for option in user_types %}
+                                                                    {% if option.1 == user.userType %}
+                                                                        <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <br>
+                                                            <button id="modify_password{{user.id}}" class="btn btn-dark" disabled>CAMBIAR CONTRASEÑA</button>
+                                                        </div>
+                                                    </div>
+                                                    <input id="modify-user-{{ user.id }}" class="btn btn-dark btn-lg modify-users-btn" type="submit" value="MODIFICAR">
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="modal fade modal-lg" id="windowUserTrash{{ user.id }}" tabindex="-1" aria-labelledby="label{{ user.id }}">
                                 <div class="modal-dialog">
                                     <div class="modal-content">
                                         <div class="modal-header">
                                             <h1 class="modal-title fs-8" id="label{{ user.id }}">Eliminando {{ user.other_name }} - {{ user.username }}</h1>
-                                            <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            <button id="btn-close-users-{{ user.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                         </div>
                                         <div class="modal-body">
                                             <h3>¿Está seguro que desea eliminar el usuario {{ user.other_name }}?</h3>

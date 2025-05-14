@@ -2,32 +2,40 @@
 
 {% block body %}
 <div id="new_trip" class="d-none">
-    <h2>Crear Nuevo Viaje</h2>
-
-    {% if message %}
-        <div class="message text-center">{{ message }}</div>
-    {% endif %}
-
-    <br>
-    <br>
     <div class="container">
+        <div class="d-flex justify-content-between">
+            <h2>Crear Nuevo Viaje</h2>
+            <div>
+                <a href="{% url 'trips' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+
+        {% if message_new %}
+            <div class="message text-center">{{ message_new }}</div>
+        {% endif %}
+    
+        <br>
+        <br>
         <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'trips' %}" method="post">
+            <form class="rw-3 text-center" action="{% url 'trips' %}" method="post" id="trip-form">
                 {% csrf_token %}
                 <div class="form">
                     <div class="row">
                         <div class="mb-3 col">
                             <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
+                        <div class="mb-3 col">
+                            <input class="form-control" type="number" name="quantity_pax" id="quantity_pax" placeholder="Cantidad de pasajeros">
+                        </div>
                     </div>
                     <div class="row">
                         <div class="mb-3 col">
-                            <label for="starting_date">Fecha Pedido</label>
-                            <input class="form-control date-input" type="date" name="starting_date" id="starting_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                            <label for="starting_date" class="form-label">Fecha Pedido</label>
+                            <input class="form-control date-input" type="date" name="starting_date" id="starting_date" data-mdb-inline="true" placeholder="Fecha Ingreso">
                         </div>
                         <div class="mb-3 col">
-                            <label for="travelling_date">Fecha Viaje</label>
-                            <input class="form-control date-input" type="date" name="travelling_date" id="travelling_date" value="today();" data-mdb-inline="true" placeholder="Fecha Ingreso">
+                            <label for="travelling_date" class="form-label">Fecha Viaje</label>
+                            <input class="form-control date-input" type="date" name="travelling_date" id="travelling_date" data-mdb-inline="true" placeholder="Fecha Ingreso">
                         </div>
                     </div>
                     <div class="row">
@@ -61,22 +69,43 @@
                             </select>
                         </div>
                     </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                    <input class="btn btn-dark" type="submit" value="GUARDAR" data-bs-toggle="modal" data-bs-target="#windowCreateEntry{{ user.id }}">
                 </div>
             </form>
         </div>
+        <div class="modal fade modal-lg creating-entry-from-trip" id="windowCreateEntry{{ user.id }}" tabindex="-1" aria-labelledby="labelCreateEntry">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-8" id="labelCreateEntry">Crear entrada</h1>
+                        <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3>¿Desea agregar una entrada ahora?</h3>
+                        <br>
+                        <div class="container text-center">
+                            <a href="" id="link-create-entry{{request.user.id}}"><button id="create-entry" class="btn btn-dark btn-lg">AGREGAR</button></a>
+                            <a href="{% url 'trips' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CERRAR</button></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
-<div id="new_trip_container" class="container text-center">
-    <button id="new_trip_btn" class="btn btn-dark btn-lg">NUEVO VIAJE</button>
-</div>
+
 <div id="trip_list">
     <div class="container">
         <br>
-        <h2>Viajes</h2>
+        <div class="d-flex align-items-center justify-content-between">
+            <h2>Viajes</h2>
+            <div id="new_trip_container">
+                <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo viaje"><i class="fa-solid fa-plus"></i></button>
+            </div>
+        </div>
     
-        {% if message %}
-            <div>{{ message }}</div>
+        {% if message_modify %}
+            <div>{{ message_modify }}</div>
         {% endif %}
     
         <br>
@@ -96,59 +125,292 @@
                                 <th>Fecha Viaje</th>
                                 <th>Acciones</th>
                             </tr>
-                            <tbody>
-                                {% for trip in trips %}
-                                <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}">
-                                    <td>{{ trip.name }}</td>
-                                    <td>{{ trip.status }}</td>
-                                    {% if trip.version == none %}
-                                        <td>n/a</td>
+                        </thead>
+                        <tbody>
+                            {% for trip in trips %}
+                            <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
+                                <td>{{ trip.name }}</td>
+                                <td>{{ trip.status }}</td>
+                                {% if trip.status == "Quote" %}
+                                    {% if trip.version_quote == "@" %}
+                                        <td class="text-danger">Sin entradas</td>
                                     {% else %}
-                                        <td>{{ trip.version }}</td>
+                                        <td>{{trip.version_quote}}</td>
                                     {% endif %}
-                                    {% if trip.amount == none %}
-                                        <td>n/a</td>
-                                    {% else %}
-                                        <td>{{ trip.amount }}</td>
-                                    {% endif %}
-                                    <td>{{ trip.client }}</td>
-                                    {% if trip.client_reference == none %}
-                                        <td>n/a</td>
-                                    {% else %}
-                                        <td>{{ trip.client_reference }}</td>
-                                    {% endif %}
-                                    <td>{{ trip.contact }}</td>
-                                    <td>{{ trip.travelling_date }}</td>
-                                    <td>
-                                        <div class="justify-content-around d-flex">
-                                            <i class="fa-solid fa-pencil" id="pencil-trip-{{trip.id}}" aria-hidden="true"></i>
-                                            <i class="fa-solid fa-trash" id="trash-trip-{{trip.id}}" aria-hidden="true"></i>
+                                {% else %}
+                                {% if trip.version == 0 %}
+                                    <td class="text-danger">Sin entradas</td>
+                                {% else %}
+                                    <td>{{ trip.version }}</td>
+                                {% endif %}
+                                {% endif %}
+                                {% if trip.amount == none %}
+                                    <td>n/a</td>
+                                {% else %}
+                                    <td>{{ trip.amount }}</td>
+                                {% endif %}
+                                <td>{{ trip.client }}</td>
+                                {% if trip.client_reference == none %}
+                                    <td>n/a</td>
+                                {% else %}
+                                    <td>{{ trip.client_reference }}</td>
+                                {% endif %}
+                                <td>{{ trip.contact }}</td>
+                                <td>{{ trip.travelling_date }}</td>
+                                <td>
+                                    <div class="justify-content-around d-flex">
+                                        <i class="fa-solid fa-pencil" id="pencil-trip-{{trip.id}}" data-bs-toggle="modal" data-bs-target="#windowTripPencil{{ trip.id }}"></i>
+                                        <i class="fa-solid fa-trash" id="trash-trip-{{trip.id}}" data-bs-toggle="modal" data-bs-target="#windowTripTrash{{ trip.id }}"></i>
+                                    </div>
+                                </td>
+                            </tr>
+                            <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                                <div class="modal-dialog modal-dialog-scrollable">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
+                                            <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                         </div>
-                                    </td>
-                                </tr>
-                                <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
-                                    <div class="modal-dialog modal-dialog-scrollable">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
-                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                                            </div>
-                                            <div class="modal-body">
-                                                <div id="new_entry_container" class="container text-center">
-                                                    <a href="{% url 'create_entry' trip.id %}" ><button id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg">NUEVA ENTRADA</button></a>
+                                        <div class="modal-body">
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <h2>Entradas</h2>
+                                                <div id="new_entry_container">
+                                                    <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
                                                 </div>
-                                                <h3>Entradas</h3>
-                                                <div id="entries-{{ trip.id }}"></div>
-                                                <br>
-                                                <h3>Notas</h3>
-                                                <div id="notes-{{ trip.id }}"></div>
+                                            </div>
+                                            <br>
+                                            <div id="entries-{{ trip.id }}"></div>
+                                            <br>
+                                            <h2>Notas</h2>
+                                            <br>
+                                            <div id="notes-{{ trip.id }}">
+                                                <div id="notes{{ trip.id }}" class="container">
+                                                    <form action="{% url 'create_note' trip.id %}" method="post">
+                                                        {% csrf_token %}
+                                                        <div class="form-group">
+                                                            <input class="form-control" type="text" name="content">
+                                                            <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
+                                                        </div>
+                                                    </form>
+                                                    {% for note in notes %}
+                                                        {% if note.trip.id == trip.id %}
+                                                            <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                                {% endfor %}
-                            </tbody>
-                        </thead>
+                            </div>
+                            <div class="modal fade modal-xl" id="windowTripPencil{{ trip.id }}" tabindex="-1" aria-labelledby="labelTrip{{ trip.id }}">
+                                <div class="modal-dialog modal-dialog-scrollable">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ trip.id }}">Modificando {{ trip.name }} - {{ trip.client }}</h1>
+                                            <button id="btn-close-trips-modify-{{ trip.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <form class="rw-3 text-center" action="{% url 'modify_trip' trip.id %}" method="post" id="trip-modify-form">
+                                                {% csrf_token %}
+                                                <div class="form">
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_name{{trip.id}}" class="form-label">Nombre</label>
+                                                            <input autofocus class="form-control" type="text" name="name" id="modify_name{{trip.id}}" value="{{ trip.name }}" required>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_trip_type{{trip.id}}" class="form-label">Tipo</label>
+                                                            <select class="form-select" aria-label="trip_type" name="trip_type">
+                                                                {% for option in trip_types %}
+                                                                    {% if option.1 == trip.trip_type %}    
+                                                                        <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_quantity_pax{{trip.id}}" class="form-label">Cantidad de pasajeros</label>
+                                                            <input class="form-control" type="number" name="quantity_pax" id="modify_quantity_pax" value="{{ trip.quantity_pax }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_starting_date{{trip.id}}" class="form-label">Fecha Pedido</label>
+                                                            {% for item in formated_starting_dates %}
+                                                                {% if item.0 == trip.id %}
+                                                                    6<input class="form-control" type="date" name="starting_date" id="modify_starting_date{{trip.id}}" data-mdb-inline="true" value={{ item.1 }} required>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_travelling_date{{trip.id}}" class="form-label">Fecha Viaje</label>
+                                                            {% for item in formated_travelling_dates %}
+                                                                {% if item.0 == trip.id %}
+                                                                    <input class="form-control" type="date" name="travelling_date" id="modify_travelling_date{{trip.id}}" data-mdb-inline="true" value={{ item.1 }} required>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_out_date{{trip.id}}" class="form-label">Fecha Out</label>
+                                                            {% for item in formated_out_dates %}
+                                                                {% if item.0 == trip.id %}
+                                                                    <input class="form-control" type="date" name="out_date" id="modify_out_date{{trip.id}}" data-mdb-inline="true" value={{ item.1 }} required>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_client{{trip.id}}" class="form-label">Cliente</label>
+                                                            <select class="form-select" aria-label="client" name="client" id="modify_client{{trip.id}}">
+                                                                {% for client in clients %}
+                                                                    {% if client == trip.client %}
+                                                                        <option selected value="{{ client.id }}">{{ client.name }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ client.id }}">{{ client.name }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>                    
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_contact{{trip.id}}" class="form-label">Contacto</label>
+                                                            <select class="form-select" aria-label="contact" name="contact">
+                                                                {% for contact in contacts %}
+                                                                    {% if contact == trip.contact %}
+                                                                        <option selected value="{{ contact.id }}">{{ contact.name }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ contact.id }}">{{ contact.name }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_client_reference{{trip.id}}" class="form-label">Referencia Cliente</label>
+                                                            <input class="form-control" type="text" name="client_reference" id="modify_client_reference{{trip.id}}" value="{{ trip.client_reference }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_status{{trip.id}}" class="form-label">Status</label>
+                                                            <select class="form-select" aria-label="status" name="status">
+                                                                {% for option in status %}
+                                                                    {% if trip.status == "Quote" and option.1 == "Booking" %}
+                                                                        <option data-toggle="tooltip" data-placement="left" title="Para modificar a booking se debe ingresar una entrada" value="{{ option.0 }}" disabled>{{ option.1 }}</option>
+                                                                    {% else %}
+                                                                        {% if option.1 == "Final Itinerary" %}
+                                                                        {% elif option.1 == trip.status %}    
+                                                                            <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                        {% endif %}
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_tourplanId{{trip.id}}" class="form-label">Tourplan #</label>
+                                                            <input autofocus class="form-control" type="text" name="tourplanId" id="modify_tourplanId{{trip.id}}" value="{{ trip.tourplanId }}">
+                                                        </div>
+                                                    </div>
+                                                    {% if trip.status == "Booking" %}
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_itId{{trip.id}}" class="form-label">IT #</label>
+                                                                <input autofocus class="form-control" type="text" name="itId" id="modify_itId{{trip.id}}" value="{{ trip.itId }}">
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_responsable_user{{trip.id}}" class="form-label">Vendedor Responsable</label>
+                                                                <select class="form-select" aria-label="status" name="responsable_user">
+                                                                    {% for user in users %}
+                                                                        {% if user.userType == "Ventas" or user.id == 19 %}
+                                                                            {% if user.id == trip.responsable_user.id %}    
+                                                                                <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% else %}
+                                                                                <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% endif %}
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_operations_user{{trip.id}}" class="form-label">Operador</label>
+                                                                <select class="form-select" aria-label="status" name="operations_user">
+                                                                    {% for user in users %}
+                                                                        {% if user.userType == "Operaciones" or user.id == 19 %}
+                                                                            {% if user.id == trip.operations_user.id %}    
+                                                                                <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% else %}
+                                                                                <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% endif %}
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_dh_type{{trip.id}}" class="form-label">Seguimiento</label>
+                                                                <select class="form-select" aria-label="dh_type" name="dh_type">
+                                                                    {% for option in dh_types %}
+                                                                        {% if option.1 == trip.dh_type %}    
+                                                                            <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_dh{{trip.id}}" class="form-label">Nombre DH</label>
+                                                                <select class="form-select" aria-label="dh" name="dh">
+                                                                    {% for user in users %}
+                                                                        {% if user.userType == "DH" or user.id == 19 %}
+                                                                            {% if user == trip.dh %}    
+                                                                                <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% else %}
+                                                                                <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                                                            {% endif %}
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_guide{{trip.id}}" class="form-label">Guía</label>
+                                                                <input autofocus class="form-control" type="text" name="guide" id="modify_guide{{trip.id}}" value="{{ trip.guide }}">
+                                                            </div>
+                                                        </div>
+                                                    {% endif %}
+                                                    <div class="text-center">
+                                                        <input class="btn btn-dark" type="submit" value="GUARDAR">
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal fade modal-lg" id="windowTripTrash{{ trip.id }}" tabindex="-1" aria-labelledby="labelTrip{{ trip.id }}">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ trip.id }}">Eliminando {{ trip.name }} - {{ trip.client }}</h1>
+                                            <button id="btn-close-trips-{{ trip.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <h3>¿Está seguro que desea eliminar el viaje {{ trip.name }} - {{ trip.client }}?</h3>
+                                            <br>
+                                            <div class="container text-center">
+                                                <button id="delete-trip-{{ trip.id }}" class="btn btn-dark btn-lg delete-trips-btn">ELIMINAR</button></a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
                     </table>
                 </div>
             </div>

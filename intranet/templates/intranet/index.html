@@ -2,6 +2,74 @@
 
 {% block body %}
     <br>
-
+    <div class="row">
+        <div class="col-4">
+            <h3 class="d-inline">Pendientes</h3>
+            <i class="fa-solid fa-passport display-6 m-3"></i>
+            <br>
+            <hr>
+            <canvas id="pendings_chart"></canvas>
+        </div>
+        <div class="col-4">
+            <h3 class="d-inline">Pasajeros IN SITU</h3>
+            <i class="fa-solid fa-earth-americas display-6 m-3"></i>
+            <br>
+            <hr>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Nombre</th>
+                        <th>Cliente</th>
+                        <th>Tipo</th>
+                        <th>VR</th>
+                        <th>OP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trip in pax_insitu %}
+                    <tr>
+                        <td>{{ trip.travelling_date}}</td>
+                        <td>{{ trip.name }}</td>
+                        <td>{{ trip.client }}</td>
+                        <td>{{ trip.trip_type }}</td>
+                        <td>{{ trip.responsable_user }}</td>
+                        <td>{{ trip.operations_user }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="col-4" id="pax-arriving">
+            <h3 class="d-inline">Pasajeros viajando pronto</h3>
+            <i class="fa-solid fa-plane-arrival display-6 m-3"></i>
+            <br>
+            <hr>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Nombre</th>
+                        <th>Cliente</th>
+                        <th>Tipo</th>
+                        <th>VR</th>
+                        <th>OP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trip in pax_arriving %}
+                    <tr>
+                        <td>{{ trip.travelling_date}}</td>
+                        <td>{{ trip.name }}</td>
+                        <td>{{ trip.client }}</td>
+                        <td>{{ trip.trip_type }}</td>
+                        <td>{{ trip.responsable_user }}</td>
+                        <td>{{ trip.operations_user }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
     <br>
 {% endblock %}

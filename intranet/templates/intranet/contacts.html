@@ -47,22 +47,27 @@
                     </thead>
                     <tbody>
                         {% for contact in contacts %}
-                        <tr>
-                            <td>{{ contact.name }}</td>
-                            <td>{{ contact.client }}</td>
-                            <td>{{ contact.email }}</td>
-                            <td>{{ contact.isActivated }}</td>
+                        <tr id="row-contacts-{{contact.id}}">
+                            <td id="contacts-name-{{contact.id}}">{{ contact.name }}</td>
+                            <td id="contacts-client-{{contact.id}}">{{ contact.client }}</td>
+                            <td id="contacts-email-{{contact.id}}">{{ contact.email }}</td>
+                            {% if contact.isActivated == True %}
+                                <td id="contacts-isActivated-{{contact.id}}">Sí</td>
+                            {% else %}
+                                <td id="contacts-isActivated-{{contact.id}}">No</td>
+                            {% endif %}
                             <td>
                                 <div class="justify-content-around d-flex mu-2">
-                                    <i class="fa-solid fa-pencil" id="pencil-contact-{{contact.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" id="trash-contact-{{contact.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowContactTrash{{ contact.id }}"></i>
+                                    <i class="fa-solid fa-pencil pencil-contacts" id="pencil-contacts-{{contact.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-trash" id="trash-contacts-{{contact.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowContactTrash{{ contact.id }}"></i>
+                                    <button class="btn btn-dark d-none" id="save-btn-contacts-{{contact.id}}">GUARDAR</button>
                                 </div>
                                 <div class="modal fade modal-lg" id="windowContactTrash{{ contact.id }}" tabindex="-1" aria-labelledby="label{{ contact.id }}">
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <div class="modal-header">
                                                 <h1 class="modal-title fs-8" id="label{{ contact.id }}">Eliminando {{ contact.name }}</h1>
-                                                <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                                <button id="btn-close-contacts-{{ contact.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                             </div>
                                             <div class="modal-body">
                                                 <h3>¿Está seguro que desea eliminar el contacto {{ contact.name }}?</h3>

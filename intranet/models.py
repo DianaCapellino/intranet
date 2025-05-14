@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 import django.utils.timezone
+from datetime import datetime, timedelta
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
@@ -40,11 +41,34 @@ PROGRESS_OPTIONS = [
     ("5 - Finalizado", "Finalizado"),
 ]
 
+DH_TYPES = [
+    ("B", "Basic"),
+    ("S", "Standard"),
+    ("F", "Full"),
+    ("Sin definir", "Sin definir"),
+    ("No", "Sin seguimiento"),
+]
+
+TRIP_TYPES = [
+    ("FIT's", "FIT's"),
+    ("Personal Trips", "Personal Trips"),
+    ("FAM Tours", "FAM Tours"),
+    ("Grupos", "Grupos"),
+]
+
+USER_TYPES = [
+    ("Ventas", "Ventas"),
+    ("Operaciones", "Operaciones"),
+    ("DH", "DH"),
+    ("Internal", "Internal"),
+]
+
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
     isActivated = models.BooleanField(default=True)
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
     isAdmin = models.BooleanField(default=False)
+    userType = models.CharField(max_length=64, choices=USER_TYPES, default="Sales")
 
     class Meta:
         ordering = ["username"]
@@ -86,29 +110,46 @@ class ClientContact(models.Model):
 
 class Trip(models.Model):
     name = models.CharField(max_length=64)
-    tourplanId = models.CharField(max_length=64, null=True)
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
     version = models.IntegerField(blank=True, null=True, default=0)
-    version_quote = models.CharField(max_length=64, null=True, default="A")
+    version_quote = models.CharField(max_length=64, null=True, default="@")
     amount = models.FloatField(null=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="trip_clients")
     client_reference = models.CharField(max_length=64, null=True, default="n/a")
     starting_date = models.DateField(default=django.utils.timezone.now, verbose_name='starting date')
-    creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='starting date')
+    creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='creation date')
     conversion_date = models.DateTimeField(null=True, verbose_name='conversion date')
     travelling_date = models.DateField(default=django.utils.timezone.now, verbose_name='travelling date')
+    out_date = models.DateField(null=True, verbose_name='out_date')
     contact = models.ForeignKey(ClientContact, on_delete=models.CASCADE, related_name="trip_contacts")
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
+    tourplanId = models.CharField(max_length=64, null=True, blank=True, default="")
+    itId = models.CharField(max_length=64, null=True, blank=True, default="")
+    dh_type = models.CharField(max_length=64, choices=DH_TYPES, default="Sin definir")
+    trip_type = models.CharField(max_length=64, choices=TRIP_TYPES, default="FIT's")
+    responsable_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_responsable_users", null=True)
+    operations_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_operations_users", null=True)
+    quantity_pax = models.IntegerField(default=2)
+    guide = models.CharField(max_length=64, null=True, blank=True, default="")
+    dh = models.ForeignKey(User, on_delete=models.CASCADE, related_name="dh_user", null=True)
+    creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users")
 
     def __str__(self):
         return f"{self.name}"
+    
+    class Meta:
+        ordering = ["-creation_date"]
 
 
 class Notes(models.Model):
     creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='creation date')
+    user = models.ForeignKey(User,on_delete=models.CASCADE, related_name="notes_user")
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="trip_notes")
-    last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date')
+    last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date', null=True)
     content = models.CharField(max_length=512)
+
+    def __str__(self):
+        return f"{self.content} (by: {self.user})"
 
 
 class Entry(models.Model):
@@ -141,13 +182,14 @@ class Entry(models.Model):
         return {
             "id": self.id,
             "trip": self.trip.name,
+            "trip_id": self.trip.id,
             "version_quote": self.version_quote,
             "version": self.version,
             "user_creator": self.user_creator.username,
             "user_working": self.user_working.username,
-            "starting_date": self.starting_date.strftime("%d %b %Y, %I:%M %p"),
-            "last_modification_date": self.last_modification_date.strftime("%d %b %Y, %I:%M %p"),
-            "closing_date": self.closing_date.strftime("%d %b %Y, %I:%M %p"),
+            "starting_date": (self.starting_date - timedelta(hours=3)).strftime("%Y/%m/%d - %I:%M %p"),
+            "last_modification_date": (self.last_modification_date - timedelta(hours=3)).strftime("%d %b %Y, %I:%M %p"),
+            "closing_date": (self.closing_date - timedelta(hours=3)).strftime("%Y/%m/%d - %I:%M %p"),
             "status": self.status,
             "amount": self.amount,
             "isClosed": self.isClosed,

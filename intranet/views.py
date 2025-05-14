@@ -8,13 +8,37 @@ from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
 import django.utils.timezone
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES
 import json
 import datetime
+from datetime import datetime, date, timedelta
 
+@login_required
 def index (request):
+
+    pax_arriving = []
+    pax_insitu = []
+
+    today = date.today()
+
+    # Gets the difference between today and arriving dates and add these trips to the list
+    for trip in Trip.objects.all():
+        if (trip.travelling_date - today).days < 16 and (trip.travelling_date - today).days >= 0 and trip.status == "Booking":
+            pax_arriving.append(trip)
+    
+    pax_arriving.sort(key=lambda trip: trip.travelling_date)
+
+    # Gets the difference between today and arriving dates and add these trips to the list
+    for trip in Trip.objects.all():
+        if trip.out_date != None:
+            if (trip.travelling_date - today).days > -60 and (trip.travelling_date - today).days <= 0 and (trip.out_date - today).days >= 0 and trip.status == "Booking":
+                pax_insitu.append(trip)
+    
+    pax_insitu.sort(key=lambda trip: trip.travelling_date)
+
     return render(request, "intranet/index.html", {
-        "trips": Trip.objects.all()
+        "pax_arriving": pax_arriving,
+        "pax_insitu": pax_insitu,
     })
 
 def login_view (request):
@@ -36,6 +60,7 @@ def login_view (request):
     else:
         return render(request, "intranet/login.html")
     
+@login_required
 def logout_view(request):
     logout(request)
     return HttpResponseRedirect(reverse("index"))
@@ -149,7 +174,6 @@ def create_client_contact(request):
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
 
-
         # Creates the model of the contact from the form information
         new_contact = ClientContact.objects.create(
             name=name,
@@ -180,6 +204,8 @@ def create_user(request):
         email = request.POST["email"]
         password = request.POST["password"]
         department = request.POST["department"]
+        type = request.POST["type"]
+
         try:
             isAdmin = request.POST['admin']
         except MultiValueDictKeyError:
@@ -189,20 +215,21 @@ def create_user(request):
             isAdmin = True
 
         # Validations
-        if not name or not email or not username or not password or not department:
+        if not name or not email or not username or not password or not department or not type:
             return render(request, "intranet/users.html", {
-                "message": "Todos los campos deben ser completados",
+                "message_new": "Todos los campos deben ser completados",
                 "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
                 "users": User.objects.all()
             })
         
         if len(username) < 2 or len(username) > 3:
             return render(request, "intranet/users.html", {
-                "message": "El usuario debe tener entre 2 y 3 caracteres",
+                "message_new": "El usuario debe tener entre 2 y 3 caracteres",
                 "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
                 "users": User.objects.all()
             })
-
 
         # Creates the model of the user from the form information
         try:
@@ -213,29 +240,196 @@ def create_user(request):
                 password=password,
                 department=department,
                 isAdmin=isAdmin,
+                userType=type,
             )
             new_user.save()
         except IntegrityError:
             return render(request, "intranet/users.html", {
-                "message": "El usuario ya existe",
+                "message_new": "El usuario ya existe",
                 "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
                 "users": User.objects.all()
             })
 
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
+            "user_types": USER_TYPES,
             "users": User.objects.all()
         })
 
     else:
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
+            "user_types": USER_TYPES,
             "users": User.objects.all()
         })
     
+@login_required
+def modify_user(request, user_id):
 
-def create_trip(request):
+    # Gets the object of the user modifying
+    user = User.objects.get(id=user_id) 
     
+    # Gets the information from the form
+    if request.method == "POST":
+        # Attempt to modify user
+        name = request.POST["name"]
+        username = request.POST["username"]
+        email = request.POST["email"]
+        department = request.POST["department"]
+        type = request.POST["type"]
+        
+        try:
+            isAdmin = request.POST['admin']
+        except MultiValueDictKeyError:
+            isAdmin = False
+
+        if isAdmin != False:
+            isAdmin = True
+
+        try:
+            isActivated = request.POST['isActivated']
+        except MultiValueDictKeyError:
+            isActivated = False
+
+        if isActivated != False:
+            isActivated = True
+
+        try:
+            is_active = request.POST['isActive']
+        except MultiValueDictKeyError:
+            is_active = False
+
+        if is_active != False:
+            is_active = True
+
+        # Validations
+        if not name or not email or not username or not department or not type:
+            return render(request, "intranet/users.html", {
+                "message_modify": "Todos los campos deben ser completados",
+                "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
+                "users": User.objects.all()
+            })
+        
+        if len(username) < 2 or len(username) > 3:
+            return render(request, "intranet/users.html", {
+                "message_modify": "El usuario debe tener entre 2 y 3 caracteres",
+                "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
+                "users": User.objects.all()
+            })
+
+        # Modifies the model of the user from the form information
+        try:
+
+            user.username=username
+            user.email=email
+            user.department=department
+            user.isAdmin=isAdmin
+            user.isActivated=isActivated
+            user.is_active=is_active
+            user.userType=type
+            
+            user.save()
+
+        # Shows and error if the username already exists    
+        except IntegrityError:
+            return render(request, "intranet/users.html", {
+                "message_modify": "El usuario ya existe",
+                "departments": DEPARTMENTS,
+                "user_types": USER_TYPES,
+                "users": User.objects.all()
+            })
+        return HttpResponseRedirect(reverse("users"), {
+            "departments": DEPARTMENTS,
+            "user_types": USER_TYPES,
+            "users": User.objects.all()
+        })
+    
+def get_return_page(page, type):
+
+    # List of the dates formated for the form
+    formated_starting_dates = []
+    formated_travelling_dates = []
+    formated_out_dates = []
+
+    for trip in Trip.objects.all():
+        formated_starting_date = trip.starting_date.isoformat()
+        formated_starting_dates.append((trip.id, formated_starting_date))
+        formated_travelling_date = trip.travelling_date.isoformat()
+        formated_travelling_dates.append((trip.id, formated_travelling_date))
+        if trip.out_date:
+            formated_out_date = trip.out_date.isoformat()
+        else:
+            formated_out_date = (trip.travelling_date + timedelta(days=1)).isoformat()
+        formated_out_dates.append((trip.id, formated_out_date))
+    
+    if page == "trips":
+
+        if type == "error":
+            return {
+                    "message_new": "Completar todos los campos",
+                    "status": STATUS_OPTIONS,
+                    "trip_types": TRIP_TYPES,
+                    "dh_types": DH_TYPES,
+                    "clients": Client.objects.all(),
+                    "contacts": ClientContact.objects.all(),
+                    "trips": Trip.objects.all(),
+                    "formated_starting_dates": formated_starting_dates,
+                    "formated_travelling_dates": formated_travelling_dates,
+                    "formated_out_dates": formated_out_dates,
+                    "users": User.objects.all(),
+                    "entries": Entry.objects.all(),
+                    "notes": Notes.objects.all(),
+                }
+        else:
+            return {
+                    "status": STATUS_OPTIONS,
+                    "trip_types": TRIP_TYPES,
+                    "dh_types": DH_TYPES,
+                    "clients": Client.objects.all(),
+                    "contacts": ClientContact.objects.all(),
+                    "trips": Trip.objects.all(),
+                    "formated_starting_dates": formated_starting_dates,
+                    "formated_travelling_dates": formated_travelling_dates,
+                    "formated_out_dates": formated_out_dates,
+                    "users": User.objects.all(),
+                    "entries": Entry.objects.all(),
+                    "notes": Notes.objects.all(),
+                }
+        
+    if page == "entries":
+        if type == "error":
+            return {
+                    "message_new": "Completar todos los campos",
+                    "entries": Entry.objects.all(),
+                    "trips": Trip.objects.all(),
+                    "status": STATUS_OPTIONS,
+                    "importance_options": IMPORTANCE_OPTIONS,
+                    "progress_options": PROGRESS_OPTIONS,
+                    "users": User.objects.all(),
+                    "formated_starting_dates": formated_starting_dates,
+                    "formated_travelling_dates": formated_travelling_dates,
+                    "formated_out_dates": formated_out_dates,
+                }
+        else:
+            return {
+                    "entries": Entry.objects.all(),
+                    "trips": Trip.objects.all(),
+                    "status": STATUS_OPTIONS,
+                    "importance_options": IMPORTANCE_OPTIONS,
+                    "progress_options": PROGRESS_OPTIONS,
+                    "users": User.objects.all(),
+                    "formated_starting_dates": formated_starting_dates,
+                    "formated_travelling_dates": formated_travelling_dates,
+                    "formated_out_dates": formated_out_dates,
+                }
+
+
+@login_required
+def create_trip(request):
+
     if request.method == "POST":
         name = request.POST["name"]
         starting_date = request.POST["starting_date"]
@@ -246,13 +440,7 @@ def create_trip(request):
         status = request.POST["status"]
 
         if not name or not starting_date or not client_form or not contact_form or not status:
-            return render(request, "intranet/trips.html", {
-                "message": "Completar los campos obligatorios",
-                "status": STATUS_OPTIONS,
-                "clients": Client.objects.all(),
-                "contacts": ClientContact.objects.all(),
-                "trips": Trip.objects.all()
-            })
+            return render(request, "intranet/trips.html", get_return_page("trips", "error") )
         
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
@@ -263,6 +451,11 @@ def create_trip(request):
         # Get the department from the user department
         department = request.user.department
 
+        # Set the default undefined users for the new trip booking options
+        responsable_user = User.objects.get(pk=19)
+        operations_user = User.objects.get(pk=19)
+        dh = User.objects.get(pk=19)
+
         # Creates the model of the contact from the form information
         new_trip = Trip.objects.create(
             name=name,
@@ -272,135 +465,128 @@ def create_trip(request):
             starting_date=starting_date,
             travelling_date=travelling_date,
             contact=contact,
-            department=department
+            department=department,
+            responsable_user=responsable_user,
+            operations_user=operations_user,
+            dh=dh,
+            creation_user=request.user
         )
         new_trip.save()
 
-        return render(request, "intranet/trips.html", {
-            "status": STATUS_OPTIONS,
-            "clients": Client.objects.all(),
-            "contacts": ClientContact.objects.all(),
-            "trips": Trip.objects.all()
-        })
+        #return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+        return HttpResponse(status=204)
 
     else:
-        return render(request, "intranet/trips.html", {
-            "status": STATUS_OPTIONS,
-            "clients": Client.objects.all(),
-            "contacts": ClientContact.objects.all(),
-            "trips": Trip.objects.all()
-        })
-    
-
-def pendings(request):
-
-    # Creates new entry
-    if request.method == "POST":
-
-        trip_form = request.POST["trip"]
-        starting_date = request.POST["starting_date"]
-        status = request.POST["status"]
-        importance = request.POST["importance"]
-        user_working_form = request.POST["user_working"]
-
-        if not trip_form or not starting_date or not status or not importance or not user_working_form:
-            return render(request, "intranet/pendings.html", {
-                "message": "Completar todos los campos",
-                "entries": Entry.objects.all(),
-                "trips": Trip.objects.all(),
-                "status": STATUS_OPTIONS,
-                "importance_options": IMPORTANCE_OPTIONS,
-            })
-        
-        # Get the trip from the trip ID of the form
-        trip = Trip.objects.get(id=trip_form)
-
-        # Get the user from the user ID of the form
-        user_working = User.objects.get(id=user_working_form)
-
-        # Get the elements for the last and first entries
-        last_entry = Entry.objects.filter(trip=trip).last()
-        first_entry = Entry.objects.filter(trip=trip).first()
-
-        # Set the version of the quote and booking defaults
-        if trip.version != "0":
-
-            # When a quote already exists
-            if status == "Quote":
-
-                # When it is a quote but the status of the trip is a booking
-                if trip.status == "Booking":
-                    version_booking = trip.version
-                    version_quote = chr(int(ord(last_entry.version_quote)) + 1)
-
-                # When it is quote but the trip is other options that are not a booking
-                else:
-                    version_booking = 0
-                    version_quote = chr(int(ord(trip.version)) + 1)
-            
-            # When it is not a quote
-            else:
-                version_quote = chr(int(ord(trip.version)) + 1)
-                version_booking = int(trip.version) + 1
-        else:
-            version_quote = "A"
-            if status == "Booking":
-                version_booking = 1
-            else:
-                version_booking = 0
-
-
-        # Creates defauls according to the trip status
-        if trip.version == "0":
-            if status == "Booking":
-                # If it is the first booking version by default it will be the user SC
-                user_creator = User.objects.get(id=12)
-                trip.conversion_date = django.utils.timezone.now
-            else:
-                user_creator = user_working
-            
-        else:
-            if trip.status == "Quote" and status == "Booking":
-                # Get the last version trip
-                user_creator = first_entry.user_working
-                trip.conversion_date = django.utils.timezone.now
-            else:
-                user_creator = last_entry.user_working                
-
-        # Creates the model of the contact from the form information
-        new_entry = Entry.objects.create(
-            trip=trip,
-            starting_date=starting_date,
-            status=status,
-            importance=importance,
-            user_working=user_working,
-            user_creator=user_creator,
-            version_quote=version_quote,
-            version_booking=version_booking,
-        )
-        new_entry.save()
-
-        # Updates the trip version and amounts
-        if status == "Quote":
-            trip.version = version_quote
-        else:
-            trip.version = str(version_booking)
-
-        return HttpResponseRedirect(reverse("create_entry", kwargs={"entry_id": new_entry.id}))
-    
-    # Shows all entries
-    else:
-        return render(request, "intranet/pendings.html", {
-            "entries": Entry.objects.all(),
-            "trips": Trip.objects.all(),
-            "status": STATUS_OPTIONS,
-            "importance_options": IMPORTANCE_OPTIONS,
-            "progress_options": PROGRESS_OPTIONS,
-            "users": User.objects.all(),
-        })
+        return render(request, "intranet/trips.html", get_return_page("trips", ""))
     
 @login_required
-@csrf_exempt
+def modify_trip(request, trip_id):
+
+    # Gets the object of the trip modifying
+    trip = Trip.objects.get(id=trip_id) 
+    
+    if request.method == "POST":
+        name = request.POST["name"]
+        quantity_pax = request.POST["quantity_pax"]
+        starting_date_form = request.POST["starting_date"]
+        travelling_date_form = request.POST["travelling_date"]
+        client_form = request.POST["client"]
+        contact_form = request.POST["contact"]
+        client_reference = request.POST["client_reference"]
+        status = request.POST["status"]
+        tourplanId = request.POST["tourplanId"]
+        itId = request.POST["itId"]
+        trip_type = request.POST["trip_type"]
+        dh_type = request.POST["dh_type"]
+        responsable_user_form = request.POST["responsable_user"]
+        operations_user_form = request.POST["operations_user"]
+        dh_form = request.POST["dh"]
+        out_date_form = request.POST["out_date"]
+        guide = request.POST["guide"]
+
+
+        if not name or not starting_date_form or not client_form or not contact_form or not status or not quantity_pax:
+            return render(request, "intranet/trips.html", get_return_page("trips", "error"))
+        
+        # Get the client from the client ID of the form
+        client = Client.objects.get(id=client_form)
+
+        # Get the contact from the contact ID of the form
+        contact = ClientContact.objects.get(id=contact_form)
+
+        # Get the department from the user department
+        department = request.user.department
+
+        # Get the user from the user ID of the form
+        responsable_user = User.objects.get(id=responsable_user_form)
+        operations_user = User.objects.get(id=operations_user_form)
+        dh = User.objects.get(id=dh_form)
+
+        # Return the correct date to the model from the form
+        starting_date = datetime.fromisoformat(starting_date_form)
+        travelling_date = datetime.fromisoformat(travelling_date_form)
+        out_date = datetime.fromisoformat(out_date_form)
+
+        # Modifies the model of the user from the form information
+        trip.name=name
+        trip.quantity_pax=quantity_pax
+        trip.status=status
+        trip.client=client
+        trip.client_reference=client_reference
+        trip.starting_date=starting_date
+        trip.travelling_date=travelling_date
+        trip.contact=contact
+        trip.department=department
+        trip.tourplanId=tourplanId
+        trip.itId=itId
+        trip.trip_type=trip_type
+        trip.dh_type=dh_type
+        trip.responsable_user=responsable_user
+        trip.operations_user=operations_user
+        trip.out_date=out_date
+        trip.dh=dh
+        trip.guide=guide
+        
+        trip.save()
+
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+    
+
+@login_required
+def create_note(request, trip_id):
+
+    trip = Trip.objects.get(id=trip_id)
+
+    # If method is POST it will create the new client
+    if request.method == "POST":
+
+        # Gets the information from the form
+        content = request.POST["content"]
+
+        # Validations
+        if not content:
+            return render(request, "intranet/pendings.html", get_return_page("trips", "error"))
+
+
+        # Creates the model of the note from the form information
+        new_note = Notes.objects.create(
+            user=request.user,
+            trip=trip,
+            content=content,
+            creation_date=datetime.now(),
+        )
+        new_note.save()
+
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+
+
+@login_required
+def pendings(request):
+
+    # Shows all entries
+    return render(request, "intranet/pendings.html", get_return_page("entries", ""))
+    
+@login_required
 def create_entry(request, trip_id):
 
     # Get the trip from the trip ID of the button
@@ -414,12 +600,14 @@ def create_entry(request, trip_id):
 
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
-            return render(request, "intranet/pendings.html", {
-                "message": "Completar todos los campos",
+            return render(request, "intranet/new_entry.html", {
                 "entries": Entry.objects.all(),
                 "trips": Trip.objects.all(),
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
+                "progress_options": PROGRESS_OPTIONS,
+                "users": User.objects.all(),
+                "trip": trip,
             })
         
         # Get the user from the username in the form
@@ -431,19 +619,28 @@ def create_entry(request, trip_id):
 
         # Set the version of the quote and booking defaults
         if status == "Quote":
-            version_quote = chr(int(ord(last_entry.version_quote)) + 1)
+            version_quote = chr(int(ord(trip.version_quote)) + 1)
             version = trip.version
             user_creator = user_working
-            trip.version = version_quote
-        else:
-            version_quote = trip.version
+            trip.version_quote = chr(int(ord(trip.version_quote)) + 1)
+        elif status == "Booking":
+            if (trip.version == 0):
+                trip.conversion_date = starting_date
+                trip.status = "Booking"
+                trip.save()
             version = int(trip.version) + 1
+            version_quote = trip.version_quote
+            user_creator = user_working
+            trip.version += 1
+        else:
+            version = int(trip.version) + 1
+            version_quote = trip.version
             user_creator = user_working
             trip.version = version
 
-        progress = PROGRESS_OPTIONS[0]
-        # Creates defauls according to the trip status
+        trip.save()
 
+        progress = PROGRESS_OPTIONS[0]
 
         # Creates the model of the contact from the form information
         new_entry = Entry.objects.create(
@@ -459,12 +656,8 @@ def create_entry(request, trip_id):
         )
         new_entry.save()
 
-        return render(request, "intranet/pendings.html", {
-            "entries": Entry.objects.all(),
-            "trips": Trip.objects.all(),
-            "status": STATUS_OPTIONS,
-            "importance_options": IMPORTANCE_OPTIONS,
-        })
+        return HttpResponse(status=204)
+
     else:
         return render(request, "intranet/new_entry.html", {
             "entries": Entry.objects.all(),
@@ -476,6 +669,152 @@ def create_entry(request, trip_id):
             "trip": trip,
         })
     
+@login_required
+def modify_entry(request, entry_id):
+     
+    # Get the entry from the entry ID of the button
+    entry = Entry.objects.get(id=entry_id)
+
+    iso_starting_date = entry.starting_date.isoformat()
+    formated_starting_date = iso_starting_date[:16]
+
+    if request.method == "POST":
+        starting_date = request.POST["starting_date"]
+        status = request.POST["status"]
+        importance = request.POST["importance"]
+        user_working_form = request.POST["user_working"]
+        version = request.POST["version"]
+        user_creator_form = request.POST["user_creator"]
+        user_working_form = request.POST["user_working"]
+        amount = request.POST["amount"]
+        progress = request.POST["progress"]
+        closing_date_form = request.POST["closing_date"]
+
+        try:
+            isClosed = request.POST['isClosed']
+        except MultiValueDictKeyError:
+            isClosed = False
+
+        if isClosed != False:
+            isClosed = True
+        
+        # Validations of the form
+        if not starting_date or not status or not importance or not user_working_form:
+            return render(request, "intranet/edit_entry.html", {
+                "message": "Completar todos los campos obligatorios",
+                "entries": Entry.objects.all(),
+                "trips": Trip.objects.all(),
+                "status": STATUS_OPTIONS,
+                "importance_options": IMPORTANCE_OPTIONS,
+                "progress_options": PROGRESS_OPTIONS,
+                "users": User.objects.all(),
+                "entry": entry,
+                "formated_starting_date": formated_starting_date
+            })
+        
+        # Checks if version and amount are Int
+        versionIsInt = isinstance(version, int)
+
+        empty_amount = False
+
+        try:
+            amount = int(amount)
+        except ValueError:
+            empty_amount = True
+        
+        if status != "Quote" and versionIsInt:
+            return render(request, "intranet/edit_entry.html", {
+                "message": "La versión debe ser un número, a no ser que sea status Quote",
+                "entries": Entry.objects.all(),
+                "trips": Trip.objects.all(),
+                "status": STATUS_OPTIONS,
+                "importance_options": IMPORTANCE_OPTIONS,
+                "progress_options": PROGRESS_OPTIONS,
+                "users": User.objects.all(),
+                "entry": entry,
+                "formated_starting_date": formated_starting_date
+            })
+        elif (status == "Quote" or status == "Booking" or status == "Cancelado") and isClosed and empty_amount == True:
+            return render(request, "intranet/edit_entry.html", {
+                "message": "El monto es obligatorio para status Quote y Booking",
+                "entries": Entry.objects.all(),
+                "trips": Trip.objects.all(),
+                "status": STATUS_OPTIONS,
+                "importance_options": IMPORTANCE_OPTIONS,
+                "progress_options": PROGRESS_OPTIONS,
+                "users": User.objects.all(),
+                "entry": entry,
+                "formated_starting_date": formated_starting_date
+            })
+        
+        # Get the user from the username in the form
+        user_working = User.objects.get(id=user_working_form)
+        user_creator = User.objects.get(id=user_creator_form)
+
+        # Get the trip from the entry
+        trip = entry.trip
+
+        # Set the version of the quote and booking defaults
+        if status == "Booking":
+            if (entry.version == 1):
+                trip.status = "Booking"
+                trip.conversion_date = starting_date
+            trip.version = version
+        if status == "Quote":
+            trip.version_quote = version
+        else:
+            trip.version = version
+
+        if isClosed == True:
+            closing_date = datetime.fromisoformat(closing_date_form)
+            entry.closing_date = closing_date
+
+        if empty_amount == False:
+            trip.amount = amount
+            entry.amount=amount
+        
+        trip.save()
+
+        # Modifies the model of the entry with the form information
+        entry.starting_date=starting_date
+        entry.status=status
+        entry.importance=importance
+        entry.user_working=user_working
+        entry.user_creator=user_creator       
+        entry.progress=progress
+        entry.isClosed=isClosed
+
+        if status == "Quote":
+            entry.version_quote=version
+        else:
+            entry.version=version
+
+        entry.save()
+
+        return HttpResponseRedirect(reverse("entries"), {
+            "entries": Entry.objects.all(),
+            "trips": Trip.objects.all(),
+            "status": STATUS_OPTIONS,
+            "importance_options": IMPORTANCE_OPTIONS,
+            "progress_options": PROGRESS_OPTIONS,
+            "users": User.objects.all(),
+            "entry": entry,
+            "formated_starting_date": formated_starting_date,
+            })
+    
+    else:
+        return render(request, "intranet/edit_entry.html", {
+            "entries": Entry.objects.all(),
+            "trips": Trip.objects.all(),
+            "status": STATUS_OPTIONS,
+            "importance_options": IMPORTANCE_OPTIONS,
+            "progress_options": PROGRESS_OPTIONS,
+            "users": User.objects.all(),
+            "entry": entry,
+            "formated_starting_date": formated_starting_date,
+            })
+    
+@login_required
 def stats(request):
     return render(request, "intranet/stats.html")
 
@@ -485,8 +824,8 @@ def jsontrips(_request):
 
     # Get the list of the trips
     trips = list(Trip.objects.values())
-    data = {'trips': trips}
-    return JsonResponse(data)
+
+    return JsonResponse(trips, safe=False)
 
 
 @login_required
@@ -534,9 +873,10 @@ def jsontrip(request, trip_id):
 def json_entries(_request):
 
     # Get the list of the entries
-    entries = list(Entry.objects.values())
-    data = {'entries': entries}
-    return JsonResponse(data)
+    entries_object_list = Entry.objects.all()
+    entries = [entry.serialize() for entry in entries_object_list]
+
+    return JsonResponse(entries, safe=False)
 
 
 @login_required
@@ -601,9 +941,38 @@ def jsontrip_entries(request, trip_id):
     # Entry requests must be via GET or PUT or DELETE
     else:
         return JsonResponse({
-            "error": "GET or PUT or DELETE request required."
+            "error": "GET request required."
+        }, status=400)
+
+
+@login_required
+@csrf_exempt
+def jsontrip_notes(request, trip_id):
+
+    # Query for entries for the trip
+    try:
+        trip_object = Trip.objects.get(pk=trip_id)
+        notes_object_list = Notes.objects.filter(trip=trip_object)
+        if not notes_object_list:          
+            return JsonResponse({"empty": "No notes"})
+
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Trip not found"}, status=404)
+
+
+    # Return entries contents
+    if request.method == "GET":
+        return JsonResponse([note.serialize() for note in notes_object_list], safe=False)
+
+    # Entry requests must be via GET or PUT or DELETE
+    else:
+        return JsonResponse({
+            "error": "GET request required."
         }, status=400)
     
+
+@login_required
+@csrf_exempt
 def jsoncountry(request, country_id):
 
     # Query for country
@@ -621,11 +990,19 @@ def jsoncountry(request, country_id):
     elif request.method == "PUT":
 
         # Get json information
-        data = json.loads(request.body)
+        data = json.loads(request.body.decode('utf-8'))
 
         # Update information of the country
-        country_object.name = data["name"]
-        country_object.code = data["code"]
+        if data.get("name") is not None:
+            country_object.name = data["name"]
+        if data.get("code") is not None:
+            if len(data["code"]) != 2:
+                return JsonResponse({
+                    "error": "Code should have a lenght of 2."
+                }, status=400)
+            else:
+                country_object.code = data["code"]
+
 
         # Save the changes of the country
         country_object.save()
@@ -642,6 +1019,17 @@ def jsoncountry(request, country_id):
             "error": "GET or PUT or DELETE request required."
         }, status=400)
     
+@login_required
+@csrf_exempt
+def json_countries(_request):
+
+    # Get the list of the countries
+    countries = list(Country.objects.values())
+
+    return JsonResponse(countries, safe=False)
+
+@login_required
+@csrf_exempt
 def jsonclient(request, client_id):
 
     # Query for client
@@ -662,8 +1050,15 @@ def jsonclient(request, client_id):
         data = json.loads(request.body)
 
         # Update information of the client
-        client_object.name = data["name"]
-
+        if data.get("name") is not None:
+            client_object.name = data["name"]
+        if data.get("isActivated") is not None:
+            client_object.isActivated = data["isActivated"]
+        if data.get("country") is not None:
+            country_object = Country.objects.get(pk=int(data["country"]))
+            client_object.country = country_object
+        if data.get("department") is not None:
+            client_object.department = data["department"]
 
         # Save the changes of the client
         client_object.save()
@@ -679,7 +1074,18 @@ def jsonclient(request, client_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
+    
+@login_required
+@csrf_exempt
+def json_clients(_request):
 
+    # Get the list of the clients
+    clients = list(Client.objects.values())
+
+    return JsonResponse(clients, safe=False)
+
+@login_required
+@csrf_exempt
 def jsoncontact(request, contact_id):
     # Query for contact
     try:
@@ -699,8 +1105,15 @@ def jsoncontact(request, contact_id):
         data = json.loads(request.body)
 
         # Update information of the contact
-        contact_object.name = data["name"]
-
+        if data.get("name") is not None:
+            contact_object.name = data["name"]
+        if data.get("client") is not None:
+            client_object = Client.objects.get(pk=int(data["client"]))
+            contact_object.client = client_object
+        if data.get("email") is not None:
+            contact_object.email = data["email"]
+        if data.get("isActivated") is not None:
+            contact_object.isActivated = data["isActivated"]
 
         # Save the changes of the contact
         contact_object.save()
@@ -716,7 +1129,18 @@ def jsoncontact(request, contact_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
+    
+@login_required
+@csrf_exempt
+def json_contacts(_request):
 
+    # Get the list of the contacts
+    contacts = list(ClientContact.objects.values())
+    data = {'contacts': contacts}
+    return JsonResponse(data)
+
+@login_required
+@csrf_exempt
 def jsonuser(request, user_id):
     # Query for user
     try:
@@ -754,3 +1178,13 @@ def jsonuser(request, user_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
+    
+
+@login_required
+@csrf_exempt
+def json_users(_request):
+
+    # Get the list of the users
+    users = list(User.objects.values())
+    data = {'users': users}
+    return JsonResponse(data)
