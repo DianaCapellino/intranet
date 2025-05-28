@@ -100,7 +100,34 @@
         <div class="d-flex align-items-center justify-content-between">
             <h2>Viajes</h2>
             <div id="new_trip_container">
+                <button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/intranet/images/tp.jpeg" style="width:20px"></button>
+                <a href="{% url 'read_emails' %}"><button type="button" id="reed_emails_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Leer e-mails"><i class="fa-solid fa-envelope"></i></button></a>
                 <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo viaje"><i class="fa-solid fa-plus"></i></button>
+            </div>
+            <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelCreateEntry">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h1 class="modal-title fs-8" id="labelCreateEntry">Subir planilla de Tourplan</h1>
+                            <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                        </div>
+                        <div class="modal-body">
+                            <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
+                            <br>
+                            <form class="rw-3 text-center" action="{% url 'tourplan' %}" method="post" id="trip-form">
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                <input class="form-control" type="file" id="formFile">
+                            </div>
+                            <div class="container text-center">
+                                <a href="" id="link-create-entry{{request.user.id}}"><button id="create-entry" class="btn btn-dark btn-lg">SUBIR</button></a>
+                                <a href="{% url 'trips' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CANCELAR</button></a>
+                            </div>
+                            <br>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     

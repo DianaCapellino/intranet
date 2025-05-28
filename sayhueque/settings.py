@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'intranet',
+    'django_ai_assistant',
 ]
 
 MIDDLEWARE = [
@@ -130,3 +133,10 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'
+
+MAIL_PASSWORD = "yzbmpoxefrkyfyjr"
+MAIL_USERNAME = "aliwenintranet@gmail.com"
+
+load_dotenv()
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")

@@ -12,6 +12,8 @@ from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DE
 import json
 import datetime
 from datetime import datetime, date, timedelta
+from imap_tools import MailBox
+
 
 @login_required
 def index (request):
@@ -1188,3 +1190,27 @@ def json_users(_request):
     users = list(User.objects.values())
     data = {'users': users}
     return JsonResponse(data)
+
+
+def read_emails(request):
+    MAIL_PASSWORD = "yzbmpoxefrkyfyjr"
+    MAIL_USERNAME = "aliwenintranet@gmail.com"
+
+    emails = []
+
+    with MailBox("imap.gmail.com").login(MAIL_USERNAME, MAIL_PASSWORD, "Inbox") as mb:
+        for msg in mb.fetch(limit=10, reverse=True, mark_seen=True):
+            #print(msg.subject, msg.date, msg.flags, msg.text, msg.uid)
+            attachments = []
+            for att in msg.attachments:
+                attachments.append(att.part)
+            emails.append({"id":msg.uid, "subject":msg.subject, "date":msg.date, "flags":msg.flags, "text":msg.text, "attachments":attachments})
+            print(emails)
+    
+    return render(request, "intranet/read_emails.html", {
+        "emails": emails,
+    })
+
+def tourplan(request):
+    return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+            

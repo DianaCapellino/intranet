@@ -41,4 +41,8 @@ urlpatterns = [
     path("contacts/json", views.json_contacts, name="json_contacts"),
     path("users/json", views.json_users, name="json_users"),
     path("entries/json", views.json_entries, name="json_entries"),
+
+    path("read_emails", views.read_emails, name="read_emails"),
+
+    path("tourplan", views.tourplan, name="tourplan"),
 ]

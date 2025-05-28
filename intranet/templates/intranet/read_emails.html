@@ -1,0 +1,13 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+
+    {% for email in emails %}
+        <div>ASUNTO: {{ email.subject }}</div>
+        <div>FECHA: {{ email.date }}</div>
+        <div>CONTENIDO: {{ email.text }}</div>
+        <div>ADJUNTO: {{ email.attachments }}</div>
+        <hr>
+    {% endfor %}
+
+{% endblock %}
