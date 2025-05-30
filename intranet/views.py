@@ -13,6 +13,8 @@ import json
 import datetime
 from datetime import datetime, date, timedelta
 from imap_tools import MailBox
+import os
+from dotenv import load_dotenv
 
 
 @login_required
@@ -1193,8 +1195,8 @@ def json_users(_request):
 
 
 def read_emails(request):
-    MAIL_PASSWORD = "yzbmpoxefrkyfyjr"
-    MAIL_USERNAME = "aliwenintranet@gmail.com"
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
 
     emails = []
 
@@ -1213,4 +1215,3 @@ def read_emails(request):
 
 def tourplan(request):
     return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
-            

@@ -134,9 +134,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'
 
-MAIL_PASSWORD = "yzbmpoxefrkyfyjr"
-MAIL_USERNAME = "aliwenintranet@gmail.com"
-
 load_dotenv()
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+#OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
