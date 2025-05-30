@@ -1195,23 +1195,29 @@ def json_users(_request):
 
 
 def read_emails(request):
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    load_dotenv()
+    
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    MAIL_SERVER = os.environ.get("MAIL_SERVER")
 
     emails = []
 
-    with MailBox("imap.gmail.com").login(MAIL_USERNAME, MAIL_PASSWORD, "Inbox") as mb:
+    with MailBox(MAIL_SERVER).login(MAIL_USERNAME, MAIL_PASSWORD, "Inbox") as mb:
         for msg in mb.fetch(limit=10, reverse=True, mark_seen=True):
-            #print(msg.subject, msg.date, msg.flags, msg.text, msg.uid)
+            
             attachments = []
             for att in msg.attachments:
                 attachments.append(att.part)
             emails.append({"id":msg.uid, "subject":msg.subject, "date":msg.date, "flags":msg.flags, "text":msg.text, "attachments":attachments})
-            print(emails)
+            
     
     return render(request, "intranet/read_emails.html", {
         "emails": emails,
     })
 
-def tourplan(request):
+def tourplan_files(request):
     return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+
+def tourplan_costs(request):
+    return HttpResponseRedirect(reverse("tariff"))

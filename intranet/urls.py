@@ -44,5 +44,5 @@ urlpatterns = [
 
     path("read_emails", views.read_emails, name="read_emails"),
 
-    path("tourplan", views.tourplan, name="tourplan"),
+    path("tourplan_files", views.tourplan_files, name="tourplan_files"),
 ]

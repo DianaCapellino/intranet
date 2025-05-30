@@ -1,0 +1,31 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <h2>Tarifario</h2>
+    <br>
+    
+    {% if message %}
+        <div class="message text-center">{{ message }}</div>
+    {% endif %}
+
+    <br>
+    {% if user.isAdmin %}
+    <div id="new_product" class="d-none">
+        <div class="container">
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nuevo Producto</h2>
+                <div>
+                    <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                </div>
+            </div>
+
+            {% if message_new %}
+                <div class="message text-center">{{ message_new }}</div>
+            {% endif %}
+        
+            <br>
+            <br>
+        </div>
+    {% endif %}
+    <br>
+{% endblock %}

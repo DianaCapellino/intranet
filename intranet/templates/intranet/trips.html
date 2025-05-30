@@ -114,7 +114,7 @@
                         <div class="modal-body">
                             <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
                             <br>
-                            <form class="rw-3 text-center" action="{% url 'tourplan' %}" method="post" id="trip-form">
+                            <form class="rw-3 text-center" action="{% url 'tourplan_files' %}" method="post" id="trip-form">
                             {% csrf_token %}
                             <div class="mb-3">
                                 <input class="form-control" type="file" id="formFile">

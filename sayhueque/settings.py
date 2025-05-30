@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'intranet',
+    'tariff',
     'django_ai_assistant',
 ]
 
@@ -134,6 +135,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'
 
-load_dotenv()
+# load_dotenv()
 
 #OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
