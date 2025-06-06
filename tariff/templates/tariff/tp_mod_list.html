@@ -1,0 +1,69 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    {% if user.isAdmin %}
+
+        <h2>Actualizar Alojamiento</h2>
+        <div id="update_tariff_container" class="text-center">
+            <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Actualizar Tarifario con Tourplan" data-bs-toggle="modal" data-bs-target="#windowTourplan"><i class="fa-solid fa-upload display-8"></i></button>
+        </div>
+        <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelUpdateTariff">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-8" id="labelCreateEntry">Subir planilla de Tourplan</h1>
+                        <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
+                        <br>
+                        <form class="rw-3 text-center" action="{% url 'tp_mod_list' %}" method="post" id="tp-tariff-form" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        {{ form.file_name }}
+                        <br>
+                        <div class="container text-center">
+                            <a href=""><button id="upload_file" class="btn btn-dark btn-lg" type="submit">SUBIR</button></a>
+                            <a href="{% url 'tp_mod_list' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CANCELAR</button></a>
+                        </div>
+                        <br>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <br>
+        <div class="row">
+            <div class="col-12">
+                <div style="width:100%">
+                    <table id="tariff_table" class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Destination</th>
+                                <th>Supplier</th>
+                                <th>Product</th>
+                                <th>Validity</th>
+                                <th>Type</th>
+                                <th>Cost</th>
+                                <th>Sell</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in tourplan_list %}
+                                <tr>
+                                    <td>{{ line.location_code }}</td>
+                                    <td>{{ line.supplier_name }}</td>
+                                    <td>{{ line.option_description }}</td>
+                                    <td>{{ line.date_from }} to {{ line.date_to }}</td>
+                                    <td>{{ line.serv_item }}</td>
+                                    <td>{{ line.fit_cost }}</td>
+                                    <td>{{ line.fit_sell }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+{% endblock %}

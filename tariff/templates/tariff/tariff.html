@@ -1,14 +1,6 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-    <h2>Tarifario</h2>
-    <br>
-    
-    {% if message %}
-        <div class="message text-center">{{ message }}</div>
-    {% endif %}
-
-    <br>
     {% if user.isAdmin %}
     <div id="new_product" class="d-none">
         <div class="container">
@@ -26,6 +18,93 @@
             <br>
             <br>
         </div>
+    </div>
     {% endif %}
     <br>
+    <div id="tariff">
+        <div class="container">
+            <br>
+            <div class="d-flex align-items-center justify-content-between">
+                <h2>Tarifario Alojamiento</h2>
+                <div id="new_product_container">
+                    <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
+                    <button type="button" id="new_product_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo producto"><i class="fa-solid fa-plus"></i></button>
+                </div>
+
+            </div>
+
+            {% if message_modify %}
+                <div>{{ message_modify }}</div>
+            {% endif %}
+
+            <br>
+
+            <div class="row">
+                <div class="col-12">
+                    <div style="width:100%">
+                        <table id="tariff_table" class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Destination</th>
+                                    <th>Supplier</th>
+                                    <th>Product</th>
+                                    <th>Validity</th>
+                                    <th>DBL</th>
+                                    <th>SGL</th>
+                                    <th>TPL</th>
+                                    <th>CPL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for line in rate_lines %}
+                                    <tr>
+                                        <td>{{ line.group.product.group.location }}</td>
+                                        <td>{{ line.group.product.supplier }}</td>
+                                        <td>{{ line.group.product.name }}</td>
+                                        <td>{{ line.date_from }} to {{ line.date_to }}</td>
+                                        {% for rate in rates %}
+                                            {% if rate.rate_line.id == line.id and rate.column_options == "DBL" %}
+                                                {% if rate.has_rate %}
+                                                    <td>{{ rate.sell }}</td>
+                                                {% else %}
+                                                    <td>{{ rate.text_value }}</td>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% for rate in rates %}
+                                            {% if rate.rate_line.id == line.id and rate.column_options == "SGL" %}
+                                                {% if rate.has_rate %}
+                                                    <td>{{ rate.sell }}</td>
+                                                {% else %}
+                                                    <td>{{ rate.text_value }}</td>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% for rate in rates %}
+                                            {% if rate.rate_line.id == line.id and rate.column_options == "TPL" %}
+                                                {% if rate.has_rate %}
+                                                    <td>{{ rate.sell }}</td>
+                                                {% else %}
+                                                    <td>{{ rate.text_value }}</td>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% for rate in rates %}
+                                            {% if rate.rate_line.id == line.id and rate.column_options == "CPL" %}
+                                                {% if rate.has_rate %}
+                                                    <td>{{ rate.sell }}</td>
+                                                {% else %}
+                                                    <td>{{ rate.text_value }}</td>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}

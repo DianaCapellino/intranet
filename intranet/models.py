@@ -61,6 +61,28 @@ USER_TYPES = [
     ("Operaciones", "Operaciones"),
     ("DH", "DH"),
     ("Internal", "Internal"),
+    ("Client", "Client"),
+]
+
+CLIENT_CATEGORIES = [
+    ("A", "A"),
+    ("B", "B"),
+    ("C", "C"),
+]
+
+MONTHS = [
+    (1, "January"),
+    (2, "February"),
+    (3, "March"),
+    (4, "April"),
+    (5, "May"),
+    (6, "June"),
+    (7, "July"),
+    (8, "August"),
+    (9, "September"),
+    (10, "October"),
+    (11, "November"),
+    (12, "December")
 ]
 
 class User(AbstractUser):
@@ -93,6 +115,7 @@ class Client(models.Model):
     isActivated = models.BooleanField(default=True)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="client_countries")
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
+    category = models.CharField(max_length=64, choices=CLIENT_CATEGORIES, default="B")
 
     def __str__(self):
         return f"{self.name}"

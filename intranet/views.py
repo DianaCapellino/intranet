@@ -7,7 +7,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-import django.utils.timezone
 from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES
 import json
 import datetime

@@ -138,3 +138,6 @@ LOGIN_URL = 'login'
 # load_dotenv()
 
 #OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(os.path.dirname(BASE_DIR), 'media')
