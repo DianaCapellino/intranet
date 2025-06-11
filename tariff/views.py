@@ -141,7 +141,7 @@ def upload_data(csv_obj):
                         new_line.save()
                         col_number+=1
                     elif col_number == 14:
-                        if col == "-":
+                        if col == "-   ":
                             new_line.delete()
                             break
                         else:

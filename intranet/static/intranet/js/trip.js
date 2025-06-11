@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("clients");
     create_datatable("users");
     create_datatable("entries-creating");
+    create_datatable("tariff-table");
 
     // Modifies the date format to be shown in the forms
     modify_date_and_datetime();

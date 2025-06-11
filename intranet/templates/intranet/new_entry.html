@@ -32,7 +32,11 @@
                             <select autofocus class="form-select" aria-label="status" name="status">
                                 <option selected value="">Status</option>
                                 {% for option in status %}
-                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% if trip.version_quote == "@" and option.0 == "Quote" %}
+                                        <option value="{{ option.0 }}" selected>{{ option.0 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endif %}
                                 {% endfor %}
                             </select>
                         </div>
@@ -42,7 +46,11 @@
                             <select class="form-select" aria-label="importance" name="importance">
                                 <option selected value="">Importancia</option>
                                 {% for option in importance_options %}
-                                <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% if option.0 == "7 - ALTA - standard" %}
+                                        <option value="{{ option.0 }}" selected>{{ option.0 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endif %}
                                 {% endfor %}
                             </select>
                         </div>

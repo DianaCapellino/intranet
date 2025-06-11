@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 import django.utils.timezone
 from datetime import datetime, timedelta
+from django import forms
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
@@ -224,3 +225,33 @@ class Entry(models.Model):
 class Holidays(models.Model):
     date = models.DateField(verbose_name="holidays date")
     working_user = models.ManyToManyField(User, related_name="working_users", blank=True)
+
+
+class Absence(models.Model):
+    date = models.DateField(verbose_name="holidays date")
+    absence_user = models.ManyToManyField(User, related_name="absence_users", blank=True)    
+
+
+class CsvFileTourplan (models.Model):
+    file_name = models.FileField(upload_to="csvFiles")
+    uploaded_time = models.DateTimeField(auto_now_add=True)
+    read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Csv File ID: {self.id} - Csv Name: {self.file_name}"
+    
+class CsvFormTourplan(forms.ModelForm):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for visible in self.visible_fields():
+            visible.field.widget.attrs['class'] = 'form-control'
+            visible.field.widget.attrs['aria-describedby'] = 'input-file'
+            visible.field.widget.attrs['aria-label'] = 'SUBIR'
+
+    class Meta:
+        model = CsvFileTourplan
+        fields = ('file_name',)
+        labels = {
+            "file_name": ""
+        }
