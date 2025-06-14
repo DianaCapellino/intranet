@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
 import json
 import datetime
 from datetime import datetime, date, timedelta
@@ -118,9 +118,10 @@ def create_client(request):
     # If method is POST it will create the new client
     if request.method == "POST":
 
-        # Attempt to create contact
+        # Attempt to create client
         name = request.POST["name"]
         country_form = request.POST["country"]
+        category = request.POST["category"]
 
         # Validations
         if not name or not country_form:
@@ -128,6 +129,8 @@ def create_client(request):
                 "message": "Todos los campos deben ser completados",
                 "clients": Client.objects.all(),
                 "countries": Country.objects.all(),
+                "categories": CLIENT_CATEGORIES,
+                "departments": DEPARTMENTS,
             })
         
         # Defines the department as the user department
@@ -141,12 +144,15 @@ def create_client(request):
             name=name,
             country=country,
             department=department,
+            category=category,
         )
         new_client.save()
 
         return render(request, "intranet/clients.html", {
             "clients": Client.objects.all(),
             "countries": Country.objects.all(),
+            "categories": CLIENT_CATEGORIES,
+            "departments": DEPARTMENTS,
         })
     
     # If method is GET it displays the form to add new client
@@ -154,6 +160,8 @@ def create_client(request):
         return render(request, "intranet/clients.html", {
             "clients": Client.objects.all(),
             "countries": Country.objects.all(),
+            "categories": CLIENT_CATEGORIES,
+            "departments": DEPARTMENTS,
         })
     
 
@@ -350,6 +358,142 @@ def modify_user(request, user_id):
             "users": User.objects.all()
         })
     
+
+@login_required
+def modify_client(request, client_id):
+
+    # Gets the object of the client modifying
+    client = Client.objects.get(id=client_id) 
+    
+    # Gets the information from the form
+    if request.method == "POST":
+
+        # Attempt to modify client
+        name = request.POST["name"]
+        country_form = request.POST["country"]
+        category = request.POST["category"]
+        department = request.POST["department"]
+
+        try:
+            isActivated = request.POST['isActivated']
+        except MultiValueDictKeyError:
+            isActivated = False
+
+        if isActivated != False:
+            isActivated = True
+
+        # Validations
+        if not name or not country_form or not category or not department:
+            return render(request, "intranet/clients.html", {
+                "message_modify": "Todos los campos deben ser completados",
+                "clients": Client.objects.all(),
+                "countries": Country.objects.all(),
+                "categories": CLIENT_CATEGORIES,
+                "departments": DEPARTMENTS,
+            })
+        
+        country = Country.objects.get(pk=country_form)
+
+        # Modifies the model of the user from the form information
+        client.name=name
+        client.country=country
+        client.category=category
+        client.department=department
+        client.isActivated=isActivated
+        
+        client.save()
+
+        return HttpResponseRedirect(reverse("clients"), {
+            "clients": Client.objects.all(),
+            "countries": Country.objects.all(),
+            "categories": CLIENT_CATEGORIES,
+            "departments": DEPARTMENTS,
+        })
+
+
+@login_required
+def modify_contact(request, contact_id):
+
+    # Gets the object of the contact modifying
+    contact = ClientContact.objects.get(id=contact_id)
+    
+    # Gets the information from the form
+    if request.method == "POST":
+
+        # Attempt to modify contact
+        name = request.POST["name"]
+        email = request.POST["email"]
+        client_form = request.POST["client"]
+
+        try:
+            isActivated = request.POST['isActivated']
+        except MultiValueDictKeyError:
+            isActivated = False
+
+        if isActivated != False:
+            isActivated = True
+
+        # Validations
+        if not name or not email or not client_form:
+            return render(request, "intranet/contacts.html", {
+                "message_modify": "Todos los campos deben ser completados",
+                "clients": Client.objects.all(),
+                "contacts": ClientContact.objects.all()
+            })
+        
+        client = Client.objects.get(pk=client_form)
+
+        # Modifies the model of the contact from the form information
+        contact.name=name
+        contact.email=email
+        contact.client=client
+        contact.isActivated=isActivated
+        
+        contact.save()
+
+        return HttpResponseRedirect(reverse("contacts"), {
+            "clients": Client.objects.all(),
+            "contacts": ClientContact.objects.all()
+        })
+    
+
+@login_required
+def modify_country(request, country_id):
+
+    # Gets the object of the country modifying
+    country = Country.objects.get(id=country_id)
+    
+    # Gets the information from the form
+    if request.method == "POST":
+
+        # Attempt to modify country
+        name = request.POST["name"]
+        code = request.POST["code"]
+
+        # Validations
+        if not name or not code:
+            return render(request, "intranet/countries.html", {
+                "message_modify": "Todos los campos deben ser completados",
+                "countries": Country.objects.all(),
+            })
+        
+        if len(code) != 2:
+            return render(request, "intranet/countries.html", {
+                "message_modify": "El código del país debe tener 2 caracteres",
+                "countries": Country.objects.all(),
+            })
+
+        # Modifies the model of the contact from the form information
+        country.name=name
+        country.code=code
+        
+        country.save()
+
+        return HttpResponseRedirect(reverse("countries"), {
+            "countries": Country.objects.all(),
+        })
+    
+    
 def get_return_page(page, type):
 
     # List of the dates formated for the form
@@ -376,6 +520,7 @@ def get_return_page(page, type):
                     "status": STATUS_OPTIONS,
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
+                    "difficulty_options": DIFFICULTY_OPTIONS,
                     "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
                     "trips": Trip.objects.all(),
@@ -391,6 +536,7 @@ def get_return_page(page, type):
                     "status": STATUS_OPTIONS,
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
+                    "difficulty_options": DIFFICULTY_OPTIONS,
                     "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
                     "trips": Trip.objects.all(),
@@ -441,8 +587,9 @@ def create_trip(request):
         contact_form = request.POST["contact"]
         client_reference = request.POST["client_reference"]
         status = request.POST["status"]
+        difficulty = request.POST["difficulty"]
 
-        if not name or not starting_date or not client_form or not contact_form or not status:
+        if not name or not starting_date or not client_form or not contact_form or not status or not difficulty:
             return render(request, "intranet/trips.html", get_return_page("trips", "error") )
         
         # Get the client from the client ID of the form
@@ -468,6 +615,7 @@ def create_trip(request):
             starting_date=starting_date,
             travelling_date=travelling_date,
             contact=contact,
+            difficulty=difficulty,
             department=department,
             responsable_user=responsable_user,
             operations_user=operations_user,
@@ -497,18 +645,28 @@ def modify_trip(request, trip_id):
         contact_form = request.POST["contact"]
         client_reference = request.POST["client_reference"]
         status = request.POST["status"]
+        difficulty = request.POST["difficulty"]
         tourplanId = request.POST["tourplanId"]
-        itId = request.POST["itId"]
         trip_type = request.POST["trip_type"]
-        dh_type = request.POST["dh_type"]
-        responsable_user_form = request.POST["responsable_user"]
-        operations_user_form = request.POST["operations_user"]
-        dh_form = request.POST["dh"]
         out_date_form = request.POST["out_date"]
-        guide = request.POST["guide"]
+
+        if trip.status == "Booking":
+            itId = request.POST["itId"]
+            dh_type = request.POST["dh_type"]
+            responsable_user_form = request.POST["responsable_user"]
+            operations_user_form = request.POST["operations_user"]
+            dh_form = request.POST["dh"]
+            guide = request.POST["guide"]
+        else:
+            itId = ""
+            dh_type = "Sin definir"
+            responsable_user_form = User.objects.get(username="SD").id
+            operations_user_form = User.objects.get(username="SD").id
+            dh_form = User.objects.get(username="SD").id
+            guide = ""
 
 
-        if not name or not starting_date_form or not client_form or not contact_form or not status or not quantity_pax:
+        if not name or not starting_date_form or not client_form or not contact_form or not status or not quantity_pax or not difficulty:
             return render(request, "intranet/trips.html", get_return_page("trips", "error"))
         
         # Get the client from the client ID of the form
@@ -534,6 +692,7 @@ def modify_trip(request, trip_id):
         trip.name=name
         trip.quantity_pax=quantity_pax
         trip.status=status
+        trip.difficulty=difficulty
         trip.client=client
         trip.client_reference=client_reference
         trip.starting_date=starting_date
@@ -1038,13 +1197,13 @@ def jsonclient(request, client_id):
     # Query for client
     try:
         client_object = Client.objects.get(pk=client_id)
-        client = model_to_dict(client_object)
+        # client = model_to_dict(client_object)
     except Client.DoesNotExist:
         return JsonResponse({"error": "Client not found"}, status=404)
 
     # Return client contents
     if request.method == "GET":
-        return JsonResponse(client, safe=False)
+        return JsonResponse(client_object.serialize(), safe=False)
 
     # Update client
     elif request.method == "PUT":
@@ -1062,6 +1221,8 @@ def jsonclient(request, client_id):
             client_object.country = country_object
         if data.get("department") is not None:
             client_object.department = data["department"]
+        if data.get("category") is not None:
+            client_object.category = data["category"]
 
         # Save the changes of the client
         client_object.save()
@@ -1083,7 +1244,8 @@ def jsonclient(request, client_id):
 def json_clients(_request):
 
     # Get the list of the clients
-    clients = list(Client.objects.values())
+    clients_object_list = Client.objects.all()
+    clients = [client.serialize() for client in clients_object_list]
 
     return JsonResponse(clients, safe=False)
 

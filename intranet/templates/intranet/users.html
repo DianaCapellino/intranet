@@ -146,8 +146,8 @@
                                                             <label for="modify_select{{user.id}}" class="form-label">Departamento</label>
                                                             <select class="form-control" aria-label="department" name="department" id="modify_select{{user.id}}">
                                                                 {% for department in departments %}
-                                                                    {% if department == user.department %}
-                                                                        <option selected value="{{ department.0 }}">{{ user.department.1 }}</option>
+                                                                    {% if department.0 == user.department %}
+                                                                        <option selected value="{{ department.0 }}">{{ department.1 }}</option>
                                                                     {% else %}
                                                                         <option value="{{ department.0 }}">{{ department.1 }}</option>
                                                                     {% endif %}
@@ -160,16 +160,6 @@
                                                         </div>
                                                     </div>
                                                     <div class="row">
-                                                        <div class="form-check-sm mb-3 col">
-                                                            {% if user.is_active == True %}
-                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive" checked>
-                                                            {% else %}
-                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive">
-                                                            {% endif %}
-                                                            <label class="form-check-label" for="modify_isActive{{user.id}}">
-                                                            Activado
-                                                            </label>
-                                                        </div>
                                                         <div class="form-check-sm mb-3 col">
                                                             {% if user.isAdmin == True %}
                                                                 <input class="form-check-input" type="checkbox" id="modify_admin{{user.id}}" name="admin" checked>
@@ -190,6 +180,16 @@
                                                             Visible
                                                             </label>
                                                         </div>
+                                                        <div class="form-check-sm mb-3 col">
+                                                            {% if user.is_active == True %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive" checked>
+                                                            {% else %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_isActive{{user.id}}" name="isActive">
+                                                            {% endif %}
+                                                            <label class="form-check-label" for="modify_isActive{{user.id}}">
+                                                            Activado
+                                                            </label>
+                                                        </div>                                                        
                                                     </div>
                                                     <div class="row">
                                                         <div class="mb-3 col">

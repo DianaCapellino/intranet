@@ -43,9 +43,37 @@
                             <td id="countries-code-{{country.id}}">{{ country.code }}</td>
                             <td>
                                 <div class="justify-content-around d-flex">
-                                    <i class="fa-solid fa-pencil pencil-countries" width="1px" id="pencil-countries-{{country.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-countries-{{country.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowCountryPencil{{ country.id }}"></i>
                                     <i class="fa-solid fa-trash" width="1px" id="trash-countries-{{country.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowCountryTrash{{ country.id }}"></i>
                                     <button class="btn btn-dark d-none" id="save-btn-countries-{{country.id}}">GUARDAR</button>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowCountryPencil{{ country.id }}" tabindex="-1" aria-labelledby="label{{ country.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ contact.id }}">Modificando {{ country.name }}</h1>
+                                                <button id="btn-close-countries-modify-{{ country.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <form class="rw-3 text-center" action="{% url 'modify_country' country.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form">
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_name{{country.id}}" class="form-label">Nombre</label>
+                                                                <input autofocus class="form-control" type="text" name="name" id="modify_name{{country.id}}" value="{{ country.name }}">
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_email{{country.id}}" class="form-label">Código</label>
+                                                                <input autofocus class="form-control" type="text" maxlength="2" name="code" id="modify_code{{country.id}}" value="{{ country.code }}">
+                                                            </div>                                                 
+                                                        </div>
+                                                        <input id="modify-contact-{{ contact.id }}" class="btn btn-dark btn-lg modify-contacts-btn" type="submit" value="MODIFICAR">
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="modal fade modal-lg" id="windowCountryTrash{{ country.id }}" tabindex="-1" aria-labelledby="label{{ country.id }}">
                                     <div class="modal-dialog">

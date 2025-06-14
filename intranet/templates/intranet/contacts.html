@@ -8,6 +8,9 @@
         <div class="message text-center">{{ message }}</div>
     {% endif %}
 
+    {% if message_modify %}
+        <div class="message text-center">{{ message_modify }}</div>
+    {% endif %}
     <br>
     <div class="container">
         <div class="row">
@@ -58,9 +61,61 @@
                             {% endif %}
                             <td>
                                 <div class="justify-content-around d-flex mu-2">
-                                    <i class="fa-solid fa-pencil pencil-contacts" id="pencil-contacts-{{contact.id}}" aria-hidden="true"></i>
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-contacts-{{contact.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowConctactPencil{{ contact.id }}"></i>
                                     <i class="fa-solid fa-trash" id="trash-contacts-{{contact.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowContactTrash{{ contact.id }}"></i>
-                                    <button class="btn btn-dark d-none" id="save-btn-contacts-{{contact.id}}">GUARDAR</button>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowConctactPencil{{ contact.id }}" tabindex="-1" aria-labelledby="label{{ contact.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ contact.id }}">Modificando {{ contact.name }}</h1>
+                                                <button id="btn-close-contacts-modify-{{ contact.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <form class="rw-3 text-center" action="{% url 'modify_contact' contact.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form">
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_name{{contact.id}}" class="form-label">Nombre</label>
+                                                                <input autofocus class="form-control" type="text" name="name" id="modify_name{{contact.id}}" value="{{ contact.name }}">
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_email{{contact.id}}" class="form-label">E-mail</label>
+                                                                <input autofocus class="form-control" type="email" name="email" id="modify_email{{contact.id}}" value="{{ contact.email }}">
+                                                            </div>
+                                                            <div class="row">
+                                                                <div class="mb-3 col">
+                                                                    <label for="modify_select{{contact.id}}" class="form-label">Cliente</label>
+                                                                    <select class="form-control" aria-label="client" name="client" id="modify_select{{contact.id}}">
+                                                                        {% for client in clients %}
+                                                                            {% if client == contact.client %}
+                                                                                <option selected value="{{ client.id }}">{{ client.name }}</option>
+                                                                            {% else %}
+                                                                                <option value="{{ client.id }}">{{ client.name }}</option>
+                                                                            {% endif %}
+                                                                        {% endfor %}
+                                                                    </select>
+                                                                </div>
+                                                                <div class="form-check-sm mb-3 col">
+                                                                    <br>
+                                                                    {% if contact.isActivated == True %}
+                                                                        <input class="form-check-input mb-3" type="checkbox" id="modify_isActivated{{contact.id}}" name="isActivated" checked>
+                                                                    {% else %}
+                                                                        <input class="form-check-input" type="checkbox" id="modify_isActivated{{contact.id}}" name="isActivated">
+                                                                    {% endif %}
+                                                                    <label class="form-check-label" for="modify_isActivated{{contact.id}}">
+                                                                    Activado
+                                                                    </label>
+                                                                </div>
+                                                            </div>                                                      
+                                                        </div>
+                                                        <input id="modify-contact-{{ contact.id }}" class="btn btn-dark btn-lg modify-contacts-btn" type="submit" value="MODIFICAR">
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="modal fade modal-lg" id="windowContactTrash{{ contact.id }}" tabindex="-1" aria-labelledby="label{{ contact.id }}">
                                     <div class="modal-dialog">

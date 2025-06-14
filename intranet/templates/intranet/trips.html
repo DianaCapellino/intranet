@@ -25,7 +25,7 @@
                             <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                         </div>
                         <div class="mb-3 col">
-                            <input class="form-control" type="number" name="quantity_pax" id="quantity_pax" placeholder="Cantidad de pasajeros">
+                            <input class="form-control" type="number" name="quantity_pax" id="quantity_pax" placeholder="Cantidad de pasajeros" value=2>
                         </div>
                     </div>
                     <div class="row">
@@ -43,7 +43,9 @@
                             <select class="form-select" aria-label="client" name="client">
                                 <option selected>Cliente</option>
                                 {% for client in clients %}
-                                <option value="{{ client.id }}">{{ client.name }}</option>
+                                    {% if client.isActivated and client.department == request.user.department %}
+                                        <option value="{{ client.id }}">{{ client.name }}</option>
+                                    {% endif %}
                                 {% endfor %}
                             </select>
                         </div>                    
@@ -65,6 +67,14 @@
                                 <option selected>Status</option>
                                 {% for option in status %}
                                 <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="difficulty" name="difficulty">
+                                <option selected>Dificultad</option>
+                                {% for option in difficulty_options %}
+                                <option value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -308,6 +318,18 @@
                                                                         {% else %}
                                                                             <option value="{{ option.0 }}">{{ option.1 }}</option>
                                                                         {% endif %}
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify-difficulty{{trip.id}}" class="form-label">Dificultad</label>
+                                                            <select class="form-select" aria-label="difficulty" name="difficulty">
+                                                                {% for option in difficulty_options %}
+                                                                    {% if option.0 == trip.difficulty %}
+                                                                        <option selected value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
                                                                     {% endif %}
                                                                 {% endfor %}
                                                             </select>

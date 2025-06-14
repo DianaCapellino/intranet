@@ -86,6 +86,14 @@ MONTHS = [
     (12, "December")
 ]
 
+DIFFICULTY_OPTIONS = [
+    ("1", "Muy Fácil"),
+    ("2", "Fácil"),
+    ("3", "Moderado"),
+    ("4", "Complejo"),
+    ("5", "Muy Complejo"),
+]
+
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
     isActivated = models.BooleanField(default=True)
@@ -120,6 +128,15 @@ class Client(models.Model):
 
     def __str__(self):
         return f"{self.name}"
+    
+    def serialize(self):
+        return {
+            "name": self.name,
+            "isActivated": self.isActivated,
+            "country": f"{self.country.code} - {self.country.name}",
+            "department": self.department,
+            "category": self.category,
+        }
 
 
 class ClientContact(models.Model):
@@ -137,6 +154,7 @@ class Trip(models.Model):
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
     version = models.IntegerField(blank=True, null=True, default=0)
     version_quote = models.CharField(max_length=64, null=True, default="@")
+    difficulty = models.CharField(max_length=64, choices=DIFFICULTY_OPTIONS)
     amount = models.FloatField(null=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="trip_clients")
     client_reference = models.CharField(max_length=64, null=True, default="n/a")
@@ -190,6 +208,7 @@ class Entry(models.Model):
     isClosed = models.BooleanField(default=False)
     importance = models.CharField(max_length=64, choices=IMPORTANCE_OPTIONS)
     progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS)
+    note = models.CharField(max_length=500, null=True, blank=True)
 
     @property
     def response_days(self):

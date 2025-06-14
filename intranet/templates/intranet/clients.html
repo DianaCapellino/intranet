@@ -8,6 +8,9 @@
         <div class="message text-center">{{ message }}</div>
     {% endif %}
 
+    {% if message_modify %}
+        <div class="message text-center">{{ message_modify }}</div>
+    {% endif %}
     <br>
     <div class="container">
         <div class="row">
@@ -27,6 +30,14 @@
                                 {% endfor %}
                             </select>
                         </div>
+                        <div class="mb-3">
+                            <select class="form-control" aria-label="category" name="category">
+                                <option selected value="">Categoría</option>
+                                {% for category in categories %}
+                                <option value="{{ category.0 }}">{{ category.1 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         <input class="btn btn-dark" type="submit" value="GUARDAR">
                     </div>
                 </form>
@@ -38,6 +49,7 @@
                             <th>Nombre</th>
                             <th>País</th>
                             <th>Unidad de Negocio</th>
+                            <th>Categoría</th>
                             <th>Activado</th>
                             <th>Acciones</th>
                         </tr>
@@ -48,6 +60,7 @@
                             <td id="clients-name-{{client.id}}">{{ client.name }}</td>
                             <td id="clients-country-{{client.id}}">{{ client.country }}</td>
                             <td id="clients-department-{{client.id}}">{{ client.department }}</td>
+                            <td id="clients-category-{{client.id}}">{{ client.category }}</td>
                             {% if client.isActivated == True %}
                                 <td id="clients-isActivated-{{client.id}}">Sí</td>
                             {% else %}
@@ -55,9 +68,81 @@
                             {% endif %}
                             <td>
                                 <div class="justify-content-around d-flex">
-                                    <i class="fa-solid fa-pencil pencil-clients" width="1px"" id="pencil-clients-{{client.id}}" aria-hidden="true"></i>
-                                    <i class="fa-solid fa-trash" width="1px"" id="trash-clients-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientTrash{{ client.id }}"></i>
-                                    <button class="btn btn-dark d-none" id="save-btn-clients-{{client.id}}">GUARDAR</button>
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-client-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientPencil{{ client.id }}"></i>
+                                    <i class="fa-solid fa-trash" width="1px" id="trash-clients-{{client.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowClientTrash{{ client.id }}"></i>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowClientPencil{{ client.id }}" tabindex="-1" aria-labelledby="label{{ client.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ client.id }}">Modificando {{ client.name }}</h1>
+                                                <button id="btn-close-clients-modify-{{ client.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <form class="rw-3 text-center" action="{% url 'modify_client' client.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form">
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_name{{client.id}}" class="form-label">Nombre</label>
+                                                                <input autofocus class="form-control" type="text" name="name" id="modify_name{{client.id}}" value="{{ client.name }}">
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_select{{client.id}}" class="form-label">País</label>
+                                                                <select class="form-control" aria-label="country" name="country" id="modify_select{{client.id}}">
+                                                                    {% for country in countries %}
+                                                                        {% if country == client.country %}
+                                                                            <option selected value="{{ country.id }}">{{ country.code }} - {{ country.name }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ country.id }}">{{ country.code }} - {{ country.name }}</option>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>                                                      
+                                                        </div>
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_category{{client.id}}" class="form-label">Categoría</label>
+                                                                <select class="form-control" aria-label="category" name="category" id="modify_category{{client.id}}">
+                                                                    {% for category in categories %}
+                                                                        {% if category.0 == client.category %}
+                                                                            <option selected value="{{ category.0 }}">{{ category.1 }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ category.0 }}">{{ category.1 }}</option>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>     
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_department{{client.id}}" class="form-label">Departamento</label>
+                                                                <select class="form-control" aria-label="department" name="department" id="modify_department{{client.id}}">
+                                                                    {% for department in departments %}
+                                                                        {% if department.0 == client.department %}
+                                                                            <option selected value="{{ department.0 }}">{{ department.0}} - {{ department.1 }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ department.0 }}">{{ department.0}} - {{ department.1 }}</option>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="form-check-sm mb-3 col">
+                                                                <br>
+                                                                {% if client.isActivated == True %}
+                                                                    <input class="form-check-input mb-3" type="checkbox" id="modify_isActivated{{client.id}}" name="isActivated" checked>
+                                                                {% else %}
+                                                                    <input class="form-check-input" type="checkbox" id="modify_isActivated{{client.id}}" name="isActivated">
+                                                                {% endif %}
+                                                                <label class="form-check-label" for="modify_isActivated{{client.id}}">
+                                                                Activado
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        <input id="modify-client-{{ client.id }}" class="btn btn-dark btn-lg modify-clients-btn" type="submit" value="MODIFICAR">
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="modal fade modal-lg" id="windowClientTrash{{ client.id }}" tabindex="-1" aria-labelledby="label{{ client.id }}">
                                     <div class="modal-dialog">
