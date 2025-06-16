@@ -32,6 +32,7 @@ urlpatterns = [
     path("entries_trip/json/<int:trip_id>", views.jsontrip_entries, name="jsontrip_entries"),
     path("notes_trip/json/<int:trip_id>", views.jsontrip_notes, name="jsontrip_notes"),
     path("entries/json/<int:entry_id>", views.json_entry, name="json_entry"),
+    path("entries/json/pendings", views.json_pendings, name="json_pendings"),
 
     # API routes for configurations
     path("countries/json/<int:country_id>", views.jsoncountry, name="jsoncountry"),

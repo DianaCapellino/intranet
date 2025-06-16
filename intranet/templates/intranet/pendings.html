@@ -4,9 +4,45 @@
 <div id="entry_list">
     <div class="container">
         <br>
-        <div>
-            <h2 class="d-inline">Pendientes</h2>
-            <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <h2 class="d-inline">Pendientes</h2>
+                <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
+            </div>
+            <div>
+                <select class="form-select" aria-label="user_filter" name="user_filter" id="user_filter_select">
+                    <option selected value="">Todos</option>
+                    {% for user in users %}
+                        {% if user.isActivated %}
+                            <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="button" id="new_entry_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada" data-bs-toggle="modal" data-bs-target="#windowEntryNew"><i class="fa-solid fa-plus"></i></button>
+        </div>
+        <div class="modal fade modal-lg" id="windowEntryNew" tabindex="-1" aria-labelledby="labelEntryNew">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-8" id="labelNew">Creando Nueva Entrada</h1>
+                        <button id="btn-close-entries-new" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3>Seleccionar el viaje al que se le agregará la entrada:</h3>
+                        <br>
+                        <select class="form-select" aria-label="trip_entry" name="trip_entry" id="trip_entry">
+                            {% for trip in trips %}
+                                <option value="{{ trip.id }}">{{ trip.name }} x {{ trip.quantity_pax }} - {{ trip.client }}</option>
+                            {% endfor %}
+                        </select>
+                        <br>
+                        <div class="container text-center">
+                            <a id="new-entries-link" href=""><button class="btn btn-dark btn-lg new-entries-btn">AGREGAR</button></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     
         {% if message %}
@@ -25,12 +61,15 @@
                                 <th>Fecha Respuesta</th>
                                 <th>Viaje</th>
                                 <th>Status</th>
-                                <th>Versión</th>
                                 <th>Monto</th>
-                                <th>Cotizado por</th>
-                                <th>Trabajado por</th>
+                                <th>Cliente</th>
+                                <th>Vendedor</th>
+                                <th>Referencia</th>
+                                <th>Cot. por</th>
+                                <th>Trab. por</th>
                                 <th>Progreso</th>
                                 <th>Valoración</th>
+                                <th>Observación</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -41,28 +80,35 @@
                                 {% else %}
                                     <tr id="row-entries-{{entry.id}}">
                                 {% endif %}
-                                    <td>{{entry.starting_date}}</td>
+                                    <td>{{entry.starting_date|date:"Y/m/d H:i"}}</td>
                                     {% if entry.isClosed == False %}
                                         <td>n/a</td>
                                     {% else %}
-                                        <td>{{entry.closing_date}}</td>
+                                        <td>{{entry.closing_date|date:"Y/m/d H:i"}}</td>
                                     {% endif %}
                                     <td>{{entry.trip}}</td>
-                                    <td>{{entry.status}}</td>
                                     {% if entry.status == "Quote" %}
-                                        <td>{{entry.version_quote}}</td>
+                                        <td>{{entry.status}} {{entry.version_quote}}</td>
                                     {% else %}
-                                        <td>{{entry.version}}</td>
+                                        <td>{{entry.status}} {{entry.version}}</td>
                                     {% endif %}
                                     {% if entry.amount == none %}
                                         <td>Pendiente</td>
                                     {% else %}
-                                        <td>{{entry.amount}}</td>
+                                        <td>USD {{entry.amount}}</td>
                                     {% endif %}
+                                    <td>{{entry.trip.client}}</td>
+                                    <td>{{entry.trip.contact}}</td>
+                                    <td>{{entry.trip.client_reference}}</td>
                                     <td>{{entry.user_creator}}</td>
                                     <td>{{entry.user_working}}</td>
                                     <td>{{entry.progress}}</td>
                                     <td>{{entry.importance}}</td>
+                                    {% if entry.note != None %}
+                                        <td>{{entry.note}}</td>
+                                    {% else %}
+                                        <td>n/a</td>
+                                    {% endif %}
                                     <td class="align-middle">
                                         <div class="justify-content-around d-flex">
                                             <a id="pencil-edit-entry" href="{% url 'modify_entry' entry.id %}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{{entry.id}}"></i></a>

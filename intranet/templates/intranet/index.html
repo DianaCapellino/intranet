@@ -4,14 +4,26 @@
     <br>
     <div class="row">
         <div class="col-4">
-            <h3 class="d-inline">Pendientes</h3>
+            <h4 class="d-inline">Pendientes</h4>
             <i class="fa-solid fa-passport display-6 m-3"></i>
             <br>
             <hr>
             <canvas id="pendings_chart"></canvas>
+            <br>
+            <div class="row">
+                <div class="col">
+                    <p>Total Cotizaciones: <strong class="fw-bold">{{total_quotes}}</strong></p>
+                    <p>Total Bookings: <strong class="fw-bold">{{total_bookings}}</strong></p>
+                    <p>Total Finals: <strong class="fw-bold">{{total_finals}}</strong></p>
+                    <p>Total Otros: <strong class="fw-bold">{{total_others}}</strong></p>
+                </div>
+                <div class="col">
+                    <button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#my-pendings">MIS PENDIENTES</button>
+                </div>
+            </div>
         </div>
         <div class="col-4">
-            <h3 class="d-inline">Pasajeros IN SITU</h3>
+            <h4 class="d-inline">Pasajeros IN SITU</h4>
             <i class="fa-solid fa-earth-americas display-6 m-3"></i>
             <br>
             <hr>
@@ -28,7 +40,7 @@
                 </thead>
                 <tbody>
                     {% for trip in pax_insitu %}
-                    <tr>
+                    <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
                         <td>{{ trip.travelling_date}}</td>
                         <td>{{ trip.name }}</td>
                         <td>{{ trip.client }}</td>
@@ -36,12 +48,51 @@
                         <td>{{ trip.responsable_user }}</td>
                         <td>{{ trip.operations_user }}</td>
                     </tr>
+                    <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                        <div class="modal-dialog modal-dialog-scrollable">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
+                                    <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <h2>Entradas</h2>
+                                        <div id="new_entry_container">
+                                            <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
+                                        </div>
+                                    </div>
+                                    <br>
+                                    <div id="entries-{{ trip.id }}"></div>
+                                    <br>
+                                    <h2>Notas</h2>
+                                    <br>
+                                    <div id="notes-{{ trip.id }}">
+                                        <div id="notes{{ trip.id }}" class="container">
+                                            <form action="{% url 'create_note' trip.id %}" method="post">
+                                                {% csrf_token %}
+                                                <div class="form-group">
+                                                    <input class="form-control" type="text" name="content">
+                                                    <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
+                                                </div>
+                                            </form>
+                                            {% for note in notes %}
+                                                {% if note.trip.id == trip.id %}
+                                                    <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         <div class="col-4" id="pax-arriving">
-            <h3 class="d-inline">Pasajeros viajando pronto</h3>
+            <h4 class="d-inline">Pasajeros viajando pronto</h4>
             <i class="fa-solid fa-plane-arrival display-6 m-3"></i>
             <br>
             <hr>
@@ -58,7 +109,7 @@
                 </thead>
                 <tbody>
                     {% for trip in pax_arriving %}
-                    <tr>
+                    <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
                         <td>{{ trip.travelling_date}}</td>
                         <td>{{ trip.name }}</td>
                         <td>{{ trip.client }}</td>
@@ -66,9 +117,150 @@
                         <td>{{ trip.responsable_user }}</td>
                         <td>{{ trip.operations_user }}</td>
                     </tr>
+                    <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                        <div class="modal-dialog modal-dialog-scrollable">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
+                                    <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <h2>Entradas</h2>
+                                        <div id="new_entry_container">
+                                            <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
+                                        </div>
+                                    </div>
+                                    <br>
+                                    <div id="entries-{{ trip.id }}"></div>
+                                    <br>
+                                    <h2>Notas</h2>
+                                    <br>
+                                    <div id="notes-{{ trip.id }}">
+                                        <div id="notes{{ trip.id }}" class="container">
+                                            <form action="{% url 'create_note' trip.id %}" method="post">
+                                                {% csrf_token %}
+                                                <div class="form-group">
+                                                    <input class="form-control" type="text" name="content">
+                                                    <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
+                                                </div>
+                                            </form>
+                                            {% for note in notes %}
+                                                {% if note.trip.id == trip.id %}
+                                                    <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+    <div class="modal modal-fade modal-xl" id="my-pendings">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Pendientes</h3>
+                    <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <div>
+                    {% for entry in pendings %}
+                        {% if entry.0 == request.user.username %}
+                        <div class="row">
+                            <p class="col">Cotizaciones: {{entry.1}}</p>
+                            <p class="col">Bookings: {{entry.2}}</p>
+                            <p class="col">Finals: {{entry.3}}</p>
+                            <p class="col">Others: {{entry.4}}</p>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                    </div>
+                    <div>
+                        <div class="table table-striped" style="width:100%">
+                            <table id="entries-index" class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha Pedido</th>
+                                        <th>Viaje</th>
+                                        <th>Status</th>
+                                        <th>Monto</th>
+                                        <th>Cliente</th>
+                                        <th>Vendedor</th>
+                                        <th>Progreso</th>
+                                        <th>Valoración</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for entry in entries %}
+                                        {% if entry.isClosed == False and entry.user_working == request.user %}
+                                        <tr id="row-entries-{{entry.id}}">
+
+                                            <td>{{entry.starting_date|date:"Y/m/d H:i"}}</td>
+                                            <td>{{entry.trip}}</td>
+                                            {% if entry.status == "Quote" %}
+                                                <td>{{entry.status}} {{entry.version_quote}}</td>
+                                            {% else %}
+                                                <td>{{entry.status}} {{entry.version}}</td>
+                                            {% endif %}
+                                            {% if entry.amount == none %}
+                                                <td>Pendiente</td>
+                                            {% else %}
+                                                <td>USD {{entry.amount}}</td>
+                                            {% endif %}
+                                            <td>{{entry.trip.client}}</td>
+                                            <td>{{entry.trip.contact}}</td>
+                                            <td>{{entry.progress}}</td>
+                                            <td>{{entry.importance}}</td>
+                                            <td class="align-middle">
+                                                <div class="justify-content-around d-flex">
+                                                    <a id="pencil-edit-entry" href="{% url 'modify_entry' entry.id %}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{{entry.id}}"></i></a>
+                                                    <i class="fa-solid fa-trash" id="trash-entries-{{entry.id}}" data-bs-toggle="modal" data-bs-target="#windowEntryTrash{{ entry.id }}"></i>
+                                                </div>
+                                                <div class="modal fade modal-lg" id="windowEntryTrash{{ entry.id }}" tabindex="-1" aria-labelledby="labelEntry{{ entry.id }}">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                {% if entry.status == "Quote" %}
+                                                                    <h1 class="modal-title fs-8" id="label{{ entry.id }}">Eliminando {{ entry.status }} {{ entry.version_quote }} de {{ entry.trip }}</h1>
+                                                                {% else %}
+                                                                    <h1 class="modal-title fs-8" id="label{{ entry.id }}">Eliminando {{ entry.status }} {{ entry.version }} de {{ entry.trip }}</h1>
+                                                                {% endif %}
+                                                                <button id="btn-close-entries-{{ entry.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                {% if entry.status == "Quote" %}
+                                                                    <h3>¿Está seguro que desea eliminar la entrada {{ entry.status }} {{ entry.version_quote }} de {{ entry.trip }}?</h3>
+                                                                {% else %}
+                                                                    <h3>¿Está seguro que desea eliminar la entrada {{ entry.status }} {{ entry.version }} de {{ entry.trip }}?</h3>
+                                                                {% endif %}
+                                                                <br>
+                                                                <div class="container text-center">
+                                                                    <button id="delete-entry-{{ entry.id }}" class="btn btn-dark btn-lg delete-entries-btn">ELIMINAR</button></a>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="close-my-pendings" type="button" class="btn btn-dark" data-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
         </div>
     </div>
     <br>

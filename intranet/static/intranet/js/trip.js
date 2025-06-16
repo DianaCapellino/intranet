@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("users");
     create_datatable("entries-creating");
     create_datatable("tariff-table");
+    create_datatable("entries-index");
 
     // Modifies the date format to be shown in the forms
     modify_date_and_datetime();
@@ -23,11 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Creates the listeners when opening and closing modals
     modal_functionality();
 
-    // Creates the listeners when selecting the user when creating entry
+    // Creates the listeners when selecting the user when creating entry and filtering
     user_working_functionality();
+    user_filter_functionality();
 
-    // Creates the listeners when clicking the plus button
-    //plus_btn_functionality();
+    create_entry_from_pendings();
 
     // Creates the listeners for deleting elements
     deleting_functionality("countries");
@@ -57,19 +58,6 @@ function modify_date_and_datetime() {
     allDatesArray.forEach(date => {
         date.value = local_ISO_date;
     });
-}
-
-function plus_btn_functionality() {
-    //const plus_btn = document.getElementById('new_trip_plus');
-    //const new_trip_btn = document.getElementById('new_trip_btn');
-
-    //plus_btn.addEventListener('click', () => {
-    //    window.location = '../trips';
-    //    document.addEventListener('DOMContentLoaded', function() {
-    //        btn_display("trip");
-    //    });
-    //});
-
 }
 
 function create_datatable (type) {
@@ -108,13 +96,61 @@ function create_datatable (type) {
                     ]
                 }
             },
-            columnDefs: [{ orderable: false, targets: -1 }],
+            lengthMenu: [ [30, 20, -1], [30, 20, "Todos"] ],
+            columnDefs: [
+                { orderable: false, targets: -1 },
+                { width: '20%', target: 2 },
+                { visible: false, targets: [4, 7, 12]}
+            ],
             language: {
                 url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
             },
             order: [[0, 'desc']],
         });       
 
+    } else if (type == ("trips")){
+        new DataTable(`#${type}`, {
+            layout: {
+                topStart: {
+                    buttons: [
+                        {
+                          extend: 'excelHtml5',
+                          text: '<i class="fas fa-file-excel"></i>',
+                          titleAttr: 'Exportar a Excel',
+                          className: 'btn btn-dark m-1',
+                          exportOptions: {
+                            columns: ':visible'
+                          }
+                        },
+                        {
+                            extend: 'print',
+                            text: '<i class="fa fa-print"></i>',
+                            titleAttr: 'Imprimir',
+                            className: 'btn btn-dark m-1',
+                            exportOptions: {
+                              columns: ':visible'
+                            }
+                        },
+                        {
+                            extend: 'colvis',
+                            text: 'Gestionar Columnas',
+                            titleAttr: 'Columnas',
+                            className: 'btn btn-dark m-1',
+                            exportOptions: {
+                              columns: ':visible'
+                            }
+                        }
+                    ]
+                }
+            },
+            columnDefs: [
+                { orderable: false, targets: -1 },
+                { visible: false, targets: [2, 9, 10, 11, 12, 13, 14, 15]}
+            ],
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
+            },
+        });
     } else {
         new DataTable(`#${type}`, {
             layout: {
@@ -231,14 +267,28 @@ function modal_functionality() {
                             entries.push(element.id);
                         };
                     });
-                    console.log(entries);
                     entry_id = entries[0];
-                    console.log(entries[0]);
-                    console.log(trip_id);
-                    console.log(entry_id);
                     document.getElementById(`link-edit-entry${trip_id}`).setAttribute("href", `/modify_entry/${entry_id}`);
                 });
             })
+        });
+    };
+    const my_pendings = document.getElementById('my-pendings');
+    if (my_pendings) {
+        const my_pendings_modal = new bootstrap.Modal(my_pendings);
+        const close_my_pendings = document.getElementById('close-my-pendings');
+        close_my_pendings.addEventListener('click', () => {
+            my_pendings_modal.hide();
+        });
+    };
+}
+
+function create_entry_from_pendings() {
+    const trip_entry = document.getElementById('trip_entry');
+    if (trip_entry != null) {
+        trip_entry.addEventListener('change', function() {
+            const selectedValue = this.value;
+            document.getElementById('new-entries-link').setAttribute("href", `/create_entry/${selectedValue}`);
         });
     };
 }
@@ -280,6 +330,17 @@ function user_working_functionality() {
     };
 }
 
+function user_filter_functionality() {
+    const user_filter_select = document.getElementById('user_filter_select');
+    if (user_filter_select != null) {
+        user_filter_select.addEventListener('change', function() {
+            const selectedValue = this.value;
+            let entries = $('#entries').DataTable();
+            entries.column(9).search(selectedValue).draw();
+        });
+    };
+}
+
 function deleting_functionality(type) {
     const all_delete_btns = document.querySelectorAll(`.delete-${type}-btn`);
     all_delete_btns.forEach((item) => {
@@ -316,6 +377,150 @@ function deleting_functionality(type) {
         };
     });
 }
+
+
+function display_entries(trip_id) {
+
+    fetch(`/entries_trip/json/${trip_id}`)
+    .then(response => response.json())
+    .then(list => {
+
+        // If creates the empty table
+        const table_body = create_table("entries", trip_id);
+
+        // Creates all the rows
+        if (Array.isArray(list)) {
+            list.forEach(element => {
+                const entry_row = create_entry_row(element, trip_id);
+                table_body.appendChild(entry_row);
+            });
+        };
+    });
+}
+
+function clear_old_table (type, trip_id) {
+    const table_datatable = $(`${type}-${trip_id}`).DataTable();
+    if (table_datatable) {
+        table_datatable.destroy();
+    };
+
+    const table_wrapper = document.getElementById(`${type}-table-${trip_id}_wrapper`);
+    if (table_wrapper) {
+        table_wrapper.remove();
+    };
+
+    const table = document.getElementById(`${type}-table-${trip_id}`);
+    if (table) {
+        table.remove();
+    };
+}
+
+function create_table(type, reference) {
+    // Get the div where the table will be displayed
+    const div = document.querySelector(`#${type}-${reference}`);
+
+    // Creates the table inside the modal
+    const table = document.createElement('table');
+    const head = document.createElement('thead');
+    const body = document.createElement('tbody');
+
+    table.id = `${type}-table-${reference}`;
+    table.classList.add('table');
+    table.classList.add('table-hover');
+
+    // Creates table head
+    if (type == "entries") {
+        head.innerHTML = '<th>Fecha Pedido</th><th>Fecha Respuesta</th><th>Status</th><th>Versión</th><th>Monto</th><th>Trabajado por</th><th>Progreso</th><th>Valoración</th><th>Acciones</th>';
+    };
+    
+    // Add the content to the table created
+    table.appendChild(body);
+    table.appendChild(head);
+    div.appendChild(table);
+    
+    // Gets the datatable format with the spanish language activated
+    new DataTable(table, {
+        language: {
+            url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
+        },
+        order: [[0, 'desc']],
+        lengthMenu: [ [5, 10, 20, -1], [5, 10, 20, "Todos"] ],
+        columnDefs: [{ orderable: false, targets: -1 }]
+    });
+    return body;
+}
+
+function create_entry_row(element, trip_id) {
+    
+    // Creates table row
+    const entry_row = document.createElement('tr');
+
+    const starting_date = document.createElement("td");
+    const closing_date = document.createElement("td");
+    const status = document.createElement("td");
+    const version = document.createElement("td");
+    const amount = document.createElement("td");
+    const user_working = document.createElement("td");
+    const progress = document.createElement("td");
+    const importance = document.createElement("td");
+    const actions = document.createElement("td");
+
+    
+    if (element.isClosed == false) {
+        closing_date.innerHTML = 'n/a';
+    } else {
+        closing_date.innerHTML = `${element.closing_date}`;
+    };
+
+    if (element.amount == null) {
+        amount.innerHTML = `Pendiente`;
+    } else {
+        amount.innerHTML = `USD ${element.amount}.00`;
+    };
+
+    if (element.status == "Quote") {   
+        version.innerHTML = `${element.version_quote}`;
+    } else {
+        version.innerHTML = `${element.version}`;
+    };
+
+    starting_date.innerHTML = `${element.starting_date}`;
+
+    if (element.starting_date == element.closing_date) {
+        closing_date.innerHTML = 'n/a';
+    } else {
+        closing_date.innerHTML = `${element.closing_date}`;
+    };
+    
+    status.innerHTML = `${element.status}`;
+    user_working.innerHTML = `${element.user_creator}`;
+    progress.innerHTML = `${element.progress}`;
+    importance.innerHTML = `${element.importance}`;
+    
+    const pencil = document.createElement("i");
+    const link_pencil = document.createElement("a");
+
+    pencil.className = 'fa-solid fa-pencil align-top'
+    link_pencil.setAttribute("href", `/modify_entry/${element.id}`);
+    link_pencil.setAttribute("id", 'pencil-edit-entry');
+
+    link_pencil.appendChild(pencil);
+    actions.appendChild(link_pencil);
+
+
+    entry_row.appendChild(starting_date);
+    entry_row.appendChild(closing_date);
+    entry_row.appendChild(status);
+    entry_row.appendChild(version);
+    entry_row.appendChild(amount);
+    entry_row.appendChild(user_working);
+    entry_row.appendChild(progress);
+    entry_row.appendChild(importance);
+    entry_row.appendChild(actions);
+    
+    return entry_row;
+}
+
 
 function create_json_element_by_type(type, item, id) {
     let data;
@@ -404,240 +609,127 @@ function create_json_element_by_type(type, item, id) {
     return data
 }
 
-function display_entries(trip_id) {
-
-    fetch(`/entries_trip/json/${trip_id}`)
-    .then(response => response.json())
-    .then(list => {
-
-        // If creates the empty table
-        const table_body = create_table("entries", trip_id);
-
-        // Creates all the rows
-        if (Array.isArray(list)) {
-            list.forEach(element => {
-                const entry_row = create_entry_row(element, trip_id);
-                table_body.appendChild(entry_row);
-            });
-        };
-    });
-}
-
-function clear_old_table (type, trip_id) {
-    const table_datatable = $(`${type}-${trip_id}`).DataTable();
-    if (table_datatable) {
-        table_datatable.destroy();
-    };
-
-    const table_wrapper = document.getElementById(`${type}-table-${trip_id}_wrapper`);
-    if (table_wrapper) {
-        table_wrapper.remove();
-    };
-
-    const table = document.getElementById(`${type}-table-${trip_id}`);
-    if (table) {
-        table.remove();
-    };
-}
-
-function create_table(type, reference) {
-    // Get the div where the table will be displayed
-    const div = document.querySelector(`#${type}-${reference}`);
-
-    // Creates the table inside the modal
-    const table = document.createElement('table');
-    const head = document.createElement('thead');
-    const body = document.createElement('tbody');
-
-    table.id = `${type}-table-${reference}`;
-    table.classList.add('table');
-    table.classList.add('table-hover');
-
-    // Creates table head
-    if (type == "entries") {
-        head.innerHTML = '<th>Fecha Pedido</th><th>Fecha Respuesta</th><th>Status</th><th>Versión</th><th>Monto</th><th>Trabajado por</th><th>Progreso</th><th>Valoración</th>';
-    };
-    
-    // Add the content to the table created
-    table.appendChild(body);
-    table.appendChild(head);
-    div.appendChild(table);
-    
-    // Gets the datatable format with the spanish language activated
-    new DataTable(table, {
-        language: {
-            url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
-        },
-        order: [[0, 'desc']],
-        lengthMenu: [ [5, 10, 20, -1], [5, 10, 20, "Todos"] ],
-        columnDefs: [{ orderable: false, targets: -1 }]
-    });
-    return body;
-}
-
-function create_entry_row(element, trip_id) {
-    
-    // Creates table row
-    const entry_row = document.createElement('tr');
-
-    const starting_date = document.createElement("td");
-    const closing_date = document.createElement("td");
-    const status = document.createElement("td");
-    const version = document.createElement("td");
-    const amount = document.createElement("td");
-    //const user_creator = document.createElement("td");
-    const user_working = document.createElement("td");
-    const progress = document.createElement("td");
-    const importance = document.createElement("td");
-    //const actions = document.createElement("td");
-
-    
-    if (element.isClosed == false) {
-        closing_date.innerHTML = 'n/a';
-    } else {
-        closing_date.innerHTML = `${element.closing_date}`;
-    };
-
-    if (element.amount == null) {
-        amount.innerHTML = `Pendiente`;
-    } else {
-        amount.innerHTML = `USD ${element.amount}.00`;
-    };
-
-    if (element.status == "Quote") {   
-        version.innerHTML = `${element.version_quote}`;
-    } else {
-        version.innerHTML = `${element.version}`;
-    };
-
-    starting_date.innerHTML = `${element.starting_date}`;
-
-    if (element.starting_date == element.closing_date) {
-        closing_date.innerHTML = 'n/a';
-    } else {
-        closing_date.innerHTML = `${element.closing_date}`;
-    };
-    
-    status.innerHTML = `${element.status}`;
-    //user_creator.innerHTML = `${element.user_creator}`;
-    user_working.innerHTML = `${element.user_creator}`;
-    progress.innerHTML = `${element.progress}`;
-    importance.innerHTML = `${element.importance}`;
-
-
-    entry_row.appendChild(starting_date);
-    entry_row.appendChild(closing_date);
-    entry_row.appendChild(status);
-    entry_row.appendChild(version);
-    entry_row.appendChild(amount);
-    //entry_row.appendChild(user_creator);
-    entry_row.appendChild(user_working);
-    entry_row.appendChild(progress);
-    entry_row.appendChild(importance);
-    
-    return entry_row;
-}
-
-function create_chart(id) {
-    const ctx = document.getElementById(id);
-    if (ctx != null) {
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-              //labels: users_labels.map(row => row),
-              labels: ['DC', 'LP', 'MLV', 'AA', 'LT', 'PA'],
-              datasets: [{
-                label: 'Quotes',
-                //data: data.map(row => row[1]),
-                data: ['1', '3', '5', '3', '0', '4'],
-                borderWidth: 1    
-              },
-              {
-                  label: 'Bookings',
-                  //data: data.map(row => row[1]),
-                  data: ['3', '0', '1', '1', '2', '0'],
-                  borderWidth: 1
-              },
-              {
-                  label: 'Otros',
-                  //data: data.map(row => row[1]),
-                  data: ['0', '1', '2', '0', '4', '5'],
-                  borderWidth: 1
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              elements: {
-                  bar: {
-                    borderWidth: 2,
-                  }
-              },
-              responsive: true,
-              plugins: {
-                legend: {
-                  position: 'right',
-                }
-              }
-            }
-          });
-    };    
-}
-
 function get_data() {
-    // Creates the empty tables
-    var users_labels = [];
-    var data = [];
-    var columns = [];
-    var values = [];
 
-    fetch(`/entries/json`)
+    fetch(`/entries/json/pendings`)
     .then(response => response.json())
     .then(list => {
-
-        // Creates all the rows
-        if (Array.isArray(list)) {
-            list.forEach(element => {
-                if (element.isClosed === "false") {
-                    let column = 0;
-                    let user_label = 0;
-                    if (element.status === "Quote" || element.status === "Booking" || element.status === "Final Itinerary") {
-                        const isInColumn = look_label(columns, element.status);
-                        if (isInColumn === false) {
-                            columns.push(element.status);
-                            column = column + 1;
-                        };
-                        const isInUserLabels = look_label(users_labels, element.user_working);
-                        if (isInUserLabels === false) {
-                            users_labels.push(element.user_working);
-                            user_label = user_label + 1;
-                        };
+        let data = [];
+        let labels = [];
+        let quotes = [];
+        let bookings = [];
+        let finals = [];
+        let others = [];
+        let row_order = 0;
+        list.forEach(row => {
+            let order = 0;
+            row.forEach(element => {
+                if (row_order != 0) {
+                    if (order == 0) {
+                        labels.push(element);
+                    } else if (order == 1) {
+                        quotes.push(element);
+                    } else if (order == 2) {
+                        bookings.push(element);
+                    } else if (order == 3) {
+                        finals.push(element);
                     } else {
-                        const isInColumn = look_label(columns, "Otros");
-                        if (isInColumn === false) {
-                            columns.push("Otros");
-                            column = column + 1;
-                        };
-                        const isInUserLabels = look_label(users_labels, element.user_working);
-                        if (isInUserLabels === false) {
-                            users_labels.push(element.user_working);
-                            user_label = user_label + 1;
-                        };
+                        others.push(element);
                     };
+                    order++;
+                } else {
+                    order++;
                 };
             });
-        };
+            row_order++;
+        });
+        data.push(labels, quotes, bookings, finals, others);
+        //console.log(data);
+        return labels;
     });
 }
 
-function look_label(list, label) {
-    if (list) {
-        list.forEach(i => {
-            if (list[i] === label) {
-                return true
-            };
+
+function create_chart(id) {
+    let data;
+    
+    fetch(`/entries/json/pendings`)
+    .then(response => response.json())
+    .then(list => {
+        data = [];
+        let labels = [];
+        let quotes = [];
+        let bookings = [];
+        let finals = [];
+        let others = [];
+        let row_order = 0;
+        list.forEach(row => {
+            let order = 0;
+            row.forEach(element => {
+                if (row_order != 0) {
+                    if (order == 0) {
+                        labels.push(element);
+                    } else if (order == 1) {
+                        quotes.push(element);
+                    } else if (order == 2) {
+                        bookings.push(element);
+                    } else if (order == 3) {
+                        finals.push(element);
+                    } else {
+                        others.push(element);
+                    };
+                    order++;
+                } else {
+                    order++;
+                };
+            });
+            row_order++;
         });
-        return false
-    } else {
-        return false
-    };
+        data.push(labels, quotes, bookings, finals, others);
+
+        const ctx = document.getElementById(id);
+        Chart.defaults.font.size = 8;
+        if (ctx != null) {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Quotes',
+                    data: quotes,
+                    borderWidth: 1    
+                },
+                {
+                    label: 'Bookings',
+                    data: bookings,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Final Itinerary',
+                    data: finals,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Otros',
+                    data: others,
+                    borderWidth: 1
+                }]
+                },
+                options: {
+                indexAxis: 'y',
+                elements: {
+                    bar: {
+                        borderWidth: 2,
+                    }
+                },
+                responsive: true,
+                plugins: {
+                    legend: {
+                    position: 'right',
+                    }
+                }
+                }
+            });
+        };    
+    });
 }

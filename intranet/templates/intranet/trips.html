@@ -110,8 +110,8 @@
         <div class="d-flex align-items-center justify-content-between">
             <h2>Viajes</h2>
             <div id="new_trip_container">
-                <a href="{% url 'tourplan_files' %}"><button type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/tp.jpeg" style="width:20px"></button></a>
-                <a href="{% url 'read_emails' %}"><button type="button" id="reed_emails_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Leer e-mails"><i class="fa-solid fa-envelope"></i></button></a>
+                <a href=""><button disabled type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/tp.jpeg" style="width:20px"></button></a>
+                <a href=""><button disabled type="button" id="reed_emails_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Leer e-mails"><i class="fa-solid fa-envelope"></i></button></a>
                 <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo viaje"><i class="fa-solid fa-plus"></i></button>
             </div>
         </div>
@@ -127,39 +127,48 @@
                     <table id="trips" class="table table-hover">
                         <thead>
                             <tr>
+                                <th>TP#</th>
                                 <th>Nombre</th>
+                                <th>Tipo</th>
                                 <th>Status</th>
-                                <th>Version</th>
                                 <th>Monto</th>
                                 <th>Cliente</th>
                                 <th>Ref Cliente</th>
                                 <th>Contacto</th>
-                                <th>Fecha Viaje</th>
+                                <th>Fecha In</th>
+                                <th>Fecha Out</th>
+                                <th>Dif.</th>
+                                <th>VR</th>
+                                <th>OP</th>
+                                <th>Seg.</th>
+                                <th>DH</th>
+                                <th>Guía</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for trip in trips %}
                             <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
-                                <td>{{ trip.name }}</td>
-                                <td>{{ trip.status }}</td>
+                                <td>{{ trip.tourplanId }}</td>
+                                <td>{{ trip.name }} x {{ trip.quantity_pax }}</td>
+                                <td>{{ trip.trip_type }}</td>
                                 {% if trip.status == "Quote" %}
                                     {% if trip.version_quote == "@" %}
                                         <td class="text-danger">Sin entradas</td>
                                     {% else %}
-                                        <td>{{trip.version_quote}}</td>
+                                        <td>{{trip.status}} {{trip.version_quote}}</td>
                                     {% endif %}
                                 {% else %}
                                 {% if trip.version == 0 %}
                                     <td class="text-danger">Sin entradas</td>
                                 {% else %}
-                                    <td>{{ trip.version }}</td>
+                                    <td>{{trip.status}} {{ trip.version }}</td>
                                 {% endif %}
                                 {% endif %}
                                 {% if trip.amount == none %}
                                     <td>n/a</td>
                                 {% else %}
-                                    <td>{{ trip.amount }}</td>
+                                    <td>USD {{ trip.amount }}</td>
                                 {% endif %}
                                 <td>{{ trip.client }}</td>
                                 {% if trip.client_reference == none %}
@@ -168,7 +177,14 @@
                                     <td>{{ trip.client_reference }}</td>
                                 {% endif %}
                                 <td>{{ trip.contact }}</td>
-                                <td>{{ trip.travelling_date }}</td>
+                                <td>{{ trip.travelling_date|date:"Y/m/d" }}</td>
+                                <td>{{ trip.out_date|date:"Y/m/d" }}</td>
+                                <td>{{ trip.difficulty }}</td>
+                                <td>{{ trip.responsable_user }}</td>
+                                <td>{{ trip.operations_user }}</td>
+                                <td>{{ trip.dh_type }}</td>
+                                <td>{{ trip.dh }}</td>
+                                <td>{{ trip.guide }}</td>
                                 <td>
                                     <div class="justify-content-around d-flex">
                                         <i class="fa-solid fa-pencil" id="pencil-trip-{{trip.id}}" data-bs-toggle="modal" data-bs-target="#windowTripPencil{{ trip.id }}"></i>

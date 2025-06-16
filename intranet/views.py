@@ -16,6 +16,7 @@ import os
 from dotenv import load_dotenv
 
 
+
 @login_required
 def index (request):
 
@@ -39,9 +40,39 @@ def index (request):
     
     pax_insitu.sort(key=lambda trip: trip.travelling_date)
 
+    data = get_pendings()
+
+    total_quotes = 0
+    total_bookings = 0
+    total_finals = 0
+    total_others = 0
+
+    row_num = 0
+    for row in data:
+        if row_num != 0:
+            col_num = 0
+            for i in row:
+                if col_num == 1:
+                    total_quotes+=row[col_num]
+                elif col_num == 2:
+                    total_bookings+=row[col_num]
+                elif col_num == 3:
+                    total_finals+=row[col_num]
+                elif col_num == 4:
+                    total_others+=row[col_num]
+                col_num+=1
+        row_num+=1
+
     return render(request, "intranet/index.html", {
         "pax_arriving": pax_arriving,
         "pax_insitu": pax_insitu,
+        "notes": Notes.objects.all(),
+        "entries": Entry.objects.all(),
+        "pendings": data,
+        "total_quotes": total_quotes,
+        "total_bookings": total_bookings,
+        "total_finals": total_finals,
+        "total_others": total_others
     })
 
 def login_view (request):
@@ -70,6 +101,7 @@ def logout_view(request):
 
 def error (request):
     return render(request, "intranet/error.html")
+
 
 @login_required
 def create_country(request):
@@ -124,7 +156,7 @@ def create_client(request):
         category = request.POST["category"]
 
         # Validations
-        if not name or not country_form:
+        if not name or not country_form or not category:
             return render(request, "intranet/clients.html", {
                 "message": "Todos los campos deben ser completados",
                 "clients": Client.objects.all(),
@@ -589,7 +621,7 @@ def create_trip(request):
         status = request.POST["status"]
         difficulty = request.POST["difficulty"]
 
-        if not name or not starting_date or not client_form or not contact_form or not status or not difficulty:
+        if not name or not starting_date or not travelling_date or not client_form or not contact_form or not status or not difficulty:
             return render(request, "intranet/trips.html", get_return_page("trips", "error") )
         
         # Get the client from the client ID of the form
@@ -601,7 +633,7 @@ def create_trip(request):
         # Get the department from the user department
         department = request.user.department
 
-        # Set the default undefined users for the new trip booking options
+        # Set the default undefined users SD for the new trip booking options
         responsable_user = User.objects.get(pk=19)
         operations_user = User.objects.get(pk=19)
         dh = User.objects.get(pk=19)
@@ -624,11 +656,11 @@ def create_trip(request):
         )
         new_trip.save()
 
-        #return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
         return HttpResponse(status=204)
 
     else:
         return render(request, "intranet/trips.html", get_return_page("trips", ""))
+    
     
 @login_required
 def modify_trip(request, trip_id):
@@ -727,7 +759,7 @@ def create_note(request, trip_id):
 
         # Validations
         if not content:
-            return render(request, "intranet/pendings.html", get_return_page("trips", "error"))
+            return render(request, "intranet/trips.html", get_return_page("trips", "error"))
 
 
         # Creates the model of the note from the form information
@@ -789,16 +821,17 @@ def create_entry(request, trip_id):
             if (trip.version == 0):
                 trip.conversion_date = starting_date
                 trip.status = "Booking"
+                if first_entry != None:
+                    trip.user_creator = first_entry.user_working
+                    user_creator = first_entry.user_working
+                else:
+                    user_creator = user_working
                 trip.save()
             version = int(trip.version) + 1
             version_quote = trip.version_quote
-            user_creator = user_working
             trip.version += 1
         else:
-            version = int(trip.version) + 1
-            version_quote = trip.version
             user_creator = user_working
-            trip.version = version
 
         trip.save()
 
@@ -837,7 +870,10 @@ def modify_entry(request, entry_id):
     # Get the entry from the entry ID of the button
     entry = Entry.objects.get(id=entry_id)
 
-    iso_starting_date = entry.starting_date.isoformat()
+    # Rest the 3 hours and make the iso format to match the form
+    three_hours = timedelta(hours=3)
+    starting_date_local = entry.starting_date - three_hours
+    iso_starting_date = starting_date_local.isoformat()
     formated_starting_date = iso_starting_date[:16]
 
     if request.method == "POST":
@@ -1353,6 +1389,58 @@ def json_users(_request):
     users = list(User.objects.values())
     data = {'users': users}
     return JsonResponse(data)
+
+def get_pendings():
+    data = []
+    labels = []
+    columns = ["Nombre", "Quote", "Booking", "Final Itinerary", "Otro"]
+
+    data.append(columns)
+
+    pendings = Entry.objects.filter(isClosed=False)
+
+    for entry in pendings:
+        if entry.user_working.username not in labels:
+            labels.append(entry.user_working.username)
+
+    row = []
+    
+    for label in range(len(labels)):
+        for column in range(len(columns)):
+            row.append(0)
+        data.append(row)
+        row = []
+
+    # Create the first row data with the labels
+    row_num = 0
+    for row in data:
+        if row_num != 0:
+            num = 0
+            for i in row:
+                if num == 0:
+                    row[num] = labels[row_num-1]
+                num+=1
+        row_num+=1
+
+    for entry in pendings:
+        for row in data:
+            if row[0] == entry.user_working.username:
+                if entry.status == "Quote":
+                    row[1]+=1
+                elif entry.status == "Booking":
+                    row[2]+=1
+                elif entry.status == "Final Itinerary":
+                    row[3]+=1
+                else:
+                    row[4]+=1
+    return data
+
+@login_required
+@csrf_exempt
+def json_pendings(_request):
+    data = get_pendings()
+
+    return JsonResponse(data, safe=False)
 
 
 def read_emails(request):
