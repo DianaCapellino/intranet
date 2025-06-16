@@ -18,7 +18,7 @@
                     <p>Total Otros: <strong class="fw-bold">{{total_others}}</strong></p>
                 </div>
                 <div class="col">
-                    <button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#my-pendings">MIS PENDIENTES</button>
+                    <button type="button" class="btn btn-dark btn" data-bs-toggle="modal" data-bs-target="#my-pendings">MIS PENDIENTES</button>
                 </div>
             </div>
         </div>
@@ -173,10 +173,10 @@
                     {% for entry in pendings %}
                         {% if entry.0 == request.user.username %}
                         <div class="row">
-                            <p class="col">Cotizaciones: {{entry.1}}</p>
-                            <p class="col">Bookings: {{entry.2}}</p>
-                            <p class="col">Finals: {{entry.3}}</p>
-                            <p class="col">Others: {{entry.4}}</p>
+                            <p class="col">Cotizaciones: <strong class="fw-bold">{{entry.1}}</strong></p>
+                            <p class="col">Bookings: <strong class="fw-bold">{{entry.2}}</strong></p>
+                            <p class="col">Finals: <strong class="fw-bold">{{entry.3}}</strong></p>
+                            <p class="col">Others: <strong class="fw-bold">{{entry.4}}</strong></p>
                         </div>
                         {% endif %}
                     {% endfor %}
