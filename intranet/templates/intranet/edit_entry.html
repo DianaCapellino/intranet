@@ -31,7 +31,7 @@
                             {% if entry.amount == none %}
                                 <input autofocus class="form-control" type="number" name="amount" id="amount" value="">
                             {% else %}
-                                <input autofocus class="form-control" type="number" name="amount" id="amount" value="{{ entry.amount }}">
+                                <input autofocus class="form-control" type="number" name="amount" id="amount" value="{{ entry.trip.amount }}">
                             {% endif %}
                         </div>
                         <div class="form-check-sm mb-3 col">

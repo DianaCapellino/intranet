@@ -7,14 +7,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
 import json
 import datetime
 from datetime import datetime, date, timedelta
 from imap_tools import MailBox
 import os
 from dotenv import load_dotenv
-
+import csv
 
 
 @login_required
@@ -837,6 +837,9 @@ def create_entry(request, trip_id):
 
         progress = PROGRESS_OPTIONS[0]
 
+        if trip.amount != None or trip.amount != 0:
+            amount = trip.amount
+
         # Creates the model of the contact from the form information
         new_entry = Entry.objects.create(
             trip=trip,
@@ -848,6 +851,7 @@ def create_entry(request, trip_id):
             version_quote=version_quote,
             version=version,
             progress=progress[0],
+            amount=amount,
         )
         new_entry.save()
 
@@ -1465,8 +1469,91 @@ def read_emails(request):
         "emails": emails,
     })
 
+@login_required
 def tourplan_files(request):
-    return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
 
-def tourplan_costs(request):
-    return HttpResponseRedirect(reverse("tariff"))
+    if request.method == "POST":
+        form = CsvFormTourplanFiles(request.POST, request.FILES)
+        if form.is_valid():
+
+            form.save()
+
+            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
+            tourplan_files = upload_data(csv_obj)
+            print(tourplan_files)
+
+            return render(request, "intranet/tourplan_files.html", {
+                "form":form,
+                "tourplan_files":tourplan_files,
+                "users": User.objects.all,
+            })
+    else:
+        form = CsvFormTourplanFiles()
+
+    return render(request, "intranet/tourplan_files.html", {
+        "form":form,
+        "users": User.objects.all,
+    })
+
+def upload_data(csv_obj):
+
+    # List to be import
+    tourplan_list = []
+
+    user_usernames = []
+    all_users = User.objects.all()
+    for user in all_users:
+        user_usernames.append(user.username)
+    
+    # All trips
+    trip_ids = []
+    empty_ids = []
+    all_trips = Trip.objects.all()
+    for trip in all_trips:
+        if trip.tourplanId == None or trip.tourplanId == "":
+            empty_ids.append(trip.tourplanId)
+        else:
+            trip_ids.append(trip.tourplanId)
+
+    # Open the csv and read all the data
+    with open(csv_obj.file_name.path, 'r') as f:
+        reader = csv.reader(f, delimiter=';')
+
+        for i, row in enumerate(reader):
+            if i >= 7:
+                col_number = 1
+                for col in row:
+                    if col_number == 3:
+                        # Read only the lines with tourplan id
+                        if col in trip_ids:
+                            trip = Trip.objects.get(tourplanId=col)
+                            tourplan_list.append(trip)
+                            col_number+=1
+                        else:
+                            break
+                    elif col_number == 12:
+                        trip.guide = col
+                        trip.save()
+                        col_number+=1
+                    elif col_number == 15:
+                        if col in user_usernames:
+                            operations_user = User.objects.get(username=col)
+                            trip.operations_user = operations_user
+                            trip.save()
+                        col_number+=1
+                    elif col_number == 18:
+                        trip.amount = col
+                        trip.save()
+                        col_number+=1
+                    elif col_number == 20:
+                        trip.rent_perc = col
+                        trip.save()
+                        col_number+=1
+                    else:
+                        col_number+=1
+
+    csv_obj.read = True
+    csv_obj.save()
+    csv_obj.delete()
+
+    return tourplan_list

@@ -125,6 +125,7 @@ class Client(models.Model):
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="client_countries")
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
     category = models.CharField(max_length=64, choices=CLIENT_CATEGORIES, default="B")
+    tp_id = models.CharField(max_length=64, blank=True, null=True, default="")
 
     def __str__(self):
         return f"{self.name}"
@@ -172,6 +173,7 @@ class Trip(models.Model):
     responsable_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_responsable_users", null=True)
     operations_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_operations_users", null=True)
     quantity_pax = models.IntegerField(default=2)
+    rent_perc = models.FloatField(default=0, blank=True, null=True)
     guide = models.CharField(max_length=64, null=True, blank=True, default="")
     dh = models.ForeignKey(User, on_delete=models.CASCADE, related_name="dh_user", null=True)
     creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users")
@@ -251,7 +253,7 @@ class Absence(models.Model):
     absence_user = models.ManyToManyField(User, related_name="absence_users", blank=True)    
 
 
-class CsvFileTourplan (models.Model):
+class CsvFileTourplanFiles (models.Model):
     file_name = models.FileField(upload_to="csvFiles")
     uploaded_time = models.DateTimeField(auto_now_add=True)
     read = models.BooleanField(default=False)
@@ -259,7 +261,7 @@ class CsvFileTourplan (models.Model):
     def __str__(self):
         return f"Csv File ID: {self.id} - Csv Name: {self.file_name}"
     
-class CsvFormTourplan(forms.ModelForm):
+class CsvFormTourplanFiles (forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -269,7 +271,7 @@ class CsvFormTourplan(forms.ModelForm):
             visible.field.widget.attrs['aria-label'] = 'SUBIR'
 
     class Meta:
-        model = CsvFileTourplan
+        model = CsvFileTourplanFiles
         fields = ('file_name',)
         labels = {
             "file_name": ""

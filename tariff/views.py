@@ -3,8 +3,10 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from .models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
 import csv
-import pandas as pd
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt
 
+@login_required
 def tariff(request):
     return render(request, "tariff/tariff.html", {
         "products":Product.objects.all(),
@@ -19,6 +21,7 @@ def tariff(request):
         "rate_lines": RateLine.objects.all(),
     })
 
+@login_required
 def tp_mod_list(request):
 
     if request.method == "POST":

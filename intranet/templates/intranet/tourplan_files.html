@@ -1,29 +1,28 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-    {% if user.isAdmin %}
-
+    {% if request.user.isAdmin %}
         <h2>Actualizar Bookings</h2>
         <div id="update_bookings_container" class="text-center">
-            <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Actualizar Tarifario con Tourplan" data-bs-toggle="modal" data-bs-target="#windowTourplan"><i class="fa-solid fa-upload display-8"></i></button>
+            <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Actualizar Files con Tourplan" data-bs-toggle="modal" data-bs-target="#windowTourplan"><i class="fa-solid fa-upload display-8"></i></button>
         </div>
-        <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelUpdateTariff">
+        <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelUpdateFiles">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h1 class="modal-title fs-8" id="labelCreateEntry">Subir planilla de Tourplan</h1>
+                        <h1 class="modal-title fs-8" id="labelUpdateFiles">Subir planilla de Tourplan</h1>
                         <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
                     <div class="modal-body">
                         <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
                         <br>
-                        <form class="rw-3 text-center" action="{% url 'tourplan_files' %}" method="post" id="tp-tariff-form" enctype="multipart/form-data">
+                        <form class="rw-3 text-center" action="{% url 'tourplan_files' %}" method="post" id="tp-files-form" enctype="multipart/form-data">
                         {% csrf_token %}
                         {{ form.file_name }}
                         <br>
                         <div class="container text-center">
                             <a href=""><button id="upload_file" class="btn btn-dark btn-lg" type="submit">SUBIR</button></a>
-                            <a href="{% url 'tp_mod_list' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CANCELAR</button></a>
+                            <a href="{% url 'tourplan_files' %}"><button id="close-tourplan-files" class="btn btn-dark btn-lg">CANCELAR</button></a>
                         </div>
                         <br>
                         </form>
@@ -32,6 +31,22 @@
             </div>
         </div>
         <br>
+        <hr>
+        {% if tourplan_files %}
+            <h2>Viajes actualizados:</h2>
+            <br>
+            {% for trip in tourplan_files %}
+                <p>Nombre: {{trip.name}} - Monto: USD {{trip.amount}} - Guía: {{trip.guide}} - Operador: {{trip.operations_user.username}} - Rentabilidad: {{trip.rent_perc}}</p>
+            {% endfor %}
+        {% else %}
+            <p>Subir archivo primero.</p>
+        {% endif %}
+    {% else %}
+        <p>Solo usuarios administradores pueden subir archivos:</p>
+        {% for user in users%}
+            {% if user.isAdmin%}
+                <p>- {{ user.username }}/{{ user.other_name }}</p>
+            {% endif %}
+        {% endfor%}
     {% endif %}
-
 {% endblock %}
