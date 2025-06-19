@@ -139,6 +139,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'
 
+DISABLE_COLLECTSTATIC=1
+
 # load_dotenv()
 
 #OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
