@@ -1,25 +1,26 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Intranet{% endblock %}</title>
-    <link rel="icon" href="../../static/intranet/images/sello.ico" sizes="32x32">
+    <link rel="icon" href="{% static 'intranet/images/sello.ico' %}" sizes="32x32">
     <link href="https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.min.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/2.2.2/css/dataTables.bootstrap5.css" rel="stylesheet">
-    <link href="../../static/intranet/SCSS/custom.css" rel="stylesheet">
-    <link href="../../static/intranet/css/intranet.css" rel="stylesheet">
+    <link href="{% static 'intranet/SCSS/custom.css' %}" rel="stylesheet">
+    <link href="{% static 'intranet/css/intranet.css' %}" rel="stylesheet">
   </head>
   <body>
     <div id="header">
       <nav class="navbar navbar-expand-lg navbar-dark fixed-top bg-dark px-4 py-3">
         <div class="nav-item d-lg-none">
           {% if user.is_authenticated and user.department == "AI" %}
-            <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/logo.png" style="width:40px"></a>
+            <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:40px"></a>
           {% elif not user.is_authenticated %}
-            <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/say.png" style="width:50px"></a>
+            <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="width:50px"></a>
           {% else %}
-            <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/say.png" style="width:50px"></a>
+            <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="width:50px"></a>
           {% endif %}
           </div>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -28,11 +29,11 @@
           <div class="collapse navbar-collapse justify-content-between" id="navbarSupportedContent">
             <div class="nav-item d-none d-lg-block">
             {% if user.is_authenticated and user.department == "AI" %}
-              <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/logo.png" style="width:80px"></a>
+              <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:80px"></a>
             {% elif not user.is_authenticated %}
-              <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/say.png" style="height:40px"></a>
+              <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="height:40px"></a>
             {% else %}
-              <a class="nav-link" href="{% url 'index' %}"><img src="../../static/intranet/images/say.png" style="height:40px"></a>
+              <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="height:40px"></a>
             {% endif %}
             </div>
             {% if user.is_authenticated %}
@@ -110,6 +111,6 @@
     <script src="https://cdn.datatables.net/v/bs5/moment-2.29.4/jszip-3.10.1/dt-2.3.0/b-3.2.3/b-colvis-3.2.3/b-html5-3.2.3/b-print-3.2.3/date-1.5.5/fc-5.0.4/fh-4.0.1/r-3.0.4/sb-1.8.2/sp-2.3.3/sl-3.0.0/datatables.min.js" integrity="sha384-XubE+7PQuBY1pVVqr7bTUtnLVyn+s6yDRb9nTNnFcMb2JYzQ82qh331r+U1w3qfx" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
-    <script src="../../static/intranet/js/trip.js?n=1"></script>
+    <script src="{% static 'intranet/js/trip.js?n=1' %}"></script>
   </body>      
 </html>
