@@ -255,20 +255,20 @@ function modal_functionality() {
     if (edit_entry_when_creating) {
         edit_entry_when_creating.forEach((item) => {
             $(item).on('shown.bs.modal', function() {
-                let trip_id_string = item.id.match(/\d+/);
-                let trip_id = parseInt(trip_id_string[0]);
+                let user_id_string = item.id.match(/\d+/);
+                let user_id = parseInt(user_id_string[0]);
                 let entries = []
                 let entry_id;
                 fetch(`/entries/json`)
                 .then(response => response.json())
                 .then(list => {
                     list.forEach(element => {
-                        if (element.trip_id === trip_id) {
+                        if (element.request_user === user_id) {
                             entries.push(element.id);
                         };
                     });
                     entry_id = entries[0];
-                    document.getElementById(`link-edit-entry${trip_id}`).setAttribute("href", `/modify_entry/${entry_id}`);
+                    document.getElementById(`link-edit-entry${user_id}`).setAttribute("href", `/modify_entry/${entry_id}`);
                 });
             })
         });
@@ -343,39 +343,41 @@ function user_filter_functionality() {
 
 function deleting_functionality(type) {
     const all_delete_btns = document.querySelectorAll(`.delete-${type}-btn`);
-    all_delete_btns.forEach((item) => {
-        if (item != null) {
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-            item.addEventListener('click', () => {
+    if (all_delete_btns != null) {
+        all_delete_btns.forEach((item) => {
+            if (item != null) {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                item.addEventListener('click', () => {
 
-                // Gets the item id
-                const id_string = item.id.match(/\d+/);
-                const id = parseInt(id_string[0]);
+                    // Gets the item id
+                    const id_string = item.id.match(/\d+/);
+                    const id = parseInt(id_string[0]);
 
-                // Gets the complete row
-                const row = document.getElementById(`row-${type}-${id}`);
-                
-                // Makes the request to the server to delete
-                fetch(`${type}/json/${id}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken,
-                    },
-                })
-                .then(response => response.json)
+                    // Gets the complete row
+                    const row = document.getElementById(`row-${type}-${id}`);
+                    
+                    // Makes the request to the server to delete
+                    fetch(`${type}/json/${id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        },
+                    })
+                    .then(response => response.json)
 
-                // Close the modal
-                .then(document.getElementById(`btn-close-${type}-${id}`).click())
+                    // Close the modal
+                    .then(document.getElementById(`btn-close-${type}-${id}`).click())
 
-                // Start animation and remove row
-                .then(row.classList.add('row-delete'))
-                .then(row.onanimationend = () => {
-                    row.remove();
+                    // Start animation and remove row
+                    .then(row.classList.add('row-delete'))
+                    .then(row.onanimationend = () => {
+                        row.remove();
+                    });
                 });
-            });
-        };
-    });
+            };
+        });
+    }    
 }
 
 

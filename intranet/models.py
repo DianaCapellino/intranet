@@ -3,6 +3,7 @@ from django.db import models
 import django.utils.timezone
 from datetime import datetime, timedelta
 from django import forms
+from multiselectfield import MultiSelectField
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
@@ -211,6 +212,7 @@ class Entry(models.Model):
     importance = models.CharField(max_length=64, choices=IMPORTANCE_OPTIONS)
     progress = models.CharField(max_length=64, choices=PROGRESS_OPTIONS)
     note = models.CharField(max_length=500, null=True, blank=True)
+    creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users_entry")
 
     @property
     def response_days(self):
@@ -240,6 +242,7 @@ class Entry(models.Model):
             "isClosed": self.isClosed,
             "importance": self.importance,
             "progress": self.progress,
+            "request_user": self.creation_user.id
         }
         
 
@@ -276,3 +279,15 @@ class CsvFormTourplanFiles (forms.ModelForm):
         labels = {
             "file_name": ""
         }
+
+class Search (models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="search_users")
+    starting_date_from = models.DateField(verbose_name="starting_date_from")
+    starting_date_to = models.DateField(verbose_name="starting_date_to")
+    name = models.CharField(max_length=64)
+    client_reference = models.CharField(max_length=64)
+    tourplanId = models.CharField(max_length=64)
+    status = MultiSelectField(choices=STATUS_OPTIONS, max_length=500, blank=True, null=True)
+    difficulty = MultiSelectField(choices=DIFFICULTY_OPTIONS, max_length=500, blank=True, null=True)
+    responsable_user = models.ManyToManyField(User, related_name="responsable_users", blank=True)
+    operations_user = models.ManyToManyField(User, related_name="operations_users", blank=True)

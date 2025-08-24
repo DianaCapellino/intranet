@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
 import json
 import datetime
 from datetime import datetime, date, timedelta
@@ -40,7 +40,7 @@ def index (request):
     
     pax_insitu.sort(key=lambda trip: trip.travelling_date)
 
-    data = get_pendings()
+    data = get_pendings(request.user.department)
 
     total_quotes = 0
     total_bookings = 0
@@ -101,6 +101,129 @@ def logout_view(request):
 
 def error (request):
     return render(request, "intranet/error.html")
+
+
+def get_filtered_trips(user):
+
+    today = date.today()
+
+    try:
+        search = Search.objects.get(user=user)
+    except Search.DoesNotExist:
+        search = None
+
+
+    # Empty list of trips filtered
+    filter_trips = []
+
+    if search:
+        
+        # Filter the trips by deparment
+        dep_trips = Trip.objects.filter(department=user.department)
+
+
+        name_trips = dep_trips.filter(name__icontains=search.name)
+        client_ref_trips = name_trips.filter(client_reference__icontains=search.client_reference)
+        tourplan_ref_trips = client_ref_trips.filter(tourplanId__icontains=search.tourplanId)
+
+        filter_trips = tourplan_ref_trips
+        status_trips = []
+        """
+        if search.status:
+            for status in search.status:
+                status_trip = search_trips.filter(status=status)
+                if status_trips:
+                    status_trips.union(status_trip)
+                else:
+                    status_trips.append(status_trip)
+
+        print(status_trip)
+        filter_trips = status_trips
+        """
+
+    else:
+        dep_trips = Trip.objects.filter(department=user.department)
+
+        if user.userType == "Ventas":
+            filter_trips = dep_trips.filter(responsable_user=user)
+        else:
+            for trip in dep_trips:
+                if (trip.travelling_date - today).days < 16 and (trip.travelling_date - today).days >= 0:
+                    filter_trips.append(trip)
+
+    return filter_trips
+
+
+@login_required
+def advanced_search(request):
+    # Get 2 years from now
+    today = datetime.today()
+    days = 730
+    to_date = today + timedelta(days=days)
+
+    # Transform to ISO to use as a default in the form
+    to_date_iso = to_date.strftime("%Y-%m-%d")
+
+    if request.method == "POST":
+        
+        # Delete previous search/s
+        previous_search = Search.objects.filter(user=request.user)
+        previous_search.delete()
+
+        # Get the information from the form
+        starting_date_from_form = request.POST["starting_date_from"]
+        starting_date_to_form = request.POST["starting_date_to"]
+        name = request.POST["name"]
+        client_reference = request.POST["client_reference"]
+        tourplanId = request.POST["tourplanId"]
+        status = request.POST.getlist("status", None)
+        difficulty = request.POST.getlist("difficulty", None)
+        responsable_user_form = request.POST.getlist("responsable_user", None)
+        operations_user_form = request.POST.getlist("operations_user", None)
+
+        starting_date_from = datetime.fromisoformat(starting_date_from_form)
+        starting_date_to = datetime.fromisoformat(starting_date_to_form)
+
+        # Create the search info
+        search = Search.objects.create(
+            user=request.user,
+            starting_date_from=starting_date_from,
+            starting_date_to=starting_date_to,
+            name=name,
+            client_reference=client_reference,
+            tourplanId=tourplanId,
+            status=status,
+            difficulty=difficulty,
+        )
+        search.save()
+
+        # Add the information of users to the new search info
+        if responsable_user_form:
+            for user_id in responsable_user_form:
+                responsable_user = User.objects.get(id=user_id)
+                search.responsable_user.add(responsable_user)
+
+        if operations_user_form:
+            for operations_user_id in operations_user_form:
+                operations_user = User.objects.get(id=operations_user_id)
+                search.operations_user.add(operations_user)
+        
+        search.save()
+
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
+
+    else:
+        return render(request, "intranet/search.html", {
+            "trips":Trip.objects.all(),
+            "status": STATUS_OPTIONS,
+            "trip_types": TRIP_TYPES,
+            "dh_types": DH_TYPES,
+            "difficulty_options": DIFFICULTY_OPTIONS,
+            "clients": Client.objects.all(),
+            "contacts": ClientContact.objects.all(),
+            "users": User.objects.all(),
+            "to_date_default": to_date_iso,
+        })
 
 
 @login_required
@@ -366,6 +489,7 @@ def modify_user(request, user_id):
         # Modifies the model of the user from the form information
         try:
 
+            user.other_name=name
             user.username=username
             user.email=email
             user.department=department
@@ -526,14 +650,16 @@ def modify_country(request, country_id):
         })
     
     
-def get_return_page(page, type):
+def get_return_page(page, type, user):
 
-    # List of the dates formated for the form
+    filter_trips = get_filtered_trips(user)
+    print(filter_trips)
+
     formated_starting_dates = []
     formated_travelling_dates = []
     formated_out_dates = []
 
-    for trip in Trip.objects.all():
+    for trip in filter_trips:
         formated_starting_date = trip.starting_date.isoformat()
         formated_starting_dates.append((trip.id, formated_starting_date))
         formated_travelling_date = trip.travelling_date.isoformat()
@@ -543,7 +669,7 @@ def get_return_page(page, type):
         else:
             formated_out_date = (trip.travelling_date + timedelta(days=1)).isoformat()
         formated_out_dates.append((trip.id, formated_out_date))
-    
+
     if page == "trips":
 
         if type == "error":
@@ -555,13 +681,14 @@ def get_return_page(page, type):
                     "difficulty_options": DIFFICULTY_OPTIONS,
                     "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
-                    "trips": Trip.objects.all(),
+                    "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.all(),
                     "entries": Entry.objects.all(),
                     "notes": Notes.objects.all(),
+                    "one_hundred": 100,
                 }
         else:
             return {
@@ -571,13 +698,14 @@ def get_return_page(page, type):
                     "difficulty_options": DIFFICULTY_OPTIONS,
                     "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
-                    "trips": Trip.objects.all(),
+                    "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.all(),
                     "entries": Entry.objects.all(),
                     "notes": Notes.objects.all(),
+                    "one_hundred": 100,
                 }
         
     if page == "entries":
@@ -585,7 +713,7 @@ def get_return_page(page, type):
             return {
                     "message_new": "Completar todos los campos",
                     "entries": Entry.objects.all(),
-                    "trips": Trip.objects.all(),
+                    "trips": filter_trips,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -597,7 +725,7 @@ def get_return_page(page, type):
         else:
             return {
                     "entries": Entry.objects.all(),
-                    "trips": Trip.objects.all(),
+                    "trips": filter_trips,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -608,9 +736,21 @@ def get_return_page(page, type):
                 }
 
 
+def clean_search(request):
+
+    try:
+        # Delete previous search/s
+        previous_search = Search.objects.filter(user=request.user)
+        previous_search.delete()
+    except Search.DoesNotExist:
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
+
+    return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
+
 @login_required
 def create_trip(request):
 
+    # Get all the info from the form
     if request.method == "POST":
         name = request.POST["name"]
         starting_date = request.POST["starting_date"]
@@ -621,8 +761,9 @@ def create_trip(request):
         status = request.POST["status"]
         difficulty = request.POST["difficulty"]
 
+        # Return an error message if something is missing
         if not name or not starting_date or not travelling_date or not client_form or not contact_form or not status or not difficulty:
-            return render(request, "intranet/trips.html", get_return_page("trips", "error") )
+            return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user) )
         
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
@@ -659,7 +800,7 @@ def create_trip(request):
         return HttpResponse(status=204)
 
     else:
-        return render(request, "intranet/trips.html", get_return_page("trips", ""))
+        return render(request, "intranet/trips.html", get_return_page("trips", "", request.user))
     
     
 @login_required
@@ -699,7 +840,7 @@ def modify_trip(request, trip_id):
 
 
         if not name or not starting_date_form or not client_form or not contact_form or not status or not quantity_pax or not difficulty:
-            return render(request, "intranet/trips.html", get_return_page("trips", "error"))
+            return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user))
         
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
@@ -743,7 +884,7 @@ def modify_trip(request, trip_id):
         
         trip.save()
 
-        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
     
 
 @login_required
@@ -759,7 +900,7 @@ def create_note(request, trip_id):
 
         # Validations
         if not content:
-            return render(request, "intranet/trips.html", get_return_page("trips", "error"))
+            return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user))
 
 
         # Creates the model of the note from the form information
@@ -771,14 +912,14 @@ def create_note(request, trip_id):
         )
         new_note.save()
 
-        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", ""))
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
 
 
 @login_required
 def pendings(request):
 
     # Shows all entries
-    return render(request, "intranet/pendings.html", get_return_page("entries", ""))
+    return render(request, "intranet/pendings.html", get_return_page("entries", "", request.user))
     
 @login_required
 def create_entry(request, trip_id):
@@ -791,6 +932,7 @@ def create_entry(request, trip_id):
         status = request.POST["status"]
         importance = request.POST["importance"]
         user_working_form = request.POST["user_working"]
+        note = request.POST["note"]
 
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
@@ -852,6 +994,8 @@ def create_entry(request, trip_id):
             version=version,
             progress=progress[0],
             amount=amount,
+            creation_user=request.user,
+            note=note
         )
         new_entry.save()
 
@@ -1394,17 +1538,24 @@ def json_users(_request):
     data = {'users': users}
     return JsonResponse(data)
 
-def get_pendings():
-    data = []
-    labels = []
-    columns = ["Nombre", "Quote", "Booking", "Final Itinerary", "Otro"]
+def get_pendings(department):
 
+    # Empty list for the table
+    data = []
+
+    # Empty list for labels (each row)
+    labels = []
+
+    # Create the columns and add to the table
+    columns = ["Nombre", "Quote", "Booking", "Final Itinerary", "Otro"]
     data.append(columns)
 
+    # Filter only the entries that are not closed (pending)
     pendings = Entry.objects.filter(isClosed=False)
 
+    # Add only the labels once and the ones in the department of the user 
     for entry in pendings:
-        if entry.user_working.username not in labels:
+        if entry.user_working.username not in labels and entry.trip.department == department:
             labels.append(entry.user_working.username)
 
     row = []
@@ -1426,6 +1577,7 @@ def get_pendings():
                 num+=1
         row_num+=1
 
+    # Fill the information for each label (user)
     for entry in pendings:
         for row in data:
             if row[0] == entry.user_working.username:
@@ -1441,8 +1593,8 @@ def get_pendings():
 
 @login_required
 @csrf_exempt
-def json_pendings(_request):
-    data = get_pendings()
+def json_pendings(request):
+    data = get_pendings(request.user.department)
 
     return JsonResponse(data, safe=False)
 
@@ -1535,6 +1687,12 @@ def upload_data(csv_obj):
                         trip.guide = col
                         trip.save()
                         col_number+=1
+                    elif col_number == 14:
+                        if col in user_usernames:
+                            responsable_user = User.objects.get(username=col)
+                            trip.responsable_user = responsable_user
+                            trip.save()
+                        col_number+=1
                     elif col_number == 15:
                         if col in user_usernames:
                             operations_user = User.objects.get(username=col)
@@ -1557,3 +1715,236 @@ def upload_data(csv_obj):
     csv_obj.delete()
 
     return tourplan_list
+
+
+# Page to load the tourplan csv
+@login_required
+def tourplan_files(request):
+
+    if request.method == "POST":
+        form = CsvFormTourplanFiles(request.POST, request.FILES)
+        if form.is_valid():
+
+            form.save()
+
+            # Create data from tourplan csv
+            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
+            tourplan_files = upload_data(csv_obj)
+            print(tourplan_files)
+
+            return render(request, "intranet/tourplan_files.html", {
+                "form":form,
+                "tourplan_files":tourplan_files,
+                "users": User.objects.all,
+            })
+    else:
+        form = CsvFormTourplanFiles()
+
+    return render(request, "intranet/tourplan_files.html", {
+        "form":form,
+        "users": User.objects.all,
+    })
+
+
+def compare_ref(ref1, ref2):
+    if len(ref1) >= 7 and len(ref2) >= 7:
+        return ref1[:7] == ref2[:7]
+    else:
+        return False
+
+
+def compare_name(name1, name2):
+    if len(name1) >= 11 and len(name2) >= 11:
+        return name1[:11] == name2[:11]
+    else:
+        return False
+
+
+def upload_csv_intranet(csv_obj):
+
+    user_usernames = []
+    all_users = User.objects.all()
+    for user in all_users:
+        user_usernames.append(user.username)
+
+    clients_names = []
+    all_clients = Client.objects.all()
+    for client in all_clients:
+        clients_names.append(client.name)
+    
+    contact_names = []
+    all_contacts = ClientContact.objects.all()
+    for contact in all_contacts:
+        contact_names.append(contact.name)
+
+    # All trips
+    client_ref = []
+    name_ref = []
+    tourplanIds = []
+    all_trips = Trip.objects.all()
+    for trip in all_trips:
+        tourplanIds.append(trip.tourplanId)
+        if trip.client_reference == None or trip.client_reference == "" or trip.client_reference == "-" or trip.client_reference == "n/a":
+            name_ref.append(trip.name)
+        else:
+            client_ref.append(trip.client_reference)
+
+    # Empty list of temp objects
+    all_obj = []
+
+    # Open the csv and read all the data
+    with open(csv_obj.file_name.path, 'r') as f:
+        reader = csv.reader(f, delimiter=';')
+
+        for i, row in enumerate(reader):
+            if i >= 1:
+                col_number = 1
+                temp_obj = {}
+                for col in row:
+                    if col_number == 1:
+                        
+                        # Read only the lines with reference first
+                        if col != "" or col != None or col != "-":
+                            
+                            # Check if any of the references matches with this column
+                            for ref in client_ref:
+                                is_same_ref = compare_ref(col, ref)
+
+                            # Ignore if it is the same reference and goes to next row
+                            if is_same_ref or col in client_ref:
+                                print(is_same_ref)
+                                break
+
+                        else:
+                            client_ref.append(col)
+
+                        temp_obj["client_reference"] = col
+                        
+                        col_number+=1
+                    elif col_number == 2:
+                        # If there is no reference check the name
+                        for name in name_ref:
+                            is_same_name = compare_name(col, name)
+
+                        # Ignore if it is the same reference and goes to next row
+                        if is_same_name or col in name_ref:
+                            break
+
+                        temp_obj["name"] = col
+                        name_ref.append(col)
+                        col_number+=1
+                    elif col_number == 3:
+                        temp_obj["status"] = col
+                        col_number+=1
+                    elif col_number == 6:
+                        temp_obj["trip_type"] = col
+                        col_number+=1
+                    elif col_number == 9:
+                        if col == "n/a":
+                            date_obj = datetime.today()
+                            temp_obj["travelling_date"] = date_obj.strftime("%Y-%m-%d")
+                        else:
+                            date_obj = datetime.strptime(col, "%d/%m/%Y")
+                            formatted_date = date_obj.strftime("%Y-%m-%d")
+                            temp_obj["travelling_date"] = formatted_date
+                        col_number+=1
+                    elif col_number == 10:
+                        if col != "":
+                            temp_obj["amount"] = float(col)
+                        else:
+                            temp_obj["amount"] = 0
+                        col_number+=1
+                    elif col_number == 11:
+                        client_found = False
+                        for client in clients_names:
+                            is_client = compare_ref(client, col)
+                            if is_client:
+                                temp_obj["client"] = Client.objects.get(name=client)
+                                client_found = True
+                                col_number+=1
+                        if not client_found:
+                            print("Client not found, retry when it is created: ", col)
+                            break
+                    elif col_number == 12:
+                        contact_found = False
+                        for contact in contact_names:
+                            is_contact = compare_ref(contact, col)
+                            if is_contact:
+                                temp_obj["contact"] = ClientContact.objects.get(name=contact)
+                                contact_found = True
+                        if not contact_found:
+                            temp_obj["contact"] = ClientContact.objects.get(name="Sin Contacto")
+                        col_number+=1
+                    elif col_number == 13:
+                        if col != "":
+                            temp_obj["department"] = col
+                        else:
+                            temp_obj["department"] = "AI"
+                        col_number+=1
+                    elif col_number == 19:
+                        temp_obj["tourplanId"] = col
+                        col_number+=1
+                    else:
+                        col_number+=1
+                if temp_obj:
+                    #print(temp_obj)
+                    for ref in client_ref:
+                        if temp_obj["client_reference"] == ref:
+                            break
+                    for ref in tourplanIds:
+                        if temp_obj["tourplanId"] == ref:
+                            break
+
+                    trip_obj = Trip.objects.create(
+                        name=temp_obj["name"],
+                        status=temp_obj["status"],
+                        client=temp_obj["client"],
+                        client_reference=temp_obj["client_reference"],
+                        contact=temp_obj["contact"],
+                        difficulty=1,
+                        department=temp_obj["department"],
+                        responsable_user=User.objects.get(username="SD"),
+                        operations_user=User.objects.get(username="SD"),
+                        dh=User.objects.get(username="SD"),
+                        creation_user=User.objects.get(username="KoalaDiana"),
+                        trip_type=temp_obj["trip_type"],
+                        travelling_date=temp_obj["travelling_date"],
+                        tourplanId=temp_obj["tourplanId"],
+                    )
+
+                    #trip_obj.save()
+                    print(trip_obj)
+
+                    all_obj.append(trip_obj)
+
+    csv_obj.read = True
+    csv_obj.save()
+    csv_obj.delete()
+
+    return all_obj
+
+
+@login_required
+def intranet_files(request):
+
+    if request.method == "POST":
+        form = CsvFormTourplanFiles(request.POST, request.FILES)
+        if form.is_valid():
+
+            form.save()
+
+            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
+            intranet_files = upload_csv_intranet(csv_obj)
+
+            return render(request, "intranet/intranet_files.html", {
+                "form":form,
+                "intranet_files":intranet_files,
+                "users": User.objects.all,
+            })
+    else:
+        form = CsvFormTourplanFiles()
+
+    return render(request, "intranet/intranet_files.html", {
+        "form":form,
+        "users": User.objects.all,
+    })

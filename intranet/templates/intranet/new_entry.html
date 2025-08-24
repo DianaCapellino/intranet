@@ -65,11 +65,16 @@
                             </select>
                         </div>
                     </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR" data-bs-toggle="modal" data-bs-target="#windowEditEntry{{ trip.id }}">
+                    <div class="row">
+                        <div class="mb-3 col-12">
+                            <input class="form-control" type="text" maxlength="100" name="note" id="note" placeholder="Observación (de esta cotización/reserva)...">
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR" data-bs-toggle="modal" data-bs-target="#windowEditEntry{{ user.id }}">
                 </div>
             </form>
         </div>
-        <div class="modal fade modal-lg editing-entry" id="windowEditEntry{{ trip.id }}" tabindex="-1" aria-labelledby="labelEditEntry">
+        <div class="modal fade modal-lg editing-entry" id="windowEditEntry{{ user.id }}" tabindex="-1" aria-labelledby="labelEditEntry">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -81,7 +86,7 @@
                         <p>Se podrán agregar en esta opción más detalles.</p>
                         <br>
                         <div class="container text-center">
-                            <a href="" id="link-edit-entry{{trip.id}}"><button id="create-entry" class="btn btn-dark btn-lg">EDITAR</button></a>
+                            <a href="" id="link-edit-entry{{request.user.id}}"><button id="create-entry" class="btn btn-dark btn-lg">EDITAR</button></a>
                             <a href="{% url 'trips' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CERRAR</button></a>
                         </div>
                     </div>

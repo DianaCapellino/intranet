@@ -1,0 +1,110 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="modify_entry">
+    <div class="container">
+        <h2>Búsqueda Avanzada</h2>
+
+        {% if message %}
+            <div class="message text-center">{{ message }}</div>
+        {% endif %}
+
+        <br>
+        <br>
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'advanced_search' %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                            <label class="form-label">Fecha de Viaje</label>
+                                <div class="row">
+                                    <div class="col">
+                                        <input class="form-control date-input" type="date" name="starting_date_from" id="starting_date_from" data-mdb-inline="true">
+                                    </div>
+                                    <div class="col">
+                                        <input class="form-control" type="date" name="starting_date_to" id="starting_date_to" data-mdb-inline="true" value="{{ to_date_default }}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                            <label class="form-label">Nombre del pasajero</label>
+                                <input class="form-control col" type="text" name="name" id="name">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Referencia Cliente</label>
+                                <input class="form-control col" type="text" name="client_reference" id="client_reference">
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Tourplan #</label>
+                                <input class="form-control col" type="text" name="tourplanId" id="tourplanId">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" multiple aria-label="status" name="status">
+                                    {% for option in status %}
+                                        <option selected value="{{ option.0 }}">{{ option.0 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Dificultad</label>
+                                <select class="form-select" multiple aria-label="difficulty" name="difficulty">
+                                    {% for option in difficulty_options %}
+                                        <option selected value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Vendedor Responsable</label>
+                                <select class="form-select" multiple aria-label="responsable_user" name="responsable_user">
+                                    {% for user in users %}
+                                        {% if user.isActivated and user.department == request.user.department and user.userType == "Ventas" %}
+                                            <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <div class="form-group">
+                                <label class="form-label">Operador</label>
+                                <select class="form-select" multiple aria-label="operations_user" name="operations_user">
+                                    {% for user in users %}
+                                        {% if user.isActivated and user.department == request.user.department and user.userType == "Operaciones" %}
+                                            <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="BUSCAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<br>
+<hr>
+<br>
+{% endblock %}

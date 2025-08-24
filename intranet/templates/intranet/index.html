@@ -40,53 +40,55 @@
                 </thead>
                 <tbody>
                     {% for trip in pax_insitu %}
-                    <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
-                        <td>{{ trip.travelling_date}}</td>
-                        <td>{{ trip.name }}</td>
-                        <td>{{ trip.client }}</td>
-                        <td>{{ trip.trip_type }}</td>
-                        <td>{{ trip.responsable_user }}</td>
-                        <td>{{ trip.operations_user }}</td>
-                    </tr>
-                    <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
-                        <div class="modal-dialog modal-dialog-scrollable">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
-                                    <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <div class="d-flex align-items-center justify-content-between">
-                                        <h2>Entradas</h2>
-                                        <div id="new_entry_container">
-                                            <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
-                                        </div>
+                        {% if trip.departament == request.user.department %}
+                        <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
+                            <td>{{ trip.travelling_date}}</td>
+                            <td>{{ trip.name }}</td>
+                            <td>{{ trip.client }}</td>
+                            <td>{{ trip.trip_type }}</td>
+                            <td>{{ trip.responsable_user }}</td>
+                            <td>{{ trip.operations_user }}</td>
+                        </tr>
+                        <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                            <div class="modal-dialog modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
+                                        <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                     </div>
-                                    <br>
-                                    <div id="entries-{{ trip.id }}"></div>
-                                    <br>
-                                    <h2>Notas</h2>
-                                    <br>
-                                    <div id="notes-{{ trip.id }}">
-                                        <div id="notes{{ trip.id }}" class="container">
-                                            <form action="{% url 'create_note' trip.id %}" method="post">
-                                                {% csrf_token %}
-                                                <div class="form-group">
-                                                    <input class="form-control" type="text" name="content">
-                                                    <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
-                                                </div>
-                                            </form>
-                                            {% for note in notes %}
-                                                {% if note.trip.id == trip.id %}
-                                                    <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
-                                                {% endif %}
-                                            {% endfor %}
+                                    <div class="modal-body">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <h2>Entradas</h2>
+                                            <div id="new_entry_container">
+                                                <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
+                                            </div>
+                                        </div>
+                                        <br>
+                                        <div id="entries-{{ trip.id }}"></div>
+                                        <br>
+                                        <h2>Notas</h2>
+                                        <br>
+                                        <div id="notes-{{ trip.id }}">
+                                            <div id="notes{{ trip.id }}" class="container">
+                                                <form action="{% url 'create_note' trip.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form-group">
+                                                        <input class="form-control" type="text" name="content">
+                                                        <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
+                                                    </div>
+                                                </form>
+                                                {% for note in notes %}
+                                                    {% if note.trip.id == trip.id %}
+                                                        <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -109,53 +111,55 @@
                 </thead>
                 <tbody>
                     {% for trip in pax_arriving %}
-                    <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
-                        <td>{{ trip.travelling_date}}</td>
-                        <td>{{ trip.name }}</td>
-                        <td>{{ trip.client }}</td>
-                        <td>{{ trip.trip_type }}</td>
-                        <td>{{ trip.responsable_user }}</td>
-                        <td>{{ trip.operations_user }}</td>
-                    </tr>
-                    <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
-                        <div class="modal-dialog modal-dialog-scrollable">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
-                                    <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <div class="d-flex align-items-center justify-content-between">
-                                        <h2>Entradas</h2>
-                                        <div id="new_entry_container">
-                                            <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
-                                        </div>
+                        {% if trip.department == request.user.department %}
+                        <tr data-bs-toggle="modal" data-bs-target="#windowTrip{{ trip.id }}" id="row-trips-{{trip.id}}">
+                            <td>{{ trip.travelling_date}}</td>
+                            <td>{{ trip.name }}</td>
+                            <td>{{ trip.client }}</td>
+                            <td>{{ trip.trip_type }}</td>
+                            <td>{{ trip.responsable_user }}</td>
+                            <td>{{ trip.operations_user }}</td>
+                        </tr>
+                        <div class="modal fade modal-xl modal-trip" id="windowTrip{{ trip.id }}" tabindex="-1" aria-labelledby="label{{ trip.id }}">
+                            <div class="modal-dialog modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8" id="label{{ trip.id }}">{{ trip.name }} - {{ trip.client }}</h1>
+                                        <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                     </div>
-                                    <br>
-                                    <div id="entries-{{ trip.id }}"></div>
-                                    <br>
-                                    <h2>Notas</h2>
-                                    <br>
-                                    <div id="notes-{{ trip.id }}">
-                                        <div id="notes{{ trip.id }}" class="container">
-                                            <form action="{% url 'create_note' trip.id %}" method="post">
-                                                {% csrf_token %}
-                                                <div class="form-group">
-                                                    <input class="form-control" type="text" name="content">
-                                                    <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
-                                                </div>
-                                            </form>
-                                            {% for note in notes %}
-                                                {% if note.trip.id == trip.id %}
-                                                    <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
-                                                {% endif %}
-                                            {% endfor %}
+                                    <div class="modal-body">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <h2>Entradas</h2>
+                                            <div id="new_entry_container">
+                                                <a href="{% url 'create_entry' trip.id %}" ><button type="button" id="new_entry_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva entrada"><i class="fa-solid fa-plus"></i></button></a>
+                                            </div>
+                                        </div>
+                                        <br>
+                                        <div id="entries-{{ trip.id }}"></div>
+                                        <br>
+                                        <h2>Notas</h2>
+                                        <br>
+                                        <div id="notes-{{ trip.id }}">
+                                            <div id="notes{{ trip.id }}" class="container">
+                                                <form action="{% url 'create_note' trip.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form-group">
+                                                        <input class="form-control" type="text" name="content">
+                                                        <input class="btn btn-dark my-3" type="submit" value="AGREGAR NOTA">
+                                                    </div>
+                                                </form>
+                                                {% for note in notes %}
+                                                    {% if note.trip.id == trip.id %}
+                                                        <div><b>{{ note.user.other_name }} ({{ note.creation_date }}): </b><i>{{ note.content }}</i></div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        {% endif %}
                     {% endfor %}
                 </tbody>
             </table>

@@ -15,6 +15,7 @@ urlpatterns = [
     path("contacts", views.create_client_contact, name="contacts"),
     path("users", views.create_user, name="users"),
     path("trips", views.create_trip, name="trips"),
+    path("trips/clean", views.clean_search, name="clean_search"),
     path("create_entry/<int:trip_id>", views.create_entry, name="create_entry"),
     path("create_note/<int:trip_id>", views.create_note, name="create_note"),
 
@@ -49,4 +50,6 @@ urlpatterns = [
     path("read_emails", views.read_emails, name="read_emails"),
 
     path("tourplan_files", views.tourplan_files, name="tourplan_files"),
+    path("intranet_files", views.intranet_files, name="intranet_files"),
+    path("advanced_search", views.advanced_search, name="advanced_search"),
 ]
