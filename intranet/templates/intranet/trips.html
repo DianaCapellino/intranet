@@ -65,8 +65,10 @@
                         </div>
                         <div class="mb-3 col">
                             <select class="form-select" aria-label="status" name="status">
-                                <option selected>Status</option>
                                 {% for option in status %}
+                                    {% if option == "Quote" %}
+                                        <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                    {% endif %}
                                 <option value="{{ option.0 }}">{{ option.1 }}</option>
                                 {% endfor %}
                             </select>

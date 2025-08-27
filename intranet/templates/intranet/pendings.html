@@ -11,17 +11,13 @@
             </div>
             <div>
                 <select class="form-select" aria-label="user_filter" name="user_filter" id="user_filter_select">
-                    <option value="">Todos</option>
+                    <option selected value="">Todos</option>
                     {% for user in users %}
                         {% if user.isActivated and user.department == request.user.department %}
-                            {% if user.isAdmin and user.userType != "Ventas" %}
+                            {% if user.isAdmin %}
                                 <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
                             {% else %}
-                                {% if request.user == user %}
-                                    <option selected value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
-                                {% else %}
-                                    <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
-                                {% endif %}
+                                <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
                             {% endif %}
                         {% endif %}
                     {% endfor %}

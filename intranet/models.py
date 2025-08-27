@@ -222,7 +222,7 @@ class Entry(models.Model):
             return django.utils.timezone.now - self.starting_date
 
     class Meta:
-        ordering = ["-starting_date"]
+        ordering = ["-id"]
 
     
     def serialize(self):

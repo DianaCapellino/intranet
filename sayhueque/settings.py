@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     'intranet',
     'tariff',
     'django_ai_assistant',
-    'django_filters',
 ]
 
 MIDDLEWARE = [

@@ -246,6 +246,7 @@
                                                                 {% endif %}
                                                                 <br>
                                                                 <div class="container text-center">
+                                                                    {% csrf_token %}
                                                                     <button id="delete-entry-{{ entry.id }}" class="btn btn-dark btn-lg delete-entries-btn">ELIMINAR</button></a>
                                                                 </div>
                                                             </div>

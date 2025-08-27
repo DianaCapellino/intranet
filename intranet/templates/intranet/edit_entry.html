@@ -27,11 +27,19 @@
                             <input class="form-control" type="datetime-local" name="starting_date" data-mdb-inline="true" value="{{ formated_starting_date }}" required>
                         </div>
                         <div class="mb-3 col">
+                            <label for="closing_date" class="form-label">Fecha Cierre/Envío</label>
+                            {% if entry.closing_date != entry.starting_date %}
+                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" data-mdb-inline="true" value="{{ closing_date }}" required>
+                            {% else %}
+                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" id="closing_date" data-mdb-inline="true">
+                            {% endif %}
+                        </div>
+                        <div class="mb-3 col">
                             <label for="amount" class="form-label">Monto</label>
                             {% if entry.amount == none %}
                                 <input autofocus class="form-control" type="number" name="amount" id="amount" value="">
                             {% else %}
-                                <input autofocus class="form-control" type="number" name="amount" id="amount" value="{{ entry.trip.amount }}">
+                                <input autofocus class="form-control" type="number" step="0.01" name="amount" id="amount" value="{{ entry.trip.amount|floatformat:0 }}">
                             {% endif %}
                         </div>
                         <div class="form-check-sm mb-3 col">
@@ -44,13 +52,15 @@
                             Cerrar entrada (enviada)
                             </label>
                         </div>
-                        <div class="mb-3 col">
-                            <label for="closing_date" class="form-label">Fecha Cierre/Envío</label>
-                            {% if entry.closing_date != entry.starting_date %}
-                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" data-mdb-inline="true" value="{{ closing_date }}" required>
-                            {% else %}
-                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" id="closing_date" data-mdb-inline="true">
-                            {% endif %}
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-3">
+                            <label for="tourplanId" class="form-label"># Tourplan</label>
+                            <input class="form-control" type="text" name="tourplanId" id="tourplanId" value="{{ entry.trip.tourplanId }}">
+                        </div>
+                        <div class="mb-3 col-9">
+                            <label for="note" class="form-label">Observación</label>
+                            <input class="form-control" type="text" name="note" id="note" value="{{ entry.note }}">
                         </div>
                     </div>
                     <div class="row">
