@@ -713,7 +713,7 @@ def get_return_page(page, type, user):
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
                     "difficulty_options": DIFFICULTY_OPTIONS,
-                    "clients": Client.objects.filter(department=user),
+                    "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
                     "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
@@ -730,7 +730,7 @@ def get_return_page(page, type, user):
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
                     "difficulty_options": DIFFICULTY_OPTIONS,
-                    "clients": Client.objects.filter(department=user),
+                    "clients": Client.objects.all(),
                     "contacts": ClientContact.objects.all(),
                     "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
@@ -961,6 +961,16 @@ def pendings(request):
 @login_required
 def create_entry(request, trip_id):
 
+    # Get 30 days ago
+    today = date.today()
+    days = 15
+    date_fil = today - timedelta(days=days)
+    date_fil_to = today + timedelta(days=1)
+
+    entries_trips = Trip.objects.filter(department=request.user.department)
+
+    filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
+
     # Get the trip from the trip ID of the button
     trip = Trip.objects.get(id=trip_id)
 
@@ -971,11 +981,12 @@ def create_entry(request, trip_id):
         user_working_form = request.POST["user_working"]
         note = request.POST["note"]
 
+
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/new_entry.html", {
-                "entries": Entry.objects.all(),
-                "trips": Trip.objects.all(),
+                "entries": filter_entries,
+                "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
                 "progress_options": PROGRESS_OPTIONS,
@@ -1000,14 +1011,15 @@ def create_entry(request, trip_id):
             if (trip.version == 0):
                 trip.conversion_date = starting_date
                 trip.status = "Booking"
-                if first_entry != None:
-                    trip.user_creator = first_entry.user_working
-                    user_creator = first_entry.user_working
-                else:
-                    user_creator = user_working
-                trip.save()
+            if first_entry != None:
+                trip.user_creator = first_entry.user_working
+                user_creator = first_entry.user_working
+            else:
+                user_creator = user_working
+            trip.save()
             version = int(trip.version) + 1
             version_quote = trip.version_quote
+            
             trip.version += 1
         else:
             version_quote = "@"
@@ -1042,8 +1054,8 @@ def create_entry(request, trip_id):
 
     else:
         return render(request, "intranet/new_entry.html", {
-            "entries": Entry.objects.all(),
-            "trips": Trip.objects.all(),
+            "entries": filter_entries,
+            "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
             "progress_options": PROGRESS_OPTIONS,
@@ -1057,11 +1069,25 @@ def modify_entry(request, entry_id):
     # Get the entry from the entry ID of the button
     entry = Entry.objects.get(id=entry_id)
 
-    # Rest the 3 hours and make the iso format to match the form
+    # Get 30 days ago
+    today = date.today()
+    days = 15
+    date_fil = today - timedelta(days=days)
+    date_fil_to = today + timedelta(days=1)
+
+    entries_trips = Trip.objects.filter(department=request.user.department)
+
+    filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
+
+    # Substract 3 hours for dates and make the iso format to match the form
     three_hours = timedelta(hours=3)
     starting_date_local = entry.starting_date - three_hours
     iso_starting_date = starting_date_local.isoformat()
     formated_starting_date = iso_starting_date[:16]
+
+    closing_date_local = entry.closing_date - three_hours
+    iso_closing_date = closing_date_local.isoformat()
+    formated_closing_date = iso_closing_date[:16]
 
     # Get the information from the form
     if request.method == "POST":
@@ -1090,14 +1116,15 @@ def modify_entry(request, entry_id):
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/edit_entry.html", {
                 "message": "Completar todos los campos obligatorios",
-                "entries": Entry.objects.filter(department=request.user),
-                "trips": Trip.objects.filter(department=request.user),
+                "entries": filter_entries,
+                "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
                 "progress_options": PROGRESS_OPTIONS,
                 "users": User.objects.filter(department=request.user),
                 "entry": entry,
-                "formated_starting_date": formated_starting_date
+                "formated_starting_date": formated_starting_date,
+                "formated_closing_date": formated_closing_date,
             })
         
         # Checks if version and amount are Int
@@ -1113,26 +1140,28 @@ def modify_entry(request, entry_id):
         if status != "Quote" and versionIsInt:
             return render(request, "intranet/edit_entry.html", {
                 "message": "La versión debe ser un número, a no ser que sea status Quote",
-                "entries": Entry.objects.filter(department=request.user),
-                "trips": Trip.objects.filter(department=request.user),
+                "entries": filter_entries,
+                "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
                 "progress_options": PROGRESS_OPTIONS,
                 "users": User.objects.filter(department=request.user),
                 "entry": entry,
-                "formated_starting_date": formated_starting_date
+                "formated_starting_date": formated_starting_date,
+                "formated_closing_date": formated_closing_date,
             })
         elif (status == "Quote" or status == "Booking" or status == "Cancelado") and isClosed and empty_amount == True:
             return render(request, "intranet/edit_entry.html", {
                 "message": "El monto es obligatorio para status Quote y Booking",
-                "entries": Entry.objects.filter(department=request.user),
-                "trips": Trip.objects.filter(department=request.user),
+                "entries": filter_entries,
+                "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
                 "progress_options": PROGRESS_OPTIONS,
                 "users": User.objects.filter(department=request.user),
                 "entry": entry,
-                "formated_starting_date": formated_starting_date
+                "formated_starting_date": formated_starting_date,
+                "formated_closing_date": formated_closing_date,
             })
         
         # Get the user from the username in the form
@@ -1187,8 +1216,8 @@ def modify_entry(request, entry_id):
         entry.save()
 
         return HttpResponseRedirect(reverse("entries"), {
-            "entries": Entry.objects.all(),
-            "trips": Trip.objects.all(),
+            "entries": filter_entries,
+            "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
             "progress_options": PROGRESS_OPTIONS,
@@ -1199,8 +1228,8 @@ def modify_entry(request, entry_id):
     
     else:
         return render(request, "intranet/edit_entry.html", {
-            "entries": Entry.objects.all(),
-            "trips": Trip.objects.all(),
+            "entries": filter_entries,
+            "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
             "progress_options": PROGRESS_OPTIONS,

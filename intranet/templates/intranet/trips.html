@@ -116,10 +116,10 @@
             <div id="new_trip_container">
                 {% if request.user.isAdmin %}
                     <a href="{% url 'tourplan_files' %}"><button type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/tp.jpeg" style="width:20px"></button></a>
-                    <a href="{% url 'intranet_files' %}"><button type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/excel.png" style="width:20px"></button></a>
+                    <a class="d-none" href="{% url 'intranet_files' %}"><button type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/excel.png" style="width:20px"></button></a>
                 {% else %}
                     <a href="{% url 'tourplan_files' %}"><button disabled type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/tp.jpeg" style="width:20px"></button></a>
-                    <a href="{% url 'intranet_files' %}"><button disabled type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/excel.png" style="width:20px"></button></a>
+                    <a class="d-none" href="{% url 'intranet_files' %}"><button disabled type="button" class="btn btn-dark btn-lg"><img src="../../static/intranet/images/excel.png" style="width:20px"></button></a>
                     {% endif %}
                 <a href=""><button disabled type="button" id="reed_emails_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Leer e-mails"><i class="fa-solid fa-envelope"></i></button></a>
                 <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo viaje"><i class="fa-solid fa-plus"></i></button>
@@ -276,7 +276,7 @@
                                                                 <h5><b>Vendedor Responsable:</b> {{ trip.responsable_user }}</h5>
                                                             </div>
                                                             <div class="col-4">
-                                                                <h5><b>Vendedor Operaciones:</b> {{ trip.operations_user }}</h5>
+                                                                <h5><b>Operador:</b> {{ trip.operations_user }}</h5>
                                                             </div>
                                                             <div class="col-4">
                                                                 <h5><b>Seguimiento:</b> {{ trip.dh_type }}</h5>
