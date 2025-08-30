@@ -145,3 +145,5 @@ LOGIN_URL = 'login'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(os.path.dirname(BASE_DIR), 'media')
+
+CACHE_MIDDLEWARE_SECONDS = 36000
