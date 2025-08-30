@@ -29,7 +29,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['intranet-app-2x5m6.ondigitalocean.app/']
+ALLOWED_HOSTS = ['intranet-app-2x5m6.ondigitalocean.app']
 
 
 # Application definition
