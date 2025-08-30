@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
 import json
 import datetime
 from datetime import datetime, date, timedelta
@@ -700,7 +700,7 @@ def get_return_page(page, type, user):
     date_fil = today - timedelta(days=days)
     date_fil_to = today + timedelta(days=1)
 
-    entries_trips = Trip.objects.filter(department=user.department)
+    entries_trips = Trip.objects.filter(department=user.department).filter(starting_date__gte=today, starting_date__lte=date_fil)
 
     filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
 
@@ -999,7 +999,7 @@ def create_entry(request, trip_id):
 
         # Get the elements for the last and first entries
         last_entry = Entry.objects.filter(trip=trip).filter(status="Quote").last()
-        first_entry = Entry.objects.filter(trip=trip).first()
+        first_entry = Entry.objects.filter(trip=trip).last()
 
         # Set the version of the quote and booking defaults
         if status == "Quote":
@@ -1207,6 +1207,7 @@ def modify_entry(request, entry_id):
         entry.progress=progress
         entry.isClosed=isClosed
         entry.note=note
+        entry.tourplanId=tourplanId
 
         if status == "Quote":
             entry.version_quote = version
@@ -1240,7 +1241,13 @@ def modify_entry(request, entry_id):
     
 @login_required
 def stats(request):
-    return render(request, "intranet/stats.html")
+
+    this_month = date.today().month
+
+    return render(request, "intranet/stats.html", {
+        "months":MONTHS,
+        "this_month":this_month,
+    })
 
 @login_required
 @csrf_exempt
@@ -1341,6 +1348,15 @@ def json_entry(request, entry_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
+
+
+@login_required
+@csrf_exempt
+def json_last_entry(request):
+    
+    # Get the last user entry
+    entry = Entry.objects.filter(creation_user=request.user).first()
+    return JsonResponse(entry.serialize(), safe=False)
 
 
 @login_required
@@ -1742,11 +1758,10 @@ def upload_data(csv_obj):
 
     # All trips
     trip_ids = []
-    empty_ids = []
     all_trips = Trip.objects.all()
     for trip in all_trips:
         if trip.tourplanId == None or trip.tourplanId == "":
-            empty_ids.append(trip.tourplanId)
+            pass
         else:
             trip_ids.append(trip.tourplanId)
 
@@ -1806,6 +1821,10 @@ def upload_data(csv_obj):
                     elif col_number == 26:
                         trip.amount = col
                         trip.save()
+                        last_entry = Entry.objects.filter(trip=trip).last()
+                        if last_entry:
+                            last_entry.amount = col
+                            last_entry.save()
                         col_number+=1
                     elif col_number == 28:
                         trip.rent_perc = col

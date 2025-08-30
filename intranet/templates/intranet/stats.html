@@ -2,8 +2,53 @@
 
 {% block body %}
 <div class="container text-center mb-2">
-    <h1>EN PROGRESO</h1>
-    <img src="../../static/intranet/images/working.jpg" height="300rem">
+    <h1>ESTADÍSTICAS</h1>
+    <hr>
+    <div class="row">
+        <button class="btn btn-dark col m-4 stats-btn" id="stats-btn-1"><h3>Semanal</h3></button>
+        <button class="btn btn-dark col m-4 stats-btn" id="stats-btn-2"><h3>Mensual</h3></button>
+    </div>
+    <div class="row">
+        <button class="btn btn-dark col m-4 stats-btn" id="3-stats-btn"><h3>Temporada</h3></button>
+        <button class="btn btn-dark col m-4 stats-btn" id="4-stats-btn"><h3>Personalizado</h3></button>
+    </div>
+    <hr>
+    <div id="2-stats-form" class="stats-form d-none">
+        <form>
+            <div class="form">
+                <div class="row">
+                    <div class="m-3 col">
+                        <select autofocus class="form-control" aria-label="Mes" name="month" id="month-select">
+                            {% for month in months %}
+                                {% if month.0 == this_month %}
+                                    <option selected value="{{ month.0 }}">{{ month.1 }}</option>
+                                {% else %}
+                                    <option value="{{ month.0 }}">{{ month.1 }}</option>
+                                {% endif %}
+                            {% endfor%}
+                        </select>
+                    </div>
+                    <div class="m-3 col">
+                        <select class="form-control" aria-label="Year" name="year" id="year-select">
+                            <option value="2025">2025</option>
+                            <option value="2026">2026</option>
+                            <option value="2027">2027</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col">
+                        <select class="form-control" aria-label="Tipo" name="type" id="type-stats">
+                            <option>Viajes</option>
+                            <option>Entradas</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col"><input id="2-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
+                </div>
+            </div>
+        </form>
+        <hr>
+    </div>
+    <div id="report_results" class="stats-results">
 
+    </div>
 </div>
 {% endblock %}

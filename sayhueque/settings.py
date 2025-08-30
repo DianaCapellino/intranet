@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'intranet',
     'tariff',
-    'django_ai_assistant',
 ]
 
 MIDDLEWARE = [

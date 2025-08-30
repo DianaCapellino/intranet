@@ -1,14 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Gets the datatable format to the tables with the spanish language activated
-    create_datatable("trips");
-    create_datatable("entries");
-    create_datatable("countries");
-    create_datatable("contacts");
-    create_datatable("clients");
-    create_datatable("users");
-    create_datatable("entries-creating");
-    create_datatable("tariff-table");
-    create_datatable("entries-index");
 
     // Modifies the date format to be shown in the forms
     modify_date_and_datetime();
@@ -39,6 +29,17 @@ document.addEventListener('DOMContentLoaded', () => {
     deleting_functionality("entries");
 
     create_chart("pendings_chart");
+
+    // Gets the datatable format to the tables with the spanish language activated
+    create_datatable("trips");
+    create_datatable("entries");
+    create_datatable("countries");
+    create_datatable("contacts");
+    create_datatable("clients");
+    create_datatable("users");
+    create_datatable("entries-creating");
+    create_datatable("tariff-table");
+    create_datatable("entries-index");
 
 })
 
@@ -257,17 +258,10 @@ function modal_functionality() {
             $(item).on('shown.bs.modal', function() {
                 let user_id_string = item.id.match(/\d+/);
                 let user_id = parseInt(user_id_string[0]);
-                let entries = []
-                let entry_id;
-                fetch(`/entries/json`)
+                fetch(`/entries/json/last_entry`)
                 .then(response => response.json())
-                .then(list => {
-                    list.forEach(element => {
-                        if (element.request_user === user_id) {
-                            entries.push(element.id);
-                        };
-                    });
-                    entry_id = entries[0];
+                .then(element => {
+                    const entry_id = element.id;
                     document.getElementById(`link-edit-entry${user_id}`).setAttribute("href", `/modify_entry/${entry_id}`);
                 });
             })
@@ -467,12 +461,6 @@ function create_entry_row(element, trip_id) {
     const importance = document.createElement("td");
     const actions = document.createElement("td");
 
-    
-    if (element.isClosed == false) {
-        closing_date.innerHTML = 'n/a';
-    } else {
-        closing_date.innerHTML = `${element.closing_date}`;
-    };
 
     if (element.amount == null) {
         amount.innerHTML = `Pendiente`;
@@ -488,14 +476,14 @@ function create_entry_row(element, trip_id) {
 
     starting_date.innerHTML = `${element.starting_date}`;
 
-    if (element.starting_date == element.closing_date) {
+    if (element.starting_date == element.closing_date & element.isClosed) {
         closing_date.innerHTML = 'n/a';
     } else {
         closing_date.innerHTML = `${element.closing_date}`;
     };
     
     status.innerHTML = `${element.status}`;
-    user_working.innerHTML = `${element.user_creator}`;
+    user_working.innerHTML = `${element.user_working}`;
     progress.innerHTML = `${element.progress}`;
     importance.innerHTML = `${element.importance}`;
     
