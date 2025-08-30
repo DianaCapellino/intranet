@@ -1,0 +1,78 @@
+body {
+    color: var(--bs-grey-900);
+    font-family: Tahoma, Verdana, sans-serif;
+    font-style: normal;
+    font-weight: 300;
+}
+
+@font-face {
+    font-family: branditalic;
+    src: url("../Qwigley-Regular.ttf");
+}
+
+h2 {
+    font-family: Tahoma, Verdana, sans-serif;
+    font-style: normal;
+    font-weight: 700;
+}
+
+nav ul li {
+    padding: 0 5px 0 5px;
+}
+
+.fa-brands {
+    color: #fff;
+}
+
+#brand-name {
+    font-family: branditalic, arial;
+    font-size: 1rem;
+}
+
+.fa-pencil:hover,
+.fa-pencil:focus,
+.fa-trash:hover,
+.fa-trash:focus,
+.fa-eye-slash:hover,
+.fa-eye-slash:focus,
+.fa-eye:hover,
+.fa-eye:focus {
+    filter: invert(54%) sepia(4%) saturate(6%) hue-rotate(331deg) brightness(92%) contrast(81%);
+    cursor:pointer;
+}
+
+.fa-plus:focus,
+.fa-plus:hover {
+    filter: sepia(50%) saturate(50%) hue-rotate(331deg) brightness(100%) contrast(100%);
+    cursor:pointer;
+}
+
+#pencil-edit-entry {
+    color: inherit
+}
+
+@keyframes hide {
+    0% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+.row-delete {
+    animation: forwards 2s ease-in-out;
+}
+
+.message {
+    background-color: var(--bs-primary);
+    font-weight: bold;
+    margin: 0.5rem;
+    padding: 0.5rem;
+}
+
+@media (min-width: 400px) {
+    #brand-name {
+      font-size: 1.5rem;
+    }
+}
