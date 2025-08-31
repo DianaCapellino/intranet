@@ -981,7 +981,6 @@ def create_entry(request, trip_id):
         user_working_form = request.POST["user_working"]
         note = request.POST["note"]
 
-
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/new_entry.html", {
@@ -1030,8 +1029,7 @@ def create_entry(request, trip_id):
 
         progress = PROGRESS_OPTIONS[0]
 
-        if trip.amount != None or trip.amount != 0:
-            amount = trip.amount
+        amount = 0
 
         # Creates the model of the contact from the form information
         new_entry = Entry.objects.create(

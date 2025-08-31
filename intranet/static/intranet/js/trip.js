@@ -476,7 +476,7 @@ function create_entry_row(element, trip_id) {
 
     starting_date.innerHTML = `${element.starting_date}`;
 
-    if (element.starting_date == element.closing_date & element.isClosed) {
+    if (element.isClosed == false) {
         closing_date.innerHTML = 'n/a';
     } else {
         closing_date.innerHTML = `${element.closing_date}`;
