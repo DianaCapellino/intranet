@@ -36,9 +36,9 @@
                         </select>
                     </div>
                     <div class="m-3 col">
-                        <select class="form-control" aria-label="Tipo" name="type" id="type-stats">
-                            <option>Viajes</option>
-                            <option>Entradas</option>
+                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-month">
+                            <option value="entries">Entradas</option>
+                            <option value="trips">Viajes</option>
                         </select>
                     </div>
                     <div class="m-3 col"><input id="2-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
@@ -46,6 +46,32 @@
             </div>
         </form>
         <hr>
+    </div>
+    <div id="4-stats-form" class="stats-form d-none">
+        <form>
+            <div class="form">
+                <div class="row">
+                    <div class="m-3 col">
+                        <input class="form-control datetime-input col" type="datetime-local" name="date-from" id="date-from" data-mdb-inline="true" placeholder="Fecha Desde">
+                    </div>
+                    <div class="m-3 col">
+                        <input class="form-control datetime-input col" type="datetime-local" name="date-to" id="date-to" data-mdb-inline="true" placeholder="Fecha Hasta">
+                    </div>
+                    <div class="m-3 col">
+                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-personalized">
+                            <option value="entries">Entradas</option>
+                            <option value="trips">Viajes</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col"><input id="2-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
+                </div>
+            </div>
+        </form>
+        <hr>
+    </div>
+    <div id="stats-sum" class="d-none">
+        <table id="4-stats" class="table table-striped">
+        </table>
     </div>
     <div id="report_results" class="stats-results">
 

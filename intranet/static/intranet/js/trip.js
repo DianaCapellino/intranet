@@ -599,46 +599,6 @@ function create_json_element_by_type(type, item, id) {
     return data
 }
 
-function get_data() {
-
-    fetch(`/entries/json/pendings`)
-    .then(response => response.json())
-    .then(list => {
-        let data = [];
-        let labels = [];
-        let quotes = [];
-        let bookings = [];
-        let finals = [];
-        let others = [];
-        let row_order = 0;
-        list.forEach(row => {
-            let order = 0;
-            row.forEach(element => {
-                if (row_order != 0) {
-                    if (order == 0) {
-                        labels.push(element);
-                    } else if (order == 1) {
-                        quotes.push(element);
-                    } else if (order == 2) {
-                        bookings.push(element);
-                    } else if (order == 3) {
-                        finals.push(element);
-                    } else {
-                        others.push(element);
-                    };
-                    order++;
-                } else {
-                    order++;
-                };
-            });
-            row_order++;
-        });
-        data.push(labels, quotes, bookings, finals, others);
-        //console.log(data);
-        return labels;
-    });
-}
-
 
 function create_chart(id) {
     let data;

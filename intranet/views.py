@@ -1301,10 +1301,17 @@ def jsontrip(request, trip_id):
 
 @login_required
 @csrf_exempt
-def json_entries(_request):
+def json_entries(request):
 
     # Get the list of the entries
-    entries_object_list = Entry.objects.all()
+    entries_object_list = []
+    trip_entries = Trip.objects.filter(department=request.user.department)
+
+    for entry in Entry.objects.all():
+        if entry.trip in trip_entries:
+            entries_object_list.append(entry)
+    
+    #entries_object_list = Entry.objects.filter(department=request.user.department)
     entries = [entry.serialize() for entry in entries_object_list]
 
     return JsonResponse(entries, safe=False)
