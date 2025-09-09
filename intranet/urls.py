@@ -8,6 +8,7 @@ urlpatterns = [
     path("error", views.error, name="error"),
     path("entries", views.pendings, name="entries"),
     path("stats", views.stats, name="stats"),
+    path("holidays", views.holidays, name="holidays"),
 
     # Paths for creating items
     path("countries", views.create_country, name="countries"),
@@ -41,12 +42,12 @@ urlpatterns = [
     path("clients/json/<int:client_id>", views.jsonclient, name="jsonclient"),
     path("contacts/json/<int:contact_id>", views.jsoncontact, name="jsoncontact"),
     path("users/json/<int:user_id>", views.jsonuser, name="jsonuser"),
-
     path("countries/json", views.json_countries, name="json_countries"),
     path("clients/json", views.json_clients, name="json_clients"),
     path("contacts/json", views.json_contacts, name="json_contacts"),
     path("users/json", views.json_users, name="json_users"),
     path("entries/json", views.json_entries, name="json_entries"),
+    path("holidays/json", views.json_holidays, name="json_holidays"),
 
     path("read_emails", views.read_emails, name="read_emails"),
 

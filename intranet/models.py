@@ -4,6 +4,7 @@ import django.utils.timezone
 from datetime import datetime, timedelta
 from django import forms
 from multiselectfield import MultiSelectField
+from colorfield.fields import ColorField
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
@@ -95,12 +96,26 @@ DIFFICULTY_OPTIONS = [
     ("5", "Muy Complejo"),
 ]
 
+TYPE_HOLIDAYS = [
+    ("Feriado", "Se trabaja equipo reducido"),
+    ("Fin de semana", "No se trabaja"),
+    ("Día no laborable", "Se trabaja medio día"),
+]
+
+TIMING_STATUS = [
+    ("light", "En tiempo"),
+    ("warning", "Al límite"),
+    ("info", "Vencido"),
+    ("danger", "Muy vencido"),
+]
+
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
     isActivated = models.BooleanField(default=True)
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
     isAdmin = models.BooleanField(default=False)
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Sales")
+    color = ColorField(default='#000000')
 
     class Meta:
         ordering = ["username"]
@@ -214,6 +229,8 @@ class Entry(models.Model):
     note = models.CharField(max_length=500, null=True, blank=True)
     creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users_entry")
     tourplanId = models.CharField(max_length=64, null=True, blank=True, default="")
+    timingStatus = models.CharField(max_length=64, choices=TIMING_STATUS, default="light")
+    exception = models.BooleanField(default=False)
 
     @property
     def response_days(self):
@@ -248,13 +265,17 @@ class Entry(models.Model):
         
 
 class Holidays(models.Model):
-    date = models.DateField(verbose_name="holidays date")
-    working_user = models.ManyToManyField(User, related_name="working_users", blank=True)
+    date_from = models.DateField(verbose_name="holidays from")
+    date_to = models.DateField(verbose_name="holidays to")
+    type_holidays = models.CharField(max_length=64, choices=TYPE_HOLIDAYS)
+    workable = models.BooleanField(default=False)
+    working_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="working_users", null=True, blank=True)
 
 
 class Absence(models.Model):
-    date = models.DateField(verbose_name="holidays date")
-    absence_user = models.ManyToManyField(User, related_name="absence_users", blank=True)    
+    date_from = models.DateField(verbose_name="absence from")
+    date_to = models.DateField(verbose_name="absence to")
+    absence_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="absence_users", null=True, blank=True)
 
 
 class CsvFileTourplanFiles (models.Model):

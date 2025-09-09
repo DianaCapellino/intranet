@@ -101,7 +101,7 @@ function create_datatable (type) {
             columnDefs: [
                 { orderable: false, targets: -1 },
                 { width: '20%', target: 2 },
-                { visible: false, targets: [4, 7, 12]}
+                { visible: false, targets: [4, 7, 11, 12]}
             ],
             language: {
                 url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',

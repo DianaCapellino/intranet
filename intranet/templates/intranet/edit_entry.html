@@ -56,7 +56,11 @@
                     <div class="row">
                         <div class="mb-3 col-3">
                             <label for="tourplanId" class="form-label"># Tourplan</label>
-                            <input class="form-control" type="text" name="tourplanId" id="tourplanId" value="{{ entry.tourplanId }}">
+                            {% if not entry.trip.tourplanId or entry.trip.tourplanId == "" %}
+                                <input class="form-control" type="text" name="tourplanId" id="tourplanId" value="{{ entry.tourplanId }}">
+                            {% else %}
+                                <input class="form-control" type="text" name="tourplanId" id="tourplanId" value="{{ entry.trip.tourplanId }}">
+                            {% endif %}
                         </div>
                         <div class="mb-3 col-9">
                             <label for="note" class="form-label">Observación</label>

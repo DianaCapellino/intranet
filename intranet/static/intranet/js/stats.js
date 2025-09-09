@@ -3,6 +3,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Display functionality of the btn
     stats_btn_display();
 
+    var calendarEl = document.getElementById('calendar');
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        events: '/holidays/json',
+    });
+    calendar.render();
+
 })
 
 function stats_btn_display() {

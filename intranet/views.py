@@ -7,9 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
 import json
-import datetime
 from datetime import datetime, date, timedelta
 from imap_tools import MailBox
 import os
@@ -27,13 +26,13 @@ def index (request):
 
     # Filter the trips according to the rol of the user
     if request.user.userType == "Internal" and request.user.isAdmin:
-        trips = Trip.objects.filter(department=request.user.department)
+        trips = Trip.objects.filter(department=request.user.department).filter(status="Booking").order_by('travelling_date')
     elif request.user.userType == "Ventas":
-        trips = Trip.objects.filter(department=request.user.department).filter(responsable_user=request.user)
+        trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
     elif request.user.userType == "Operaciones":
-        trips = Trip.objects.filter(department=request.user.department).filter(operations_user=request.user)
+        trips = Trip.objects.filter(status="Booking").filter(operations_user=request.user).order_by('travelling_date')
     else:
-        trips = Trip.objects.filter(department=request.user.department).filter(responsable_user=request.user)
+        trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
 
     # Gets the next 10 trips arriving
     q_files = 1
@@ -41,8 +40,6 @@ def index (request):
         if q_files < 11:
             pax_arriving.append(trip)
             q_files+=1
-    
-    pax_arriving.sort(key=lambda trip: trip.travelling_date)
 
     # Gets the difference between today and arriving dates and add these trips to the list
     for trip in trips:
@@ -468,7 +465,7 @@ def modify_user(request, user_id):
         email = request.POST["email"]
         department = request.POST["department"]
         type = request.POST["type"]
-        
+                
         try:
             isAdmin = request.POST['admin']
         except MultiValueDictKeyError:
@@ -493,6 +490,11 @@ def modify_user(request, user_id):
         if is_active != False:
             is_active = True
 
+        try:
+            color = request.POST['color']
+        except MultiValueDictKeyError:
+            color = "#000000"
+        
         # Validations
         if not name or not email or not username or not department or not type:
             return render(request, "intranet/users.html", {
@@ -511,27 +513,19 @@ def modify_user(request, user_id):
             })
 
         # Modifies the model of the user from the form information
-        try:
 
-            user.other_name=name
-            user.username=username
-            user.email=email
-            user.department=department
-            user.isAdmin=isAdmin
-            user.isActivated=isActivated
-            user.is_active=is_active
-            user.userType=type
-            
-            user.save()
+        user.other_name=name
+        user.username=username
+        user.email=email
+        user.department=department
+        user.isAdmin=isAdmin
+        user.isActivated=isActivated
+        user.is_active=is_active
+        user.userType=type
+        user.color=color
 
-        # Shows and error if the username already exists    
-        except IntegrityError:
-            return render(request, "intranet/users.html", {
-                "message_modify": "El usuario ya existe",
-                "departments": DEPARTMENTS,
-                "user_types": USER_TYPES,
-                "users": User.objects.all()
-            })
+        user.save()
+
         return HttpResponseRedirect(reverse("users"), {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
@@ -700,8 +694,6 @@ def get_return_page(page, type, user):
     date_fil = today - timedelta(days=days)
     date_fil_to = today + timedelta(days=1)
 
-    entries_trips = Trip.objects.filter(department=user.department).filter(starting_date__gte=today, starting_date__lte=date_fil)
-
     filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
 
     if page == "trips":
@@ -747,7 +739,6 @@ def get_return_page(page, type, user):
             return {
                     "message_new": "Completar todos los campos",
                     "entries": filter_entries,
-                    "trips": entries_trips,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -759,7 +750,6 @@ def get_return_page(page, type, user):
         else:
             return {
                     "entries": filter_entries,
-                    "trips": entries_trips,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -954,7 +944,7 @@ def create_note(request, trip_id):
 
 @login_required
 def pendings(request):
-
+        
     # Shows all entries
     return render(request, "intranet/pendings.html", get_return_page("entries", "", request.user))
     
@@ -966,8 +956,6 @@ def create_entry(request, trip_id):
     days = 15
     date_fil = today - timedelta(days=days)
     date_fil_to = today + timedelta(days=1)
-
-    entries_trips = Trip.objects.filter(department=request.user.department)
 
     filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
 
@@ -985,7 +973,6 @@ def create_entry(request, trip_id):
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/new_entry.html", {
                 "entries": filter_entries,
-                "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
                 "progress_options": PROGRESS_OPTIONS,
@@ -997,7 +984,6 @@ def create_entry(request, trip_id):
         user_working = User.objects.get(username=user_working_form)
 
         # Get the elements for the last and first entries
-        last_entry = Entry.objects.filter(trip=trip).filter(status="Quote").last()
         first_entry = Entry.objects.filter(trip=trip).last()
 
         # Set the version of the quote and booking defaults
@@ -1027,9 +1013,8 @@ def create_entry(request, trip_id):
 
         trip.save()
 
+        # Chose the first option progress by default
         progress = PROGRESS_OPTIONS[0]
-
-        amount = 0
 
         # Creates the model of the contact from the form information
         new_entry = Entry.objects.create(
@@ -1042,18 +1027,19 @@ def create_entry(request, trip_id):
             version_quote=version_quote,
             version=version,
             progress=progress[0],
-            amount=amount,
+            amount=0,
             creation_user=request.user,
             note=note
         )
         new_entry.save()
 
         return HttpResponse(status=204)
-
+    
     else:
+
+        # Return all the entries in the last 15 days
         return render(request, "intranet/new_entry.html", {
             "entries": filter_entries,
-            "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
             "progress_options": PROGRESS_OPTIONS,
@@ -1246,6 +1232,92 @@ def stats(request):
         "months":MONTHS,
         "this_month":this_month,
     })
+
+
+@login_required
+def holidays(request):
+    return render(request, "intranet/holidays.html")
+
+
+def create_weekend_holidays(start_date, end_date):
+    """
+    Creates the weekend holidays events
+    """
+    current = start_date
+    while current <= end_date:
+        if current.weekday() in (5, 6):  # 5 = saturday, 6 = sunday
+            Holidays.objects.get_or_create(
+                date_from=current,
+                date_to=current,
+                type_holidays="Fin de semana",
+                defaults={
+                    "workable": False,
+                    "working_user": None
+                }
+            )
+        current += timedelta(days=1)
+
+
+@login_required
+@csrf_exempt
+def json_holidays(request):
+    """
+    Function to create json for FullCalendar
+    """
+
+    # Getting the information of the dates required
+    start_date_str = request.GET.get('start', None)
+    end_date_str = request.GET.get('end', None)
+
+    # Filter the events of the model according to the required dates
+    if start_date_str and end_date_str:
+        start_date = datetime.fromisoformat(start_date_str)
+        end_date = datetime.fromisoformat(end_date_str)
+        holidays = Holidays.objects.filter(date_from__gte=start_date, date_to__lte=end_date)
+        absences = Absence.objects.filter(date_from__gte=start_date, date_to__lte=end_date)
+
+    # Inicialize empty list of the data to be send
+    data = []
+
+    # Get the holidays events
+    for event in holidays:
+
+        # Select the color according to the type
+        if event.type_holidays == "Feriado":
+            color = "#FF0000"
+        elif event.type_holidays == "Fin de semana":
+            color = "#808080"
+        elif event.type_holidays == "Día no laborable":
+            color = "#FF8000"
+        
+        # If it is workable it will bring the name of the user, otherwise empty string
+        if event.workable:
+            title = event.working_user.username
+        else:
+            title = ""
+
+        data.append({
+            'id': event.id,
+            'title': title,
+            'start': event.date_from.isoformat(),
+            'end': event.date_to.isoformat(),
+            'allDay': True,
+            'backgroundColor': color,
+        })
+    
+    for event in absences:
+        
+        data.append({
+            'id': event.id,
+            'title': event.absence_user.username,
+            'start': event.date_from.isoformat(),
+            'end': event.date_to.isoformat(),
+            'allDay': True,
+            'backgroundColor': "#00aae4",
+        })
+    
+    return JsonResponse(data, safe=False)
+
 
 @login_required
 @csrf_exempt
@@ -1764,11 +1836,11 @@ def upload_data(csv_obj):
     # All trips
     trip_ids = []
     all_trips = Trip.objects.all()
-    for trip in all_trips:
-        if trip.tourplanId == None or trip.tourplanId == "":
+    for item in all_trips:
+        if item.tourplanId == None or item.tourplanId == "":
             pass
         else:
-            trip_ids.append(trip.tourplanId)
+            trip_ids.append(item.tourplanId)
 
     # Open the csv and read all the data
     with open(csv_obj.file_name.path, 'r') as f:
@@ -1786,54 +1858,62 @@ def upload_data(csv_obj):
                             col_number+=1
                         else:
                             break
-                    elif col_number == 7:
-                        trip.itId = col
+                    elif col_number == 4:
+                        date_obj = datetime.strptime(col, "%d/%m/%Y")
+                        formatted_date = date_obj.strftime("%Y-%m-%d")
+                        trip.travelling_date = formatted_date
                         trip.save()
                         col_number+=1
-                    elif col_number == 10:
+                    elif col_number == 5:
+                        date_obj = datetime.strptime(col, "%d/%m/%Y")
+                        formatted_date = date_obj.strftime("%Y-%m-%d")
+                        trip.out_date = formatted_date
+                        trip.save()
+                        col_number+=1  
+                    elif col_number == 8:
                         if col == "S" or col == "B" or col == "F":
                             trip.dh_type = col
                         trip.save()
                         col_number+=1
-                    elif col_number == 11:
-                        if col in user_usernames:
-                            dh = User.objects.get(username=col)
-                            trip.dh = dh
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 13:
-                        if col in contact_names:
-                            contact = ClientContact.objects.get(name=col)
-                            trip.contact = contact
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 15:
-                        trip.guide = col
-                        trip.save()
-                        col_number+=1
-                    elif col_number == 17:
+                    elif col_number == 10:
                         if col in user_usernames:
                             responsable_user = User.objects.get(username=col)
                             trip.responsable_user = responsable_user
                             trip.save()
                         col_number+=1
-                    elif col_number == 19:
+                    elif col_number == 11:
                         if col in user_usernames:
                             operations_user = User.objects.get(username=col)
                             trip.operations_user = operations_user
                             trip.save()
                         col_number+=1
-                    elif col_number == 26:
-                        trip.amount = col
-                        trip.save()
-                        last_entry = Entry.objects.filter(trip=trip).last()
-                        if last_entry:
-                            last_entry.amount = col
-                            last_entry.save()
+                    elif col_number == 12:
+                        if col in user_usernames:
+                            dh = User.objects.get(username=col)
+                            trip.dh = dh
+                            trip.save()
                         col_number+=1
-                    elif col_number == 28:
+                    elif col_number == 14:
+                        if col in contact_names:
+                            contact = ClientContact.objects.get(name=col)
+                            trip.contact = contact
+                            trip.save()
+                        col_number+=1
+                    elif col_number == 17:
+                        trip.guide = col
+                        trip.save()
+                        col_number+=1
+                    elif col_number == 21:
                         trip.rent_perc = col
                         trip.save()
+                        col_number+=1
+                    elif col_number == 22:
+                        trip.amount = col
+                        trip.save()
+                        tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).last()
+                        if tp_entry:
+                            tp_entry.amount = col
+                            tp_entry.save()
                         col_number+=1
                     else:
                         col_number+=1

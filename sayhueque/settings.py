@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'intranet',
     'tariff',
+    'colorfield',
 ]
 
 MIDDLEWARE = [

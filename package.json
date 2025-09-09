@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "datatables.net-plugins": "^2.3.0",
+    "fullcalendar": "^6.1.19",
     "moment": "^2.30.1"
   }
 }

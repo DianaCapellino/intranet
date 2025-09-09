@@ -204,7 +204,11 @@
                                                                 {% endfor %}
                                                             </select>
                                                         </div>
-                                                        <div class="mb-3 col">
+                                                        <div class="mb-3 p-3 col">
+                                                            <br>
+                                                            <input type="color" id="color" name="color" value="{{ user.color }}">
+                                                        </div>
+                                                        <div class="mb-3 p-2 col">
                                                             <br>
                                                             <button id="modify_password{{user.id}}" class="btn btn-dark" disabled>CAMBIAR CONTRASEÑA</button>
                                                         </div>
