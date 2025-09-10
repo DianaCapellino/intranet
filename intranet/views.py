@@ -33,21 +33,22 @@ def index (request):
         trips = Trip.objects.filter(status="Booking").filter(operations_user=request.user).order_by('travelling_date')
     else:
         trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
-
-    # Gets the next 10 trips arriving
-    q_files = 1
-    for trip in trips:
-        if q_files < 11:
-            pax_arriving.append(trip)
-            q_files+=1
-
-    # Gets the difference between today and arriving dates and add these trips to the list
-    for trip in trips:
-        if trip.out_date != None:
-            if (trip.travelling_date - today).days > -60 and (trip.travelling_date - today).days <= 0 and (trip.out_date - today).days >= 0 and trip.status == "Booking":
-                pax_insitu.append(trip)
     
-    pax_insitu.sort(key=lambda trip: trip.travelling_date)
+    # Quantity of files starting in 1 for arriving
+    q_files = 1
+
+    for trip in trips:
+        if trip.out_date:
+
+            # Gets the difference between today and arriving dates and add these trips to the list
+            if (trip.travelling_date - today).days > -60 and (trip.travelling_date - today).days <= 0 and (trip.out_date - today).days >= 0:
+                pax_insitu.append(trip)
+
+        # Gets the next 10 trips arriving
+        if q_files < 11:
+            if (trip.travelling_date - today).days >=0:
+                pax_arriving.append(trip)
+                q_files+=1
 
     data = get_pendings(request.user.department)
 

@@ -173,11 +173,7 @@
                                             <td>{{trip.status}} {{trip.version_quote}}</td>
                                         {% endif %}
                                     {% else %}
-                                    {% if trip.version == 0 %}
-                                        <td class="text-danger">Sin entradas</td>
-                                    {% else %}
-                                        <td>{{trip.status}} {{ trip.version }}</td>
-                                    {% endif %}
+                                        <td>{{trip.status}}</td>
                                     {% endif %}
                                     {% if trip.amount == none %}
                                         <td>n/a</td>
