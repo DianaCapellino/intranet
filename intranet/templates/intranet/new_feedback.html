@@ -1,0 +1,76 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div id="modify_entry">
+    <div class="container">
+        <div class="d-flex justify-content-between">
+            <h2>Creando Feedback para
+                <u>{{ trip.name }} - {{ trip.client }}</u></h2>
+            <div>
+                <a href="{% url 'trips' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+
+        {% if message %}
+            <div class="message text-center">{{ message }}</div>
+        {% endif %}
+
+        <br>
+        <br>
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'create_feedback' trip.id %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <div class="row">
+                                <label for="creation_date" class="col">Fecha Feedback</label>
+                                <input class="form-control datetime-input col" type="datetime-local" name="creation_date" id="creation_date" data-mdb-inline="true">
+                            </div>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <select autofocus class="form-select" aria-label="supplier" name="supplier">
+                                <option selected value="">Proveedor</option>
+                                {% for supplier in suppliers %}
+                                    <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-6">
+                            <select class="form-select" aria-label="destination" name="destination">
+                                <option selected value="">Destino</option>
+                                {% for destination in destinations %}
+                                    <option value="{{ destination.id }}">{{ destination.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3 col-6">
+                            <select class="form-select" aria-label="type" name="type" id="type">
+                                <option selected value="">Tipo de queja/felicitación</option>
+                                {% for type in types %}
+                                    <option value="{{ type.0 }}">{{ type.0 }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-9">
+                            <textarea class="form-control" type="text" name="content" id="content" placeholder="Resumen de la queja/felicitación..."></textarea>
+                        </div>
+                        <div class="form-check-sm mb-3 col">
+                            <input class="form-check-input" type="checkbox" id="checkDefault" name="complaint">
+                            <label class="form-check-label" for="checkDefault">
+                            ¿Es queja?
+                            </label>
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<br>
+{% endblock %}

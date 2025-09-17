@@ -8,12 +8,17 @@ from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
 from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
+from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
+from .utils import update_timingStatus
 import json
 from datetime import datetime, date, timedelta
+from django.utils.timezone import localtime
 from imap_tools import MailBox
 import os
 from dotenv import load_dotenv
 import csv
+from django.db.models import Q
+from django.core.paginator import Paginator
 
 
 @login_required
@@ -672,7 +677,6 @@ def modify_country(request, country_id):
 def get_return_page(page, type, user):
 
     filter_trips = get_filtered_trips(user)
-    print(filter_trips)
 
     formated_starting_dates = []
     formated_travelling_dates = []
@@ -706,16 +710,17 @@ def get_return_page(page, type, user):
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
                     "difficulty_options": DIFFICULTY_OPTIONS,
-                    "clients": Client.objects.all(),
-                    "contacts": ClientContact.objects.all(),
+                    "clients": Client.objects.filter(department=user.department),
+                    "contacts": ClientContact.objects.filter(client__department=user.department),
                     "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
-                    "users": User.objects.all(),
+                    "users": User.objects.filter(department=user.department),
                     "entries": filter_entries,
-                    "notes": Notes.objects.all(),
+                    "notes": Notes.objects.filter(trip__department=user.department),
                     "one_hundred": 100,
+                    "feedbacks": Feedback.objects.filter(trip__department=user.department),
                 }
         else:
             return {
@@ -723,16 +728,17 @@ def get_return_page(page, type, user):
                     "trip_types": TRIP_TYPES,
                     "dh_types": DH_TYPES,
                     "difficulty_options": DIFFICULTY_OPTIONS,
-                    "clients": Client.objects.all(),
-                    "contacts": ClientContact.objects.all(),
+                    "clients": Client.objects.filter(department=user.department),
+                    "contacts": ClientContact.objects.filter(client__department=user.department),
                     "trips": filter_trips,
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
-                    "users": User.objects.all(),
+                    "users": User.objects.filter(department=user.department),
                     "entries": filter_entries,
-                    "notes": Notes.objects.all(),
+                    "notes": Notes.objects.filter(trip__department=user.department),
                     "one_hundred": 100,
+                    "feedbacks": Feedback.objects.filter(trip__department=user.department),
                 }
         
     if page == "entries":
@@ -743,7 +749,7 @@ def get_return_page(page, type, user):
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
-                    "users": User.objects.all(),
+                    "users": User.objects.filter(department=user.department),
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
@@ -754,7 +760,7 @@ def get_return_page(page, type, user):
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
-                    "users": User.objects.all(),
+                    "users": User.objects.filter(department=user.department),
                     "formated_starting_dates": formated_starting_dates,
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
@@ -833,8 +839,6 @@ def modify_trip(request, trip_id):
 
     # Gets the object of the trip modifying
     trip = Trip.objects.get(id=trip_id)
-    print(trip.id)
-    print(trip_id)
     
     if request.method == "POST":
         name = request.POST["name"]
@@ -920,7 +924,7 @@ def create_note(request, trip_id):
 
     trip = Trip.objects.get(id=trip_id)
 
-    # If method is POST it will create the new client
+    # If method is POST it will create the new note
     if request.method == "POST":
 
         # Gets the information from the form
@@ -942,6 +946,68 @@ def create_note(request, trip_id):
 
         return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
 
+
+@login_required
+def create_feedback(request, trip_id):
+
+    trip = Trip.objects.get(id=trip_id)
+
+    # If method is POST it will create the new feedback
+    if request.method == "POST":
+
+        # Gets the information from the form
+        content = request.POST["content"]
+        creation_date = request.POST["creation_date"]
+        supplier_form = request.POST["supplier"]
+        destination_form = request.POST["destination"]
+        type = request.POST["type"]
+
+        try:
+            complaint = request.POST['complaint']
+            if complaint == "on":
+                complaint = True
+        except MultiValueDictKeyError:
+            complaint = False
+
+        # Validations
+        if not content or not creation_date or not type:
+            return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user))
+
+        if supplier_form != "":
+            supplier = Supplier.objects.get(id=supplier_form)
+        else:
+            supplier = None
+        if destination_form != "":
+            destination = Location.objects.get(id=destination_form)
+        else:
+            destination = None
+
+        # Creates the model of the feedback from the form information
+        new_feedback = Feedback.objects.create(
+            user=request.user,
+            trip=trip,
+            content=content,
+            creation_date=creation_date,
+            last_modification_date=datetime.now(),
+            supplier=supplier,
+            destination=destination,
+            type=type,
+            complaint=complaint,
+        )
+        new_feedback.save()
+
+        # After created it goes to Trip page again
+        return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
+    else:
+
+        # Return the feedback info for the form
+        return render(request, "intranet/new_feedback.html", {
+            "trip": trip,
+            "suppliers": Supplier.objects.all(),
+            "destinations": Location.objects.all(),
+            "types": TYPE_QUALITY,
+        })
+    
 
 @login_required
 def pendings(request):
@@ -1054,15 +1120,7 @@ def modify_entry(request, entry_id):
     # Get the entry from the entry ID of the button
     entry = Entry.objects.get(id=entry_id)
 
-    # Get 30 days ago
-    today = date.today()
-    days = 15
-    date_fil = today - timedelta(days=days)
-    date_fil_to = today + timedelta(days=1)
-
     entries_trips = Trip.objects.filter(department=request.user.department)
-
-    filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
 
     # Substract 3 hours for dates and make the iso format to match the form
     three_hours = timedelta(hours=3)
@@ -1101,7 +1159,6 @@ def modify_entry(request, entry_id):
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/edit_entry.html", {
                 "message": "Completar todos los campos obligatorios",
-                "entries": filter_entries,
                 "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
@@ -1125,7 +1182,6 @@ def modify_entry(request, entry_id):
         if status != "Quote" and versionIsInt:
             return render(request, "intranet/edit_entry.html", {
                 "message": "La versión debe ser un número, a no ser que sea status Quote",
-                "entries": filter_entries,
                 "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
@@ -1138,7 +1194,6 @@ def modify_entry(request, entry_id):
         elif (status == "Quote" or status == "Booking" or status == "Cancelado") and isClosed and empty_amount == True:
             return render(request, "intranet/edit_entry.html", {
                 "message": "El monto es obligatorio para status Quote y Booking",
-                "entries": filter_entries,
                 "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
@@ -1183,6 +1238,8 @@ def modify_entry(request, entry_id):
         # Save all the changes of the trip
         trip.save()
 
+        update_timingStatus(entry)
+
         # Modifies the model of the entry with the form information
         entry.starting_date=starting_date
         entry.status=status
@@ -1202,7 +1259,6 @@ def modify_entry(request, entry_id):
         entry.save()
 
         return HttpResponseRedirect(reverse("entries"), {
-            "entries": filter_entries,
             "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
@@ -1210,11 +1266,11 @@ def modify_entry(request, entry_id):
             "users": User.objects.all(),
             "entry": entry,
             "formated_starting_date": formated_starting_date,
+            "formated_closing_date": formated_closing_date,
             })
     
     else:
         return render(request, "intranet/edit_entry.html", {
-            "entries": filter_entries,
             "trips": entries_trips,
             "status": STATUS_OPTIONS,
             "importance_options": IMPORTANCE_OPTIONS,
@@ -1222,16 +1278,37 @@ def modify_entry(request, entry_id):
             "users": User.objects.all(),
             "entry": entry,
             "formated_starting_date": formated_starting_date,
+            "formated_closing_date": formated_closing_date,
             })
     
 @login_required
 def stats(request):
 
     this_month = date.today().month
+    this_week = date.today().isocalendar()[1]
+    this_year = date.today().year
+    today = date.today()
+  
+    weeks = []
+
+    # Buscar lunes de la semana actual (ISO: lunes=1, domingo=7)
+    start_of_week = today - timedelta(days=today.isoweekday() - 1)
+
+    for i in range(-20, 20 + 1):
+        start = start_of_week + timedelta(weeks=i)
+        end = start + timedelta(days=6)
+        week_number = start.isocalendar()[1]
+        # Formato en español
+        weeks.append(
+            (week_number, f"Semana {week_number} - {start.strftime('%-d-%m-%Y')} al {end.strftime('%-d-%m-%Y')}")
+        )
 
     return render(request, "intranet/stats.html", {
         "months":MONTHS,
         "this_month":this_month,
+        "this_year":this_year,
+        "this_week":this_week,
+        "weeks":weeks,
     })
 
 
@@ -1770,6 +1847,287 @@ def json_pendings(request):
 
     return JsonResponse(data, safe=False)
 
+@login_required
+@csrf_exempt
+def entries_data(request):
+    # Columnas en el mismo orden que tu tabla HTML
+    columns = [
+        "starting_date",
+        "closing_date",
+        "trip__name",
+        "status",
+        "amount",
+        "trip__client__name",
+        "trip__contact__name",
+        "trip__client_reference",
+        "user_creator__username",
+        "user_working__username",
+        "progress",
+        "importance",
+        "note",
+        "trip__travelling_date",
+        "id"  # para acciones
+    ]
+
+    # Parámetros DataTables
+    draw = int(request.GET.get("draw", 1))
+    start = int(request.GET.get("start", 0))
+    length = int(request.GET.get("length", 10))
+    search_value = request.GET.get("search[value]", "")
+    show_all = request.GET.get("show_all", "0")
+    user_filter = request.GET.get("user_filter", "").strip()  # username o ""
+
+    order_col_index = int(request.GET.get("order[0][column]", 0))
+    order_dir = request.GET.get("order[0][dir]", "asc")
+    order_col = columns[order_col_index]
+    if order_dir == "desc":
+        order_col = f"-{order_col}"
+
+    # 🚩 Filtrar solo entradas del mismo departamento que el usuario
+    qs = Entry.objects.select_related("trip", "user_creator", "user_working", "trip__client", "trip__contact").filter(
+        trip__department=request.user.department
+    )
+    
+    # 🚩 Solo entradas abiertas (isClosed == False) si no se pidió show_all
+    if show_all != "1":
+        qs = qs.filter(isClosed=False)
+
+    # si viene filtro de usuario, aplicar (ejemplo: filtrar por user_creator username)
+    if user_filter != "":
+        qs = qs.filter(user_working__username=user_filter)
+
+    # Búsqueda global
+    if search_value:
+        qs = qs.filter(
+            Q(trip__name__icontains=search_value) |
+            Q(status__icontains=search_value) |
+            Q(user_creator__username__icontains=search_value) |
+            Q(user_working__username__icontains=search_value) |
+            Q(trip__client__name__icontains=search_value) |
+            Q(trip__contact__name__icontains=search_value) |
+            Q(progress__icontains=search_value) |
+            Q(importance__icontains=search_value) |
+            Q(note__icontains=search_value)
+        )
+
+    total_records = Entry.objects.filter(trip__department=request.user.department).count()
+    filtered_records = qs.count()
+
+    # Orden + paginación
+    qs = qs.order_by(order_col)
+    paginator = Paginator(qs, length)
+    page_number = start // length + 1
+    page_obj = paginator.get_page(page_number)
+
+    # Preparar datos
+    data = []
+    for entry in page_obj:
+        # status con versión
+        status = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}"
+
+        # monto
+        amount = f"USD {entry.amount}" if entry.amount else "Pendiente"
+
+        # fechas
+        starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
+        closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
+        travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
+
+        # acciones con modal
+        acciones_html = f"""
+            <div class="d-flex justify-content-around p-2">
+                <a id="pencil-edit-entry" href="/modify_entry/{entry.id}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{entry.id}"></i></a>
+                <i class="fa-solid fa-trash" data-bs-toggle="modal" data-bs-target="#deleteModal{entry.id}"></i>
+            </div>
+            <div class="modal fade modal-lg delete-entries-btn" id="deleteModal{entry.id}" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body text-center">
+                            <h3>¿Está seguro que desea eliminar la entrada?</h3>
+                            <button class="btn btn-dark btn-lg delete-entries-btn" data-id="{entry.id}">ELIMINAR</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        """
+
+        data.append({
+            "starting_date": starting_date,
+            "closing_date": closing_date,
+            "trip": entry.trip.name if entry.trip else "",
+            "status": status,
+            "amount": amount,
+            "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
+            "contact": str(entry.trip.contact) if entry.trip and entry.trip.contact else "",
+            "client_reference": entry.trip.client_reference if entry.trip else "",
+            "user_creator": entry.user_creator.username,
+            "user_working": entry.user_working.username,
+            "progress": entry.progress,
+            "importance": entry.importance,
+            "note": entry.note or "n/a",
+            "travelling_date": travelling_date,
+            "acciones": acciones_html,
+        })
+
+    return JsonResponse({
+        "draw": draw,
+        "recordsTotal": total_records,
+        "recordsFiltered": filtered_records,
+        "data": data,
+    })
+
+
+def stats_data(request):
+    # columnas en el mismo orden que la tabla HTML
+    columns = [
+        "starting_date",
+        "closing_date",
+        "trip__name",
+        "status",
+        "amount",
+        "trip__client__name",
+        "trip__contact__name",
+        "trip__client_reference",
+        "user_creator__username",
+        "user_working__username",
+        "progress",
+        "importance",
+        "note",
+        "trip__travelling_date",
+    ]
+
+    # parámetros DataTables
+    draw = int(request.GET.get("draw", 1))
+    start = int(request.GET.get("start", 0))
+    length = int(request.GET.get("length", 10))
+    search_value = request.GET.get("search[value]", "")
+
+    # filtros personalizados
+    month = request.GET.get("month")
+    year = request.GET.get("year")
+    week = request.GET.get("week")
+    season = request.GET.get("season")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+
+    # columna de orden
+    order_col_index = int(request.GET.get("order[0][column]", 0))
+    order_dir = request.GET.get("order[0][dir]", "asc")
+    order_col = columns[order_col_index]
+    if order_dir == "desc":
+        order_col = f"-{order_col}"
+
+    # queryset base
+    qs = Entry.objects.select_related("trip", "user_creator", "user_working", "trip__client", "trip__contact").filter(
+        trip__department=request.user.department
+    )
+
+    # filtros de fechas
+    if month and year:
+        qs = qs.filter(starting_date__month=month, starting_date__year=year)
+
+    if date_from and date_to:
+        qs = qs.filter(starting_date__date__range=[date_from, date_to])
+
+    # búsqueda global
+    if search_value:
+        qs = qs.filter(
+            Q(trip__name__icontains=search_value) |
+            Q(status__icontains=search_value) |
+            Q(user_creator__username__icontains=search_value) |
+            Q(user_working__username__icontains=search_value) |
+            Q(trip__client__name__icontains=search_value) |
+            Q(trip__contact__name__icontains=search_value) |
+            Q(progress__icontains=search_value) |
+            Q(importance__icontains=search_value) |
+            Q(note__icontains=search_value)
+        )
+
+    total_records = Entry.objects.count()
+    filtered_records = qs.count()
+
+    # ordenar + paginar
+    qs = qs.order_by(order_col)
+    paginator = Paginator(qs, length)
+    page_number = start // length + 1
+    page_obj = paginator.get_page(page_number)
+
+    # preparar datos
+    data = []
+    for entry in page_obj:
+        status = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}"
+        amount = f"USD {entry.amount}" if entry.amount else "Pendiente"
+        starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
+        closing_date = (
+            localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M")
+            if entry.isClosed
+            else f"<td class='bg-{entry.timingStatus}'>n/a</td>"
+        )
+        travelling_date = (
+            entry.trip.travelling_date.strftime("%Y/%m/%d")
+            if entry.trip and entry.trip.travelling_date
+            else ""
+        )
+
+        data.append({
+            "starting_date": starting_date,
+            "closing_date": closing_date,
+            "trip": entry.trip.name if entry.trip else "",
+            "status": status,
+            "amount": amount,
+            "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
+            "contact": str(entry.trip.contact) if entry.trip and entry.trip.contact else "",
+            "client_reference": entry.trip.client_reference if entry.trip else "",
+            "user_creator": entry.user_creator.username,
+            "user_working": entry.user_working.username,
+            "progress": entry.progress,
+            "importance": entry.importance,
+            "note": entry.note or "n/a",
+            "travelling_date": travelling_date,
+        })
+
+    # ejemplo dentro de stats_data (similar a entries_data)
+    summary = {
+        "quotesA_count": 0,
+        "quotes_all_count": 0,
+        "quotesA_sum": 0,
+        "quotes_all_sum": 0,
+        "bookings1_count": 0,
+        "bookings_all_count": 0,
+        "bookings1_sum": 0,
+        "bookings_all_sum": 0,
+        "others_count": 0,
+    }
+
+    for entry in qs:  # qs ya filtrado
+        if entry.status == "Quote":
+            summary["quotes_all_count"] += 1
+            summary["quotes_all_sum"] += entry.amount or 0
+            if entry.version_quote == "A":
+                summary["quotesA_count"] += 1
+                summary["quotesA_sum"] += entry.amount or 0
+        elif entry.status == "Booking":
+            summary["bookings_all_count"] += 1
+            summary["bookings_all_sum"] += entry.amount or 0
+            if entry.version == 1:
+                summary["bookings1_count"] += 1
+                summary["bookings1_sum"] += entry.amount or 0
+        else:
+            summary["others_count"] += 1
+
+
+    return JsonResponse({
+        "draw": draw,
+        "recordsTotal": total_records,
+        "recordsFiltered": filtered_records,
+        "data": data,
+        "summary": summary,
+    })
+
 
 def read_emails(request):
     load_dotenv()
@@ -1804,7 +2162,6 @@ def tourplan_files(request):
 
             csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
             tourplan_files = upload_data(csv_obj)
-            print(tourplan_files)
 
             return render(request, "intranet/tourplan_files.html", {
                 "form":form,
@@ -1939,7 +2296,6 @@ def tourplan_files(request):
             # Create data from tourplan csv
             csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
             tourplan_files = upload_data(csv_obj)
-            print(tourplan_files)
 
             return render(request, "intranet/tourplan_files.html", {
                 "form":form,
@@ -1992,7 +2348,7 @@ def upload_csv_intranet(csv_obj):
     for trip in all_trips:
         if trip.tourplanId != '':
             tourplanIds.append(trip.tourplanId)
-    print(tourplanIds)
+
     # Empty list of temp objects
     all_obj = []
 
@@ -2078,8 +2434,6 @@ def upload_csv_intranet(csv_obj):
                     )
 
                     trip_obj.save()
-                    
-                    print(trip_obj)
 
                     all_obj.append(trip_obj)
 
@@ -2126,7 +2480,6 @@ def upload_csv_entries(csv_obj):
                     if col_number == 1:
                         if col != "n/a":
                             trip = Trip.objects.filter(client_reference__icontains=col).first()
-                            print(trip)
                             if trip == None:
                                 continue
                             temp_obj["trip"] = trip
@@ -2137,7 +2490,6 @@ def upload_csv_entries(csv_obj):
                         if row[0] == "n/a":
 
                             trip = Trip.objects.filter(name__icontains=col).first()
-                            print(trip)
                             if trip == None:
                                 print("Trip is not found by reference")
                                 break
@@ -2225,8 +2577,6 @@ def upload_csv_entries(csv_obj):
                     )
 
                     entry_obj.save()
-                    
-                    print(entry_obj)
                     
                     all_obj.append(entry_obj)
 

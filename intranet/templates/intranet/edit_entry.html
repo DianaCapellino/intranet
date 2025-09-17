@@ -29,7 +29,7 @@
                         <div class="mb-3 col">
                             <label for="closing_date" class="form-label">Fecha Cierre/Envío</label>
                             {% if entry.isClosed %}
-                                <input class="form-control datetime-input" type="datetime-local" name="closing_date" id="closing_date" data-mdb-inline="true" value="{{ formated_closing_date }}" required>
+                                <input class="form-control" type="datetime-local" name="closing_date" data-mdb-inline="true" value="{{ formated_closing_date }}" required>
                             {% else %}
                                 <input class="form-control datetime-input" type="datetime-local" name="closing_date" id="closing_date" data-mdb-inline="true">
                             {% endif %}

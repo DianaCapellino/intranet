@@ -350,13 +350,13 @@
                                 <thead>
                                     <tr>
                                         <th>Fecha Pedido</th>
+                                        <th>Respuesta</th>
                                         <th>Viaje</th>
                                         <th>Status</th>
                                         <th>Monto</th>
                                         <th>Cliente</th>
                                         <th>Vendedor</th>
                                         <th>Progreso</th>
-                                        <th>Valoración</th>
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
@@ -366,6 +366,7 @@
                                         <tr id="row-entries-{{entry.id}}">
 
                                             <td>{{entry.starting_date|date:"Y/m/d H:i"}}</td>
+                                            <td class="bg-{{entry.timingStatus}}">n/a</td>
                                             <td>{{entry.trip}}</td>
                                             {% if entry.status == "Quote" %}
                                                 <td>{{entry.status}} {{entry.version_quote}}</td>
@@ -380,7 +381,6 @@
                                             <td>{{entry.trip.client}}</td>
                                             <td>{{entry.trip.contact}}</td>
                                             <td>{{entry.progress}}</td>
-                                            <td>{{entry.importance}}</td>
                                             <td class="align-middle">
                                                 <div class="justify-content-around d-flex">
                                                     <a id="pencil-edit-entry" href="{% url 'modify_entry' entry.id %}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{{entry.id}}"></i></a>

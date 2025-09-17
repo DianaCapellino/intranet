@@ -1,6 +1,5 @@
 from django.db import models
-from intranet.models import Client
-from intranet.models import User
+from intranet.models import Client, User, Trip
 from multiselectfield import MultiSelectField
 import django.utils.timezone
 from django import forms
@@ -113,7 +112,16 @@ MARGIN_OPTIONS = [
     ("Low", "Low"),
     ("Regular", "Regular"),
     ("High", "High"),
-] 
+]
+
+
+TYPE_QUALITY = [
+    ("Calidad del servicio", "Calidad del servicio"),
+    ("Demora/rapidez", "Demora/rapidez"),
+    ("Salud/higiene", "Salud/higiene"),
+    ("Inclusiones", "Otro"),
+    ("Otro", "Otro")
+]
 
 class Location(models.Model):
     code = models.CharField(max_length=3)
@@ -319,3 +327,18 @@ class TourplanLine(models.Model):
 
     def __str__ (self):
         return f"Line: {self.order} - Supplier: {self.supplier_name} - Info: {self.option_description} - Date: {self.date_from}"
+    
+
+class Feedback(models.Model):
+    creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='creation date')
+    user = models.ForeignKey(User,on_delete=models.CASCADE, related_name="feedback_user")
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="feedback_trips")
+    last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date', null=True)
+    closing_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='closing date', null=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="feedback_suppliers", null=True, blank=True)
+    destination = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="feedbac_destinations", null=True, blank=True)
+    type = models.CharField(max_length=64,choices=TYPE_QUALITY)
+    content = models.CharField(max_length=3000)
+    complaint = models.BooleanField(default=False)
+    solution = models.CharField(max_length=3000, null=True, blank=True)
+    cost = models.FloatField(default=0, null=True, blank=True)

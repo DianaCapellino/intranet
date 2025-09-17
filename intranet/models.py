@@ -109,6 +109,7 @@ TIMING_STATUS = [
     ("danger", "Muy vencido"),
 ]
 
+
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
     isActivated = models.BooleanField(default=True)
@@ -207,6 +208,9 @@ class Notes(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="trip_notes")
     last_modification_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='last modification date', null=True)
     content = models.CharField(max_length=512)
+
+    def __str__(self):
+        return f"{self.content} (by: {self.user})"
 
     def __str__(self):
         return f"{self.content} (by: {self.user})"

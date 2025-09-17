@@ -19,6 +19,7 @@ urlpatterns = [
     path("trips/clean", views.clean_search, name="clean_search"),
     path("create_entry/<int:trip_id>", views.create_entry, name="create_entry"),
     path("create_note/<int:trip_id>", views.create_note, name="create_note"),
+    path("create_feedback/<int:trip_id>", views.create_feedback, name="create_feedback"),
 
     # Paths for modifying items
     path("modify_user/<int:user_id>", views.modify_user, name="modify_user"),
@@ -34,8 +35,10 @@ urlpatterns = [
     path("entries_trip/json/<int:trip_id>", views.jsontrip_entries, name="jsontrip_entries"),
     path("notes_trip/json/<int:trip_id>", views.jsontrip_notes, name="jsontrip_notes"),
     path("entries/json/<int:entry_id>", views.json_entry, name="json_entry"),
+    path("entries/data/", views.entries_data, name="entries_data"),
     path("entries/json/pendings", views.json_pendings, name="json_pendings"),
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
+    path("stats/data/", views.stats_data, name="stats_data"),
 
     # API routes for configurations
     path("countries/json/<int:country_id>", views.jsoncountry, name="jsoncountry"),

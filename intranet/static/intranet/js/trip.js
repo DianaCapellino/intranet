@@ -8,15 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btn_display("entry");
     btn_display("user");
 
-    // Creates the functionality when pressing the eye
-    eye_functionality();
-
     // Creates the listeners when opening and closing modals
     modal_functionality();
 
     // Creates the listeners when selecting the user when creating entry and filtering
     user_working_functionality();
-    user_filter_functionality();
+    //user_filter_functionality();
 
     create_entry_from_pendings();
 
@@ -63,7 +60,36 @@ function modify_date_and_datetime() {
 
 function create_datatable (type) {
     if (type == ("entries")) {
-        new DataTable(`#${type}`, {
+        let showAll = 0;
+        let userFilter = "";
+        let entriesTable = $('#entries').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: "/entries/data/",
+                type: "GET",
+                data: function (d) {
+                    d.show_all = showAll;  // 👈 por defecto solo abiertas
+                    d.user_filter = userFilter;
+                }
+            },
+            columns: [
+                { data: "starting_date" },
+                { data: "closing_date" },
+                { data: "trip" },
+                { data: "status" },
+                { data: "amount" },
+                { data: "client" },
+                { data: "contact" },
+                { data: "client_reference" },
+                { data: "user_creator" },
+                { data: "user_working" },
+                { data: "progress" },
+                { data: "importance" },
+                { data: "note" },
+                { data: "travelling_date" },
+                { data: "acciones", orderable: false }
+            ],
             layout: {
                 topStart: {
                     buttons: [
@@ -103,11 +129,37 @@ function create_datatable (type) {
                 { width: '20%', target: 2 },
                 { visible: false, targets: [4, 7, 11, 12]}
             ],
+            order: [[0, "desc"]],
             language: {
-                url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
-            },
-            order: [[0, 'desc']],
-        });       
+                url: "https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json"
+            }
+        });
+
+        // Creates the functionality when pressing the eye
+        const $eye = $("#pending-eye");
+        // inicial: asegurar icono 'eye-slash' si showAll == 0
+        if (showAll === 0) {
+            $eye.removeClass("fa-eye").addClass("fa-eye-slash");
+        } else {
+            $eye.removeClass("fa-eye-slash").addClass("fa-eye");
+        }
+
+        $eye.on("click", function () {
+            showAll = showAll === 0 ? 1 : 0;
+            // cambio de ícono
+            if (showAll === 1) {
+                $eye.removeClass("fa-eye-slash").addClass("fa-eye");
+            } else {
+                $eye.removeClass("fa-eye").addClass("fa-eye-slash");
+            }
+            // recargo la tabla (manteniendo la página actual)
+            entriesTable.ajax.reload(null, false);
+        });
+
+        $("#user_filter_select").on("change", function () {
+            userFilter = $(this).val() || "";
+            entriesTable.ajax.reload();
+        });
 
     } else if (type == ("trips")){
         new DataTable(`#${type}`, {
@@ -287,30 +339,26 @@ function create_entry_from_pendings() {
     };
 }
 
-function eye_functionality() {
-    const pending_eye = document.querySelector('#pending-eye');
-    let eye_is_open = false;
-    if (pending_eye != null) {
-        pending_eye.addEventListener("click", () => {
-            const all_pending_entries = document.querySelectorAll('.pending-entry');
-            if (eye_is_open == false) {
-                all_pending_entries.forEach(entry => {
-                    entry.classList.remove("d-none");
-                });
-                pending_eye.classList.remove("fa-eye-slash");
-                pending_eye.classList.add("fa-eye");
-                eye_is_open = true;
-            } else {
-                all_pending_entries.forEach(entry => {
-                    entry.classList.add("d-none");
-                });
-                eye_is_open = false;
-                pending_eye.classList.remove("fa-eye");
-                pending_eye.classList.add("fa-eye-slash");
-            };
+function eye_functionality(entriesTable) {
+    let showAll = 0;  // 0 = solo abiertas, 1 = todas
 
-        });
-    };
+    $("#pending-eye").on("click", function() {
+        // alternar estado
+        showAll = showAll === 0 ? 1 : 0;
+
+        // cambiar icono
+        if (showAll === 1) {
+            $(this).removeClass("fa-eye-slash").addClass("fa-eye");
+        } else {
+            $(this).removeClass("fa-eye").addClass("fa-eye-slash");
+        }
+
+        // actualizar el parámetro y recargar
+        entriesTable.ajax.params = function (d) {
+            d.show_all = showAll;
+        };
+        entriesTable.ajax.reload();
+    });
 }
 
 function user_working_functionality() {
