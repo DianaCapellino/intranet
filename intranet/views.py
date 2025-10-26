@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 import csv
 from django.db.models import Q
 from django.core.paginator import Paginator
+from collections import OrderedDict
 
 
 @login_required
@@ -124,24 +125,24 @@ def get_filtered_trips(user):
 
     try:
         search = Search.objects.get(user=user)
+
     except Search.DoesNotExist:
         search = None
-
 
     # Empty list of trips filtered
     filter_trips = []
 
     # Check if a search is saved
     if search:
-        
-        # Filter the trips by deparment
+
+       # Filter the trips by deparment
         dep_trips = Trip.objects.filter(department=user.department)
 
         if search.name != "":
             name_trips = dep_trips.filter(name__icontains=search.name)
         else:
             name_trips = dep_trips
-        
+
         if search.client_reference != "":
             client_ref_trips = name_trips.filter(client_reference__icontains=search.client_reference)
         else:
@@ -154,19 +155,7 @@ def get_filtered_trips(user):
 
         filter_trips = tourplan_ref_trips
         status_trips = []
-        """
-        if search.status:
-            for status in search.status:
-                status_trip = search_trips.filter(status=status)
-                if status_trips:
-                    status_trips.union(status_trip)
-                else:
-                    status_trips.append(status_trip)
-
-        print(status_trip)
-        filter_trips = status_trips
-        """
-
+ 
     # Filter applied when there is no search
     else:
         dep_trips = Trip.objects.filter(department=user.department)
@@ -693,14 +682,6 @@ def get_return_page(page, type, user):
             formated_out_date = (trip.travelling_date + timedelta(days=1)).isoformat()
         formated_out_dates.append((trip.id, formated_out_date))
 
-    # Get 30 days ago
-    today = date.today()
-    days = 15
-    date_fil = today - timedelta(days=days)
-    date_fil_to = today + timedelta(days=1)
-
-    filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
-
     if page == "trips":
 
         if type == "error":
@@ -717,7 +698,6 @@ def get_return_page(page, type, user):
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.filter(department=user.department),
-                    "entries": filter_entries,
                     "notes": Notes.objects.filter(trip__department=user.department),
                     "one_hundred": 100,
                     "feedbacks": Feedback.objects.filter(trip__department=user.department),
@@ -735,7 +715,6 @@ def get_return_page(page, type, user):
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.filter(department=user.department),
-                    "entries": filter_entries,
                     "notes": Notes.objects.filter(trip__department=user.department),
                     "one_hundred": 100,
                     "feedbacks": Feedback.objects.filter(trip__department=user.department),
@@ -745,7 +724,6 @@ def get_return_page(page, type, user):
         if type == "error":
             return {
                     "message_new": "Completar todos los campos",
-                    "entries": filter_entries,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -756,7 +734,6 @@ def get_return_page(page, type, user):
                 }
         else:
             return {
-                    "entries": filter_entries,
                     "status": STATUS_OPTIONS,
                     "importance_options": IMPORTANCE_OPTIONS,
                     "progress_options": PROGRESS_OPTIONS,
@@ -780,58 +757,124 @@ def clean_search(request):
 
 @login_required
 def create_trip(request):
-
-    # Get all the info from the form
     if request.method == "POST":
-        name = request.POST["name"]
-        starting_date = request.POST["starting_date"]
-        travelling_date = request.POST["travelling_date"]
-        client_form = request.POST["client"]
-        contact_form = request.POST["contact"]
-        client_reference = request.POST["client_reference"]
-        status = request.POST["status"]
-        difficulty = request.POST["difficulty"]
+        # Detectar si es una request AJAX
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
+        try:
+            # Get all the info from the form
+            name = request.POST.get("name", "").strip()
+            starting_date = request.POST.get("starting_date")
+            travelling_date = request.POST.get("travelling_date")
+            client_form = request.POST.get("client")
+            contact_form = request.POST.get("contact")
+            client_reference = request.POST.get("client_reference", "")
+            status = request.POST.get("status")
+            difficulty = request.POST.get("difficulty", "")
 
-        # Return an error message if something is missing
-        if not name or not starting_date or not travelling_date or not client_form or not contact_form or not status or not difficulty:
-            return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user) )
-               
-        # Get the client from the client ID of the form
-        client = Client.objects.get(id=client_form)
+            # Validar campos requeridos
+            if not name or not starting_date or not travelling_date or not status or difficulty == "":
+                if is_ajax:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Por favor complete todos los campos requeridos',
+                        'errors': {
+                            'form': ['Faltan campos obligatorios']
+                        }
+                    }, status=400)
+                else:
+                    return render(request, "intranet/trips.html", 
+                                get_return_page("trips", "error", request.user))
+            
+            # Get the client from the client ID of the form
+            if client_form == "0" or client_form == "Cliente" or not client_form:
+                client = Client.objects.get(name="Sin Cliente")
+            else:
+                try:
+                    client = Client.objects.get(id=client_form)
+                except Client.DoesNotExist:
+                    if is_ajax:
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'Cliente no encontrado',
+                            'errors': {'client': ['Cliente inválido']}
+                        }, status=400)
+                    else:
+                        return render(request, "intranet/trips.html", 
+                                    get_return_page("trips", "error", request.user))
 
-        # Get the contact from the contact ID of the form
-        contact = ClientContact.objects.get(id=contact_form)
+            # Get the contact from the contact ID of the form
+            if contact_form == "0" or contact_form == "Contacto" or not contact_form:
+                contact = ClientContact.objects.get(name="Sin Contacto")
+            else:
+                try:
+                    contact = ClientContact.objects.get(id=contact_form)
+                except ClientContact.DoesNotExist:
+                    if is_ajax:
+                        return JsonResponse({
+                            'success': False,
+                            'message': 'Contacto no encontrado',
+                            'errors': {'contact': ['Contacto inválido']}
+                        }, status=400)
+                    else:
+                        return render(request, "intranet/trips.html", 
+                                    get_return_page("trips", "error", request.user))
 
-        # Get the department from the user department
-        department = request.user.department
+            # Get the department from the user department
+            department = request.user.department
 
-        # Set the default undefined users SD for the new trip booking options
-        responsable_user = User.objects.get(pk=19)
-        operations_user = User.objects.get(pk=19)
-        dh = User.objects.get(pk=19)
+            # Set the default undefined users SD for the new trip booking options
+            responsable_user = User.objects.get(pk=19)
+            operations_user = User.objects.get(pk=19)
+            dh = User.objects.get(pk=19)
 
-        # Creates the model of the contact from the form information
-        new_trip = Trip.objects.create(
-            name=name,
-            status=status,
-            client=client,
-            client_reference=client_reference,
-            starting_date=starting_date,
-            travelling_date=travelling_date,
-            contact=contact,
-            difficulty=difficulty,
-            department=department,
-            responsable_user=responsable_user,
-            operations_user=operations_user,
-            dh=dh,
-            creation_user=request.user
-        )
-        new_trip.save()
+            # Creates the model of the trip from the form information
+            new_trip = Trip.objects.create(
+                name=name,
+                status=status,
+                client=client,
+                client_reference=client_reference,
+                starting_date=starting_date,
+                travelling_date=travelling_date,
+                contact=contact,
+                difficulty=difficulty,
+                department=department,
+                responsable_user=responsable_user,
+                operations_user=operations_user,
+                dh=dh,
+                creation_user=request.user
+            )
+            new_trip.save()
 
-        return HttpResponse(status=204)
+            # Responder según el tipo de request
+            if is_ajax:
+                return JsonResponse({
+                    'success': True,
+                    'trip_id': new_trip.id,
+                    'user_id': request.user.id,
+                    'message': 'Viaje creado exitosamente',
+                    'trip_name': new_trip.name
+                })
+            else:
+                # Método tradicional (fallback)
+                return HttpResponse(status=204)
+        
+        except Exception as e:
+            # Manejo de errores generales
+            if is_ajax:
+                return JsonResponse({
+                    'success': False,
+                    'message': f'Error al crear el viaje: {str(e)}',
+                    'errors': {'general': [str(e)]}
+                }, status=500)
+            else:
+                return render(request, "intranet/trips.html", 
+                            get_return_page("trips", "error", request.user))
 
     else:
-        return render(request, "intranet/trips.html", get_return_page("trips", "", request.user))
+        # GET request - mostrar el formulario
+        return render(request, "intranet/trips.html", 
+                     get_return_page("trips", "", request.user))
     
     
 @login_required
@@ -1018,13 +1061,7 @@ def pendings(request):
 @login_required
 def create_entry(request, trip_id):
 
-    # Get 30 days ago
-    today = date.today()
-    days = 15
-    date_fil = today - timedelta(days=days)
-    date_fil_to = today + timedelta(days=1)
-
-    filter_entries = Entry.objects.filter(starting_date__gte=date_fil, starting_date__lte=date_fil_to)
+    filter_entries = Entry.objects.filter(isClosed=False)
 
     # Get the trip from the trip ID of the button
     trip = Trip.objects.get(id=trip_id)
@@ -1100,11 +1137,20 @@ def create_entry(request, trip_id):
         )
         new_entry.save()
 
+        # Si la petición viene por AJAX (fetch con header X-Requested-With)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                "success": True,
+                "entry_id": new_entry.id,
+                "user_id": request.user.id
+            })
+
+        # Si no, comportamiento normal (mantiene compatibilidad)
         return HttpResponse(status=204)
     
     else:
 
-        # Return all the entries in the last 15 days
+        # Return all the entries without answer and the rest of the info for the form
         return render(request, "intranet/new_entry.html", {
             "entries": filter_entries,
             "status": STATUS_OPTIONS,
@@ -1139,6 +1185,7 @@ def modify_entry(request, entry_id):
         importance = request.POST["importance"]
         user_working_form = request.POST["user_working"]
         version = request.POST["version"]
+        version_quote = request.POST["version_quote"]
         user_creator_form = request.POST["user_creator"]
         user_working_form = request.POST["user_working"]
         amount = request.POST["amount"]
@@ -1218,7 +1265,7 @@ def modify_entry(request, entry_id):
                 trip.conversion_date = starting_date
             trip.version = version
         if status == "Quote":
-            trip.version_quote = version
+            trip.version_quote = version_quote
         else:
             trip.version = version
 
@@ -1252,7 +1299,7 @@ def modify_entry(request, entry_id):
         entry.tourplanId=tourplanId
 
         if status == "Quote":
-            entry.version_quote = version
+            entry.version_quote = version_quote
         else:
             entry.version = version
 
@@ -1311,6 +1358,53 @@ def stats(request):
         "weeks":weeks,
     })
 
+
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+
+@require_GET
+def stats_entries_report(request):
+    """
+    Renderiza la página de reporte de estadísticas
+    Recibe parámetros por GET:
+    - type: 'vendor' o 'client'
+    - period: descripción del período
+    - week/month/year/date_from/date_to: según el filtro
+    """
+    
+    # Obtener parámetros de la solicitud
+    report_type = request.GET.get('type', 'vendor')
+    period = request.GET.get('period', 'Período Personalizado')
+    
+    context = {
+        'report_type': report_type,
+        'period': period,
+    }
+    
+    return render(request, 'intranet/stats_entries_report.html', context)
+
+
+@require_GET
+def stats_trips_report(request):
+    """
+    Renderiza la página de reporte de estadísticas
+    Recibe parámetros por GET:
+    - type: 'vendor' o 'client'
+    - period: descripción del período
+    - week/month/year/date_from/date_to: según el filtro
+    """
+    
+    # Obtener parámetros de la solicitud
+    report_type = request.GET.get('type', 'vendor')
+    period = request.GET.get('period', 'Período Personalizado')
+    
+    context = {
+        'report_type': report_type,
+        'period': period,
+    }
+    
+    return render(request, 'intranet/stats_trips_report.html', context)
 
 @login_required
 def holidays(request):
@@ -1932,6 +2026,7 @@ def entries_data(request):
         starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
         closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
         travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
+        #user_working = f"<div style='background-color: {entry.user_working.color}; color:white'>{entry.user_working.username}</div>"
 
         # acciones con modal
         acciones_html = f"""
@@ -1939,20 +2034,28 @@ def entries_data(request):
                 <a id="pencil-edit-entry" href="/modify_entry/{entry.id}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{entry.id}"></i></a>
                 <i class="fa-solid fa-trash" data-bs-toggle="modal" data-bs-target="#deleteModal{entry.id}"></i>
             </div>
-            <div class="modal fade modal-lg delete-entries-btn" id="deleteModal{entry.id}" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body text-center">
-                            <h3>¿Está seguro que desea eliminar la entrada?</h3>
-                            <button class="btn btn-dark btn-lg delete-entries-btn" data-id="{entry.id}">ELIMINAR</button>
+
+            <!-- Modal de eliminación -->
+                <div class="modal fade modal-lg" id="deleteModal{entry.id}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
+                                <!-- Botón cerrar con id único -->
+                                <button id="btn-close-entries-{entry.id}" type="button" 
+                                        class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body text-center">
+                                <h3>¿Está seguro que desea eliminar la entrada?</h3>
+                                <!-- Botón eliminar con data-id -->
+                                <button class="btn btn-dark btn-lg delete-entries-btn" 
+                                        id="delete-entry-{entry.id}">
+                                    ELIMINAR
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
         """
 
         data.append({
@@ -1971,6 +2074,7 @@ def entries_data(request):
             "note": entry.note or "n/a",
             "travelling_date": travelling_date,
             "acciones": acciones_html,
+            "id": entry.id,
         })
 
     return JsonResponse({
@@ -1980,23 +2084,21 @@ def entries_data(request):
         "data": data,
     })
 
-
-def stats_data(request):
+def stats_entries_data(request):
     # columnas en el mismo orden que la tabla HTML
     columns = [
         "starting_date",
         "closing_date",
         "trip__name",
         "status",
+        "version",
+        "version_quote",
         "amount",
         "trip__client__name",
         "trip__contact__name",
-        "trip__client_reference",
         "user_creator__username",
         "user_working__username",
-        "progress",
-        "importance",
-        "note",
+        "difficulty",
         "trip__travelling_date",
     ]
 
@@ -2043,8 +2145,7 @@ def stats_data(request):
             Q(trip__client__name__icontains=search_value) |
             Q(trip__contact__name__icontains=search_value) |
             Q(progress__icontains=search_value) |
-            Q(importance__icontains=search_value) |
-            Q(note__icontains=search_value)
+            Q(importance__icontains=search_value)
         )
 
     total_records = Entry.objects.count()
@@ -2078,15 +2179,14 @@ def stats_data(request):
             "closing_date": closing_date,
             "trip": entry.trip.name if entry.trip else "",
             "status": status,
+            "version": entry.version,
+            "version_quote": entry.version_quote,
             "amount": amount,
             "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
             "contact": str(entry.trip.contact) if entry.trip and entry.trip.contact else "",
-            "client_reference": entry.trip.client_reference if entry.trip else "",
             "user_creator": entry.user_creator.username,
             "user_working": entry.user_working.username,
-            "progress": entry.progress,
-            "importance": entry.importance,
-            "note": entry.note or "n/a",
+            "difficulty": entry.trip.difficulty,
             "travelling_date": travelling_date,
         })
 
@@ -2129,6 +2229,228 @@ def stats_data(request):
     })
 
 
+def stats_trips_data(request):
+    # Columnas en el mismo orden que definiste en el JS para trips
+    columns = [
+        "name",
+        "client__name",
+        "contact__name",
+        "client_reference",
+        "travelling_date",
+        "amount",
+        "difficulty",
+        "responsable_user",
+        "operations_user"
+    ]
+
+    draw = int(request.GET.get("draw", 1))
+    start = int(request.GET.get("start", 0))
+    length = int(request.GET.get("length", 10))
+    search_value = request.GET.get("search[value]", "")
+
+    order_col_index = int(request.GET.get("order[0][column]", 0))
+    order_dir = request.GET.get("order[0][dir]", "asc")
+    order_col = columns[order_col_index]
+    if order_dir == "desc":
+        order_col = f"-{order_col}"
+
+    # 🚩 Filtrar solo viajes del departamento del usuario
+    qs = Trip.objects.filter(
+        department=request.user.department
+    ).filter(status="Booking")
+
+    # 🚩 filtros de fechas por travelling_date
+    month = request.GET.get("month")
+    year = request.GET.get("year")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+
+    if month and year:
+        qs = qs.filter(
+            travelling_date__year=year,
+            travelling_date__month=month
+        )
+    elif date_from and date_to:
+        try:
+            date_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            date_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+            qs = qs.filter(travelling_date__range=(date_from, date_to))
+        except ValueError:
+            pass  # si no se puede parsear, ignora el filtro
+
+    # 🚩 Búsqueda global
+    if search_value:
+        qs = qs.filter(
+            Q(name__icontains=search_value) |
+            Q(status__icontains=search_value) |
+            Q(client__name__icontains=search_value) |
+            Q(contact__name__icontains=search_value) |
+            Q(client_reference__icontains=search_value) |
+            Q(difficulty__icontains=search_value)
+        )
+
+    total_records = Trip.objects.filter(department=request.user.department).count()
+    filtered_records = qs.count()
+
+    # 🚩 Orden + paginación
+    qs = qs.order_by(order_col)
+    paginator = Paginator(qs, length)
+    page_number = start // length + 1
+    page_obj = paginator.get_page(page_number)
+
+    data = []
+    for trip in page_obj:
+        data.append({
+            "name": trip.name,
+            "client": trip.client.name if trip.client else "",
+            "contact": str(trip.contact) if trip.contact else "",
+            "reference": trip.client_reference or "n/a",
+            "travelling_date": trip.travelling_date.strftime("%Y/%m/%d") if trip.travelling_date else "",
+            "amount": f"USD {trip.amount:,.2f}" if trip.amount else "Pendiente",
+            "difficulty": trip.difficulty,
+            "responsable_user": trip.responsable_user.username,
+            "operations_user": trip.operations_user.username
+        })
+
+    
+    # summary inicialization
+    summary = {
+        "audley_count": 0,
+        "audley_amount": 0,
+        "others_count": 0,
+        "others_amount": 0,
+        "all_count": 0,
+        "all_amount": 0
+    }
+
+    for trip in qs:  # qs ya filtrado
+        if trip.client.name == "Audley Travel UK":
+            summary["audley_count"] += 1
+            summary["audley_amount"] += trip.amount or 0
+        else:
+            summary["others_count"] += 1
+            summary["others_amount"] += trip.amount or 0
+
+        summary["all_count"] += 1
+        summary["all_amount"] += trip.amount or 0
+
+    return JsonResponse({
+        "draw": draw,
+        "recordsTotal": total_records,
+        "recordsFiltered": filtered_records,
+        "data": data,
+        "summary": summary,
+    })
+
+
+@login_required
+@csrf_exempt
+def stats_data(request):
+    """Router entre entries y trips para DataTables"""
+    report_type = request.GET.get("type", "entries")
+
+    if report_type == "trips":
+        return stats_trips_data(request)
+    else:
+        return stats_entries_data(request)
+
+
+def stats_entries_by_vendor(qs):
+
+    # agrupación y agregación
+    vendors = {}
+    for entry in qs:
+        vendor = entry.user_working.other_name if entry.user_working.userType == "Ventas" else "Operaciones-Sin Definir"
+        if vendor not in vendors:
+
+            # ✅ Asegurar que el color sea string
+            user_color = '#999999'  # Color por defecto
+
+            if entry.user_working:
+                if hasattr(entry.user_working, 'color'):
+                    # Convertir explícitamente a string
+                    color_value = entry.user_working.color
+                    if color_value:
+                        # Si es un objeto ColorField, convertir a string
+                        user_color = str(color_value)
+
+            vendors[vendor] = {
+                "total": 0,
+                "a": 0,
+                "audleyA": 0,
+                "montoA": 0.0,
+                "color": user_color
+            }
+
+        if entry.status == "Quote":
+            if entry.version_quote == "A":
+                vendors[vendor]["a"] += 1
+                if entry.trip and entry.trip.client and entry.trip.client.name == "Audley Travel UK":
+                    vendors[vendor]["audleyA"] += 1
+                if entry.amount:
+                    vendors[vendor]["montoA"] += float(entry.amount)
+            vendors[vendor]["total"] += 1
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
+    sorted_vendors = sorted(
+        vendors.items(),
+        key=lambda x: x[1]['a'],  # Ordenar por cantidad de cotizaciones A
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado (Python 3.7+ mantiene el orden)
+    vendors_ordered = OrderedDict(sorted_vendors)
+
+    return dict(vendors_ordered)
+
+
+def stats_entries_by_client(qs):
+    pass
+
+
+def stats_entries_by_op_users(qs):
+    pass
+
+
+@login_required
+def stats_presentation_entries(request):
+    """
+    Devuelve datos agregados por vendedor (user_working)
+    para generar estadísticas tipo generateSampleData().
+    """
+    department = request.user.department
+
+    # filtros opcionales (mismo formato que tus otras vistas)
+    month = request.GET.get("month")
+    year = request.GET.get("year")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+
+    # base queryset
+    qs = Entry.objects.select_related(
+        "user_working", "trip", "trip__client"
+    ).filter(
+        trip__department=department
+    )
+
+    # filtro por fechas
+    if month and year:
+        qs = qs.filter(starting_date__month=month, starting_date__year=year)
+    elif date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+            qs = qs.filter(starting_date__range=(d_from, d_to))
+        except ValueError:
+            pass
+
+    vendors = stats_entries_by_vendor(qs)
+    op_users = stats_entries_by_op_users(qs)
+    clients = stats_entries_by_client(qs)
+
+    return JsonResponse({"vendors": vendors})
+
+
 def read_emails(request):
     load_dotenv()
     
@@ -2150,6 +2472,7 @@ def read_emails(request):
     return render(request, "intranet/read_emails.html", {
         "emails": emails,
     })
+    
 
 @login_required
 def tourplan_files(request):

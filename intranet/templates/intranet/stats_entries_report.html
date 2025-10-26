@@ -1,0 +1,84 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block body %}
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between">
+            <h1>📊 ESTADISTICAS 📊</h1>
+            <!-- Toolbar de exportación -->
+            <div class="align-items-center">
+                <button class="btn btn-primary btn-export" id="export-pdf">
+                    <i class="fas fa-file-pdf"></i> PDF Completo
+                </button>
+                
+                <button class="btn btn-primary" id="start-presentation">
+                    <i class="fas fa-desktop"></i> Presentación
+                </button>
+
+                <button class="btn btn-primary" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+            </div>
+            <div>
+                <a href="javascript:history.back()"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+        <p id="report-period">Periodo: Cargando...</p>
+
+        <hr>
+        <!-- Contenido del Reporte -->
+        <div id="report-content" style="display: none;">
+            <!-- Sección 1: Tabla de Vendedores -->
+            <div class="content-section">
+                <h2>📋 Resumen por Vendedor - Cotizaciones</h2>
+                <br>
+                <table class="report-table table table-striped" id="vendor-table">
+                    <thead>
+                        <tr>
+                            <th>Vendedor</th>
+                            <th>Total Cotizaciones</th>
+                            <th>Cotizaciones A</th>
+                            <th>Cotizaciones Audley (A)</th>
+                            <th>Facturación A</th>
+                            <th>Facturación %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendor-tbody">
+                    </tbody>
+                    <tfoot id="vendor-tfoot"></tfoot>
+                </table>
+            </div>
+            <hr>
+            <!-- Sección 2: Gráficos -->
+            <div class="content-section">
+                <h2>📈 Análisis Visual - Cotizaciones</h2>
+                <br>
+                <div class="charts-container row">
+                    <div class="chart-box col-6">
+                        <h4>Cotizaciones A por Cantidad</h4>
+                        <canvas class="p-4 m-4" id="chartCantidadCanvas"></canvas>
+                    </div>
+                    <div class="chart-box col-6">
+                        <h4>Cotizaciones A por Monto</h4>
+                        <canvas class="p-4 m-4" id="chartMontoCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+            <hr>
+            <!-- Sección 3: Insights -->
+            <div class="content-section">
+                <h2>💡 Insights Clave</h2>
+                <div class="insights-box">
+                    <h4>Análisis de Facturación - Cotizaciones</h4>
+                    <div id="insights-content"></div>
+                </div>
+            </div>
+
+            <!-- Sección 4: Datos Completos (opcional, para PDF) -->
+            <div class="content-section" style="display: none;" id="full-data-section">
+                <h2>📊 Datos Completos del Período</h2>
+                <p>Esta sección contiene todos los datos solicitados del período analizado.</p>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # General paths
     path("",views.index, name="index"),
     path("login", views.login_view, name="login"),
     path("logout", views.logout_view, name="logout"),
@@ -38,7 +39,8 @@ urlpatterns = [
     path("entries/data/", views.entries_data, name="entries_data"),
     path("entries/json/pendings", views.json_pendings, name="json_pendings"),
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
-    path("stats/data/", views.stats_data, name="stats_data"),
+    path("stats/data/", views.stats_data, name="stats_data"),   
+    path("stats/data/entries/presentation/", views.stats_presentation_entries, name="stats_presentation_entries"),
 
     # API routes for configurations
     path("countries/json/<int:country_id>", views.jsoncountry, name="jsoncountry"),
@@ -52,9 +54,12 @@ urlpatterns = [
     path("entries/json", views.json_entries, name="json_entries"),
     path("holidays/json", views.json_holidays, name="json_holidays"),
 
+    # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),
-
     path("tourplan_files", views.tourplan_files, name="tourplan_files"),
     path("intranet_files", views.intranet_files, name="intranet_files"),
     path("advanced_search", views.advanced_search, name="advanced_search"),
+    path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),
+    path("stats/trips/", views.stats_trips_report, name="stats_trips_report"),
+    
 ]

@@ -115,7 +115,7 @@ class User(AbstractUser):
     isActivated = models.BooleanField(default=True)
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
     isAdmin = models.BooleanField(default=False)
-    userType = models.CharField(max_length=64, choices=USER_TYPES, default="Sales")
+    userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
 
     class Meta:

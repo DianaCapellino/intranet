@@ -80,13 +80,13 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="mb-3 col">
+                        <div class="mb-1 col">
+                            <label for="version" class="form-label">Versión Coti</label>
+                            <input class="form-control" type="text" name="version_quote" id="version_quote" maxlength="2" value="{{ entry.version_quote }}">
+                        </div>
+                        <div class="mb-1 col">
                             <label for="version" class="form-label">Versión</label>
-                            {% if entry.status == "Quote" %}
-                                <input class="form-control" type="text" name="version" id="version" maxlength="2" value="{{ entry.version_quote }}">
-                            {% else %}
-                                <input class="form-control" type="text" name="version" id="version" maxlength="2" value="{{ entry.version }}">
-                            {% endif %}
+                            <input class="form-control" type="number" name="version" id="version" maxlength="2" value="{{ entry.version }}">
                         </div>
                         <div class="mb-3 col">
                             <label for="importance" class="form-label">Importancia</label>

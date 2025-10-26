@@ -1,5 +1,5 @@
 from datetime import datetime, date, timedelta
-from .models import Entry, Holidays
+from .models import Entry, Holidays, Trip
 
 def update_entries():
     
@@ -50,3 +50,10 @@ def update_timingStatus(entry):
             entry.timingStatus = "danger"
 
     entry.save()
+
+def get_duplicate_trips():
+    duplicated_files = []
+    for trip in Trip.objects.all():
+        for trip_compared in Trip.objects.all():
+            if trip.tourplanId == trip_compared.tourplanId:
+                duplicated_files.append((trip.id, trip_compared.id))

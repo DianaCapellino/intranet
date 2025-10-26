@@ -1,7 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-<div id="modify_entry">
+<div id="advanced_search">
     <div class="container">
         <h2>Búsqueda Avanzada</h2>
 
@@ -16,7 +16,27 @@
                 {% csrf_token %}
                 <div class="form">
                     <div class="row">
-                        <div class="mb-3 col-6">
+                        <div class="mb-3 col-4">
+                            <div class="form-group">
+                            <label class="form-label">Nombre del pasajero</label>
+                                <input class="form-control col" type="text" name="name" id="name" autofocus>
+                            </div>
+                        </div>
+                        <div class="mb-3 col-4">
+                            <div class="form-group">
+                                <label class="form-label">Referencia Cliente</label>
+                                <input class="form-control col" type="text" name="client_reference" id="client_reference">
+                            </div>
+                        </div>
+                        <div class="mb-3 col-4">
+                            <div class="form-group">
+                                <label class="form-label">Tourplan #</label>
+                                <input class="form-control col" type="text" name="tourplanId" id="tourplanId">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row d-none">
+                        <div class="mb-3 col-6 d-none">
                             <div class="form-group">
                             <label class="form-label">Fecha de Viaje</label>
                                 <div class="row">
@@ -29,28 +49,6 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="mb-3 col-6">
-                            <div class="form-group">
-                            <label class="form-label">Nombre del pasajero</label>
-                                <input class="form-control col" type="text" name="name" id="name" autofocus>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="mb-3 col-6">
-                            <div class="form-group">
-                                <label class="form-label">Referencia Cliente</label>
-                                <input class="form-control col" type="text" name="client_reference" id="client_reference">
-                            </div>
-                        </div>
-                        <div class="mb-3 col-6">
-                            <div class="form-group">
-                                <label class="form-label">Tourplan #</label>
-                                <input class="form-control col" type="text" name="tourplanId" id="tourplanId">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
                         <div class="mb-3 col-6">
                             <div class="form-group">
                                 <label class="form-label">Status</label>
@@ -72,7 +70,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="row">
+                    <div class="row d-none">
                         <div class="mb-3 col-6">
                             <div class="form-group">
                                 <label class="form-label">Vendedor Responsable</label>

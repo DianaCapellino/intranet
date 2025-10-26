@@ -13,8 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Creates the listeners when selecting the user when creating entry and filtering
     user_working_functionality();
-    //user_filter_functionality();
 
+    // Creates entry at the pendings page
     create_entry_from_pendings();
 
     // Creates the listeners for deleting elements
@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("tariff-table");
     create_datatable("entries-index");
 
+    init_entry_edit_modal();
 })
 
 function modify_date_and_datetime() {
@@ -130,6 +131,14 @@ function create_datatable (type) {
                 { visible: false, targets: [4, 7, 11, 12]}
             ],
             order: [[0, "desc"]],
+              // callback que corre cada vez que DataTables crea un <tr>
+            createdRow: function(row, data) {
+                try {
+                // data.id debe venir en el JSON (asegurate que tu entries_data incluya "id")
+                row.id = `row-entries-${data.id}`;
+                row.dataset.entryId = data.id;
+                } catch (e) { console.warn("createdRow error", e); }
+            },
             language: {
                 url: "https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json"
             }
@@ -281,44 +290,95 @@ function modal_functionality() {
         })
     });
 
+    // Get the trip form
+    const tripForm = document.getElementById('trip-form');
+    
+    // Verificar que el formulario existe antes de continuar
+    if (!tripForm) {
+        console.log('Formulario de viaje no encontrado en esta página');
+        return;
+    }
+    
+    const submitButton = tripForm.querySelector('#save-new-trip');
+    
+    if (tripForm && submitButton) {
+        // Remover el data-bs-toggle del HTML y manejarlo con JavaScript
+        submitButton.removeAttribute('data-bs-toggle');
+        submitButton.removeAttribute('data-bs-target');
+        
+        tripForm.addEventListener('submit', async function(e) {
+            e.preventDefault(); // Prevenir submit normal
+            
+            // Deshabilitar botón y mostrar loading
+            const originalText = submitButton.value;
+            submitButton.value = 'GUARDANDO...';
+            submitButton.disabled = true;
+            
+            try {
+                // Crear FormData con los datos del formulario
+                const formData = new FormData(tripForm);
+                
+                // Enviar request AJAX
+                const response = await fetch(tripForm.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest', // Indicar que es AJAX
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Viaje creado exitosamente
+                    const userId = result.user_id;
+                    const tripId = result.trip_id;
+                    
+                    // Actualizar el enlace del modal con el ID del viaje recién creado
+                    const linkElement = document.getElementById(`link-create-entry${userId}`);
+                    if (linkElement) {
+                        linkElement.setAttribute('href', `/create_entry/${tripId}`);
+                    }
+                    
+                    // Ahora sí abrir el modal
+                    const modal = new bootstrap.Modal(document.getElementById(`windowCreateEntry${userId}`));
+                    modal.show();
+                    
+                } else {
+                    // Mostrar errores de validación
+                    if (result.errors) {
+                        let errorMessage = 'Errores en el formulario:\n';
+                        for (const [field, errors] of Object.entries(result.errors)) {
+                            errorMessage += `${field}: ${errors.join(', ')}\n`;
+                        }
+                        alert(errorMessage);
+                    } else {
+                        alert(result.message || 'Error al crear el viaje');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error de conexión. Por favor, intenta nuevamente.');
+            } finally {
+                // Rehabilitar botón
+                submitButton.value = originalText;
+                submitButton.disabled = false;
+            }
+        });
+    }
+    
+    // Código para manejar el modal (ya no necesario el polling)
     const new_entry_from_trip = document.querySelectorAll('.creating-entry-from-trip');
     if (new_entry_from_trip) {
         new_entry_from_trip.forEach((item) => {
             $(item).on('shown.bs.modal', function() {
-                let user_id_string = item.id.match(/\d+/);
-                let user_id = parseInt(user_id_string[0]);
-                let trips = []
-                let trip_id;
-                fetch(`/trips/json`)
-                .then(response => response.json())
-                .then(list => {
-                    list.forEach(element => {
-                        if (element.creation_user_id === user_id) {
-                            trips.push(element.id);
-                        };
-                    });
-                    trip_id = trips[0];
-                    document.getElementById(`link-create-entry${user_id}`).setAttribute("href", `/create_entry/${trip_id}`);
-                });
-            })
+                // El enlace ya está configurado correctamente antes de abrir el modal
+                console.log('Modal abierto con enlace ya configurado');
+            });
         });
-    };
+    }
 
-    const edit_entry_when_creating = document.querySelectorAll('.editing-entry');
-    if (edit_entry_when_creating) {
-        edit_entry_when_creating.forEach((item) => {
-            $(item).on('shown.bs.modal', function() {
-                let user_id_string = item.id.match(/\d+/);
-                let user_id = parseInt(user_id_string[0]);
-                fetch(`/entries/json/last_entry`)
-                .then(response => response.json())
-                .then(element => {
-                    const entry_id = element.id;
-                    document.getElementById(`link-edit-entry${user_id}`).setAttribute("href", `/modify_entry/${entry_id}`);
-                });
-            })
-        });
-    };
     const my_pendings = document.getElementById('my-pendings');
     if (my_pendings) {
         const my_pendings_modal = new bootstrap.Modal(my_pendings);
@@ -327,6 +387,67 @@ function modal_functionality() {
             my_pendings_modal.hide();
         });
     };
+}
+
+function init_entry_edit_modal() {
+    const entryForm = document.querySelector('#modify_entry form');
+    if (!entryForm) {
+        console.log('[edit-entry] formulario #modify_entry no encontrado en esta página (no aplica)');
+        return;
+    }
+
+    const submitButton = entryForm.querySelector('#save-new-entry');
+    if (!submitButton) return;
+
+    submitButton.removeAttribute('data-bs-toggle');
+    submitButton.removeAttribute('data-bs-target');
+
+    entryForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const originalText = submitButton.value;
+        submitButton.value = 'GUARDANDO...';
+        submitButton.disabled = true;
+
+        try {
+            const formData = new FormData(entryForm);
+            const response = await fetch(entryForm.action, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!response.ok) {
+                alert('Error del servidor al crear la entrada');
+                return;
+            }
+
+            const result = await response.json();
+            console.log('[edit-entry] respuesta recibida:', result);
+
+            if (result.success) {
+                const userId = result.user_id;
+                const entryId = result.entry_id;
+
+                const link = document.getElementById(`link-edit-entry${userId}`);
+                if (link) link.setAttribute('href', `/modify_entry/${entryId}`);
+
+                const modalEl = document.getElementById(`windowEditEntry${userId}`);
+                if (modalEl) {
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+                }
+            } else {
+                alert('Error: no se pudo crear la entrada.');
+                console.error(result);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error de red. Intenta nuevamente.');
+        } finally {
+            submitButton.value = originalText;
+            submitButton.disabled = false;
+        }
+    });
 }
 
 function create_entry_from_pendings() {
@@ -372,54 +493,44 @@ function user_working_functionality() {
     };
 }
 
-function user_filter_functionality() {
-    const user_filter_select = document.getElementById('user_filter_select');
-    if (user_filter_select != null) {
-        user_filter_select.addEventListener('change', function() {
-            const selectedValue = this.value;
-            let entries = $('#entries').DataTable();
-            entries.column(9).search(selectedValue).draw();
-        });
-    };
-}
-
 function deleting_functionality(type) {
-    const all_delete_btns = document.querySelectorAll(`.delete-${type}-btn`);
-    if (all_delete_btns != null) {
-        all_delete_btns.forEach((item) => {
-            if (item != null) {
-                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-                item.addEventListener('click', () => {
+    let csrfToken;
+    const csrfTokenObj = document.querySelector('[name=csrfmiddlewaretoken]')
+    if (csrfTokenObj) {
+        csrfToken = csrfTokenObj.value;
+    };
 
-                    // Gets the item id
-                    const id_string = item.id.match(/\d+/);
-                    const id = parseInt(id_string[0]);
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(`.delete-${type}-btn`);
+        if (!btn) return; // no es botón de delete
 
-                    // Gets the complete row
-                    const row = document.getElementById(`row-${type}-${id}`);
-                    
-                    // Makes the request to the server to delete
-                    fetch(`${type}/json/${id}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken,
-                        },
-                    })
-                    .then(response => response.json)
+        const id_string = btn.id.match(/\d+/);
+        const id = parseInt(id_string[0]);
+        console.log("Deleting", type, id);
 
-                    // Close the modal
-                    .then(document.getElementById(`btn-close-${type}-${id}`).click())
+        const row = document.getElementById(`row-${type}-${id}`);
 
-                    // Start animation and remove row
-                    .then(row.classList.add('row-delete'))
-                    .then(row.onanimationend = () => {
-                        row.remove();
-                    });
-                });
-            };
-        });
-    }    
+        fetch(`${type}/json/${id}`, {
+            method: "DELETE",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken,
+            },
+        })
+        .then(() => {
+            // cerrar modal
+            const closeBtn = document.getElementById(`btn-close-${type}-${id}`);
+            if (closeBtn) closeBtn.click();
+
+            // animar y eliminar fila
+            if (row) {
+                row.classList.add("row-delete");
+                //row.onanimationend = () => row.remove();
+                row.remove();
+            }
+        })
+        .catch(err => console.error("Error deleting:", err));
+    });
 }
 
 

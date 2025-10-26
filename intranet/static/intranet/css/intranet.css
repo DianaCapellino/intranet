@@ -71,6 +71,24 @@ nav ul li {
     padding: 0.5rem;
 }
 
+#presentation-container {
+    width: 100% !important;
+    height: 600px !important;
+    position: relative !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#presentation-container .slides section {
+    background: rgba(255, 255, 255, 0.95) !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
+    margin: 20px !important;
+}
+
 @media (min-width: 400px) {
     #brand-name {
       font-size: 1.5rem;

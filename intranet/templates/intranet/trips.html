@@ -42,7 +42,7 @@
                     <div class="row">
                         <div class="mb-3 col">
                             <select class="form-select" aria-label="client" name="client">
-                                <option selected>Cliente</option>
+                                <option selected value="">Cliente</option>
                                 {% for client in clients %}
                                     {% if client.isActivated and client.department == request.user.department %}
                                         <option value="{{ client.id }}">{{ client.name }}</option>
@@ -52,7 +52,7 @@
                         </div>                    
                         <div class="mb-3 col">
                             <select class="form-select" aria-label="contact" name="contact">
-                                <option selected>Contacto</option>
+                                <option selected value="0">Contacto</option>
                                 {% for contact in contacts %}
                                 <option value="{{ contact.id }}">{{ contact.name }}</option>
                                 {% endfor %}
@@ -75,14 +75,14 @@
                         </div>
                         <div class="mb-3 col">
                             <select class="form-select" aria-label="difficulty" name="difficulty">
-                                <option selected>Dificultad</option>
+                                <option selected value="">Dificultad</option>
                                 {% for option in difficulty_options %}
                                 <option value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                     </div>
-                    <input class="btn btn-dark" type="submit" value="GUARDAR" data-bs-toggle="modal" data-bs-target="#windowCreateEntry{{ user.id }}">
+                    <input class="btn btn-dark" type="submit" value="GUARDAR" id="save-new-trip">
                 </div>
             </form>
         </div>
