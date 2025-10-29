@@ -1,4 +1,5 @@
 {% extends "intranet/layout.html" %}
+{% load custom_filters %}
 
 {% block body %}
 <div class="container text-center mb-2">
@@ -57,9 +58,10 @@
                     </div>
                     <div class="m-3 col">
                         <select class="form-control" aria-label="Year" name="year" id="year-select">
-                            <option value="{{this_year}}">{{this_year}}</option>
-                            <option value="2026">2026</option>
-                            <option value="2027">2027</option>
+                            <option value="{{this_year|add:-1}}">{{this_year|add:-1}}</option>
+                            <option value="{{this_year}}" selected>{{this_year}}</option>
+                            <option value="{{this_year|add:1}}">{{this_year|add:1}}</option>
+                            <option value="{{this_year|add:2}}">{{this_year|add:2}}</option>
                         </select>
                     </div>
                     <div class="m-3 col">

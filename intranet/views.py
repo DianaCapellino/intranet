@@ -20,6 +20,8 @@ import csv
 from django.db.models import Q
 from django.core.paginator import Paginator
 from collections import OrderedDict
+from django.views.decorators.http import require_GET
+from .utils import get_working_days, get_working_days_worker
 
 
 @login_required
@@ -1331,24 +1333,29 @@ def modify_entry(request, entry_id):
 @login_required
 def stats(request):
 
+    # Get current month, year and week
     this_month = date.today().month
     this_week = date.today().isocalendar()[1]
     this_year = date.today().year
     today = date.today()
-  
+    
+    # Empty list of the weeks that will be listed in the form
     weeks = []
 
-    # Buscar lunes de la semana actual (ISO: lunes=1, domingo=7)
+    # Get the Monday of the current week (ISO: monday=1, sunday=7)
     start_of_week = today - timedelta(days=today.isoweekday() - 1)
 
+    # Get the list of the 20 weeks before and 20 weeks later than the current week
     for i in range(-20, 20 + 1):
         start = start_of_week + timedelta(weeks=i)
         end = start + timedelta(days=6)
         week_number = start.isocalendar()[1]
-        # Formato en español
+        
+        # Add the weeks with Spanish format
         weeks.append(
             (week_number, f"Semana {week_number} - {start.strftime('%-d-%m-%Y')} al {end.strftime('%-d-%m-%Y')}")
         )
+
 
     return render(request, "intranet/stats.html", {
         "months":MONTHS,
@@ -1358,10 +1365,6 @@ def stats(request):
         "weeks":weeks,
     })
 
-
-from django.shortcuts import render
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
 
 @require_GET
 def stats_entries_report(request):
@@ -2355,12 +2358,14 @@ def stats_data(request):
         return stats_entries_data(request)
 
 
-def stats_entries_by_vendor(qs):
+def stats_entries_quotes_by_vendor(qs, date_from, date_to):
 
+    quotes = qs.filter(status="Quote")
     # agrupación y agregación
     vendors = {}
-    for entry in qs:
-        vendor = entry.user_working.other_name if entry.user_working.userType == "Ventas" else "Operaciones-Sin Definir"
+
+    for entry in quotes:
+        vendor = entry.user_working.other_name
         if vendor not in vendors:
 
             # ✅ Asegurar que el color sea string
@@ -2376,20 +2381,20 @@ def stats_entries_by_vendor(qs):
 
             vendors[vendor] = {
                 "total": 0,
+                "workingDays": get_working_days_worker(date_from, date_to, entry.user_working),
                 "a": 0,
                 "audleyA": 0,
                 "montoA": 0.0,
                 "color": user_color
             }
+        if entry.version_quote == "A":
+            vendors[vendor]["a"] += 1
+            if entry.trip and entry.trip.client and entry.trip.client.name == "Audley Travel UK":
+                vendors[vendor]["audleyA"] += 1
+            if entry.amount:
+                vendors[vendor]["montoA"] += float(entry.amount)
+        vendors[vendor]["total"] += 1
 
-        if entry.status == "Quote":
-            if entry.version_quote == "A":
-                vendors[vendor]["a"] += 1
-                if entry.trip and entry.trip.client and entry.trip.client.name == "Audley Travel UK":
-                    vendors[vendor]["audleyA"] += 1
-                if entry.amount:
-                    vendors[vendor]["montoA"] += float(entry.amount)
-            vendors[vendor]["total"] += 1
 
     # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
     sorted_vendors = sorted(
@@ -2398,19 +2403,70 @@ def stats_entries_by_vendor(qs):
         reverse=True  # De mayor a menor
     )
 
-    # ✅ Convertir de vuelta a diccionario ordenado (Python 3.7+ mantiene el orden)
+    # ✅ Convertir de vuelta a diccionario ordenado
     vendors_ordered = OrderedDict(sorted_vendors)
 
     return dict(vendors_ordered)
+
+
+def stats_entries_bookings_by_vendor(qs, date_from, date_to):
+    bookings = qs.filter(status="Booking")
+    # agrupación y agregación
+    vendors_b = {}
+
+    for entry in bookings:
+        vendor = entry.user_working.other_name
+        if vendor not in vendors_b:
+
+            # ✅ Asegurar que el color sea string
+            user_color = '#999999'  # Color por defecto
+
+            if entry.user_working:
+                if hasattr(entry.user_working, 'color'):
+                    # Convertir explícitamente a string
+                    color_value = entry.user_working.color
+                    if color_value:
+                        # Si es un objeto ColorField, convertir a string
+                        user_color = str(color_value)
+
+            vendors_b[vendor] = {
+                "total": 0,
+                "workingDays": get_working_days_worker(date_from, date_to, entry.user_working),
+                "first": 0,
+                "audleyFirst": 0,
+                "amountFirst": 0.0,
+                "color": user_color
+            }
+        if entry.version == 1:
+            vendors_b[vendor]["first"] += 1
+            if entry.trip and entry.trip.client and entry.trip.client.name == "Audley Travel UK":
+                vendors_b[vendor]["audleyFirst"] += 1
+            if entry.amount:
+                vendors_b[vendor]["amountFirst"] += float(entry.amount)
+        vendors_b[vendor]["total"] += 1
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
+    sorted_vendors_b = sorted(
+        vendors_b.items(),
+        key=lambda x: x[1]['first'],  # Ordenar por cantidad de cotizaciones A
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado
+    vendors_ordered_bookings = OrderedDict(sorted_vendors_b)
+
+    return dict(vendors_ordered_bookings)
 
 
 def stats_entries_by_client(qs):
     pass
 
 
-def stats_entries_by_op_users(qs):
+def stats_entries_by_speed(qs, date_from, date_to):
     pass
 
+def stats_entries_by_worker(qs):
+    pass
 
 @login_required
 def stats_presentation_entries(request):
@@ -2444,11 +2500,226 @@ def stats_presentation_entries(request):
         except ValueError:
             pass
 
-    vendors = stats_entries_by_vendor(qs)
-    op_users = stats_entries_by_op_users(qs)
+    this_year = datetime.strptime(date_from, "%Y-%m-%d").year
+    this_month = datetime.strptime(date_from, "%Y-%m-%d").month
+
+    if this_month > 4:
+        # String representation of the seasons if it is May or higher
+        this_season_str = str(this_year) + "/" + str(this_year + 1)
+        next_season_str = str(this_year + 1) + "/" + str(this_year + 2)
+        next2_season_str = str(this_year + 2) + "/" + str(this_year + 3)
+
+        # Dates in the specific seasons
+        this_season_from = date(this_year, 5, 1)
+        this_season_to = date(this_year + 1, 4, 30)
+        next_season_from = date(this_year + 1, 5, 1)
+        next_season_to = date(this_year + 2, 4, 30)
+        next2_season_from = date(this_year + 2, 5, 1)
+        next2_season_to = date(this_year + 3, 4, 30)
+
+    else:
+        # String representation of the seasons if it is January to April
+        this_season_str = str(this_year - 1) + "/" + str(this_year)
+        next_season_str = str(this_year) + "/" + str(this_year + 1)
+        next2_season_str = str(this_year + 1) + "/" + str(this_year + 2)
+
+        # Dates in the specific seasons
+        this_season_from = date(this_year - 1, 5, 1)
+        this_season_to = date(this_year, 4, 30)
+        next_season_from = date(this_year, 5, 1)
+        next_season_to = date(this_year + 1, 4, 30)
+        next2_season_from = date(this_year + 1, 5, 1)
+        next2_season_to = date(this_year + 2, 4, 30)
+
+    quotes = qs.filter(status="Quote").filter(version_quote="A")
+
+    # === RESUMEN GLOBAL (para tu tabla doble entrada quotes) ===
+    total_count_quotes = quotes.count()
+    total_amount_quotes = sum(float(e.amount or 0) for e in quotes)
+
+    # Count of the quotes
+    individual_count_quotes = quotes.filter(trip__trip_type="FIT's").count()  # suponiendo que tu modelo Trip tiene "is_group"
+    audley_count_quotes = quotes.filter(trip__client__name="Audley Travel UK").count()
+    group_count_quotes = quotes.filter(trip__trip_type="Grupos").count()
+    fam_count_quotes = quotes.filter(trip__trip_type="FAM Tours").count()
+    this_season_count_quotes = quotes.filter(trip__travelling_date__range=(this_season_from, this_season_to)).count()
+    next_season_count_quotes = quotes.filter(trip__travelling_date__range=(next_season_from, next_season_to)).count()
+
+    # Changes of the quotes (B, C, D)
+    total_changes_quotes = qs.filter(status="Quote").exclude(version_quote="A").count()
+
+    # Amounts for quotes
+    individual_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="FIT's"))
+    audley_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__client__name="Audley Travel UK"))
+    group_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="Grupos"))
+    fam_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="FAM Tours"))
+    this_season_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__travelling_date__range=(this_season_from, this_season_to)))
+    next_season_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__travelling_date__range=(next_season_from, next_season_to)))
+
+    # Percentages
+    individual_perc_quotes = round(float(individual_amount_quotes / total_amount_quotes * 100), 2)
+    audley_perc_quotes = round(float(audley_amount_quotes / total_amount_quotes * 100), 2)
+    group_perc_quotes = round(float(group_amount_quotes / total_amount_quotes * 100), 2)
+    fam_perc_quotes = round(float(fam_amount_quotes / total_amount_quotes * 100), 2)
+    this_season_perc_quotes = round(float(this_season_amount_quotes / total_amount_quotes * 100), 2)
+    next_season_perc_quotes = round(float(next_season_amount_quotes / total_amount_quotes * 100), 2)
+
+    # Promedio por día (si hay rango de fechas)
+    days = 1
+    if date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+            days = get_working_days(d_from, d_to)
+        except Exception:
+            pass
+
+    average_quotes_quantity = round(total_count_quotes / days, 2) if days else 0
+    average_quotes_amount = round(total_amount_quotes / days, 2) if days else 0
+
+    if total_count_quotes > 0:
+        average_difficulty = round(sum(int(e.trip.difficulty or 0) for e in quotes) / total_count_quotes, 2)
+    else:
+        average_difficulty = 0
+
+    difficulty_1 = quotes.filter(trip__difficulty="1").count()
+    difficulty_2 = quotes.filter(trip__difficulty="2").count()
+    difficulty_3 = quotes.filter(trip__difficulty="3").count()
+    difficulty_4 = quotes.filter(trip__difficulty="4").count()
+    difficulty_5 = quotes.filter(trip__difficulty="5").count()
+
+    summary_table_quotes = {
+        "working_days": days,
+        "difficulty_1": difficulty_1,
+        "difficulty_2": difficulty_2,
+        "difficulty_3": difficulty_3,
+        "difficulty_4": difficulty_4,
+        "difficulty_5": difficulty_5,
+        "average_difficulty": average_difficulty,
+        "total_count_quotes": total_count_quotes,
+        "total_amount_quotes": total_amount_quotes,
+        "total_changes_quotes": total_changes_quotes,
+        "fam_count_quotes": fam_count_quotes,
+        "fam_amount_quotes": fam_amount_quotes,
+        "average_quotes_quantity": average_quotes_quantity,
+        "average_quotes_amount": average_quotes_amount,
+        "individual_count_quotes": individual_count_quotes,
+        "individual_amount_quotes": individual_amount_quotes,
+        "group_count_quotes": group_count_quotes,
+        "group_amount_quotes": group_amount_quotes,
+        "individual_perc_quotes": individual_perc_quotes,
+        "group_perc_quotes": group_perc_quotes,
+        "fam_perc_quotes": fam_perc_quotes,
+        "audley_count_quotes": audley_count_quotes,
+        "audley_amount_quotes": audley_amount_quotes,
+        "audley_perc_quotes": audley_perc_quotes,
+        "this_season_str": this_season_str,
+        "next_season_str": next_season_str,
+        "this_season_count_quotes": this_season_count_quotes,
+        "this_season_amount_quotes": this_season_amount_quotes,
+        "this_season_perc_quotes": this_season_perc_quotes,
+        "next_season_count_quotes": next_season_count_quotes,
+        "next_season_amount_quotes": next_season_amount_quotes,
+        "next_season_perc_quotes": next_season_perc_quotes
+    }
+
+    bookings = qs.filter(status="Booking").filter(version=1)
+
+    # === RESUMEN GLOBAL (para tu tabla doble entrada bookings) ===
+    total_count_bookings = bookings.count()
+    total_amount_bookings = sum(float(e.amount or 0) for e in bookings)
+
+    # Count of the bookings
+    individual_count_bookings = bookings.filter(trip__trip_type="FIT's").count()  # suponiendo que tu modelo Trip tiene "is_group"
+    audley_count_bookings = bookings.filter(trip__client__name="Audley Travel UK").count()
+    group_count_bookings = bookings.filter(trip__trip_type="Grupos").count()
+    fam_count_bookings = bookings.filter(trip__trip_type="FAM Tours").count()
+    this_season_count_bookings = bookings.filter(trip__travelling_date__range=(this_season_from, this_season_to)).count()
+    next_season_count_bookings = bookings.filter(trip__travelling_date__range=(next_season_from, next_season_to)).count()
+
+    # Changes of the bookings (2, 3, 4)
+    total_changes_bookings = qs.filter(status="Booking").exclude(version=1).count()
+
+    # Amounts for bookings
+    individual_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="FIT's"))
+    audley_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__client__name="Audley Travel UK"))
+    group_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="Grupos"))
+    fam_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="FAM Tours"))
+    this_season_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__travelling_date__range=(this_season_from, this_season_to)))
+    next_season_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__travelling_date__range=(next_season_from, next_season_to)))
+
+    # Percentages
+    individual_perc_bookings = round(float(individual_amount_bookings / total_amount_bookings * 100), 2)
+    audley_perc_bookings = round(float(audley_amount_bookings / total_amount_bookings * 100), 2)
+    group_perc_bookings = round(float(group_amount_bookings / total_amount_bookings * 100), 2)
+    fam_perc_bookings = round(float(fam_amount_bookings / total_amount_bookings * 100), 2)
+    this_season_perc_bookings = round(float(this_season_amount_bookings / total_amount_bookings * 100), 2)
+    next_season_perc_bookings = round(float(next_season_amount_bookings / total_amount_bookings * 100), 2)
+
+    average_bookings_quantity = round(total_count_bookings / days, 2) if days else 0
+    average_bookings_amount = round(total_amount_bookings / days, 2) if days else 0
+
+    # Cancellation information
+    cancellations_count = qs.filter(status="Cancelado").count()
+
+    # Cancellation amounts (difference with the last booking)
+    cancellations_amount = 0.0
+    cancellation_entries = qs.filter(status="Cancelado")
+
+    for entry in cancellation_entries:
+        trip_obj = entry.trip
+        
+        last_booking = Entry.objects.filter(trip=trip_obj).filter(status="Booking").first()
+        if last_booking:
+            cancellations_amount += (last_booking.amount)
+        else:
+            cancellations_amount = entry.amount
+
+    conversion_perc = round(total_count_bookings / total_count_quotes * 100, 2)
+    conversion_perc_audley = round(audley_count_bookings / audley_count_quotes * 100, 2)
+
+    summary_table_bookings = {
+        "total_count_bookings": total_count_bookings,
+        "total_amount_bookings": total_amount_bookings,
+        "total_changes_bookings": total_changes_bookings,
+        "fam_count_bookings": fam_count_bookings,
+        "fam_amount_bookings": fam_amount_bookings,
+        "average_bookings_quantity": average_bookings_quantity,
+        "average_bookings_amount": average_bookings_amount,
+        "individual_count_bookings": individual_count_bookings,
+        "individual_amount_bookings": individual_amount_bookings,
+        "group_count_bookings": group_count_bookings,
+        "group_amount_bookings": group_amount_bookings,
+        "individual_perc_bookings": individual_perc_bookings,
+        "group_perc_bookings": group_perc_bookings,
+        "fam_perc_bookings": fam_perc_bookings,
+        "audley_count_bookings": audley_count_bookings,
+        "audley_amount_bookings": audley_amount_bookings,
+        "audley_perc_bookings": audley_perc_bookings,
+        "this_season_count_bookings": this_season_count_bookings,
+        "this_season_amount_bookings": this_season_amount_bookings,
+        "this_season_perc_bookings": this_season_perc_bookings,
+        "next_season_count_bookings": next_season_count_bookings,
+        "next_season_amount_bookings": next_season_amount_bookings,
+        "next_season_perc_bookings": next_season_perc_bookings,
+        "cancellations_count": cancellations_count,
+        "cancellations_amount": cancellations_amount,
+        "conversion_perc": conversion_perc,
+        "conversion_perc_audley": conversion_perc_audley,
+    }
+
+    vendors_quote = stats_entries_quotes_by_vendor(qs, d_from, d_to)
+    vendors_bookings = stats_entries_bookings_by_vendor(qs, d_from, d_to)
+    speed = stats_entries_by_speed(qs, d_from, d_to)
+    speed_by_worker = stats_entries_by_worker(qs)
     clients = stats_entries_by_client(qs)
 
-    return JsonResponse({"vendors": vendors})
+    return JsonResponse({
+        "vendors_quote": vendors_quote,
+        "vendors_bookings": vendors_bookings,
+        "summary_table_quotes": summary_table_quotes,
+        "summary_table_bookings": summary_table_bookings,
+    })
 
 
 def read_emails(request):

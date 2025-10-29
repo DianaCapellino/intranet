@@ -24,7 +24,93 @@
             </div>
         </div>
         <p id="report-period">Periodo: Cargando...</p>
+        <hr>
+        <h2>📋 Resumen del período</h2>
+        <div class="m-3" id="working-days"></div>
+        <div class="container">
+            <div class="row">
+                <div class="col-6">
+                    <table class="table table-bordered mt-4" id="summary-table-quotes">
+                        <thead>
+                            <tr>
+                            <th>COTIZACIONES</th>
+                            <th>Cantidad</th>
+                            <th>Facturación</th>
+                            <th>% (monto)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-quotes-tbody">
+                            <!-- JS rellenará acá -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-6">
+                    <table class="table table-bordered mt-4" id="summary-table-bookings">
+                        <thead>
+                            <tr>
+                            <th>RESERVAS</th>
+                            <th>Cantidad</th>
+                            <th>Facturación</th>
+                            <th>% (monto)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-bookings-tbody">
+                            <!-- JS rellenará acá -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
+        <div class="container">
+            <div class="row">
+                <div class="col">
+                    <div class="container align-items-center">
+                        <h3 class="m-3">Cancelaciones</h3>
+                    </div>
+                    <div class="container">
+                        <div class="row">
+                            <div class="m-3 col" id="cancellations-count"></div>
+                            <div class="m-3 col" id="cancellations-amount"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="container align-items-center">
+                        <h3 class="m-3">Conversión</h3>
+                    </div>
+                    <div class="container">
+                        <div class="row">
+                            <div class="m-3 col" id="conversion-perc"></div>
+                            <div class="m-3 col" id="conversion-perc-audley"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container d-flex align-items-center">
+                <h3 class="m-3">Dificultad de viajes (cotizaciones)</h3>
+                    <i 
+                        class="fas fa-question-circle text-primary ms-1"
+                        data-bs-toggle="tooltip"
+                        data-bs-html="true"
+                        title="
+                        1 – Muy Fácil – 1 solo destino / cruceristas simples 
+2 – Fácil – 2 destinos
+3 – Moderado – 3 destinos o 2 con dificultades
+4 – Complejo – 4 destinos o más
+5 – Muy Complejo – Itinerarios con destinos no conocidos o muy largos
+                        "
+                    ></i>
+            </div>
+            <div class="row">
+                <div class="m-3 col" id="average-difficulty"></div>
+                <div class="m-3 col" id="difficulty-1"></div>
+                <div class="m-3 col" id="difficulty-2"></div>
+                <div class="m-3 col" id="difficulty-3"></div>
+                <div class="m-3 col" id="difficulty-4"></div>
+                <div class="m-3 col" id="difficulty-5"></div>
+            </div>
+        </div>
         <hr>
         <!-- Contenido del Reporte -->
         <div id="report-content" style="display: none;">
@@ -32,20 +118,21 @@
             <div class="content-section">
                 <h2>📋 Resumen por Vendedor - Cotizaciones</h2>
                 <br>
-                <table class="report-table table table-striped" id="vendor-table">
+                <table class="report-table table table-striped" id="vendor-quote-table">
                     <thead>
                         <tr>
                             <th>Vendedor</th>
-                            <th>Total Cotizaciones</th>
-                            <th>Cotizaciones A</th>
-                            <th>Cotizaciones Audley (A)</th>
-                            <th>Facturación A</th>
-                            <th>Facturación %</th>
+                            <th>Días Trab.</th>
+                            <th>Total Cot.</th>
+                            <th>Cot. A</th>
+                            <th>Cot. Audley (A)</th>
+                            <th>Fact. A</th>
+                            <th>Fact. %</th>
                         </tr>
                     </thead>
-                    <tbody id="vendor-tbody">
+                    <tbody id="vendor-quote-tbody">
                     </tbody>
-                    <tfoot id="vendor-tfoot"></tfoot>
+                    <tfoot id="vendor-quote-tfoot"></tfoot>
                 </table>
             </div>
             <hr>
@@ -65,15 +152,58 @@
                 </div>
             </div>
             <hr>
+            <!-- Sección 1.2: Tabla de Vendedores -->
+            <div class="content-section">
+                <h2>📋 Resumen por Vendedor - Reservas</h2>
+                <br>
+                <table class="report-table table table-striped" id="vendor-booking-table">
+                    <thead>
+                        <tr>
+                            <th>Vendedor</th>
+                            <th>Días Trab.</th>
+                            <th>Total Book.</th>
+                            <th>Book. 1</th>
+                            <th>Book. Audley (1)</th>
+                            <th>Fact. 1</th>
+                            <th>Fact. %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendor-booking-tbody">
+                    </tbody>
+                    <tfoot id="vendor-booking-tfoot"></tfoot>
+                </table>
+            </div>
+            <hr>
+            <!-- Sección 2: Gráficos -->
+            <div class="content-section">
+                <h2>📈 Análisis Visual - Reservas</h2>
+                <br>
+                <div class="charts-container row">
+                    <div class="chart-box col-6">
+                        <h4>Bookings 1 por Cantidad</h4>
+                        <canvas class="p-4 m-4" id="chartCantidadBookingsCanvas"></canvas>
+                    </div>
+                    <div class="chart-box col-6">
+                        <h4>Bookings 1 por Monto</h4>
+                        <canvas class="p-4 m-4" id="chartMontoBookingsCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+            <hr>
             <!-- Sección 3: Insights -->
             <div class="content-section">
                 <h2>💡 Insights Clave</h2>
-                <div class="insights-box">
-                    <h4>Análisis de Facturación - Cotizaciones</h4>
-                    <div id="insights-content"></div>
+                <div class="row">
+                    <div class="insights-box col">
+                        <h4>Análisis de Facturación - Cotizaciones</h4>
+                        <div id="insights-content-quotes"></div>
+                    </div>
+                    <div class="insights-box col">
+                        <h4>Análisis de Facturación - Reservas</h4>
+                        <div id="insights-content-bookings"></div>
+                    </div>
                 </div>
             </div>
-
             <!-- Sección 4: Datos Completos (opcional, para PDF) -->
             <div class="content-section" style="display: none;" id="full-data-section">
                 <h2>📊 Datos Completos del Período</h2>

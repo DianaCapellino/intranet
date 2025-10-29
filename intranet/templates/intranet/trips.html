@@ -73,13 +73,25 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="mb-3 col">
+                        <div class="mb-3 col d-flex align-items-center">
                             <select class="form-select" aria-label="difficulty" name="difficulty">
                                 <option selected value="">Dificultad</option>
                                 {% for option in difficulty_options %}
                                 <option value="{{ option.0 }}">{{ option.0 }} - {{ option.1 }}</option>
                                 {% endfor %}
                             </select>
+                            <i 
+                                class="fas fa-question-circle text-primary ms-1"
+                                data-bs-toggle="tooltip"
+                                data-bs-html="true"
+                                title="
+                                1 – Muy Fácil – 1 solo destino / cruceristas simples 
+2 – Fácil – 2 destinos
+3 – Moderado – 3 destinos o 2 con dificultades
+4 – Complejo – 4 destinos o más
+5 – Muy Complejo – Itinerarios con destinos no conocidos o muy largos
+                                "
+                            ></i>
                         </div>
                     </div>
                     <input class="btn btn-dark" type="submit" value="GUARDAR" id="save-new-trip">
