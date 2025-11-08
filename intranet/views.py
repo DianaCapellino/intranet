@@ -17,11 +17,13 @@ from imap_tools import MailBox
 import os
 from dotenv import load_dotenv
 import csv
-from django.db.models import Q
+from django.db.models import Count, Avg, Q, FloatField
+from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
 from collections import OrderedDict
 from django.views.decorators.http import require_GET
 from .utils import get_working_days, get_working_days_worker
+from collections import defaultdict
 
 
 @login_required
@@ -1274,6 +1276,7 @@ def modify_entry(request, entry_id):
         if isClosed == True:
             closing_date = datetime.fromisoformat(closing_date_form)
             entry.closing_date = closing_date
+            entry.update_response()
 
         # If there is no amount, get the trip amount and save it to the entry
         if empty_amount == False:
@@ -2029,7 +2032,6 @@ def entries_data(request):
         starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
         closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
         travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
-        #user_working = f"<div style='background-color: {entry.user_working.color}; color:white'>{entry.user_working.username}</div>"
 
         # acciones con modal
         acciones_html = f"""
@@ -2429,20 +2431,43 @@ def stats_entries_bookings_by_vendor(qs, date_from, date_to):
                         # Si es un objeto ColorField, convertir a string
                         user_color = str(color_value)
 
+            # Create empty vendors
             vendors_b[vendor] = {
                 "total": 0,
                 "workingDays": get_working_days_worker(date_from, date_to, entry.user_working),
                 "first": 0,
                 "audleyFirst": 0,
                 "amountFirst": 0.0,
+                "conversionCount": 0,
                 "color": user_color
             }
+
+        # Complete the information of the vendors with booking information
         if entry.version == 1:
             vendors_b[vendor]["first"] += 1
             if entry.trip and entry.trip.client and entry.trip.client.name == "Audley Travel UK":
                 vendors_b[vendor]["audleyFirst"] += 1
             if entry.amount:
                 vendors_b[vendor]["amountFirst"] += float(entry.amount)
+            
+            # Get the information of the person who booked the trip
+            vendor_quoted = entry.user_creator.other_name
+
+            # Check if the vendor is in the original list
+            if vendor_quoted not in vendors_b:
+                vendors_b["Otros"] = {
+                    "total": 0,
+                    "workingDays": 0,
+                    "first": 0,
+                    "audleyFirst": 0,
+                    "amountFirst": 0.0,
+                    "conversionCount": 0,
+                    "color": '#999999',
+                }
+                vendors_b["Otros"]["conversionCount"] += 1
+            else:
+                vendors_b[entry.user_creator.other_name]["conversionCount"] += 1
+
         vendors_b[vendor]["total"] += 1
 
     # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
@@ -2459,14 +2484,145 @@ def stats_entries_bookings_by_vendor(qs, date_from, date_to):
 
 
 def stats_entries_by_client(qs):
-    pass
+    # agrupación y agregación
+    clients = {}
+
+    for entry in qs:
+        client = entry.trip.client.name
+        if client not in clients:
+            # Create empty clients
+            clients[client] = {
+                "quotesCount": 0,
+                "quotesAmount": 0.0,
+                "bookingsCount": 0,
+                "bookingsAmount": 0.0,
+                "others": 0,
+            }
+
+        # Complete the information of the clients
+        if entry.status == "Quote" and entry.version_quote == "A":
+            clients[client]["quotesCount"] += 1
+            if entry.amount:
+                clients[client]["quotesAmount"] += float(entry.amount)
+            
+        elif entry.status == "Booking" and entry.version == 1:
+            clients[client]["bookingsCount"] += 1
+            if entry.amount:
+                clients[client]["bookingsAmount"] += float(entry.amount)
+        else:
+            clients[client]["others"] += 1
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
+    sorted_clients = sorted(
+        clients.items(),
+        key=lambda x: x[1]['quotesCount'],  # Ordenar por cantidad de cotizaciones A
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado
+    clients_ordered = OrderedDict(sorted_clients)
+
+    return dict(clients_ordered)
 
 
-def stats_entries_by_speed(qs, date_from, date_to):
-    pass
+def stats_entries_by_speed(qs):
 
-def stats_entries_by_worker(qs):
-    pass
+    """
+    Calcula las estadísticas de rapidez de respuesta utilizando el campo preguardado `response_speed`.
+    Devuelve el mismo formato JSON que la versión anterior, sin requerir cambios en el JS.
+    """
+
+    # --- Categorías principales (manteniendo compatibilidad con el JS) ---
+    categories = {
+        "total": qs,
+        "individual_quotes": qs.filter(status="Quote", trip__trip_type="FIT's"),
+        "group_quotes": qs.filter(status="Quote", trip__trip_type="Grupos"),
+        "audley_quotes": qs.filter(status="Quote", trip__client__name="Audley Travel UK"),
+        "bookings": qs.filter(status="Booking"),
+        "final_itineraries": qs.filter(status="Final Itinerary"),
+    }
+
+    def summarize_speed(subset):
+        """Devuelve un dict con los conteos y porcentajes por rango de días."""
+        total = subset.count()
+        if total == 0:
+            return {
+                "total": 0,
+                "same_day": 0,
+                "one_day": 0,
+                "two_days": 0,
+                "three_days": 0,
+                "four_days": 0,
+                "five_days": 0,
+                "more_days": 0,
+                "average": 0,
+                "percentages": {},
+            }
+
+        # Cálculos por rango
+        ranges = {
+            "same_day": subset.filter(response_speed=0).count(),
+            "one_day": subset.filter(response_speed=1).count(),
+            "two_days": subset.filter(response_speed=2).count(),
+            "three_days": subset.filter(response_speed=3).count(),
+            "four_days": subset.filter(response_speed=4).count(),
+            "five_days": subset.filter(response_speed=5).count(),
+            "more_days": subset.filter(response_speed__gt=5).count(),
+        }
+
+        # Promedio general
+        avg_days = subset.aggregate(avg=Coalesce(Avg("response_speed", output_field=FloatField()), 0.0))["avg"]
+
+        # Porcentajes (manteniendo el formato esperado en el JS)
+        percentages = {
+            k: round((v / total * 100), 2) if total > 0 else 0 for k, v in ranges.items()
+        }
+
+        return {
+            "total": total,
+            **ranges,
+            "average": round(avg_days, 2),
+            "percentages": percentages,
+        }
+
+    # --- Totales globales por categoría ---
+    summary = {cat: summarize_speed(subset) for cat, subset in categories.items()}
+
+    # --- Totales por vendedor ---
+    vendors = defaultdict(dict)
+    all_vendors = (
+        qs.values_list("user_working__other_name", flat=True)
+        .distinct()
+        .exclude(user_working__other_name__isnull=True)
+        .exclude(user_working__other_name__exact="")
+    )
+
+    for vendor in all_vendors:
+        vendor_qs = qs.filter(user_working__other_name=vendor)
+
+        # Color del vendedor
+        user_color = "#999999"
+        try:
+            worker_obj = User.objects.get(other_name=vendor)
+            if worker_obj.color:
+                user_color = str(worker_obj.color)
+        except User.DoesNotExist:
+            pass
+
+        vendors[vendor]["total"] = summarize_speed(vendor_qs)
+        vendors[vendor]["quotes"] = summarize_speed(vendor_qs.filter(status="Quote"))
+        vendors[vendor]["bookings"] = summarize_speed(vendor_qs.filter(status="Booking"))
+        vendors[vendor]["finals"] = summarize_speed(vendor_qs.filter(status="Final Itinerary"))
+        vendors[vendor]["color"] = user_color
+
+    # --- Estructura final compatible con tu JS ---
+    summary_speed = {
+        "summary": summary,  # Totales globales
+        "vendors": vendors,  # Totales por vendedor
+    }
+
+    return summary_speed
+
 
 @login_required
 def stats_presentation_entries(request):
@@ -2710,8 +2866,7 @@ def stats_presentation_entries(request):
 
     vendors_quote = stats_entries_quotes_by_vendor(qs, d_from, d_to)
     vendors_bookings = stats_entries_bookings_by_vendor(qs, d_from, d_to)
-    speed = stats_entries_by_speed(qs, d_from, d_to)
-    speed_by_worker = stats_entries_by_worker(qs)
+    summary_speed = stats_entries_by_speed(qs)
     clients = stats_entries_by_client(qs)
 
     return JsonResponse({
@@ -2719,6 +2874,8 @@ def stats_presentation_entries(request):
         "vendors_bookings": vendors_bookings,
         "summary_table_quotes": summary_table_quotes,
         "summary_table_bookings": summary_table_bookings,
+        "summary_speed": summary_speed,
+        "clients": clients,
     })
 
 

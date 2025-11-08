@@ -1,7 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 import django.utils.timezone
-from datetime import datetime, timedelta
+from datetime import timedelta
 from django import forms
 from multiselectfield import MultiSelectField
 from colorfield.fields import ColorField
@@ -235,6 +235,7 @@ class Entry(models.Model):
     tourplanId = models.CharField(max_length=64, null=True, blank=True, default="")
     timingStatus = models.CharField(max_length=64, choices=TIMING_STATUS, default="light")
     exception = models.BooleanField(default=False)
+    response_speed = models.IntegerField(null=True, blank=True)
 
     @property
     def response_days(self):
@@ -266,6 +267,11 @@ class Entry(models.Model):
             "progress": self.progress,
             "request_user": self.creation_user.id
         }
+    
+    def update_response(self):
+        if self.isClosed:
+            self.response_speed = int(get_working_days(self.starting_date, self.closing_date))
+            self.save()
         
 
 class Holidays(models.Model):
@@ -317,3 +323,25 @@ class Search (models.Model):
     difficulty = MultiSelectField(choices=DIFFICULTY_OPTIONS, max_length=500, blank=True, null=True)
     responsable_user = models.ManyToManyField(User, related_name="responsable_users", blank=True)
     operations_user = models.ManyToManyField(User, related_name="operations_users", blank=True)
+
+
+def get_working_days(from_date, to_date):
+    
+    # Normalize the dates
+    if hasattr(from_date, "date"):
+        from_date = from_date.date()
+    if hasattr(to_date, "date"):
+        to_date = to_date.date()
+
+    # Check if the order is correct
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+
+    # Get the quantity of holidays
+    n_holidays = Holidays.objects.filter(
+        workable=False,
+        date_from__range=(from_date, to_date)
+    ).count()
+
+    working_days = (to_date - from_date).days - n_holidays
+    return working_days

@@ -50,11 +50,24 @@ def update_timingStatus(entry):
 
 
 def get_working_days(from_date, to_date):
-    # Get the days between today and the day the entry was received
-    n_holidays = Holidays.objects.filter(workable=False).filter(date_from__range=(from_date, to_date)).count()
+    
+    # Normalize the dates
+    if hasattr(from_date, "date"):
+        from_date = from_date.date()
+    if hasattr(to_date, "date"):
+        to_date = to_date.date()
+
+    # Check if the order is correct
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+
+    # Get the quantity of holidays
+    n_holidays = Holidays.objects.filter(
+        workable=False,
+        date_from__range=(from_date, to_date)
+    ).count()
 
     working_days = (to_date - from_date).days - n_holidays
-    
     return working_days
 
 
@@ -71,10 +84,13 @@ def get_working_days_worker(from_date, to_date, worker):
 
 def check_duplicate_trips(date_from, date_to):
     duplicated_files = []
-    for trip in Trip.objects.filter(travelling_date__range=(date_from, date_to)):
-        for trip_compared in Trip.objects.all():
-            if trip.tourplanId == trip_compared.tourplanId:
-                duplicated_files.append((trip.id, trip_compared.id))
+
+    filtered_trips = Trip.objects.filter(travelling_date__range=(date_from, date_to))
+    for trip in filtered_trips:
+        for trip_compared in filtered_trips:
+            if trip.tourplanId:
+                if trip.tourplanId == trip_compared.tourplanId and trip.id != trip_compared.id:
+                    duplicated_files.append((trip, trip_compared))
     
     return duplicated_files
 
@@ -89,13 +105,22 @@ def check_missing_amounts(date_from, date_to):
     return missing_amounts_entries
 
 
-def check_incongruent_dates(date_from, date_to):
+def check_incongruent_trip_dates(date_from, date_to):
     incongruent_trips = []
 
-    today = date.today()
-
     for trip in Trip.objects.filter(travelling_date__range=(date_from, date_to)):
-        if trip.starting_date == trip.travelling_date or trip.travelling_date < today:
+        if trip.starting_date == trip.travelling_date or trip.travelling_date < trip.starting_date:
             incongruent_trips.append(trip)
     
     return incongruent_trips
+
+
+def check_incongruent_entry_dates(date_from, date_to):
+    incongruent_entries = []
+
+    for entry in Entry.objects.filter(starting_date__range=(date_from, date_to)):
+        difference = (entry.closing_date - entry.starting_date).days
+        if entry.starting_date == entry.trip.travelling_date or entry.starting_date > entry.closing_date or difference < 0 or difference > 30:
+            incongruent_entries.append(entry)
+    
+    return incongruent_entries
