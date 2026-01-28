@@ -3,6 +3,7 @@
 
 {% block body %}
     <br>
+    {% if user.userType != "Cliente" %}
     <div class="row">
         <div class="col-4">
             <h4 class="d-inline">Pendientes</h4>
@@ -426,5 +427,10 @@
             </div>
         </div>
     </div>
+    {% else %}
+        <div>
+            <img class="mx-auto d-block" src="../../static/intranet/images/logo2.png">
+        </div>
+    {% endif %}
     <br>
 {% endblock %}

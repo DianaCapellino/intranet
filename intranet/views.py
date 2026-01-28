@@ -3220,6 +3220,20 @@ def stats_presentation_trips(request):
     group_perc_trips = round(float(group_amount_trips / total_amount_trips * 100), 2)
     fam_perc_trips = round(float(fam_amount_trips / total_amount_trips * 100), 2)
 
+    # Profitability
+    all_rent_perc = sum(float(e.rent_perc or 0) for e in trips)
+    all_rent_average = round(float(all_rent_perc / total_count_trips * 100), 2)
+    individual_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="FIT's")) / individual_count_trips * 100), 2)
+    audley_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(client__name="Audley Travel UK")) / audley_count_trips * 100), 2)
+    if group_count_trips > 0:
+        group_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="Grupos")) / group_count_trips * 100), 2)
+    else:
+        group_rent = 0
+    if fam_count_trips > 0:
+        fam_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="FAM Tours")) / fam_count_trips * 100), 2)
+    else:
+        fam_rent = 0
+
     if total_count_trips > 0:
         average_difficulty = round(sum(int(e.difficulty or 0) for e in trips) / total_count_trips, 2)
     else:
@@ -3260,6 +3274,11 @@ def stats_presentation_trips(request):
         "audley_perc_trips": audley_perc_trips,
         "cancellations_count": cancellations_count,
         "cancellations_amount": cancellations_amount,
+        "all_rent_average": all_rent_average,
+        "individual_rent": individual_rent,
+        "audley_rent": audley_rent,
+        "group_rent": group_rent,
+        "fam_rent": fam_rent,
     }
 
     trips_by_responsable = stats_trips_by_responsable(qs, d_from, d_to)

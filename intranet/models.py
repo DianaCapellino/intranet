@@ -64,7 +64,7 @@ USER_TYPES = [
     ("Operaciones", "Operaciones"),
     ("DH", "DH"),
     ("Internal", "Internal"),
-    ("Client", "Client"),
+    ("Cliente", "Cliente"),
 ]
 
 CLIENT_CATEGORIES = [

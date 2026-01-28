@@ -1,0 +1,35 @@
+{% regroup rate_lines by group.product.group.id as product_groups %}
+
+{% for pg in product_groups %}
+    <div class="px-3 pt-3 pb-1 text-muted small fw-bold text-uppercase">
+        {{ pg.list.0.group.product.group.name }}
+    </div>
+
+    <table class="table table-sm mb-4">
+        <thead>
+            <tr class="bg-light text-muted small">
+                <th class="ps-3">Room</th>
+                <th>Validity</th>
+                <th class="text-center">SGL</th>
+                <th class="text-center">DBL</th>
+                <th class="text-center">TPL</th>
+            </tr>
+        </thead>
+        <tbody>
+
+        {% for line in pg.list %}
+            <tr>
+                <td class="ps-3 fw-bold">
+                    {{ line.group.product.name }}
+                </td>
+                <td>
+                    {{ line.date_from|date:"d M Y" }} – {{ line.date_to|date:"d M Y" }}
+                </td>
+
+                
+            </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+{% endfor %}

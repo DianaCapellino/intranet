@@ -1,0 +1,261 @@
+{% load custom_filters %}
+
+{% if rate_lines %}
+
+{# ===================================================== #}
+{# ================= ALOJAMIENTO ======================= #}
+{# ===================================================== #}
+
+{% if tariff_type == "acc" %}
+
+{# === SupplierGroup (barra negra) === #}
+{% regroup rate_lines by group.product.supplier.group.id as supplier_groups %}
+
+{% for sg in supplier_groups %}
+
+    <div class="p-2 mt-4 mb-2 shadow-sm rounded bg-dark text-light">
+        <h5 class="mb-0 px-2 text-uppercase small fw-bold"
+            style="letter-spacing:2px;">
+            {{ sg.list.0.group.product.supplier.group.name }}
+        </h5>
+    </div>
+
+    {# === Supplier (hotel, colapsable) === #}
+    {% regroup sg.list by group.product.supplier.id as suppliers %}
+
+    {% for supplier_block in suppliers %}
+        {% with supplier=supplier_block.list.0.group.product.supplier %}
+
+        <div class="card mb-3 border-0 shadow-sm">
+
+            <div class="card-header bg-white border-0
+                        d-flex justify-content-between align-items-center py-2"
+                 style="cursor:pointer"
+                 data-bs-toggle="collapse"
+                 data-bs-target="#collapseSupplier{{ supplier.id }}">
+
+                <div class="d-flex align-items-center">
+                    <span class="fw-bold text-dark"
+                          style="font-size:1.1rem;">
+                        {{ supplier.name|upper }}
+                    </span>
+
+                    {% if supplier_block.list.0.group.product.recommended %}
+                        <img src="../../static/tariff/sello2.png"
+                             width="22" class="ms-2">
+                    {% endif %}
+                    <div class="ms-3">{{ supplier.hotel_quality }}</div>
+                </div>
+
+                <i class="fa-solid fa-chevron-down text-muted small"></i>
+            </div>
+
+            <div id="collapseSupplier{{ supplier.id }}" class="collapse">
+                <div class="card-body p-0">
+
+                    {% if supplier.note %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-exclamation"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
+                        </div>
+                    {% endif %}
+
+                    {% if supplier.prepayment %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-dollar-sign"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.prepayment }}</div>
+                        </div>
+                    {% endif %}
+                    
+                    <button class="d-none btn btn-dark ms-2">MORE INFO</button>
+                    {# === ProductGroup (desayuno / otros) === #}
+                    {% regroup supplier_block.list by group.product.group.id as product_groups %}
+
+                    {% for pg in product_groups %}
+
+                        <div class="px-3 pt-3 pb-1 text-muted small fw-bold text-uppercase">
+                            {{ pg.list.0.group.product.group.name }}
+                        </div>
+
+                        <table class="table table-hover table-sm mb-0">
+                            <thead>
+                                <tr class="text-muted small bg-light border-bottom border-primary">
+                                    <th class="ps-3 border-0" style="width:35%;">
+                                        Room Category
+                                    </th>
+                                    <th class="border-0" style="width:30%;">
+                                        Validity
+                                    </th>
+                                    <th class="text-center border-0">SGL</th>
+                                    <th class="text-center border-0">DBL</th>
+                                    <th class="text-center border-0 d-none">TPL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+
+                            {% with last_from=None last_to=None %}
+
+                            {% regroup pg.list by date_from as date_groups %}
+
+                            {% for dg in date_groups %}
+
+                                {% regroup dg.list by date_to as date_to_groups %}
+
+                                {% for dtg in date_to_groups %}
+
+                                    {% for line in dtg.list %}
+
+                                        <tr class="border-bottom">
+                                            <td class="ps-3 py-2 border-0">
+                                                <div class="fw-bold text-secondary" style="font-size:0.85rem;">
+                                                    {{ line.group.product.name }}
+                                                    <span class="fw-normal">
+                                                        – {{ line.group.name }}
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            <td class="py-2 border-0">
+                                                <span class="small">
+                                                    {{ line.date_from|date:"d M Y" }}
+                                                    –
+                                                    {{ line.date_to|date:"d M Y" }}
+                                                </span>
+                                            </td>
+
+                                            <td class="text-center fw-bold border-0">
+                                                {{ line.rates_by_column.SGL|default:"N/A" }}
+                                                    {% if show_costs %}
+                                                    <div class="small text-muted">
+                                                        Cost: {{ line.costs_by_column.SGL|default:"–" }}
+                                                    </div>
+                                                {% endif %}
+                                            </td>
+
+                                            <td class="text-center fw-bold border-0">
+                                                {{ line.rates_by_column.DBL|default:"N/A" }}
+                                            </td>
+
+                                            <td class="text-center fw-bold border-0 d-none">
+                                                {{ line.rates_by_column.TPL|default:"N/A" }}
+                                            </td>
+                                        </tr>
+
+                                    {% endfor %}
+                                    <tr class="vigency-separator">
+                                        <td colspan="5" style="height:30px"></td>
+                                    </tr>
+                                {% endfor %}
+
+                            {% endfor %}
+
+                            {% endwith %}
+
+                            </tbody>
+
+                        </table>
+
+                    {% endfor %}
+
+                </div>
+            </div>
+        </div>
+
+        {% endwith %}
+    {% endfor %}
+
+{% endfor %}
+{% endif %}
+
+{# ===================================================== #}
+{# ================== SERVICIOS ======================== #}
+{# ===================================================== #}
+
+{% if tariff_type != "acc" %}
+
+{% regroup rate_lines by group.product.group.id as product_groups %}
+
+{% for pg in product_groups %}
+
+    <div class="p-2 mt-4 mb-2 shadow-sm rounded"
+         style="background-color:black;color:white;">
+        <h5 class="mb-0 px-2 text-uppercase small fw-bold"
+            style="letter-spacing:2px;">
+            {{ pg.list.0.group.product.group.name }}
+        </h5>
+    </div>
+
+    <table class="table table-hover table-sm mb-4">
+        <thead>
+            <tr class="text-muted small bg-light border-bottom border-primary">
+                <th class="ps-3 border-0" style="width:35%;">Service</th>
+                <th class="border-0" style="width:30%;">Validity</th>
+                <th class="text-center border-0">1 Pax</th>
+                <th class="text-center border-0">2 Pax</th>
+                <th class="text-center border-0">3 Pax</th>
+                <th class="text-center border-0">4 Pax</th>
+                <th class="text-center border-0">5 Pax</th>
+                <th class="text-center border-0">6 Pax</th>
+            </tr>
+        </thead>
+        <tbody>
+
+        {% for line in pg.list %}
+            <tr class="border-bottom">
+                <td class="ps-3">
+                    <strong>{{ line.group.product.name }}</strong>
+                    <div class="small text-muted">
+                        {{ line.group.name }}
+                    </div>
+                    {% if line.group.product.note %}
+                    <div class="d-flex small align-items-center">
+                        <i class="fa-solid fa-exclamation"></i>
+                        <div class="text-primary fw-bold ms-2">{{ line.group.product.note }}</div>
+                    </div>
+                    {% endif %}
+                </td>
+
+                <td>
+                    {{ line.date_from|date:"d M Y" }}
+                    –
+                    {{ line.date_to|date:"d M Y" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.1|default:"N/A" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.2|default:"N/A" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.3|default:"N/A" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.4|default:"N/A" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.5|default:"N/A" }}
+                </td>
+
+                <td class="text-center fw-bold">
+                    {{ line.rates_by_column.6|default:"N/A" }}
+                </td>
+            </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+
+{% endfor %}
+{% endif %}
+
+{% else %}
+    <div class="text-center p-5 text-muted">
+        <i class="fa-solid fa-exclamation fa-3x mb-3"></i>
+        <p>No results found.</p>
+    </div>
+{% endif %}

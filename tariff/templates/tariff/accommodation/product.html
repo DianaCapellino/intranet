@@ -1,0 +1,156 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="container">
+        <div id="new_product">
+
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nuevo Producto para <u>{{ supplier.name }}</u></h2>
+                <div>
+                    <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                </div>
+            </div>
+            <br>
+
+            {% if message %}
+                <div class="message text-center">{{ message }}</div>
+            {% endif %}
+
+            <br>
+            <div class="text-center col">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'acc_product' supplier.id %}" method="post">
+                    {% csrf_token %}
+                    <h5 class="mb-3">Información básica</h5>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" required>
+                        </div>
+                        <div class="col-6">
+                            <input class="form-control" name="name" placeholder="Nombre del proveedor" required>
+                        </div>
+                        <div class="col">
+                            <label class="form-label">Grupo: Regular / Especial</label>
+                            <a href="{% url 'acc_product_group' %}"
+                            data-toggle="tooltip"
+                            data-placement="left"
+                            title="Gestionar Grupos">
+                                <i class="fa-solid fa-pencil"></i>
+                            </a>
+                            <select name="group" class="form-select" required>
+                                {% for group in product_groups %}
+                                    <option value="{{ group.id }}">{{ group.location.name }} - {{ group.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <textarea class="form-control" name="description" rows="3" placeholder="Descripción"></textarea>
+                    </div>
+
+                    <hr>
+
+<!-- TEXT PREPARADO PARA SERVICIOS
+                    <h5 class="mb-3">Rankings</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Niños</label>
+                            <select name="children_ranking" class="form-select">
+                                {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Accesibilidad</label>
+                            <select name="disabled_ranking" class="form-select">
+                                {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Sustentabilidad</label>
+                            <select name="sustentability_ranking" class="form-select">
+                                {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Características</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Atracciones</label>
+                            <select name="attractions" class="form-select" multiple>
+                                {% for v, label in ATTRACTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Intereses</label>
+                            <select name="interests" class="form-select" multiple>
+                                {% for v, label in INTERESTS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+-->
+                    <h5 class="mb-3">Clientes</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Clientes</label>
+                            <select name="clients" class="form-select" multiple>
+                                {% for client in clients %}
+                                    <option value="{{ client.id }}" selected>{{ client.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <h5 class="mb-3">Notas</h5>
+                    <small class="mb-3" muted>Estas notas se despliegan al abrir la habitación en el tarifario</small>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <small class="mb-3" muted>Ejemplo: This room is very small</small>
+                            <textarea class="form-control" name="note" rows="1" placeholder="Nota adicional"></textarea>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Imágenes (URLs)</h5>
+                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
+
+                    <div class="mb-3">
+                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo">
+                    </div>
+
+                    <button class="btn btn-dark">GUARDAR</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <br>
+{% endblock %}

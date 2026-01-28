@@ -1,25 +1,145 @@
-from django.shortcuts import render
-from django.http import HttpResponseRedirect
+from django.shortcuts import render, redirect
+from django.http import HttpResponseRedirect, HttpResponse
 from django.urls import reverse
-from .models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
+from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
+from tariff.utils import apply_client_margin
+from intranet.models import Client
 import csv
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
+from datetime import date
+import logging
+from django.db.models import Prefetch, Q
+
 
 @login_required
-def tariff(request):
+def index(request):
+
+    this_year = date.today().year
+
     return render(request, "tariff/tariff.html", {
-        "products":Product.objects.all(),
-        "rates":Rate.objects.all(),
         "locations":Location.objects.all(),
-        "supplier_group": SupplierGroup.objects.all(),
-        "supplier": Supplier.objects.all(),
-        "product_group": ProductGroup.objects.all(),
-        "fixed_rates": FixedRateCost.objects.all(),
-        "rate_group": RateGroup.objects.all(),
-        "cost_item": CostItem.objects.all(),
-        "rate_lines": RateLine.objects.all(),
+        "clients": Client.objects.all(),
+        "this_year": this_year,
     })
+
+logger = logging.getLogger(__name__)
+
+
+@login_required
+def tariff_search(request):
+
+    has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
+    if not has_params:
+        return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
+
+    loc_id = request.GET.get('location')
+    t_type = request.GET.get('type')
+    season = request.GET.get('season')
+    client_id = request.GET.get('client')
+
+    show_costs = request.session.get("show_costs", False)
+
+    if t_type == "acc":
+        rate_lines = (
+            RateLine.objects
+            .select_related(
+                "group__product__supplier__group",
+                "group__product__group",
+                "group__product__supplier",
+            )
+            .prefetch_related("line_rates")
+            .order_by(
+                "group__product__supplier__group__order",
+                "group__product__supplier__id",
+                "group__product__group__order",
+                "date_from",
+                "date_to",
+                "group__product__order",
+            )
+        )
+    else:
+        rate_lines = (
+            RateLine.objects
+            .select_related(
+                "group__product__supplier__group",
+                "group__product__group",
+                "group__product__supplier",
+            )
+            .prefetch_related("line_rates")
+            .order_by(
+                "group__product__supplier__group__order",
+                "group__product__supplier__id",
+                "group__product__group__order",
+                "group__product__order",
+                "date_from",
+                "date_to",
+            )
+        )
+
+    if loc_id:
+        rate_lines = rate_lines.filter(group__product__group__location_id=loc_id)
+
+    if t_type == "acc":
+        rate_lines = rate_lines.filter(group__product__type_service="AC")
+    else:
+        rate_lines = rate_lines.filter(group__product__type_service="NA")
+
+    if season:
+        year = int(season)
+
+        season_start = date(year, 5, 1)        # 01 May
+        season_end   = date(year + 1, 4, 30)   # 30 Apr siguiente año
+
+        rate_lines = rate_lines.filter(
+            date_from__lte=season_end,
+            date_to__gte=season_start
+        )
+        
+    if client_id:
+        client = Client.objects.get(id=client_id)
+        rate_lines = rate_lines.filter(group__product__clients__id=client_id)
+    else:
+        client = Client.objects.get(name=request.user.other_name)
+        rate_lines = rate_lines.filter(group__product__clients__id=client.id)
+
+    for line in rate_lines:
+        rates = {}
+
+        for r in line.line_rates.all():
+
+            sell_adjusted = apply_client_margin(
+                rate=r,
+                client_category=client.category,
+                service_type="AC" if t_type == "acc" else "NA"
+            )
+
+            rates[r.column_options] = sell_adjusted
+
+        line.rates_by_column = rates
+
+        is_internal = not hasattr(request.user, "client")
+        if not is_internal:
+            show_costs = False
+
+        if show_costs and request.user.userType != "Cliente":
+            line.costs_by_column = {
+                r.column_options: r.cost
+                for r in line.line_rates.all()
+            }
+        else:
+            line.costs_by_column = {}
+
+    return render(request, "tariff/tariff_table_partial.html", {
+        "rate_lines": rate_lines,
+        "tariff_type": t_type,
+        "show_costs": show_costs,
+    })
+
+@login_required
+def toggle_costs(request):
+    request.session["show_costs"] = not request.session.get("show_costs", False)
+    return redirect(request.META.get("HTTP_REFERER", "/"))
 
 @login_required
 def tp_mod_list(request):

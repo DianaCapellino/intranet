@@ -1,109 +1,198 @@
 {% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+<!-- Agregar HTMX solo en este template -->
+{% block extra_head %}
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<style>
+    /* Indicador de carga opcional */
+    .htmx-request .htmx-indicator {
+        display: inline;
+    }
+    .htmx-indicator {
+        display: none;
+    }
+</style>
+{% endblock %}
 
 {% block body %}
-    {% if user.isAdmin %}
-    <div id="new_product" class="d-none">
-        <div class="container">
-            <div class="d-flex justify-content-between">
-                <h2>Crear Nuevo Producto</h2>
-                <div>
-                    <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
-                </div>
-            </div>
 
-            {% if message_new %}
-                <div class="message text-center">{{ message_new }}</div>
+    <div class="container">
+        <div class="d-flex justify-content-between m-3">
+            {% if user.userType == "Cliente"%}
+                <h1>TARIFF</h1>
+            {% else %}
+                <h1>TARIFARIO</h1>
             {% endif %}
-        
-            <br>
-            <br>
+
+            <div class="d-flex align-items-center justify-content-between">
+                {% if user.isAdmin %}
+
+                <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
+                <form method="post" action="{% url 'toggle_costs' %}" class="m-2">
+                    {% csrf_token %}
+                    <button type="button" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Ver Costos">
+                        
+                        {% if show_costs %}
+                            <i class="fa-solid fa-money-bill"></i>
+                        {% else %}
+                            <i class="fa-solid fa-hand-holding-dollar"></i>
+                        {% endif %}
+                    </button>
+                </form>
+                {% endif %}
+            </div>
         </div>
     </div>
-    {% endif %}
-    <br>
+    
     <div id="tariff">
         <div class="container">
-            <br>
-            <div class="d-flex align-items-center justify-content-between">
-                <h2>Tarifario Alojamiento</h2>
-                <div id="new_product_container">
-                    <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
-                    <button type="button" id="new_product_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo producto"><i class="fa-solid fa-plus"></i></button>
-                </div>
+            <div class="position-sticky bg-white border-bottom border-top py-2 z-3" style="top:70px">
+                {% if user.userType != "Cliente" %}
+                    <!-- Formulario con HTMX -->
+                    <div class="row g-2 align-items-end">
+                        <div class="m-3 col">
+                            <select class="form-select" 
+                                    name="client" 
+                                    id="client_filter_select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='season'], [name='location'], [name='type']"
+                                    hx-indicator="#loading">
+                                {% for client in clients %}
+                                    {% if client.name == "Audley Travel UK" %}
+                                        <option value="{{ client.id }}" selected>{{ client.name }} - {{ client.category }}</option>
+                                    {% elif client.isActivated and client.department == request.user.department and client.name != "Audley Travel UK" %}
+                                        <option value="{{ client.id }}">{{ client.name }} - {{ client.category }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="season" 
+                                    id="season-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='client'], [name='location'], [name='type']"
+                                    hx-indicator="#loading">
+                                <option value="{{this_year|add:-1}}">{{this_year|add:-1}}/{{this_year}}</option>
+                                <option value="{{this_year}}" selected>{{this_year}}/{{this_year|add:1}}</option>
+                                <option value="{{this_year|add:1}}">{{this_year|add:1}}/{{this_year|add:2}}</option>
+                            </select>
+                        </div>
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="location" 
+                                    id="location-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='client'], [name='season'], [name='type']"
+                                    hx-indicator="#loading">
+                                {% for location in locations %}
+                                    {% if location.name == "Buenos Aires" %}
+                                        <option value="{{location.id}}" selected>{{location.name}}</option>
+                                    {% else %}
+                                        <option value="{{location.id}}">{{location.name}}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="type" 
+                                    id="type-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='client'], [name='season'], [name='location']"
+                                    hx-indicator="#loading">
+                                <option value="acc">Alojamiento</option>
+                                <option value="svs" selected>Servicios</option>
+                            </select>
+                        </div>
 
+                        <!-- Indicador de carga -->
+                        <span id="loading" class="htmx-indicator">
+                            <i class="fa fa-spinner fa-spin"></i>
+                        </span>
+
+                    </div>
+                {% else %}
+                    <!-- Versión para clientes -->
+                    <div class="row">
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="season" 
+                                    id="season-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='location'], [name='type']">
+                                <option value="{{this_year|add:-1}}">{{this_year|add:-1}}/{{this_year}}</option>
+                                <option value="{{this_year}}" selected>{{this_year}}/{{this_year|add:1}}</option>
+                            </select>
+                        </div>
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="location" 
+                                    id="location-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='year'], [name='type']">
+                                {% for location in locations %}
+                                    {% if location.name == "Buenos Aires" %}
+                                        <option value="{{location.id}}" selected>{{location.name}}</option>
+                                    {% else %}
+                                        <option value="{{location.id}}">{{location.name}}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="m-3 col">
+                            <select class="form-control" 
+                                    name="type" 
+                                    id="type-select"
+                                    hx-get="{% url 'tariff_search' %}"
+                                    hx-trigger="change"
+                                    hx-target="#tariff-results"
+                                    hx-include="[name='year'], [name='location']">
+                                <option value="acc">Accommodation</option>
+                                <option value="svs" selected>Services</option>
+                            </select>
+                        </div>
+
+                        <!-- Indicador de carga -->
+                        <span id="loading" class="htmx-indicator">
+                            <i class="fa fa-spinner fa-spin"></i>
+                        </span>
+                    </div>
+                {% endif %}
             </div>
-
+            
             {% if message_modify %}
                 <div>{{ message_modify }}</div>
             {% endif %}
 
             <br>
 
-            <div class="row">
-                <div class="col-12">
-                    <div style="width:100%">
-                        <table id="tariff_table" class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Destination</th>
-                                    <th>Supplier</th>
-                                    <th>Product</th>
-                                    <th>Validity</th>
-                                    <th>DBL</th>
-                                    <th>SGL</th>
-                                    <th>TPL</th>
-                                    <th>CPL</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for line in rate_lines %}
-                                    <tr>
-                                        <td>{{ line.group.product.group.location }}</td>
-                                        <td>{{ line.group.product.supplier }}</td>
-                                        <td>{{ line.group.product.name }}</td>
-                                        <td>{{ line.date_from }} to {{ line.date_to }}</td>
-                                        {% for rate in rates %}
-                                            {% if rate.rate_line.id == line.id and rate.column_options == "DBL" %}
-                                                {% if rate.has_rate %}
-                                                    <td>{{ rate.sell }}</td>
-                                                {% else %}
-                                                    <td>{{ rate.text_value }}</td>
-                                                {% endif %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        {% for rate in rates %}
-                                            {% if rate.rate_line.id == line.id and rate.column_options == "SGL" %}
-                                                {% if rate.has_rate %}
-                                                    <td>{{ rate.sell }}</td>
-                                                {% else %}
-                                                    <td>{{ rate.text_value }}</td>
-                                                {% endif %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        {% for rate in rates %}
-                                            {% if rate.rate_line.id == line.id and rate.column_options == "TPL" %}
-                                                {% if rate.has_rate %}
-                                                    <td>{{ rate.sell }}</td>
-                                                {% else %}
-                                                    <td>{{ rate.text_value }}</td>
-                                                {% endif %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        {% for rate in rates %}
-                                            {% if rate.rate_line.id == line.id and rate.column_options == "CPL" %}
-                                                {% if rate.has_rate %}
-                                                    <td>{{ rate.sell }}</td>
-                                                {% else %}
-                                                    <td>{{ rate.text_value }}</td>
-                                                {% endif %}
-                                            {% endif %}
-                                        {% endfor %}
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+            <!-- Contenedor donde se cargan los resultados -->
+            <div id="tariff-results">
+                {% if user.userType == "Cliente" %}
+                    <div class="text-center p-5 text-muted">
+                        <i class="fa-solid fa-magnifying-glass fa-3x mb-3"></i>
+                        <p>Please select the options above to display the rates.</p>
                     </div>
-                </div>
+                {% else %}
+                    <div class="text-center p-5 text-muted">
+                        <i class="fa-solid fa-magnifying-glass fa-3x mb-3"></i>
+                        <p>Selecciona los filtros arriba para ver las tarifas.</p>
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>

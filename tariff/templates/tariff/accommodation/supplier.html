@@ -1,0 +1,537 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="container">
+        <div id="new_supplier" class="d-none">
+
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nuevo Proveedor</h2>
+                <div>
+                    <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                </div>
+            </div>
+            <br>
+
+            {% if message %}
+                <div class="message text-center">{{ message }}</div>
+            {% endif %}
+
+            <br>
+            <div class="text-center col">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'acc_supplier' %}" method="post">
+                    {% csrf_token %}
+                    <h5 class="mb-3">Información básica</h5>
+
+                    <div class="row mb-3">
+                        <div class="col-3">
+                            <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" required>
+                        </div>
+                        <div class="col-6">
+                            <input class="form-control" name="name" placeholder="Nombre del proveedor" required>
+                        </div>
+                        <div class="col-3">
+                            <select name="margin" class="form-select" required>
+                                {% for label, v in MARGIN_ACC_OPTIONS %}
+                                    {% if label == "Regular" %}
+                                        <option value="{{ v }}" selected>{{ label }} - {{ v }}</option>                      
+                                    {% else %}
+                                        <option value="{{ v }}">{{ label }} - {{ v }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <textarea class="form-control" name="description" rows="3" placeholder="Descripción"></textarea>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Clasificación</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Categoría</label>
+                            <select name="category" class="form-select" required>
+                                {% for v, label in HOTEL_QUALITY_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label class="form-label">Grupo: Barrio / Área</label>
+                            <a href="{% url 'acc_supplier_group' %}"
+                            data-toggle="tooltip"
+                            data-placement="left"
+                            title="Gestionar Grupos">
+                                <i class="fa-solid fa-pencil"></i>
+                            </a>
+                            <select name="group" class="form-select" required>
+                                {% for group in supplier_groups %}
+                                    <option value="{{ group.id }}">{{ group.location.name }} - {{ group.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <hr>
+
+                    <h5 class="mb-3">Rankings</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Niños</label>
+                            <select name="children_ranking" class="form-select">
+                                {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Accesibilidad</label>
+                            <select name="disabled_ranking" class="form-select">
+                                {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Sustentabilidad</label>
+                            <select name="sustentability_ranking" class="form-select">
+                                {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Características</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Atracciones</label>
+                            <select name="attractions" class="form-select" multiple>
+                                {% for v, label in ATTRACTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Intereses</label>
+                            <select name="interests" class="form-select" multiple>
+                                {% for v, label in INTERESTS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+                    
+                    <h5 class="mb-3">Notas</h5>
+                    <small class="mb-3" muted>Estas notas aparecen debajo del nombre en el tarifario</small>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <small class="mb-3" muted>Ejemplo: Min age is 12 years old</small>
+                            <textarea class="form-control" name="note" rows="1" placeholder="Nota adicional"></textarea>
+                        </div>
+                        <div class="col">
+                            <small class="mb-3" muted>Ejemplo: 30% prepayment is required to confirm</small>
+                            <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago"></textarea>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Imágenes (URLs)</h5>
+                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
+
+                    <div class="mb-3">
+                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo">
+                    </div>
+
+                    <button class="btn btn-dark">GUARDAR</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div id="supplier_list">
+        <div class="container">
+            <br>
+            <div class="d-flex align-items-center justify-content-between">
+                <h2>PROVEEDORES - Alojamiento</h2>
+                <div>
+                    <select class="form-select" aria-label="location_filter" name="location_filter" id="location_filter_select">
+                        <option value="all">Todos</option>
+                        {% for location in locations %}
+                            {% if location.id == default_location.id %}
+                                <option value="{{ location.id }}" selected>{{ location.code }} - {{ location.name }}</option>
+                            {% else %}
+                                <option value="{{ location.id }}">{{ location.code }} - {{ location.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="new_supplier_container">
+                    <div>
+                        <button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>
+                        <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                    </div>  
+                </div>
+            </div>
+            {% if message_modify %}
+                <div class="message text-center">{{ message_modify }}</div>
+            {% endif %}
+
+            <div class="col">
+                <table id="supplier" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Destino</th>
+                            <th>Código</th>
+                            <th>Margen</th>
+                            <th>Orden</th>
+                            <th>Categoría</th>
+                            <th>Grupo</th>
+                            <th>Nota</th>
+                            <th>Prepago</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for supplier in suppliers %}
+                        <tr data-bs-toggle="modal" data-bs-target="#windowSupplier{{ supplier.id }}" id="row-supplier-{{supplier.id}}" class="row-supplier"
+                            data-location="{{ supplier.group.location.id }}"
+                            {% if supplier.group.location.id != default_location.id %}hidden{% endif %}
+                        >
+                            <td id="supplier-{{supplier.id}}">{{ supplier.name }}</td>
+                            <td id="supplier-{{supplier.id}}">{{ supplier.group.location.code }}</td>
+                            <td id="supplier-code-{{supplier.id}}">{{ supplier.code }}</td>
+                            <td id="supplier-margen{{supplier.id}}">{{ supplier.margin }}</td>
+                            <td id="supplier-order{{supplier.id}}">{{ supplier.order }}</td>
+                            <td id="supplier-quality{{supplier.id}}">{{ supplier.hotel_quality }}</td>
+                            <td id="supplier-group{{supplier.id}}">{{ supplier.group.name }}</td>
+                            {% if supplier.note %}
+                                <td id="supplier-note{{supplier.id}}">Sí</td>
+                            {% else %}
+                                <td id="supplier-note{{supplier.id}}">No</td>
+                            {% endif %}
+                            {% if supplier.prepayment %}
+                                <td id="supplier-note{{supplier.id}}">Sí</td>
+                            {% else %}
+                                <td id="supplier-note{{supplier.id}}">No</td>
+                            {% endif %}
+                            <td>
+                                <div class="justify-content-around d-flex">
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-supplier-{{supplier.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowSupplierPencil{{ supplier.id }}"></i>
+                                    <i class="fa-solid fa-trash" width="1px" id="trash-supplier-{{supplier.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowSupplierTrash{{ supplier.id }}"></i>
+                                </div>
+                            </td>
+                        </tr>
+                        <div class="modal fade modal-lg" id="windowSupplierPencil{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8" id="label{{ supplier.id }}">Modificando {{ supplier.name }}</h1>
+                                        <button id="btn-close-supplier-modify-{{ supplier.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form class="rw-3 text-center" action="{% url 'modify_supplier' supplier.id %}" method="post">
+                                            {% csrf_token %}
+
+                                            <h5 class="mb-3">Información básica</h5>
+
+                                            <div class="row mb-3">
+                                                <div class="col-3">
+                                                    <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" value="{{ supplier.code }}" required>
+                                                </div>
+                                                <div class="col-6">
+                                                    <input class="form-control" name="name" placeholder="Nombre del proveedor" value="{{ supplier.name }}" required>
+                                                </div>
+                                                <div class="col-3 d-flex align-items-center">
+                                                    <input class="form-control" type="number" step="0.01" name="margin" placeholder="Margen" value="{{ supplier.margin }}" required>
+                                                    <i 
+                                                        class="fas fa-question-circle text-primary ms-1"
+                                                        data-bs-toggle="tooltip"
+                                                        data-bs-html="true"
+                                                        title="
+                                                        Low – 0.89 - 20% comisión 
+Regular – 0.85 - Netas o con comisión mayor a 20%
+High – 0.82 - Tarifas especiales negociadas
+** Para clientes B y A se suma el adicional luego **"
+                                                    ></i>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <textarea class="form-control" name="description" rows="3" placeholder="Descripción">{{ supplier.description|default:'' }}</textarea>
+                                            </div>
+
+                                            <hr>
+
+                                            <h5 class="mb-3">Clasificación</h5>
+
+                                            <div class="row mb-3">
+                                                <div class="col">
+                                                    <label class="form-label">Categoría</label>
+                                                    <select name="category" class="form-select" required>
+                                                        {% for v, label in HOTEL_QUALITY_OPTIONS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v == supplier.hotel_quality %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col">
+                                                    <label class="form-label">Grupo: Barrio / Área</label>
+                                                    <a href="{% url 'acc_supplier_group' %}"
+                                                    data-toggle="tooltip"
+                                                    data-placement="left"
+                                                    title="Gestionar Grupos">
+                                                        <i class="fa-solid fa-pencil"></i>
+                                                    </a>
+                                                    <select name="group" class="form-select" required>
+                                                        {% for group in supplier_groups %}
+                                                            <option value="{{ group.id }}"
+                                                                {% if group.id == supplier.group.id %}selected{% endif %}
+                                                            >
+                                                                {{ group.location.name }} - {{ group.name }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col">
+                                                    <label class="form-label">Orden</label>
+                                                    <input class="form-control" name="order" type="number" placeholder="Orden" value="{{ supplier.order }}" required>
+                                                </div>
+                                            </div>
+                                            
+                                            <hr>
+
+                                            <h5 class="mb-3">Rankings</h5>
+
+                                            <div class="row mb-3">
+                                                <div class="col">
+                                                    <label class="form-label">Niños</label>
+                                                    <select name="children_ranking" class="form-select">
+                                                        {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v == supplier.children_ranking %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+
+                                                <div class="col">
+                                                    <label class="form-label">Accesibilidad</label>
+                                                    <select name="disabled_ranking" class="form-select">
+                                                        {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v == supplier.disabled_ranking %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+
+                                                <div class="col">
+                                                    <label class="form-label">Sustentabilidad</label>
+                                                    <select name="sustentability_ranking" class="form-select">
+                                                        {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v == supplier.sustentability_ranking %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <hr>
+
+                                            <h5 class="mb-3">Características</h5>
+
+                                            <div class="row mb-3">
+                                                <div class="col">
+                                                    <label class="form-label">Atracciones</label>
+                                                    <select name="attractions" class="form-select" multiple>
+                                                        {% for v, label in ATTRACTIONS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v in supplier.attractions %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+
+                                                <div class="col">
+                                                    <label class="form-label">Intereses</label>
+                                                    <select name="interests" class="form-select" multiple>
+                                                        {% for v, label in INTERESTS %}
+                                                            <option value="{{ v }}"
+                                                                {% if v in supplier.interests %}selected{% endif %}
+                                                            >
+                                                                {{ label }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <hr>
+                                            
+                                            <h5 class="mb-3">Notas</h5>
+                                            <small class="mb-3" muted>Estas notas aparecen debajo del nombre en el tarifario</small>
+
+                                            <div class="row mb-3">
+                                                <div class="col">
+                                                    <small class="mb-3" muted>Ejemplo: Min age is 12 years old</small>
+                                                    <textarea class="form-control" name="note" rows="1" placeholder="Nota adicional">{{ supplier.note|default:'' }}</textarea>
+                                                </div>
+                                                <div class="col">
+                                                    <small class="mb-3" muted>Ejemplo: 30% prepayment is required to confirm</small>
+                                                    <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago">{{ supplier.prepayment|default:'' }}</textarea>
+                                                </div>
+                                            </div>
+
+                                            <hr>
+
+                                            <h5 class="mb-3">Imágenes (URLs)</h5>
+                                            <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
+
+                                            <div class="mb-3">
+                                                <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ supplier.pic1_url|default:'' }}">
+                                            </div>
+                                            <div class="mb-3">
+                                                <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ supplier.pic2_url|default:'' }}">
+                                            </div>
+                                            <div class="mb-3">
+                                                <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ supplier.pic3_url|default:'' }}">
+                                            </div>                                                        
+
+                                            <input id="modify-supplier-{{ supplier.id }}" class="btn btn-dark btn-lg modify-supplier-btn" type="submit" value="MODIFICAR">
+
+                                        </form>
+                                    </div>
+                                </div>  
+                            </div>
+                        </div>
+                        <div class="modal fade modal-lg" id="windowSupplierTrash{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8" id="label{{ supplier.id }}">Eliminando {{ supplier.name }}</h1>
+                                        <button id="btn-close-supplier-{{ supplier.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <h3>¿Está seguro que desea eliminar el proveedor {{ supplier.name }}?</h3>
+                                        <br>
+                                        <div class="container text-center">
+                                            <button id="delete-supplier-{{ supplier.id }}" class="btn btn-dark btn-lg delete-supplier-btn">ELIMINAR</button></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="modal fade modal-xl modal-supplier" id="windowSupplier{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                            <div class="modal-dialog modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8" id="label{{ supplier.id }}">{{ supplier.name }} - {{ supplier.group.location.name }}</h1>
+                                        <button tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row">
+                                            <div class="col-4">
+                                                <h5><b>Nombre:</b> {{ supplier.name }}</h5>
+                                            </div>
+                                            <div class="col-4">
+                                                <h5><b>Código (TP):</b> {{ supplier.code }}</h5>
+                                            </div>
+                                            <div class="col-4">
+                                                <h5><b>Margen:</b> {{ supplier.margin }}</h5>
+                                            </div>
+                                        </div>
+                                        <hr>
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <h2>Productos (habitaciones)</h2>
+                                            <div id="new_product_container">
+                                                <a href="{% url 'acc_product' supplier.id %}" ><button type="button" id="new_product_btn{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva habitación"><i class="fa-solid fa-plus"></i></button></a>
+                                                <a href="{% url 'modify_supplier_rates' supplier.id %}" ><button type="button" id="edit-rates{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Gestionar tarifas"><i class="fa-solid fa-dollar-sign"></i></button></a>
+                                            </div>
+                                        </div>
+                                        <br>
+                                        <div>
+                                            <div class="row fw-bold">
+                                                <div class="col-3">Nombre</div>
+                                                <div class="col-2">Código (TP)</div>
+                                                <div class="col-1">Nota</div>
+                                                <div class="col-1">Activo</div>
+                                                <div class="col-3">Tipo</div>
+                                                <div class="col-1">Orden</div>
+                                                <div class="col-1">Editar</div>
+                                            </div>
+                                            <hr>
+                                            {% for product in supplier.supplier_products.all %}
+                                                <div class="row">
+                                                    <div class="col-3">{{ product.name }}</div>
+                                                    <div class="col-2">{{ product.code }}</div>
+                                                    {% if product.note %}
+                                                        <div class="col-1">Sí</div>
+                                                    {% else %}
+                                                        <div class="col-1">No</div>
+                                                    {% endif %}
+                                                    {% if product.shown %}
+                                                        <div class="col-1">Sí</div>
+                                                    {% else %}
+                                                        <div class="col-1">No</div>
+                                                    {% endif %}
+                                                    <div class="col-3">{{ product.group.name }}</div>
+                                                    <div class="col-1">{{ product.order }}</div>
+                                                    <div class="col-1">
+                                                        <a href="{% url 'modify_product' product.id %}">
+                                                            <i class="fa-solid fa-pencil" width="1px" id="pencil-product-{{product.id}}" aria-hidden="true"></i>
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            {% empty %}
+                                                <div class="text-muted">Este proveedor no tiene productos cargados</div>
+                                            {% endfor %}
+
+                                        </div>
+                                        <br>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <br>
+{% endblock %}

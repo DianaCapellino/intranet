@@ -96,13 +96,6 @@ HOTEL_QUALITY_OPTIONS = [
     ("Winery", "Winery")
 ]
 
-SERVICES_OPTIONS = [
-    ("Shared", "Shared"),
-    ("Shared boutique", "Shared shared"),
-    ("Private with driver only", "Private with driver only"),
-    ("Private with English-speaking guide", "Private with English-speaking guide"),
-]
-
 STATUS = [
     ("Confirmed", "Confirmed"),
     ("Provisional", "Provisional"),
@@ -146,15 +139,18 @@ class Location(models.Model):
 
 class SupplierGroup(models.Model):
     name = models.CharField(max_length=64)
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="location_suppliers")
     order = models.PositiveIntegerField()
+    type_service = models.CharField(choices=SRV, max_length=64)
 
     def __str__(self):
         return f"{self.name}"
 
+
 class Supplier(models.Model):
     code = models.CharField(max_length=6)
     name = models.CharField(max_length=64)
-    description = models.CharField(max_length=500, blank=True)
+    description = models.CharField(max_length=3000, blank=True)
     pic1_url = models.CharField(max_length=500, blank=True, null=True)
     pic2_url = models.CharField(max_length=500, blank=True, null=True)
     pic3_url = models.CharField(max_length=500, blank=True, null=True)
@@ -167,7 +163,9 @@ class Supplier(models.Model):
     recommended = models.BooleanField(default=False)
     order = models.PositiveIntegerField()
     group = models.ForeignKey(SupplierGroup, on_delete=models.CASCADE, related_name="group_products")
+    hotel_quality = models.CharField(choices=HOTEL_QUALITY_OPTIONS, max_length=64, blank=True, null=True)
     margin = models.FloatField()
+    prepayment = models.CharField(max_length=500, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name}"
@@ -177,6 +175,7 @@ class ProductGroup(models.Model):
     name = models.CharField(max_length=64)
     order = models.PositiveIntegerField()
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="location_products")
+    type_service = models.CharField(choices=SRV, max_length=64)
 
     def __str__(self):
         return f"{self.location} - {self.name}"
@@ -185,7 +184,7 @@ class ProductGroup(models.Model):
 class Product(models.Model):
     code = models.CharField(max_length=6)
     name = models.CharField(max_length=64)
-    description = models.CharField(max_length=500, blank=True)
+    description = models.CharField(max_length=3000, blank=True)
     pic1_url = models.CharField(max_length=500, blank=True, null=True)
     pic2_url = models.CharField(max_length=500, blank=True, null=True)
     pic3_url = models.CharField(max_length=500, blank=True, null=True)
@@ -198,43 +197,34 @@ class Product(models.Model):
     type_service = models.CharField(choices=SRV, max_length=64)
     recommended = models.BooleanField(default=False)
     
-    # Supplier to organize for clients
+    # Supplier for the real costs
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="supplier_products")
     
-    # Supplier for the real costs show internally
-    real_supplier = models.CharField(max_length=64)
+    # Important information
+    note = models.CharField(max_length=150, blank=True, null=True)
     
     # Visible for clients
     shown = models.BooleanField(default=True)
 
+    # Per group or per person
     fcu = models.CharField(choices=FCU_OPTIONS, max_length=64)
+    
+    # Per night is 1 or per package of x nights
     scu = models.PositiveSmallIntegerField()
+
+    # Last working date
     lw_date = models.DateField(default=django.utils.timezone.now, verbose_name='last_working_date')
 
-    quality = models.CharField(max_length=64)
+    quality = models.CharField(max_length=64, blank=True, null=True)
     order = models.PositiveIntegerField()
     group = models.ForeignKey(ProductGroup, on_delete=models.CASCADE, related_name="group_products")
     clients = models.ManyToManyField(Client, related_name="available_clients", blank=True)
 
     def __str__(self):
-        return f"{self.supplier} - {self.name}"
+        return f"{self.supplier} - {self.name} - {self.group}"
     
     class Meta:
-        ordering = ["-order"]
-
-
-class FixedRateCost(models.Model):
-    name = models.CharField(max_length=64)
-    date_from = models.DateField(verbose_name='from_date')
-    date_to = models.DateField(verbose_name='to_date')
-    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="fixed_rate_location")
-    increase = models.FloatField(null=True, blank=True)
-    usd = models.BooleanField(default=True)
-    exchange = models.PositiveIntegerField(default=1)
-    value = models.FloatField()
-
-    def __str__(self):
-        return f"{self.location} - {self.name}"
+        ordering = ["order"]
 
 
 class RateGroup(models.Model):
@@ -282,6 +272,22 @@ class CostItem(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.rate}"
+
+
+class FixedRateCost(models.Model):
+    name = models.CharField(max_length=64)
+    date_from = models.DateField(verbose_name='from_date')
+    date_to = models.DateField(verbose_name='to_date')
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="fixed_rate_location")
+    increase = models.FloatField(null=True, blank=True)
+    usd = models.BooleanField(default=True)
+    exchange = models.PositiveIntegerField(default=1)
+    value = models.FloatField()
+    rate = models.ManyToManyField(Rate, related_name="rates_with_fixed", blank=True)
+
+    def __str__(self):
+        return f"{self.location} - {self.name}"
+
     
 class CsvFileTourplan (models.Model):
     file_name = models.FileField(upload_to="csvFiles")

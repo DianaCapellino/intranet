@@ -1,0 +1,67 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block body %}
+
+<div class="container py-2">
+
+    <h3 class="mb-4 text-center">ALOJAMIENTO</h3>
+
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-body text-center">
+                    <h5>Proveedor</h5>
+                    <p class="text-muted small">
+                        Hotel / Estancia / Lodge
+                    </p>
+
+                    <a href="{% url 'acc_supplier' %}"
+                    class="btn btn-primary w-100 mb-2">
+                        Gestionar proveedores
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-body text-center">
+                    <h5>Grupo de Proveedor</h5>
+                    <p class="text-muted small">
+                        Barrio / Área / Subcategoría
+                    </p>
+
+                    <a href="{% url 'acc_supplier_group' %}"
+                    class="btn btn-primary w-100 mb-2">
+                        Gestionar grupo de proveedores
+                    </a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="col-md-5">
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-body text-center">
+                    <h5>Grupo de Productos</h5>
+                    <p class="text-muted small">
+                        Netas / Promociones / Especiales
+                    </p>
+
+                    <a href="{% url 'acc_product_group' %}"
+                    class="btn btn-primary w-100 mb-2">
+                        Gestionar grupo de productos
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

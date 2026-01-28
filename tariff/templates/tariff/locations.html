@@ -1,0 +1,344 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="container">
+        <div id="new_location" class="d-none">
+
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nuevo Destino</h2>
+                <div>
+                    <a href="{% url 'locations' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                </div>
+            </div>
+            <br>
+
+            {% if message %}
+                <div class="message text-center">{{ message }}</div>
+            {% endif %}
+
+            <br>
+            <div class="text-center col">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'locations' %}" method="post">
+                    {% csrf_token %}
+                    <h5 class="mb-3">Información básica</h5>
+
+                    <div class="row mb-3">
+                        <div class="col-3">
+                            <input class="form-control" name="code" placeholder="Código (3 letras)" maxlength="3" required>
+                        </div>
+                        <div class="col-9">
+                            <input class="form-control" name="name" placeholder="Nombre del destino" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <textarea class="form-control" name="description" rows="3" placeholder="Descripción"></textarea>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Rankings</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Niños</label>
+                            <select name="children_ranking" class="form-select">
+                                {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Accesibilidad</label>
+                            <select name="disabled_ranking" class="form-select">
+                                {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Sustentabilidad</label>
+                            <select name="sustentability_ranking" class="form-select">
+                                {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Características</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">Atracciones</label>
+                            <select name="attractions" class="form-select" multiple>
+                                {% for v, label in ATTRACTIONS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col">
+                            <label class="form-label">Intereses</label>
+                            <select name="interests" class="form-select" multiple>
+                                {% for v, label in INTERESTS %}
+                                    <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Operativa</h5>
+
+                    <div class="row mb-3">
+                        <div class="col">
+                            <input type="number" class="form-control" name="min_nights" placeholder="Noches mín." required>
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control" name="max_nights" placeholder="Noches máx." required>
+                        </div>
+                        <div class="col">
+                            <input type="number" step="0.01" class="form-control" name="margin_acc" placeholder="Margen ACC %" required>
+                        </div>
+                        <div class="col">
+                            <input type="number" step="0.01" class="form-control" name="margin_svs" placeholder="Margen SVS %" required>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Imágenes (URLs)</h5>
+                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
+
+                    <div class="mb-3">
+                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
+                    </div>
+                    <div class="mb-3">
+                        <input class="form-control" name="pic3_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
+                    </div>
+
+                    <button class="btn btn-dark">GUARDAR</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div id="location_list">
+        <div class="container">
+            <br>
+            <div class="d-flex align-items-center justify-content-between">
+                <h2>DESTINOS</h2>
+                <div id="new_location_container">
+                    <div>
+                        <button type="button" id="new_location_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>
+                        <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                    </div>  
+                </div>
+            </div>
+            {% if message_modify %}
+                <div class="message text-center">{{ message_modify }}</div>
+            {% endif %}
+
+            <div class="col">
+                <table id="locations" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Código</th>
+                            <th>Margen Acc</th>
+                            <th>Margen Svs</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for location in locations %}
+                        <tr id="row-location-{{location.id}}">
+                            <td id="locations-{{location.id}}">{{ location.name }}</td>
+                            <td id="locations-code-{{location.id}}">{{ location.code }}</td>
+                            <td id="locations-margenacc{{location.id}}">{{ location.margin_acc }}</td>
+                            <td id="locations-margensvs{{location.id}}">{{ location.margin_svs }}</td>
+                            <td>
+                                <div class="justify-content-around d-flex">
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-locations-{{location.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowLocationPencil{{ location.id }}"></i>
+                                    <i class="fa-solid fa-trash" width="1px" id="trash-locations-{{location.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowLocationTrash{{ location.id }}"></i>
+                                    <button class="btn btn-dark d-none" id="save-btn-locations-{{location.id}}">GUARDAR</button>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowLocationPencil{{ location.id }}" tabindex="-1" aria-labelledby="label{{ location.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ location.id }}">Modificando {{ location.name }}</h1>
+                                                <button id="btn-close-location-modify-{{ location.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <form class="rw-3 text-center" action="{% url 'modify_location' location.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form">
+                                                        <h5 class="mb-3">Información básica</h5>
+                                                        <div class="row mb-3">
+                                                            <div class="col-3">
+                                                                <input class="form-control" type="text" name="code" placeholder="Código (3 letras)" maxlength="3" value="{{ location.code }}" required>
+                                                            </div>
+                                                            <div class="col-9">
+                                                                <input class="form-control" type="text" name="name" placeholder="Nombre del destino" value="{{ location.name }}" required>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <textarea class="form-control" name="description" rows="3" placeholder="Descripción">{{ location.description }}</textarea>
+                                                        </div>
+
+                                                        <hr>
+
+                                                        <h5 class="mb-3">Rankings</h5>
+
+                                                        <div class="row mb-3">
+                                                            <div class="col">
+                                                                <label class="form-label">Niños</label>
+                                                                <select name="children_ranking" class="form-select">
+                                                                    {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                                                        <option value="{{ v }}"
+                                                                            {% if v == location.children_ranking %}selected{% endif %}
+                                                                        >
+                                                                            {{ label }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+
+                                                            <div class="col">
+                                                                <label class="form-label">Accesibilidad</label>
+                                                                <select name="disabled_ranking" class="form-select">
+                                                                    {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                                                        <option value="{{ v }}"
+                                                                            {% if v == location.disabled_ranking %}selected{% endif %}
+                                                                        >
+                                                                            {{ label }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+
+                                                            <div class="col">
+                                                                <label class="form-label">Sustentabilidad</label>
+                                                                <select name="sustentability_ranking" class="form-select">
+                                                                    {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                                                        <option value="{{ v }}"
+                                                                            {% if v == location.sustentability_ranking %}selected{% endif %}
+                                                                        >
+                                                                            {{ label }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
+                                                        <hr>
+
+                                                        <h5 class="mb-3">Características</h5>
+
+                                                        <div class="row mb-3">
+                                                            <div class="col">
+                                                                <label class="form-label">Atracciones</label>
+                                                                <select name="attractions" class="form-select" multiple>
+                                                                    {% for v, label in ATTRACTIONS %}
+                                                                        <option value="{{ v }}"
+                                                                            {% if v in location.attractions %}selected{% endif %}
+                                                                        >
+                                                                            {{ label }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+
+                                                            <div class="col">
+                                                                <label class="form-label">Intereses</label>
+                                                                <select name="interests" class="form-select" multiple>
+                                                                    {% for v, label in INTERESTS %}
+                                                                        <option value="{{ v }}"
+                                                                            {% if v in location.interests %}selected{% endif %}
+                                                                        >
+                                                                            {{ label }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
+                                                        <hr>
+
+                                                        <h5 class="mb-3">Operativa</h5>
+
+                                                        <div class="row mb-3">
+                                                            <div class="col">
+                                                                <input type="number" class="form-control" name="min_nights" placeholder="Noches mín." value="{{ location.min_nights }}" required>
+                                                            </div>
+                                                            <div class="col">
+                                                                <input type="number" class="form-control" name="max_nights" placeholder="Noches máx." value="{{ location.max_nights }}" required>
+                                                            </div>
+                                                            <div class="col">
+                                                                <input type="number" step="0.01" class="form-control" name="margin_acc" placeholder="Margen ACC %" value="{{ location.margin_acc }}" required>
+                                                            </div>
+                                                            <div class="col">
+                                                                <input type="number" step="0.01" class="form-control" name="margin_svs" placeholder="Margen SVS %" value="{{ location.margin_svs }}" required>
+                                                            </div>
+                                                        </div>
+
+                                                        <hr>
+
+                                                        <h5 class="mb-3">Imágenes (URLs)</h5>
+                                                        <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
+
+                                                        <div class="mb-3">
+                                                            <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ location.pic1_url }}">
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ location.pic2_url }}">
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <input class="form-control" name="pic3_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ location.pic3_url }}">
+                                                        </div>                                                        
+
+                                                        <input id="modify-location-{{ location.id }}" class="btn btn-dark btn-lg modify-location-btn" type="submit" value="MODIFICAR">
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowLocationTrash{{ location.id }}" tabindex="-1" aria-labelledby="label{{ location.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ location.id }}">Eliminando {{ location.name }}</h1>
+                                                <button id="btn-close-location-{{ location.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>¿Está seguro que desea eliminar el destino {{ location.name }}?</h3>
+                                                <br>
+                                                <div class="container text-center">
+                                                    <button id="delete-location-{{ location.id }}" class="btn btn-dark btn-lg delete-location-btn">ELIMINAR</button></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <br>
+{% endblock %}

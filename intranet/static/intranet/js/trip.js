@@ -1,3 +1,22 @@
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+        const cookies = document.cookie.split(";");
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.startsWith(name + "=")) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function getCSRFToken() {
+    return getCookie("csrftoken");
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // Modifies the date format to be shown in the forms
@@ -7,6 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btn_display("trip");
     btn_display("entry");
     btn_display("user");
+    btn_display("location");
+    btn_display("supplier");
 
     // Creates the listeners when opening and closing modals
     modal_functionality();
@@ -14,8 +35,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Creates the listeners when selecting the user when creating entry and filtering
     user_working_functionality();
 
+    // Creates listener when selecting location in suppliers
+    suppliers_location_functionality();
+
+    // Creates listener when selecting product in ratelines
+    lines_product_functionality();
+
     // Creates entry at the pendings page
     create_entry_from_pendings();
+
+    editing_blocks();
 
     // Creates the listeners for deleting elements
     deleting_functionality("countries");
@@ -24,6 +53,10 @@ document.addEventListener('DOMContentLoaded', () => {
     deleting_functionality("users");
     deleting_functionality("trips");
     deleting_functionality("entries");
+    deleting_functionality("location");
+    deleting_functionality("supplier-group");
+    deleting_functionality("product-group");
+    deleting_functionality("supplier");
 
     create_chart("pendings_chart");
 
@@ -37,6 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("entries-creating");
     create_datatable("tariff-table");
     create_datatable("entries-index");
+    create_datatable("group_suppliers");
+    create_datatable("group_products");
+    create_datatable("locations");
+    create_datatable("supplier");
+
 
     init_entry_edit_modal();
 })
@@ -510,26 +548,49 @@ function deleting_functionality(type) {
 
         const row = document.getElementById(`row-${type}-${id}`);
 
-        fetch(`${type}/json/${id}`, {
-            method: "DELETE",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": csrfToken,
-            },
-        })
-        .then(() => {
-            // cerrar modal
-            const closeBtn = document.getElementById(`btn-close-${type}-${id}`);
-            if (closeBtn) closeBtn.click();
+        if (type === "supplier-group" || type === "location") {
+            fetch(`${type}/json/${id}`, {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken,
+                },
+            })
+            .then(() => {
+                // cerrar modal
+                const closeBtn = document.getElementById(`btn-close-${type}-${id}`);
+                if (closeBtn) closeBtn.click();
 
-            // animar y eliminar fila
-            if (row) {
-                row.classList.add("row-delete");
-                //row.onanimationend = () => row.remove();
-                row.remove();
-            }
-        })
-        .catch(err => console.error("Error deleting:", err));
+                // animar y eliminar fila
+                if (row) {
+                    row.classList.add("row-delete");
+                    //row.onanimationend = () => row.remove();
+                    row.remove();
+                }
+            })
+            .catch(err => console.error("Error deleting:", err));
+        } else {
+            fetch(`${type}/json/${id}`, {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken,
+                },
+            })
+            .then(() => {
+                // cerrar modal
+                const closeBtn = document.getElementById(`btn-close-${type}-${id}`);
+                if (closeBtn) closeBtn.click();
+
+                // animar y eliminar fila
+                if (row) {
+                    row.classList.add("row-delete");
+                    //row.onanimationend = () => row.remove();
+                    row.remove();
+                }
+            })
+            .catch(err => console.error("Error deleting:", err));
+        };
     });
 }
 
@@ -546,7 +607,7 @@ function display_entries(trip_id) {
         // Creates all the rows
         if (Array.isArray(list)) {
             list.forEach(element => {
-                const entry_row = create_entry_row(element, trip_id);
+                const entry_row = create_entry_row(element);
                 table_body.appendChild(entry_row);
             });
         };
@@ -605,7 +666,7 @@ function create_table(type, reference) {
     return body;
 }
 
-function create_entry_row(element, trip_id) {
+function create_entry_row(element) {
     
     // Creates table row
     const entry_row = document.createElement('tr');
@@ -841,4 +902,187 @@ function create_chart(id) {
             });
         };    
     });
+}
+
+function suppliers_location_functionality() {
+    
+    const filter_select = document.getElementById("location_filter_select");
+
+    if (filter_select) {
+        filter_select.addEventListener("change", function () {
+            const selectedLocation = this.value;
+            const suppliers = document.querySelectorAll(".row-supplier");
+
+            suppliers.forEach(option => {
+                if (selectedLocation === "all") {
+                    option.hidden = false;
+                } else {
+                    option.hidden = option.dataset.location !== selectedLocation;
+                }
+            });
+        });
+    }
+}
+
+function lines_product_functionality() {
+    
+    const filter = document.getElementById("product_filter_select");
+    const rows = document.querySelectorAll(".row-rateline");
+
+    if (!filter) return;
+
+    function applyFilter() {
+        const value = filter.value;
+
+        rows.forEach(row => {
+            if (value === "all") {
+                row.hidden = false;
+            } else {
+                row.hidden = row.dataset.rateline !== value;
+            }
+        });
+    }
+
+    filter.addEventListener("change", applyFilter);
+
+    // 👇 CLAVE: ejecutar al cargar
+    applyFilter();
+}
+
+function editing_blocks() {
+    document.querySelectorAll(".edit-block").forEach(button => {
+        button.addEventListener("click", function () {
+            const blockId = this.dataset.block;
+            const isEditing = this.dataset.editing === "true";
+
+            if (isEditing) {
+                // GUARDAR
+                const rows = document.querySelectorAll(
+                    `.row-rateline[data-block="${blockId}"]`
+                );
+                saveBlock(blockId, rows, this);
+            } else {
+                // EDITAR
+                const rows = document.querySelectorAll(
+                    `.row-rateline[data-block="${blockId}"]`
+                );
+                
+                rows.forEach(row => {
+                    enableEdit(row);
+                });
+
+                // Cambiar el botón a modo "guardar"
+                this.textContent = "Guardar bloque";
+                this.classList.remove("btn-dark");
+                this.classList.add("btn-success");
+                this.dataset.editing = "true";
+            }
+        });
+    });
+}
+
+
+function saveBlock(blockId, rows, button) {
+    const data = [];
+
+    rows.forEach(row => {
+        row.querySelectorAll(".rate-cell").forEach(cell => {
+            const input = cell.querySelector("input");
+            if (!input) return;
+            
+            const rateId = cell.dataset.rate;
+            
+            // 👇 Validar que rate_id exista
+            if (!rateId || rateId === "None" || rateId === "undefined") {
+                console.warn("Celda sin rate_id válido", cell);
+                return;
+            }
+
+            data.push({
+                rate_id: rateId,
+                field: cell.dataset.field,
+                value: input.value
+            });
+        });
+    });
+
+    console.log("Datos a enviar:", data); // 👈 Debug
+
+    fetch("/tariff/modify/update-rate-block/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({
+            rates: data
+        })
+    })
+    .then(r => r.json())
+    .then(resp => {
+        console.log("Respuesta:", resp); // 👈 Debug
+        if (resp.ok) {
+            restoreBlock(blockId, button);
+        } else {
+            alert("Error al guardar: " + (resp.error || "Desconocido"));
+        }
+    })
+    .catch(err => {
+        alert("Error de conexión");
+        console.error(err);
+    });
+}
+
+function restoreBlock(blockId, button) {
+    const rows = document.querySelectorAll(
+        `.row-rateline[data-block="${blockId}"]`
+    );
+
+    rows.forEach(row => {
+        row.querySelectorAll(".rate-cell").forEach(cell => {
+            const input = cell.querySelector("input");
+            if (input) {
+                cell.innerText = input.value || "N/A";
+            }
+        });
+    });
+
+    // Restaurar el botón
+    button.innerText = "Editar bloque";
+    button.classList.remove("btn-success");
+    button.classList.add("btn-dark");
+    button.dataset.editing = "false";
+}
+
+function enableEdit(row) {
+    row.querySelectorAll(".rate-cell").forEach(cell => {
+        // Evita convertir dos veces
+        if (cell.querySelector("input")) return;
+
+        const value = cell.innerText.trim() === "N/A" ? "" : cell.innerText.trim();
+        const rateId = cell.dataset.rate;
+        const field = cell.dataset.field;
+
+        cell.innerHTML = `
+            <input type="number"
+                   step="0.01"
+                   class="form-control form-control-sm"
+                   value="${value}">
+        `;
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }

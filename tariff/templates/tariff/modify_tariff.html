@@ -1,0 +1,29 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block body %}
+
+<div class="container py-5 text-center">
+
+    <h3 class="mb-4">Gestionar tarifario</h3>
+
+    <div class="d-flex justify-content-center gap-4">
+
+        <a href="{% url 'locations' %}"
+           class="btn btn-dark btn-lg px-5">
+            DESTINOS
+        </a>
+
+        <a href="{% url 'accommodation' %}"
+           class="btn btn-dark btn-lg px-5">
+            ALOJAMIENTO
+        </a>
+
+        <button class="btn btn-outline-secondary btn-lg px-5" disabled>
+            SERVICIOS
+        </button>
+
+    </div>
+
+</div>
+{% endblock %}

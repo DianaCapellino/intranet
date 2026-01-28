@@ -1,0 +1,142 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="d-flex align-items-center justify-content-between">
+        <h2>Grupo de Productos - ALOJAMIENTO</h2>
+        <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+    </div>
+    <br>
+    
+    {% if message %}
+        <div class="message text-center">{{ message }}</div>
+    {% endif %}
+
+    <br>
+    <div class="container">
+        <div class="row">
+            <div class="text-center col-4">
+                <br>
+                <form class="rw-3 text-center" action="{% url 'acc_product_group' %}" method="post">
+                    {% csrf_token %}
+                    <div class="form">
+                        <div class="mb-3">
+                            <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
+                        </div>
+                        <div class="mb-3 col">
+                            <select class="form-control" aria-label="location" name="location">
+                                <option selected value="">Destino</option>
+                                {% for location in locations %}
+                                <option value="{{ location.id }}">{{ location.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <input class="btn btn-dark" type="submit" value="GUARDAR">
+                    </div>
+                </form>
+            </div>
+
+            {% if message_modify %}
+                <div class="message text-center">{{ message_modify }}</div>
+            {% endif %}
+
+            <div class="col-8">
+                <table id="group_products" class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Destino</th>
+                            <th>Orden</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for group in groups %}
+                        <tr id="row-product-group-{{group.id}}">
+                            <td id="groups-name-{{group.id}}">{{ group.name }}</td>
+                            <td id="groups-location-{{group.id}}">{{ group.location }}</td>
+                            <td id="groups-order-{{group.id}}">{{ group.order }}</td>
+                            <td>
+                                <div class="justify-content-around d-flex">
+                                    <i class="fa-solid fa-pencil" width="1px" id="pencil-groups-{{group.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowProductGroupPencil{{ group.id }}"></i>
+                                    <i class="fa-solid fa-trash" width="1px" id="trash-groups-{{group.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowProductGroupTrash{{ group.id }}"></i>
+                                    <button class="btn btn-dark d-none" id="save-btn-groups-{{group.id}}">GUARDAR</button>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowProductGroupPencil{{ group.id }}" tabindex="-1" aria-labelledby="label{{ group.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ group.id }}">Modificando {{ group.name }} - {{ group.location.name }}</h1>
+                                                <button id="btn-close-product-group-modify-{{ group.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <form class="rw-3 text-center" action="{% url 'modify_product_group' group.id %}" method="post">
+                                                    {% csrf_token %}
+                                                    <div class="form">
+                                                        <div class="row">
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_name{{group.id}}" class="form-label">Nombre</label>
+                                                                <input autofocus class="form-control" type="text" name="name" id="modify_name{{group.id}}" value="{{ group.name }}">
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_type{{group.id}}" class="form-label">Tipo</label>
+                                                                <select class="form-control" aria-label="type" name="type_service" id="modify_type{{group.id}}">
+                                                                    {% if group.type_service == "AC" %}
+                                                                        <option selected value="{{ group.type_service }}">Alojamiento</option>
+                                                                        <option value="NA">Servicio</option>
+                                                                    {% else %}
+                                                                        <option selected value="{{ group.type_service }}">Servicio</option>
+                                                                        <option value="AC">Alojamiento</option>
+                                                                    {% endif %}
+                                                                </select>                                                                
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_location{{group.id}}" class="form-label">Destino</label>
+                                                                <select class="form-control" aria-label="location" name="location" id="modify_location{{group.id}}">
+                                                                    {% for location in locations %}
+                                                                        {% if location.id == group.location.id %}
+                                                                            <option selected value="{{ location.id }}">{{ location.name }}</option>
+                                                                        {% else %}
+                                                                            <option value="{{ location.id }}">{{ location.name }}</option>
+                                                                        {% endif %}
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="mb-3 col">
+                                                                <label for="modify_order{{group.id}}" class="form-label">Orden</label>
+                                                                <input class="form-control" type="number" name="order" id="modify_order{{group.id}}" value="{{ group.order }}">
+                                                            </div>
+                                                        </div>
+                                                        <input id="modify-product-group-{{ group.id }}" class="btn btn-dark btn-lg modify-product-group-btn" type="submit" value="MODIFICAR">
+                                                    </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal fade modal-lg" id="windowProductGroupTrash{{ group.id }}" tabindex="-1" aria-labelledby="label{{ group.id }}">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h1 class="modal-title fs-8" id="label{{ group.id }}">Eliminando {{ group.name }} - {{ group.location }}</h1>
+                                                <button id="btn-close-product-group-{{ group.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <h3>¿Está seguro que desea eliminar el grupo de productos {{ group.name }} en {{ group.location.name }}?</h3>
+                                                <br>
+                                                <div class="container text-center">
+                                                    <button id="delete-group-product-{{ group.id }}" class="btn btn-dark btn-lg delete-product-group-btn">ELIMINAR</button></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <br>
+{% endblock %}

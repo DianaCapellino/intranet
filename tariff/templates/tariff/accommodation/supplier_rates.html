@@ -1,0 +1,153 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+    <div class="container">
+        <div id="new_supplier" class="d-none">
+
+            <div class="d-flex justify-content-between">
+                <h2>Crear Nueva Línea tarifaria</h2>
+                <div>
+                    <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                </div>
+            </div>
+            <br>
+
+            {% if message %}
+                <div class="message text-center">{{ message }}</div>
+            {% endif %}
+
+            <br>
+            <div class="text-center col">
+                <br>
+
+            </div>
+        </div>
+    </div>
+    <div id="supplier_list">
+        <div class="container">
+            <br>
+            <div class="d-flex align-items-center justify-content-between">
+                <h2>TARIFAS - {{ supplier.name }}</h2>
+                <div>
+                    <select class="form-select" aria-label="product_filter" name="product_filter" id="product_filter_select">
+                        <option value="all">Todos</option>
+                        
+                        {% for product in products %}
+                            <option value="{{ product.id }}">{{ product.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="new_supplier_container">
+                    <div>
+                        <button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>
+                        <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                    </div>  
+                </div>
+            </div>
+            {% if message_modify %}
+                <div class="message text-center">{{ message_modify }}</div>
+            {% endif %}
+
+            <div class="col">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Nombre Hab.</th>
+                            <th>SGL Costo</th>
+                            <th>SGL Venta TP</th>
+                            <th>SGL Venta AI</th>
+                            <th>DBL Costo</th>
+                            <th>DBL Venta TP</th>
+                            <th>DBL Venta AI</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for block in rate_blocks %}
+                        <tr class="table-secondary">
+                            <td colspan="9">
+                                <strong>Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}</strong>
+                                <button class="btn btn-sm btn-dark ms-3 edit-block"
+                                        data-from="{{ block.date_from }}"
+                                        data-to="{{ block.date_to }}"
+                                        data-block="{{ forloop.counter }}"
+                                        data-editing="false">
+                                    Editar bloque
+                                </button>
+                            </td>
+                        </tr>
+                        
+                        {% for line in block.lines %}
+                            <tr class="row-rateline"
+                                data-rateline="{{ line.group.product.id }}"
+                                data-block="{{ forloop.parentloop.counter }}"
+                                data-from="{{ line.date_from }}"
+                                data-to="{{ line.date_to }}">
+                                <td>{{ line.group.product.name }}</td>
+
+                                {# SGL #}
+                                <td class="rate-cell"
+                                    data-rate="{{ line.sgl.id }}"
+                                    data-field="cost">
+                                    {{ line.sgl.cost|default:"N/A" }}
+                                </td>
+                                <td class="rate-cell"
+                                    data-rate="{{ line.sgl.id }}"
+                                    data-field="sell">
+                                    {{ line.sgl.sell_tourplan|default:"N/A" }}
+                                </td>
+                                <td class="rate-cell"
+                                    data-rate="{{ line.sgl.id }}"
+                                    data-field="sell">
+                                    {{ line.sgl.sell|default:"N/A" }}
+                                </td>
+
+                                {# DBL #}
+                                <td class="rate-cell"
+                                    data-rate="{{ line.dbl.id }}"
+                                    data-field="cost">
+                                    {{ line.dbl.cost|default:"N/A" }}
+                                </td>
+                                <td class="rate-cell"
+                                    data-rate="{{ line.dbl.id }}"
+                                    data-field="sell">
+                                    {{ line.dbl.sell_tourplan|default:"N/A" }}
+                                </td>
+                                <td class="rate-cell"
+                                    data-rate="{{ line.dbl.id }}"
+                                    data-field="sell">
+                                    {{ line.dbl.sell|default:"N/A" }}
+                                </td>
+                                
+                                <td>
+                                    <div class="justify-content-around d-flex">
+                                        <i class="fa-solid fa-trash" width="1px" id="trash-line-{{line.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
+                                    </div>
+                                </td>
+                            </tr>
+                            <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="label{{ line.id }}">Eliminando {{ line.group }}</h1>
+                                            <button id="btn-close-line-{{ line.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <h3>¿Está seguro que desea eliminar la línea {{ line.group }} - {{ line.date_from }} / {{ line.date_to }}?</h3>
+                                            <br>
+                                            <div class="container text-center">
+                                                <button id="delete-line-{{ line.id }}" class="btn btn-dark btn-lg delete-line-btn">ELIMINAR</button></a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <br>
+{% endblock %}

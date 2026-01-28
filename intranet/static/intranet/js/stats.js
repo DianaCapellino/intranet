@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         calendar.render();
     };
+
 })
 
 let reportPeriod = '';
@@ -510,7 +511,7 @@ const sectionsLoaded = {
     client: false
 };
 
-// ==================== Cargar sección específica ====================
+// ==================== Cargar sección específica Entries ====================
 async function loadSection(sectionName) {
     // Si ya está cargada, no hacer nada
     if (sectionsLoaded[sectionName]) {
@@ -565,7 +566,7 @@ const sectionsLoadedTrips = {
     client: false
 };
 
-// ==================== Cargar sección específica ====================
+// ==================== Cargar sección específica Trips ====================
 async function loadSectionTrip(sectionName) {
     // Si ya está cargada, no hacer nada
     if (sectionsLoadedTrips[sectionName]) {
@@ -1813,30 +1814,40 @@ function renderSummaryTrips() {
             <td>${data.audley_count_trips}</td>
             <td>USD ${data.audley_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
             <td>% ${data.audley_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>USD ${(data.audley_rent/100 * data.audley_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.audley_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
         </tr>
         <tr>
             <td>Individuales:</td>
             <td>${data.individual_count_trips}</td>
             <td>USD ${data.individual_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
             <td>% ${data.individual_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>USD ${(data.individual_rent/100 * data.individual_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.individual_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
         </tr>
         <tr>
             <td>Grupos:</td>
             <td>${data.group_count_trips}</td>
             <td>USD ${data.group_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
             <td>% ${data.group_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>USD ${(data.group_rent/100 * data.group_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.group_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
         </tr>
         <tr>
             <td>FAM clientes:</td>
             <td>${data.fam_count_trips}</td>
             <td>USD ${data.fam_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
             <td>% ${data.fam_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>USD ${(data.fam_rent/100 * data.fam_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.fam_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
         </tr>
         <tr>
             <td><strong>TOTAL</strong></td>
             <td><strong>${data.total_count_trips}</strong></td>
             <td><strong>USD ${data.total_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong></td>
             <td>-</td>
+            <td>USD ${(data.all_rent_average/100 * data.total_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.all_rent_average.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
         </tr>
     `;
 
