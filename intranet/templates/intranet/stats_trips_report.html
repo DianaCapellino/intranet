@@ -3,81 +3,297 @@
 
 {% block body %}
     <div class="container-fluid">
-        <div class="d-flex justify-content-between">
-            <h1>📊 Reporte de Estadísticas</h1>
-            <p id="report-period" class="d-none">Periodo: Cargando...</p>
-            <!-- Toolbar de exportación -->
-            <div class="align-items-center">
-                <button class="btn btn-primary" onclick="exportToPDF()">
-                    <i class="fas fa-file-pdf"></i> PDF Completo
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>📊 ESTADÍSTICAS VIAJES</h1>
+            <div>
+                <a href="javascript:history.back()">
+                    <button class="btn btn-dark" data-toggle="tooltip" title="Volver">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </a>
+            </div>
+        </div>
+        
+        <p id="report-period" class="lead">Periodo: Cargando...</p>
+        <hr>
+
+        <!-- Error warning -->
+        {% if message_one %}
+            <div id="error-warning-1" class="message d-flex justify-content-between m-5">
+                <h4 class="fw-bold">MONTOS:</h4>
+                <h5 class="fst-italic">{{ message_one }}</h5>
+                <button class="btn btn-dark btn-warnings">OK</button>
+            </div>
+        {% endif %}
+
+        {% if message_two %}
+            <div id="error-warning-2" class="message d-flex justify-content-between m-5">
+                <h4 class="fw-bold">FECHAS:</h4>
+                <h5 class="fst-italic">{{ message_two }}</h5>
+                <button class="btn btn-dark btn-warnings">OK</button>
+            </div>
+        {% endif %}
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <p class="mt-3">Cargando estadísticas...</p>
+        </div>
+
+        <!-- Contenido Principal -->
+        <div id="report-content" style="display: none;">
+            
+            <!-- ========== SECCIÓN 1: RESUMEN GENERAL ========== -->
+            <div class="stats-section mb-4">
+                <button class="btn btn-lg btn-secondary w-100 text-start" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#section-general-trips" 
+                        aria-expanded="false" aria-controls="section-general-trips"
+                        onclick="loadSectionTrip('general')">
+                    <i class="fas fa-chart-line me-2"></i>
+                    <strong>1. Resumen General - Cotizaciones y Reservas</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
                 </button>
                 
-                <button class="btn btn-primary">
-                    <i class="fas fa-desktop"></i> Presentación
-                </button>
+                <div class="collapse mt-3" id="section-general-trips">
+                    <div class="card card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <div class="m-3" id="working-days"></div>
+                            <div class="mb-3">
+                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-general')">
+                                    <i class="fas fa-file-pdf"></i> Exportar PDF
+                                </button>
+                                <button class="btn btn-primary" onclick="window.print()">
+                                    <i class="fas fa-print"></i> Imprimir
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row">                          
+                            <div class="col">
+                                <h3>📋 Viajes confirmados</h3>
+                                <table class="table table-bordered table-striped" id="summary-table-trips">
+                                    <thead>
+                                        <tr>
+                                            <th>VIAJES</th>
+                                            <th>Cantidad</th>
+                                            <th>Facturación</th>
+                                            <th>% (monto)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summary-trips-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
 
-                <button class="btn btn-primary" onclick="window.print()">
-                    <i class="fas fa-print"></i> Imprimir
-                </button>
-            </div>
-            <div>
-                <a href="javascript:history.back()"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
-            </div>
-        </div>
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <h4>Cancelaciones</h4>
+                                <div class="row">
+                                    <div class="col" id="cancellations-count"></div>
+                                    <div class="col" id="cancellations-amount"></div>
+                                </div>
+                            </div>
+                        </div>
 
-        <!-- Loading -->
-        <div class="loading d-none" id="loading">
-            <div class="spinner"></div>
-            <p>Cargando datos...</p>
-        </div>
-        <hr>
-        <!-- Contenido del Reporte -->
-        <div id="report-content" style="display: none;">
-            <!-- Sección 1: Tabla de Vendedores -->
-            <div class="content-section">
-                <h2>📋 Resumen por Vendedor</h2>
-                <table class="report-table" id="vendor-table">
-                    <thead>
-                        <tr>
-                            <th>Vendedor</th>
-                            <th>Ventas cerradas</th>
-                            <th>Ventas cerradas (USD)</th>
-                            <th>Ventas cerradas (%)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="vendor-tbody">
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Sección 2: Gráficos -->
-            <div class="content-section">
-                <h2>📈 Análisis Visual</h2>
-                <div class="charts-container">
-                    <div class="chart-box">
-                        <h4>Cotizaciones A por Cantidad</h4>
-                        <canvas id="chartCantidadCanvas"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h4>Cotizaciones A por Monto (USD)</h4>
-                        <canvas id="chartMontoCanvas"></canvas>
+                        <div class="mt-4">
+                            <h4 class="d-inline">Dificultad de viajes</h4>
+                            <i class="fas fa-question-circle text-primary ms-1" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-html="true"
+                               title="1 – Muy Fácil – 1 solo destino / cruceristas simples
+2 – Fácil – 2 destinos
+3 – Moderado – 3 destinos o 2 con dificultades
+4 – Complejo – 4 destinos o más
+5 – Muy Complejo" – Itinerarios con destinos no conocidos o muy largos></i>
+                            
+                            <div class="row mt-3">
+                                <div class="col" id="average-difficulty"></div>
+                                <div class="col" id="difficulty-1"></div>
+                                <div class="col" id="difficulty-2"></div>
+                                <div class="col" id="difficulty-3"></div>
+                                <div class="col" id="difficulty-4"></div>
+                                <div class="col" id="difficulty-5"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Sección 3: Insights -->
-            <div class="content-section">
-                <h2>💡 Insights Clave</h2>
-                <div class="insights-box">
-                    <h4><i class="fas fa-lightbulb"></i> Análisis de Facturación</h4>
-                    <div id="insights-content"></div>
+            <!-- ========== SECCIÓN 2: POR VENDEDOR ========== -->
+            <div class="stats-section mb-4">
+                <button class="btn btn-lg btn-success w-100 text-start" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#section-user" 
+                        aria-expanded="false" aria-controls="section-user"
+                        onclick="loadSectionTrip('user')">
+                    <i class="fas fa-users me-2"></i>
+                    <strong>2. Por Vendedor/Operador</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </button>
+                
+                <div class="collapse mt-3" id="section-user">
+                    <div class="card card-body">
+                       
+                        <!-- Reservas por Vendedor -->
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>📋 Reservas por Vendedor Responsable</h3>
+                            <div class="mb-3">
+                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-vendor')">
+                                    <i class="fas fa-file-pdf"></i> Exportar PDF
+                                </button>
+                                <button class="btn btn-primary" onclick="window.print()">
+                                    <i class="fas fa-print"></i> Imprimir
+                                </button>
+                            </div>
+                        </div>
+                        <table class="report-table table table-striped" id="vr-booking-table">
+                            <thead>
+                                <tr>
+                                    <th>Vendedor</th>
+                                    <th>Cant. Todo</th>
+                                    <th>Fact. Todo</th>
+                                    <th>Fact. % Todo</th>
+                                    <th>Cant. Audley</th>
+                                    <th>Fact. Audley</th>
+                                    <th>Fact. % Audley</th>
+                                    <th>Días Trab.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vendor-vr-tbody"></tbody>
+                            <tfoot id="vendor-vr-tfoot"></tfoot>
+                        </table>
+
+                        <!-- Gráficos VR -->
+                        <h4 class="mt-4">📈 Análisis Visual - Vendedor Responsable</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Por Cantidad</h5>
+                                    <canvas id="chartCountVrCanvas"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Por Monto</h5>
+                                    <canvas id="chartAmountVrCanvas"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Reservas por Operador -->
+                        <h3>📋 Reservas por Operador</h3>
+                        <table class="report-table table table-striped" id="operations-booking-table">
+                            <thead>
+                                <tr>
+                                    <th>Operador</th>
+                                    <th>Cant. Todo</th>
+                                    <th>Fact. Todo</th>
+                                    <th>Fact. % Todo</th>
+                                    <th>Cant. Audley</th>
+                                    <th>Fact. Audley</th>
+                                    <th>Fact. % Audley</th>
+                                    <th>Días Trab.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="operations-booking-tbody"></tbody>
+                            <tfoot id="operations-booking-tfoot"></tfoot>
+                        </table>
+
+                        <!-- Gráficos Operadores -->
+                        <h4 class="mt-4">📈 Análisis Visual - Operadores</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Por Cantidad</h5>
+                                    <canvas id="chartCantidadOperationsCanvas"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Por Monto</h5>
+                                    <canvas id="chartMontoOperationsCanvas"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <hr class="my-5">
+                        <div class="row">
+                            <!-- Insights Vendedor Responsable -->
+                            <div class="insights-box mt-4 col-6">
+                                <h4>💡 Insights - Vendedores responsables</h4>
+                                <div id="insights-content-vr"></div>
+                            </div>
+
+                            <!-- Insights Operador -->
+                            <div class="insights-box mt-4 col-6">
+                                <h4>💡 Insights - Operadores</h4>
+                                <div id="insights-content-operations"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Sección 4: Datos Completos (opcional, para PDF) -->
-            <div class="content-section" style="display: none;" id="full-data-section">
-                <h2>📊 Datos Completos del Período</h2>
-                <p>Esta sección contiene todos los datos solicitados del período analizado.</p>
+            <!-- ========== SECCIÓN 3: POR CLIENTE ========== -->
+            <div class="stats-section mb-3">
+                <button class="btn btn-lg btn-danger w-100 text-start" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#section-client-trips" 
+                        aria-expanded="false" aria-controls="section-client-trips"
+                        onclick="loadSectionTrip('client')">
+                    <i class="fas fa-building me-2"></i>
+                    <strong>3. Por Cliente</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </button>
+                
+                <div class="collapse mt-3" id="section-client-trips">
+                    <div class="card card-body">
+
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>📋 Estadísticas por Cliente</h3>
+                            <div class="mb-3">
+                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-client-trips')">
+                                    <i class="fas fa-file-pdf"></i> Exportar PDF
+                                </button>
+                                <button class="btn btn-primary" onclick="window.print()">
+                                    <i class="fas fa-print"></i> Imprimir
+                                </button>
+                            </div>
+                        </div>
+                        <table class="table table-bordered table-striped" id="summary-clients-trips-table" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Bookings Cant.</th>
+                                    <th>Bookings % x Cant.</th>
+                                    <th>Bookings Fact.</th>
+                                    <th>Bookings % x Monto</th>
+                                    <th>Promedio x viaje</th>
+                                    <th>Promedio Dif.</th>
+                                    <th>Cancelados</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summary-clients-trips-tbody"></tbody>
+                            <tfoot id="summary-clients-trips-tfoot"></tfoot>
+                        </table>
+                        <hr class="my-4">
+                        <!-- Gráficos clientes -->
+                        <h4 class="mt-4">📈 Análisis Visual - Clientes</h4>
+                        <br>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Cantidad de Reservas</h5>
+                                    <canvas id="chartClientsCountTripsCanvas"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Facturación de Reservas</h5>
+                                    <canvas id="chartClientsAmountTripsCanvas"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

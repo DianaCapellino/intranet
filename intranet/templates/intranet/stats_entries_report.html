@@ -4,7 +4,7 @@
 {% block body %}
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>📊 ESTADÍSTICAS</h1>
+            <h1>📊 ESTADÍSTICAS ENTRADAS</h1>
             <div>
                 <a href="javascript:history.back()">
                     <button class="btn btn-dark" data-toggle="tooltip" title="Volver">
@@ -16,6 +16,23 @@
         
         <p id="report-period" class="lead">Periodo: Cargando...</p>
         <hr>
+
+        <!-- Error warning -->
+        {% if message_one %}
+            <div id="error-warning-1" class="message d-flex justify-content-between m-5">
+                <h4 class="fw-bold">MONTOS:</h4>
+                <h5 class="fst-italic">{{ message_one }}</h5>
+                <button class="btn btn-dark btn-warnings">OK</button>
+            </div>
+        {% endif %}
+
+        {% if message_two %}
+            <div id="error-warning-2" class="message d-flex justify-content-between m-5">
+                <h4 class="fw-bold">FECHAS:</h4>
+                <h5 class="fst-italic">{{ message_two }}</h5>
+                <button class="btn btn-dark btn-warnings">OK</button>
+            </div>
+        {% endif %}
 
         <!-- Loading Indicator -->
         <div id="loading" class="text-center my-5">
@@ -30,7 +47,7 @@
             
             <!-- ========== SECCIÓN 1: RESUMEN GENERAL ========== -->
             <div class="stats-section mb-4">
-                <button class="btn btn-lg btn-primary w-100 text-start" type="button" 
+                <button class="btn btn-lg btn-secondary w-100 text-start" type="button" 
                         data-bs-toggle="collapse" data-bs-target="#section-general" 
                         aria-expanded="false" aria-controls="section-general"
                         onclick="loadSection('general')">
@@ -54,7 +71,7 @@
                         </div>
                         <div class="row">
                             <div class="col-lg-6">
-                                <h3>📋 Cotizaciones</h3>
+                                <h3>📋 Cotizaciones (A)</h3>
                                 <table class="table table-bordered table-striped" id="summary-table-quotes">
                                     <thead>
                                         <tr>
@@ -69,7 +86,7 @@
                             </div>
                             
                             <div class="col-lg-6">
-                                <h3>📋 Reservas</h3>
+                                <h3>📋 Reservas (1)</h3>
                                 <table class="table table-bordered table-striped" id="summary-table-bookings">
                                     <thead>
                                         <tr>
@@ -185,14 +202,6 @@
                             </div>
                         </div>
 
-                        <!-- Insights Cotizaciones -->
-                        <div class="insights-box mt-4">
-                            <h4>💡 Insights - Cotizaciones</h4>
-                            <div id="insights-content-quotes"></div>
-                        </div>
-
-                        <hr class="my-5">
-
                         <!-- Reservas por Vendedor -->
                         <h3>📋 Reservas por Vendedor</h3>
                         <table class="report-table table table-striped" id="vendor-booking-table">
@@ -228,11 +237,19 @@
                                 </div>
                             </div>
                         </div>
+                        <hr class="my-5">
+                        <div class="row">
+                            <!-- Insights Cotizaciones -->
+                            <div class="insights-box mt-4 col-6">
+                                <h4>💡 Insights - Cotizaciones</h4>
+                                <div id="insights-content-quotes"></div>
+                            </div>
 
-                        <!-- Insights Bookings -->
-                        <div class="insights-box mt-4">
-                            <h4>💡 Insights - Reservas</h4>
-                            <div id="insights-content-bookings"></div>
+                            <!-- Insights Bookings -->
+                            <div class="insights-box mt-4 col-6">
+                                <h4>💡 Insights - Reservas</h4>
+                                <div id="insights-content-bookings"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -269,12 +286,12 @@
                                     <th>Días</th>
                                     <th>Total Cant.</th>
                                     <th>Total %</th>
-                                    <th>Individuales Cant.</th>
-                                    <th>Individuales %</th>
-                                    <th>Audley Cant.</th>
-                                    <th>Audley %</th>
-                                    <th>Grupos Cant.</th>
-                                    <th>Grupos %</th>
+                                    <th>Quotes FIT's Cant.</th>
+                                    <th>Quotes FIT's %</th>
+                                    <th>Quotes Audley Cant.</th>
+                                    <th>Quotes Audley %</th>
+                                    <th>Quotes Grupos Cant.</th>
+                                    <th>Quotes Grupos %</th>
                                     <th>Bookings Cant.</th>
                                     <th>Bookings %</th>
                                     <th>Final Cant.</th>
@@ -341,7 +358,7 @@
                                 </button>
                             </div>
                         </div>
-                        <table class="table table-bordered table-striped" id="summary-clients-table">
+                        <table class="table table-bordered table-striped" id="summary-clients-table" style="width:100%">
                             <thead>
                                 <tr>
                                     <th>Cliente</th>
@@ -359,14 +376,27 @@
                             <tbody id="summary-clients-tbody"></tbody>
                             <tfoot id="summary-clients-tfoot"></tfoot>
                         </table>
-
-                        <div class="my-4">
-                            <canvas id="chartClientsCanvas" height="100"></canvas>
+                        <hr class="my-4">
+                        <!-- Gráficos clientes -->
+                        <h4 class="mt-4">📈 Análisis Visual - Clientes Reservas</h4>
+                        <br>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Facturación Cotizaciones</h5>
+                                    <canvas id="chartClientsQuotesCanvas"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="chart-box">
+                                    <h5 class="text-center">Facturación Reservas</h5>
+                                    <canvas id="chartClientsBookingsCanvas"></canvas>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-
         </div>
     </div>
 {% endblock %}

@@ -1,17 +1,16 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    // ✅ Detectar si estamos en la página de presentación
+    // ✅ Detectar si estamos en la página de entradas de estadísticas
     if (window.location.pathname.startsWith("/stats/entries/")) {
-        console.log("📊 Modo presentación detectado");
 
         const params = new URLSearchParams(window.location.search);
         const filters = Object.fromEntries(params.entries());
 
         if (filters.filter === "monthly") {
-            const reportPeriod = filters.period;
+            const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''}`;
             const periodEl = document.getElementById('report-period');
             if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
         } else if (filters.filter === "weekly") {
-            const reportPeriod = filters.period;
+            const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''}`;
             const periodEl = document.getElementById('report-period');
             if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
         } else {
@@ -41,6 +40,69 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         };
 
+        const btnWarnings = document.querySelectorAll('.btn-warnings');
+        if (btnWarnings) {
+            btnWarnings.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    btn.parentNode.classList.add("d-none");
+                });
+            });
+        }
+
+        // 🛑 IMPORTANTE: no ejecutar el resto del JS (DataTables, formularios, etc.)
+        return;
+    }
+
+    // ✅ Detectar si estamos en la página de viajes
+    if (window.location.pathname.startsWith("/stats/trips/")) {
+
+        const params = new URLSearchParams(window.location.search);
+        const filters = Object.fromEntries(params.entries());
+
+        if (filters.filter === "monthly") {
+            const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''}`;
+            const periodEl = document.getElementById('report-period');
+            if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
+        } else if (filters.filter === "weekly") {
+            const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''}`;
+            const periodEl = document.getElementById('report-period');
+            if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
+        } else {
+            const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''}`;
+            const periodEl = document.getElementById('report-period');
+            if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
+        };
+
+        // Llamar a la función que obtiene los datos del backend
+        await generatePresentationTripsData(filters);
+
+        // Mostrar contenido cuando los datos llegan
+        const loadingEl = document.getElementById('loading');
+        const contentEl = document.getElementById('report-content');
+        if (loadingEl) loadingEl.classList.remove('show');
+        if (contentEl) {
+            contentEl.style.display = 'block';
+            loadingEl.classList.add('d-none');
+        }
+
+        // Buttons listeners
+        const exportPdf = document.querySelector('.btn-export');
+        if (exportPdf) {
+            exportPdf.addEventListener('click', (e) => {
+                console.log("🟢 Listener de exportación activado por clase.");
+                exportToPDF(e);
+            });
+        };
+
+        const btnWarnings = document.querySelectorAll('.btn-warnings');
+        if (btnWarnings) {
+            btnWarnings.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    btn.parentNode.classList.add("d-none");
+                });
+            });
+        }
+
         // 🛑 IMPORTANTE: no ejecutar el resto del JS (DataTables, formularios, etc.)
         return;
     }
@@ -65,15 +127,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 })
 
-// ==================== DATOS Y ESTADO ====================
+let reportPeriod = '';
+
+// ==================== DATA ENTRIES ====================
 let vendorQuoteData = {};
 let vendorBookingData = {};
-let reportPeriod = '';
 let chartsQuotes = {};
 let chartsBookings = {};
+let chartsTripsVendor = {};
+let chartsTripsOperator = {};
+let chartsClients = {};
 let vendorSpeedData = {};
 let summarySpeed = {};
 let summaryClients = {};
+
+// ==================== DATA TRIPS ====================
+let vendorTripsData = {};
+let operatorTripsData = {};
+let clientTripsData = {};
+let chartsClientsTrips = {};
+
 
 // extraer helper
 function toDateOnly(raw) {
@@ -258,6 +331,153 @@ async function generatePresentationEntriesData(filters = {}) {
 
         console.log("📊 Datos recibidos y normalizados Rapidez:", vendorSpeedData);
 
+        // ⚠️ Asignar a la variable que usa renderReport Bookings
+        // Normalizar el objeto y asegurarnos que los montos sean números
+        const normalizedClients = {};
+        const rawC = result.clients || result || {};
+        Object.entries(rawC).forEach(([client, vals]) => {
+            // defensivo: si vals vino como string o faltan campos, normalizar
+            const quotesCount = parseInt(vals.quotesCount || 0, 10) || 0;
+            const quotesAmount = parseFloat(vals.quotesAmount || 0) || 0;
+            const bookingsCount = parseInt(vals.bookingsCount || 0, 10) || 0;
+            const bookingsAmount = parseFloat(vals.bookingsAmount || 0) || 0;
+            const others = parseInt(vals.others || 0, 10) || 0;
+
+            normalizedClients[client] = {
+                quotesCount,
+                quotesAmount,
+                bookingsCount,
+                bookingsAmount,
+                others,
+            };
+        });
+
+        // Guardamos en la variable global que usan las funciones
+        summaryClients = normalizedClients;
+
+        console.log("📊 Datos recibidos y normalizados Clientes:", normalizedClients);
+
+        // Mostrar el contenido y ocultar loading si existen
+        const loadingEl = document.getElementById('loading');
+        const contentEl = document.getElementById('report-content');
+        if (loadingEl) loadingEl.classList.remove('show');
+        if (contentEl) contentEl.style.display = 'block';
+
+        // Llamar al renderer (tabla, charts, insights)
+        if (typeof renderReport === "function") {
+            renderReport();
+        } else {
+            console.warn("renderReport() no está definida");
+        }
+
+    } catch (error) {
+        console.error("Error al cargar datos de vendedores:", error);
+        // opcional: mostrar mensaje al usuario en el DOM
+        const contentEl = document.getElementById('report-content');
+        if (contentEl) {
+            contentEl.innerHTML = `<div class="alert alert-danger">Error al cargar datos: ${error.message}</div>`;
+            contentEl.style.display = 'block';
+        }
+    }
+}
+
+async function generatePresentationTripsData(filters = {}) {
+    try {
+        // Construir query string (para filtros personalizados)
+        const params = new URLSearchParams(filters);
+        const response = await fetch(`/stats/data/trips/presentation/?${params.toString()}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+
+        // Guardamos el objeto global para reutilizarlo
+        window.summaryTableTrips = result.summary_table_trips || {};
+        window.vendorTripsData = result.trips_by_responsable || {};
+        window.operatorTripsData = result.trips_by_operator || {};
+        window.clientTripsData = result.clients || {};
+
+        // ⚠️ Asignar a la variable que usa renderReport Quotes
+        // Normalizar el objeto y asegurarnos que los montos sean números
+        const normalizedVendors = {};
+        const raw = result.trips_by_responsable || result || {};
+        Object.entries(raw).forEach(([vendor, vals]) => {
+            // defensivo: si vals vino como string o faltan campos, normalizar
+            const total = parseInt(vals.total || 0, 10) || 0;
+            const amountTotal = parseFloat(vals.amountTotal || 0) || 0;
+            const audley = parseInt(vals.audley || vals.audley || 0, 10) || 0;
+            const amountAudley = parseFloat(vals.amountAudley || 0) || 0;
+
+            const color = vals.color;
+            const workingDays = parseInt(vals.workingDays || 0, 10) || 0;
+
+            normalizedVendors[vendor] = {
+                total,
+                amountTotal,
+                audley,
+                amountAudley,
+                color,
+                workingDays,
+            };
+        });
+
+        // Guardamos en la variable global que usan las funciones
+        vendorTripsData = normalizedVendors;
+
+        console.log("📊 Datos recibidos y normalizados Viajes x Vendedor:", vendorTripsData);
+
+        // ⚠️ Asignar a la variable que usa renderReport Bookings
+        // Normalizar el objeto y asegurarnos que los montos sean números
+        const normalizedOperators = {};
+        const rawB = result.trips_by_operator || result || {};
+        Object.entries(rawB).forEach(([operator, vals]) => {
+            // defensivo: si vals vino como string o faltan campos, normalizar           
+            const total = parseInt(vals.total || 0, 10) || 0;
+            const amountTotal = parseFloat(vals.amountTotal || 0) || 0;
+            const audley = parseInt(vals.audley || vals.audley || 0, 10) || 0;
+            const amountAudley = parseFloat(vals.amountAudley || 0) || 0;
+
+            const color = vals.color;
+            const workingDays = parseInt(vals.workingDays || 0, 10) || 0;
+
+            normalizedOperators[operator] = {
+                total,
+                amountTotal,
+                audley,
+                amountAudley,
+                color,
+                workingDays,
+            };
+        });
+
+        // Guardamos en la variable global que usan las funciones
+        operatorTripsData = normalizedOperators;
+
+        console.log("📊 Datos recibidos y normalizados Viajes x Operador:", operatorTripsData);
+
+        // ⚠️ Asignar a la variable que usa renderReport Quotes
+        // Normalizar el objeto y asegurarnos que los montos sean números
+        const normalizedClients = {};
+        const rawC = result.clients || result || {};
+        Object.entries(rawC).forEach(([client, vals]) => {
+            // defensivo: si vals vino como string o faltan campos, normalizar
+            const total = parseInt(vals.bookingsCount || 0, 10) || 0;
+            const amountTotal = parseFloat(vals.bookingsAmount || 0) || 0;
+            const cancelled = parseInt(vals.cancelled || 0, 10) || 0;
+            const totalDifficulty = parseInt(vals.totalDifficulty || 0, 10) || 0;
+
+            normalizedClients[client] = {
+                total,
+                amountTotal,
+                cancelled,
+                totalDifficulty,
+            };
+        });
+
+        // Guardamos en la variable global que usan las funciones
+        clientTripsData = normalizedClients;
+
+        console.log("📊 Datos recibidos y normalizados Viajes x Cliente:", clientTripsData);
+
+
         // Mostrar el contenido y ocultar loading si existen
         const loadingEl = document.getElementById('loading');
         const contentEl = document.getElementById('report-content');
@@ -326,6 +546,55 @@ async function loadSection(sectionName) {
                 
             case 'client':
                 renderClients();
+                renderChartsClients();
+                sectionsLoaded.client = true;
+                break;
+        }
+        
+        console.log(`✅ Sección ${sectionName} cargada correctamente`);
+        
+    } catch (error) {
+        console.error(`❌ Error cargando sección ${sectionName}:`, error);
+    }
+}
+
+// Estado de carga de secciones
+const sectionsLoadedTrips = {
+    general: false,
+    user: false,
+    client: false
+};
+
+// ==================== Cargar sección específica ====================
+async function loadSectionTrip(sectionName) {
+    // Si ya está cargada, no hacer nada
+    if (sectionsLoadedTrips[sectionName]) {
+        console.log(`✅ Sección ${sectionName} ya estaba cargada`);
+        return;
+    }
+
+    console.log(`🔄 Cargando sección: ${sectionName}`);
+
+    try {
+        switch(sectionName) {
+            case 'general':
+                renderSummaryTrips();
+                sectionsLoadedTrips.general = true;
+                break;
+                
+            case 'user':
+                renderVendorTrips();
+                renderOperatorTrips();
+                renderChartsTripsVendors();
+                renderChartsTripsOperators();
+                renderInsightsTripsVendors();
+                renderInsightsTripsOperators();
+                sectionsLoadedTrips.user = true;
+                break;
+                
+            case 'client':
+                renderTripsClients();
+                renderChartsTripsClients();
                 sectionsLoaded.client = true;
                 break;
         }
@@ -900,11 +1169,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.same_day}</td>
             <td>${data.audley_quotes.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.same_day}</td>
-            <td>${data.group_quotes.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
             <td>${data.bookings.same_day}</td>
             <td>${data.bookings.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.same_day}</td>
-            <td>${data.final_itineraries.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.same_day.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>1 día:</td>
@@ -915,11 +1184,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.one_day}</td>
             <td>${data.audley_quotes.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.one_day}</td>
-            <td>${data.group_quotes.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
             <td>${data.bookings.one_day}</td>
             <td>${data.bookings.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.one_day}</td>
-            <td>${data.final_itineraries.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.one_day.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>2 días:</td>
@@ -930,11 +1199,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.two_days}</td>
             <td>${data.audley_quotes.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.two_days}</td>
-            <td>${data.group_quotes.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes > 0 ? data.group_quotes.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
             <td>${data.bookings.two_days}</td>
             <td>${data.bookings.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.two_days}</td>
-            <td>${data.final_itineraries.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.two_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>3 días:</td>
@@ -945,11 +1214,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.three_days}</td>
             <td>${data.audley_quotes.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.three_days}</td>
-            <td>${data.group_quotes.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
             <td>${data.bookings.three_days}</td>
             <td>${data.bookings.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.three_days}</td>
-            <td>${data.final_itineraries.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.three_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>4 días:</td>
@@ -960,11 +1229,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.four_days}</td>
             <td>${data.audley_quotes.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.four_days}</td>
-            <td>${data.group_quotes.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2}): 0}%</td>
             <td>${data.bookings.four_days}</td>
             <td>${data.bookings.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.four_days}</td>
-            <td>${data.final_itineraries.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.four_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>5 días:</td>
@@ -975,11 +1244,11 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.five_days}</td>
             <td>${data.audley_quotes.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.five_days}</td>
-            <td>${data.group_quotes.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
             <td>${data.bookings.five_days}</td>
             <td>${data.bookings.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.five_days}</td>
-            <td>${data.final_itineraries.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.five_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
         <tr>
             <td>Más de 5 días:</td>
@@ -990,11 +1259,26 @@ function renderResponseSpeed() {
             <td>${data.audley_quotes.more_days}</td>
             <td>${data.audley_quotes.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.group_quotes.more_days}</td>
-            <td>${data.group_quotes.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.total > 0 ? data.group_quotes.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2}): 0}%</td>
             <td>${data.bookings.more_days}</td>
             <td>${data.bookings.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
             <td>${data.final_itineraries.more_days}</td>
-            <td>${data.final_itineraries.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
+        </tr>
+        <tr>
+            <td>TOTAL:</td>
+            <td class="fw-bold">${data.total.total}</td>
+            <td>-</td>
+            <td class="fw-bold">${data.individual_quotes.total}</td>
+            <td>-</td>
+            <td class="fw-bold">${data.audley_quotes.total}</td>
+            <td>-</td>
+            <td class="fw-bold">${data.group_quotes.total}</td>
+            <td>-</td>
+            <td class="fw-bold">${data.bookings.total}</td>
+            <td>-</td>
+            <td class="fw-bold">${data.final_itineraries.total}</td>
+            <td>-</td>
         </tr>
         <tr>
             <td>Promedio:</td>
@@ -1074,8 +1358,11 @@ function renderClients() {
         const percBookingsCount = totalBookingsCount > 0 ? ((vals.bookingsCount / totalBookingsCount) * 100).toFixed(2) : 0;
         const percQuotesAmount = totalQuotesAmount > 0 ? ((vals.quotesAmount / totalQuotesAmount) * 100).toFixed(2) : 0;
         const percBookingsAmount = totalBookingsAmount > 0 ? ((vals.bookingsAmount / totalBookingsAmount) * 100).toFixed(2) : 0;
-        const conversion = totalQuotesCount > 0 ? ((vals.bookingsCount / vals.quotesCount) * 100).toFixed(2) : 0;
-
+        const bookings = +vals.bookingsCount || 0;
+        const quotes = +vals.quotesCount || 0;
+        const conversion = quotes > 0
+            ? ((bookings / quotes) * 100).toFixed(2)
+            : "n/a";
         const row = document.createElement('tr');
 
         row.innerHTML = `
@@ -1088,7 +1375,7 @@ function renderClients() {
             <td>${percBookingsCount}%</td>
             <td>USD ${vals.bookingsAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
             <td>${percBookingsAmount}%</td>
-            <td>${conversion}</td>
+            <td>${conversion}%</td>
         `;
         tbody.appendChild(row);
     });
@@ -1101,11 +1388,11 @@ function renderClients() {
         <td><strong>TOTAL</strong></td>
         <td>${totalQuotesCount}</td>
         <td>-</td>
-        <td>${totalQuotesAmount}</td>
+        <td>USD ${totalQuotesAmount}</td>
         <td>-</td>
         <td>${totalBookingsCount}</td>
         <td>-</td>
-        <td>${totalBookingsAmount}</td>
+        <td>USD ${totalBookingsAmount}</td>
         <td>-</td>
         <td>-</td>
     `;
@@ -1387,6 +1674,84 @@ function renderChartsSpeed() {
     });
 }
 
+// ==================== FUNCIÓN: Renderizar gráficos ====================
+function renderChartsClients() {
+    const clients = Object.keys(summaryClients);
+    const quotesAmount = clients.map(c => summaryClients[c].quotesAmount);
+    const bookingsAmount = clients.map(c => summaryClients[c].bookingsAmount);
+
+    // Destruir gráficos anteriores
+    if (chartsClients.quotes) chartsClients.quotes.destroy();
+    if (chartsClients.bookings) chartsClients.bookings.destroy();
+
+    // Gráfico de Cantidad
+    const ctxQuotes = document.getElementById('chartClientsQuotesCanvas').getContext('2d');
+    chartsClients.quotes = new Chart(ctxQuotes, {
+        type: 'pie',
+        data: {
+            labels: clients,
+            datasets: [{
+                data: quotesAmount,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'USD ' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 0});
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Gráfico de Monto
+    const ctxBookings = document.getElementById('chartClientsBookingsCanvas').getContext('2d');
+    chartsClients.bookings = new Chart(ctxBookings, {
+        type: 'pie',
+        data: {
+            labels: clients,
+            datasets: [{
+                data: bookingsAmount,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'USD ' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 0});
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+
 // ==================== FUNCIÓN: Renderizar insights ====================
 function renderInsightsQuotes() {
     const vendors = Object.keys(vendorQuoteData);
@@ -1434,6 +1799,585 @@ function renderInsightsBookings() {
 
     document.getElementById('insights-content-bookings').innerHTML = insights;
 }
+
+function renderSummaryTrips() {
+    const data = window.summaryTableTrips;
+    if (!data || !Object.keys(data).length) return;
+
+    const tbody = document.getElementById("summary-trips-tbody");
+    if (!tbody) return;
+
+    tbody.innerHTML = `
+        <tr>
+            <td>Audley:</td>
+            <td>${data.audley_count_trips}</td>
+            <td>USD ${data.audley_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.audley_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+        </tr>
+        <tr>
+            <td>Individuales:</td>
+            <td>${data.individual_count_trips}</td>
+            <td>USD ${data.individual_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.individual_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+        </tr>
+        <tr>
+            <td>Grupos:</td>
+            <td>${data.group_count_trips}</td>
+            <td>USD ${data.group_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.group_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+        </tr>
+        <tr>
+            <td>FAM clientes:</td>
+            <td>${data.fam_count_trips}</td>
+            <td>USD ${data.fam_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+            <td>% ${data.fam_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+        </tr>
+        <tr>
+            <td><strong>TOTAL</strong></td>
+            <td><strong>${data.total_count_trips}</strong></td>
+            <td><strong>USD ${data.total_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong></td>
+            <td>-</td>
+        </tr>
+    `;
+
+    const average_difficulty = document.getElementById('average-difficulty');
+    average_difficulty.innerHTML = `Promedio: ${data.average_difficulty.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+
+    const difficulty_1 = document.getElementById('difficulty-1');
+    difficulty_1.innerHTML = `Muy fácil: ${data.difficulty_1}`;
+
+    const difficulty_2 = document.getElementById('difficulty-2');
+    difficulty_2.innerHTML = `Fácil: ${data.difficulty_2}`;
+
+    const difficulty_3 = document.getElementById('difficulty-3');
+    difficulty_3.innerHTML = `Moderado: ${data.difficulty_3}`;
+
+    const difficulty_4 = document.getElementById('difficulty-4');
+    difficulty_4.innerHTML = `Complejo: ${data.difficulty_4}`;
+
+    const difficulty_5 = document.getElementById('difficulty-5');
+    difficulty_5.innerHTML = `Muy complejo: ${data.difficulty_5}`;
+
+    const cancellations_count = document.getElementById('cancellations-count');
+    cancellations_count.innerHTML = `Cantidad: ${data.cancellations_count}`;
+
+    const cancellations_amount = document.getElementById('cancellations-amount');
+    cancellations_amount.innerHTML = `Monto: - USD ${data.cancellations_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+}
+
+
+// ==================== FUNCIÓN: Renderizar tabla ====================
+function renderVendorTrips() {
+
+    // 🔹 Primero: destruir DataTable si ya existe (antes de tocar las filas)
+    if ($.fn.DataTable.isDataTable("#vr-booking-table")) {
+        $("#vr-booking-table").DataTable().clear().destroy();
+    }
+
+    const tbody = document.getElementById('vendor-vr-tbody');
+    const tfoot = document.getElementById('vendor-vr-tfoot');
+    if (!tbody || !tfoot) {
+        console.error("❌ No se encontró tbody o tfoot en el HTML.");
+        return;
+    }
+    const totalAmounts = Object.values(vendorTripsData).reduce((acc, v) => acc + v.amountTotal, 0);
+    const totalAudleyAmounts = Object.values(vendorTripsData).reduce((acc, v) => acc + v.amountAudley, 0);
+
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    Object.entries(vendorTripsData).forEach(([vendor, vals]) => {
+        const percTotal = totalAmounts > 0 ? ((vals.amountTotal / totalAmounts) * 100).toFixed(2) : 0;
+        const percAudley = totalAudleyAmounts > 0 ? ((vals.amountAudley / totalAudleyAmounts) * 100).toFixed(2) : 0;
+
+        // Determinar color de fondo para el nombre del vendedor
+        const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
+
+        // Determinar color de texto (para asegurar contraste legible)
+        // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
+        // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
+        // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
+        const textColor = '#333333';
+
+        const row = document.createElement('tr');
+
+        // Esto cubre cualquier estilo general de la fila (ej. hover)
+        const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
+        row.setAttribute('style', rowStyle);
+
+        // 2. Definir el estilo de celda (background-color con !important)
+        // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
+        const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+
+        row.innerHTML = `
+            <td style="${cellStyle}">${vendor}</td>
+            <td style="${cellStyle}">${vals.total}</td>
+            <td style="${cellStyle}">USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td style="${cellStyle}">${percTotal}%</td>
+            <td style="${cellStyle}">${vals.audley}</td>
+            <td style="${cellStyle}">USD ${vals.amountAudley.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td style="${cellStyle}">${percAudley}%</td>
+            <td style="${cellStyle}">${vals.workingDays}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // 🔹 Agregar fila total al TFOOT
+    const totalCount = Object.values(vendorTripsData).reduce((acc, v) => acc + v.total, 0);
+    const totalAudley = Object.values(vendorTripsData).reduce((acc, v) => acc + v.audley, 0);
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row table-secondary fw-bold';
+    totalRow.innerHTML = `
+        <td><strong>TOTAL</strong></td>
+        <td>${totalCount}</td>
+        <td>USD ${totalAmounts.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+        <td>100%</td>
+        <td>${totalAudley}</td>
+        <td>USD ${totalAudleyAmounts.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+        <td>100%</td>
+        <td>-</td>
+    `;
+    tfoot.appendChild(totalRow);
+
+    // volver a crear el datatable (o regenerar su contenido)
+    create_datatable_stats("vr-booking-table");
+
+}
+
+
+function renderOperatorTrips() {
+
+    // 🔹 Primero: destruir DataTable si ya existe (antes de tocar las filas)
+    if ($.fn.DataTable.isDataTable("#operations-booking-table")) {
+        $("#operations-booking-table").DataTable().clear().destroy();
+    }
+
+    const tbody = document.getElementById('operations-booking-tbody');
+    const tfoot = document.getElementById('operations-booking-tfoot');
+    if (!tbody || !tfoot) {
+        console.error("❌ No se encontró tbody o tfoot en el HTML.");
+        return;
+    }
+    const totalAmounts = Object.values(operatorTripsData).reduce((acc, o) => acc + o.amountTotal, 0);
+    const totalAudleyAmounts = Object.values(operatorTripsData).reduce((acc, o) => acc + o.amountAudley, 0);
+
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    Object.entries(operatorTripsData).forEach(([operator, vals]) => {
+        const percTotal = totalAmounts > 0 ? ((vals.amountTotal / totalAmounts) * 100).toFixed(2) : 0;
+        const percAudley = totalAudleyAmounts > 0 ? ((vals.amountAudley / totalAudleyAmounts) * 100).toFixed(2) : 0;
+
+        // Determinar color de fondo para el nombre del vendedor
+        const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
+
+        // Determinar color de texto (para asegurar contraste legible)
+        // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
+        // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
+        // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
+        const textColor = '#333333';
+
+        const row = document.createElement('tr');
+
+        // Esto cubre cualquier estilo general de la fila (ej. hover)
+        const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
+        row.setAttribute('style', rowStyle);
+
+        // 2. Definir el estilo de celda (background-color con !important)
+        // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
+        const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+
+        row.innerHTML = `
+            <td style="${cellStyle}">${operator}</td>
+            <td style="${cellStyle}">${vals.total}</td>
+            <td style="${cellStyle}">USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td style="${cellStyle}">${percTotal}%</td>
+            <td style="${cellStyle}">${vals.audley}</td>
+            <td style="${cellStyle}">USD ${vals.amountAudley.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td style="${cellStyle}">${percAudley}%</td>
+            <td style="${cellStyle}">${vals.workingDays}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // 🔹 Agregar fila total al TFOOT
+    const totalCount = Object.values(operatorTripsData).reduce((acc, o) => acc + o.total, 0);
+    const totalAudley = Object.values(operatorTripsData).reduce((acc, o) => acc + o.audley, 0);
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row table-secondary fw-bold';
+    totalRow.innerHTML = `
+        <td><strong>TOTAL</strong></td>
+        <td>${totalCount}</td>
+        <td>USD ${totalAmounts.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+        <td>100%</td>
+        <td>${totalAudley}</td>
+        <td>USD ${totalAudleyAmounts.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+        <td>100%</td>
+        <td>-</td>
+    `;
+    tfoot.appendChild(totalRow);
+
+    // volver a crear el datatable (o regenerar su contenido)
+    create_datatable_stats("operations-booking-table");
+
+}
+
+
+// ==================== FUNCIÓN: Renderizar gráficos ====================
+function renderChartsTripsVendors() {
+    const vendors = Object.keys(vendorTripsData);
+    const count = vendors.map(v => vendorTripsData[v].total);
+    const amount = vendors.map(v => vendorTripsData[v].amountTotal);
+
+    // ✅ CORRECTO: Acceder al color dentro de cada vendedor
+    const colors = vendors.map(vendor => vendorTripsData[vendor].color || '#999999');
+
+    // Destruir gráficos anteriores
+    if (chartsTripsVendor.cantidad) chartsTripsVendor.cantidad.destroy();
+    if (chartsTripsVendor.monto) chartsTripsVendor.monto.destroy();
+
+    // Gráfico de Cantidad
+    const ctxCantidad = document.getElementById('chartCountVrCanvas').getContext('2d');
+    chartsTripsVendor.cantidad = new Chart(ctxCantidad, {
+        type: 'pie',
+        data: {
+            labels: vendors,
+            datasets: [{
+                data: count,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                }
+            }
+        }
+    });
+
+    // Gráfico de Monto
+    const ctxMonto = document.getElementById('chartAmountVrCanvas').getContext('2d');
+    chartsTripsVendor.monto = new Chart(ctxMonto, {
+        type: 'pie',
+        data: {
+            labels: vendors,
+            datasets: [{
+                data: amount,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'USD ' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 0});
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+// ==================== FUNCIÓN: Renderizar gráficos ====================
+function renderChartsTripsOperators() {
+    const operators = Object.keys(operatorTripsData);
+    const count = operators.map(o => operatorTripsData[o].total);
+    const amount = operators.map(o => operatorTripsData[o].amountTotal);
+
+    // ✅ CORRECTO: Acceder al color dentro de cada vendedor
+    const colors = operators.map(operator => operatorTripsData[operator].color || '#999999');
+
+    // Destruir gráficos anteriores
+    if (chartsTripsOperator.cantidad) chartsTripsOperator.cantidad.destroy();
+    if (chartsTripsOperator.monto) chartsTripsOperator.monto.destroy();
+
+    // Gráfico de Cantidad
+    const ctxCantidad = document.getElementById('chartCantidadOperationsCanvas').getContext('2d');
+    chartsTripsOperator.cantidad = new Chart(ctxCantidad, {
+        type: 'pie',
+        data: {
+            labels: operators,
+            datasets: [{
+                data: count,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                }
+            }
+        }
+    });
+
+    // Gráfico de Monto
+    const ctxMonto = document.getElementById('chartMontoOperationsCanvas').getContext('2d');
+    chartsTripsOperator.monto = new Chart(ctxMonto, {
+        type: 'pie',
+        data: {
+            labels: operators,
+            datasets: [{
+                data: amount,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'USD ' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 0});
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+// ==================== FUNCIÓN: Renderizar insights ====================
+function renderInsightsTripsVendors() {
+    const vendors = Object.keys(vendorTripsData);
+    const topVendorAmount = vendors.reduce((max, vendor) =>
+        vendorTripsData[vendor].amountTotal > vendorTripsData[max].amountTotal ? vendor : max
+    );
+
+    const topVendorCount = vendors.reduce((max, vendor) =>
+        vendorTripsData[vendor].total > vendorTripsData[max].total ? vendor : max
+    );
+
+    const totalMonto = Object.values(vendorTripsData).reduce((acc, v) => acc + v.amountTotal, 0);
+    const totalCantidad = Object.values(vendorTripsData).reduce((acc, v) => acc + v.total, 0);
+    const promedio = totalMonto / vendors.length;
+
+    const insights = `
+        <ul>
+            <li><strong>🏆 Top Vendedor x monto:</strong> ${topVendorAmount} con USD ${vendorTripsData[topVendorAmount].amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>💰 Facturación Total:</strong> USD ${totalMonto.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>🏆 Top Vendedor x cantidad:</strong> ${topVendorCount} con ${vendorTripsData[topVendorCount].total}</li>
+            <li><strong>📊 Total Reservas:</strong> ${totalCantidad} viajes confirmados</li>
+            <li><strong>📈 Promedio por Vendedor:</strong> USD ${promedio.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>👥 Vendedores Activos:</strong> ${vendors.length}</li>
+        </ul>
+    `;
+
+    document.getElementById('insights-content-vr').innerHTML = insights;
+}
+
+
+// ==================== FUNCIÓN: Renderizar insights ====================
+function renderInsightsTripsOperators() {
+    const operators = Object.keys(operatorTripsData);
+    const topOperatorAmount = operators.reduce((max, vendor) =>
+        operatorTripsData[vendor].amountTotal > operatorTripsData[max].amountTotal ? vendor : max
+    );
+
+    const topOperatorCount = operators.reduce((max, vendor) =>
+        operatorTripsData[vendor].total > operatorTripsData[max].total ? vendor : max
+    );
+
+    const totalMonto = Object.values(operatorTripsData).reduce((acc, v) => acc + v.amountTotal, 0);
+    const totalCantidad = Object.values(operatorTripsData).reduce((acc, v) => acc + v.total, 0);
+    const promedio = totalMonto / operators.length;
+
+    const insights = `
+        <ul>
+            <li><strong>🏆 Top Operador x monto:</strong> ${topOperatorAmount} con USD ${operatorTripsData[topOperatorAmount].amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>💰 Facturación Total:</strong> USD ${totalMonto.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>🏆 Top Operador x cantidad:</strong> ${topOperatorCount} con ${operatorTripsData[topOperatorCount].total}</li>
+            <li><strong>📊 Total Reservas:</strong> ${totalCantidad} viajes confirmados</li>
+            <li><strong>📈 Promedio por Operador:</strong> USD ${promedio.toLocaleString('en-US', {minimumFractionDigits: 2})}</li>
+            <li><strong>👥 Operadores Activos:</strong> ${operators.length}</li>
+        </ul>
+    `;
+
+    document.getElementById('insights-content-operations').innerHTML = insights;
+}
+
+
+function renderTripsClients() {
+    // 🔹 Primero: destruir DataTable si ya existe (antes de tocar las filas)
+    if ($.fn.DataTable.isDataTable("#summary-clients-trips-table")) {
+        $("#summary-clients-trips-table").DataTable().clear().destroy();
+    }
+
+    const tbody = document.getElementById('summary-clients-trips-tbody');
+    const tfoot = document.getElementById('summary-clients-trips-tfoot');
+    if (!tbody || !tfoot) {
+        console.error("❌ No se encontró tbody o tfoot en el HTML.");
+        return;
+    }
+
+    const totalBookingsCount = Object.values(clientTripsData).reduce((acc, c) => acc + c.total, 0);
+    const totalBookingsAmount = Object.values(clientTripsData).reduce((acc, c) => acc + c.amountTotal, 0);
+    const totalCancelled = Object.values(clientTripsData).reduce((acc, c) => acc + c.cancelled, 0);
+    const totalDifficulty = Object.values(clientTripsData).reduce((acc, c) => acc + c.totalDifficulty, 0);
+
+    const totalAverageDifficulty = (totalDifficulty / totalBookingsCount).toFixed(2);
+    const totalPerTrip = (totalBookingsAmount / totalBookingsCount).toFixed(2);
+    
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    Object.entries(clientTripsData).forEach(([client, vals]) => {
+        const percBookingsCount = totalBookingsCount > 0 ? ((vals.total / totalBookingsCount) * 100).toFixed(2) : 0;
+        const percBookingsAmount = totalBookingsAmount > 0 ? ((vals.amountTotal / totalBookingsAmount) * 100).toFixed(2) : 0;
+        const cancelled = +vals.cancelled || 0;
+        const averageDifficulty = totalBookingsCount > 0 ? (vals.totalDifficulty / vals.total).toFixed(2) : 0;
+        const averagePerTrip = totalBookingsCount > 0 ? (vals.amountTotal / vals.total).toFixed(2) : 0;
+
+        const row = document.createElement('tr');
+
+        row.innerHTML = `
+            <td>${client}</td>
+            <td>${vals.total}</td>
+            <td>${percBookingsCount}%</td>
+            <td>USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td>${percBookingsAmount}%</td>
+            <td>USD ${averagePerTrip.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            <td>${averageDifficulty}</td>
+            <td>${cancelled}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // 🔹 Agregar fila total al TFOOT
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row table-secondary fw-bold';
+    totalRow.innerHTML = `
+        <td><strong>TOTAL</strong></td>
+        <td>${totalBookingsCount}</td>
+        <td>-</td>
+        <td>USD ${totalBookingsAmount}</td>
+        <td>-</td>
+        <td>${totalPerTrip}</td>
+        <td>${totalAverageDifficulty}</td>
+        <td>${totalCancelled}</td>
+    `;
+    tfoot.appendChild(totalRow);
+
+    // volver a crear el datatable (o regenerar su contenido)
+    create_datatable_stats("summary-clients-trips-table");
+}
+
+
+// ==================== FUNCIÓN: Renderizar gráficos ====================
+function renderChartsTripsClients() {
+    const clients = Object.keys(clientTripsData);
+    const bookingsCount = clients.map(c => clientTripsData[c].total);
+    const bookingsAmount = clients.map(c => clientTripsData[c].amountTotal);
+
+    // Destruir gráficos anteriores
+    if (chartsClientsTrips.count) chartsClients.count.destroy();
+    if (chartsClientsTrips.amount) chartsClients.amount.destroy();
+
+    // Gráfico de Cantidad
+    const ctxCount = document.getElementById('chartClientsCountTripsCanvas').getContext('2d');
+    chartsClientsTrips.count = new Chart(ctxCount, {
+        type: 'pie',
+        data: {
+            labels: clients,
+            datasets: [{
+                data: bookingsCount,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+            }
+        }
+    });
+
+    // Gráfico de Monto
+    const ctxAmount = document.getElementById('chartClientsAmountTripsCanvas').getContext('2d');
+    chartsClientsTrips.amount = new Chart(ctxAmount, {
+        type: 'pie',
+        data: {
+            labels: clients,
+            datasets: [{
+                data: bookingsAmount,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'USD ' + context.parsed.toLocaleString('en-US', {minimumFractionDigits: 0});
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 
 // ==================== FUNCIÓN: Exportar a PDF ====================
 async function exportToPDF(event) {
@@ -1578,10 +2522,14 @@ function show_form(btn_id) {
 
             // filtros adicionales
             let extraData = {};
-            if (btn_id == "2") {
+            if (btn_id == "1") {
+                extraData.week = document.getElementById("week-select").value;
+            } else if (btn_id == "2") {
                 extraData.month = document.getElementById("month-select").value;
                 extraData.year = document.getElementById("year-select").value;
-            } else if (btn_id == "4") {
+            } else if (btn_id == "3") {
+                extraData.season = document.getElementById("season-select").value;
+            }else if (btn_id == "4") {
                 let rawFrom = document.getElementById("date-from").value;
                 let rawTo = document.getElementById("date-to").value;
                 extraData.date_from = rawFrom ? rawFrom.split("T")[0] : "";
@@ -1775,7 +2723,75 @@ function hide_all_forms() {
     }
 }
 
-function inicialize_presentations(reportType) {
+/**
+ * Calcula las fechas de inicio (lunes) y fin (domingo) de una semana dada en el año actual.
+ * @param {number} weekNumber - El número de semana ISO (1-53).
+ * @param {number} year - El año.
+ * @returns {{date_from: string, date_to: string}}
+ */
+function getWeekDates(weekNumber, year) {
+    // 1. Crear una fecha que caiga en el día 4 de la primera semana del año (siempre en la semana 1)
+    const date = new Date(year, 0, 1 + (weekNumber - 1) * 7);
+    
+    // 2. Establecer el lunes de la semana actual
+    // getDay() devuelve 0 (domingo) a 6 (sábado). Queremos que 1 sea lunes y 0 sea domingo.
+    // El cálculo 'day - 1' ajusta para que el lunes sea 0, pero necesitamos que la semana empiece en lunes.
+    // Si es domingo (0), queremos movernos -6 días para el lunes anterior.
+    let day = date.getDay(); 
+    // Mueve la fecha al Lunes: Si es domingo (0), day - 1 da -1. 
+    // Usamos el ajuste ISO: 1 (lunes) a 7 (domingo). (day + 6) % 7 da 0 para lunes, 6 para domingo.
+    const dayOfWeek = (day === 0) ? 6 : day - 1; 
+
+    // Mover la fecha al lunes de la semana
+    date.setDate(date.getDate() - dayOfWeek);
+    const date_from = date.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    
+    // Mover al domingo (6 días después)
+    date.setDate(date.getDate() + 6);
+    const date_to = date.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+
+    return { date_from, date_to };
+}
+
+/**
+ * Función auxiliar para obtener el número de semana ISO 8601 de una fecha.
+ * Esto es necesario para inicializar el select con la semana actual.
+ * @param {Date} date 
+ * @returns {number}
+ */
+
+function getWeekNumber(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+/**
+ * Calcula el primer y último día de un mes específico.
+ * @param {number} year - El año seleccionado.
+ * @param {number} month - El número del mes (1 = Enero, 12 = Diciembre).
+ * @returns {{date_from: string, date_to: string}}
+ */
+function getMonthDates(year, month) {
+    // El mes en el constructor de Date es base 0 (0 = Enero, 11 = Diciembre),
+    // por eso usamos 'month - 1' para el mes de inicio.
+    
+    // Primer día del mes (date_from)
+    const firstDay = new Date(year, month - 1, 1);
+
+    // Último día del mes (date_to)
+    // Usamos el mes siguiente (month) y el día 0. El día 0 de un mes es el último día del mes anterior.
+    const lastDay = new Date(year, month, 0);
+
+    // Formatear las fechas a YYYY-MM-DD
+    const date_from = firstDay.toISOString().split('T')[0];
+    const date_to = lastDay.toISOString().split('T')[0];
+
+    return { date_from, date_to };
+}
+
+function inicialize_presentations() {
     const button = document.getElementById('stats-presentation-1');
     if (!button) return;
 
@@ -1789,7 +2805,15 @@ function inicialize_presentations(reportType) {
             if (formId === '1-stats-form') {
                 // Semanal
                 const week = document.getElementById('week-select').value;
-                queryParams.append('period', `Semana ${week}`);
+                const currentYear = new Date().getFullYear(); // Usamos el año actual
+
+                // 1. Obtener las fechas de inicio y fin
+                const { date_from, date_to } = getWeekDates(Number(week), currentYear);
+
+                // 2. Subir las fechas a los parámetros
+                queryParams.append('date_from', date_from);
+                queryParams.append('date_to', date_to);
+
                 queryParams.append('filter', 'weekly');
 
                 const typeReport = document.getElementById('type-select-1').value;
@@ -1800,9 +2824,36 @@ function inicialize_presentations(reportType) {
                 // Mensual
                 const month = document.getElementById('month-select').value;
                 const year = document.getElementById('year-select').value;
-                queryParams.append('period', `${month} ${year}`);
+
+                // 1. Obtener las fechas de inicio y fin
+                // Convertimos a Number() por seguridad, ya que los valores del select son strings
+                const { date_from, date_to } = getMonthDates(Number(year), Number(month));
+                
+                // 2. Subir las fechas a los parámetros
+                queryParams.append('date_from', date_from);
+                queryParams.append('date_to', date_to);
                 queryParams.append('filter', 'monthly');
+                
                 const typeReport = document.getElementById('type-select-2').value;
+
+                // Redirigir a la página de reporte
+                window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
+            } else if (formId === '3-stats-form') {
+                // Temporada
+                const season = document.getElementById('season-select').value;
+                const season_to = Number(season) + 1
+                
+                const date_from_obj = new Date(Number(season), 5, 1);
+                const date_from = date_from_obj.toISOString().split('T')[0];
+                const date_to_obj = new Date(season_to, 4, 30)
+                const date_to = date_to_obj.toISOString().split('T')[0];
+                
+                // 2. Subir las fechas a los parámetros
+                queryParams.append('date_from', date_from);
+                queryParams.append('date_to', date_to);
+                queryParams.append('filter', 'season');
+                
+                const typeReport = document.getElementById('type-select-3').value;
 
                 // Redirigir a la página de reporte
                 window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
@@ -1867,6 +2918,7 @@ function create_datatable_stats(id) {
             }
         },
         paging: false,
+        responsive: true,
         order: [[1, "desc"]],
         language: {
             url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',

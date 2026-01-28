@@ -41,6 +41,7 @@ urlpatterns = [
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
     path("stats/data/", views.stats_data, name="stats_data"),   
     path("stats/data/entries/presentation/", views.stats_presentation_entries, name="stats_presentation_entries"),
+    path("stats/data/trips/presentation/", views.stats_presentation_trips, name="stats_presentation_trips"),
 
     # API routes for configurations
     path("countries/json/<int:country_id>", views.jsoncountry, name="jsoncountry"),

@@ -9,7 +9,7 @@ from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
 from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
-from .utils import update_timingStatus
+from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
 from datetime import datetime, date, timedelta
 from django.utils.timezone import localtime
@@ -1349,7 +1349,7 @@ def stats(request):
     start_of_week = today - timedelta(days=today.isoweekday() - 1)
 
     # Get the list of the 20 weeks before and 20 weeks later than the current week
-    for i in range(-20, 20 + 1):
+    for i in range(-30, 1):
         start = start_of_week + timedelta(weeks=i)
         end = start + timedelta(days=6)
         week_number = start.isocalendar()[1]
@@ -1358,7 +1358,6 @@ def stats(request):
         weeks.append(
             (week_number, f"Semana {week_number} - {start.strftime('%-d-%m-%Y')} al {end.strftime('%-d-%m-%Y')}")
         )
-
 
     return render(request, "intranet/stats.html", {
         "months":MONTHS,
@@ -1379,13 +1378,45 @@ def stats_entries_report(request):
     - week/month/year/date_from/date_to: según el filtro
     """
     
-    # Obtener parámetros de la solicitud
+    # Get the dates from the information sent
+    date_from = request.GET.get('date_from', "Desde")
+    date_to = request.GET.get('date_to', "Hasta")
+
+    date_from_formatted = datetime.fromisoformat(date_from)
+    date_to_formatted = datetime.fromisoformat(date_to)
+
+    # Check if there are any errors
+    missing_amounts = check_missing_amounts(date_from, date_to)
+    if missing_amounts:
+        missing_amounts_entries = []
+
+        for entry in missing_amounts:
+            missing_amounts_entries.append((entry.trip.name, entry.status))
+
+        message_one = f"Falta monto de: {missing_amounts_entries})"
+    else:
+        message_one = "Todos los montos están completos"
+
+    incongruent_entry_dates = check_incongruent_entry_dates(date_from, date_to)
+    if incongruent_entry_dates:
+        incongruent_entries = []
+
+        for entry in incongruent_entry_dates:
+            incongruent_entries.append((entry.trip.name, entry.status))
+
+        message_two = f"Inconsistencia en fecha: {incongruent_entries})"
+    else:
+        message_two = "Todos las fechas están correctas"
+
+    # Get the information type and period
     report_type = request.GET.get('type', 'vendor')
     period = request.GET.get('period', 'Período Personalizado')
     
     context = {
         'report_type': report_type,
         'period': period,
+        'message_one': message_one,
+        'message_two': message_two,
     }
     
     return render(request, 'intranet/stats_entries_report.html', context)
@@ -1401,13 +1432,45 @@ def stats_trips_report(request):
     - week/month/year/date_from/date_to: según el filtro
     """
     
-    # Obtener parámetros de la solicitud
+    # Get the dates from the information sent
+    date_from = request.GET.get('date_from', "Desde")
+    date_to = request.GET.get('date_to', "Hasta")
+
+    date_from_formatted = datetime.fromisoformat(date_from)
+    date_to_formatted = datetime.fromisoformat(date_to)
+
+    # Check if there are any errors
+    duplicated = check_duplicate_trips(date_from, date_to)
+    if duplicated:
+        duplicate_trips = []
+
+        for trip in duplicated:
+            duplicate_trips.append((trip.name, trip.client))
+
+        message_one = f"Viaje duplicado: {duplicate_trips})"
+    else:
+        message_one = "No hay viajes duplicados"
+
+    incongruent_trip_dates = check_incongruent_trip_dates(date_from, date_to)
+    if incongruent_trip_dates:
+        incongruent_trips = []
+
+        for trip in incongruent_trip_dates:
+            incongruent_trips.append((trip.name, trip.client))
+
+        message_two = f"Inconsistencia en fecha: {incongruent_trips})"
+    else:
+        message_two = "Todos las fechas están correctas"
+
+    # Get the information type and period
     report_type = request.GET.get('type', 'vendor')
     period = request.GET.get('period', 'Período Personalizado')
     
     context = {
         'report_type': report_type,
         'period': period,
+        'message_one': message_one,
+        'message_two': message_two,
     }
     
     return render(request, 'intranet/stats_trips_report.html', context)
@@ -2136,6 +2199,27 @@ def stats_entries_data(request):
     # filtros de fechas
     if month and year:
         qs = qs.filter(starting_date__month=month, starting_date__year=year)
+    
+    this_year = date.today().year
+    
+    if week:
+        this_week = date.today().isocalendar()[1]
+        if int(week) > this_week:
+            week_year = this_year - 1
+        else:
+            week_year = this_year
+
+        week_date_from = date.fromisocalendar(week_year, int(week), 1)
+        week_date_to = date.fromisocalendar(week_year, int(week), 7)
+
+        qs = qs.filter(starting_date__date__range=[week_date_from, week_date_to])
+
+    if season:
+        season_to = int(season) + 1
+        season_date_from = date(int(season), 5, 1)
+        season_date_to = date(season_to, 4, 30)
+
+        qs = qs.filter(starting_date__date__range=[season_date_from, season_date_to])
 
     if date_from and date_to:
         qs = qs.filter(starting_date__date__range=[date_from, date_to])
@@ -2267,6 +2351,8 @@ def stats_trips_data(request):
     # 🚩 filtros de fechas por travelling_date
     month = request.GET.get("month")
     year = request.GET.get("year")
+    week = request.GET.get("week")
+    season = request.GET.get("season")
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
 
@@ -2282,6 +2368,27 @@ def stats_trips_data(request):
             qs = qs.filter(travelling_date__range=(date_from, date_to))
         except ValueError:
             pass  # si no se puede parsear, ignora el filtro
+
+    this_year = date.today().year
+    
+    if week:
+        this_week = date.today().isocalendar()[1]
+        if int(week) > this_week:
+            week_year = this_year - 1
+        else:
+            week_year = this_year
+
+        week_date_from = date.fromisocalendar(week_year, int(week), 1)
+        week_date_to = date.fromisocalendar(week_year, int(week), 7)
+
+        qs = qs.filter(travelling_date__range=[week_date_from, week_date_to])
+
+    if season:
+        season_to = int(season) + 1
+        season_date_from = date(int(season), 5, 1)
+        season_date_to = date(season_to, 4, 30)
+
+        qs = qs.filter(travelling_date__range=[season_date_from, season_date_to])
 
     # 🚩 Búsqueda global
     if search_value:
@@ -2637,6 +2744,9 @@ def stats_presentation_entries(request):
     year = request.GET.get("year")
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
+    season = request.GET.get("season")
+
+    print(request.GET.get("filter"))
 
     # base queryset
     qs = Entry.objects.select_related(
@@ -2879,6 +2989,291 @@ def stats_presentation_entries(request):
     })
 
 
+def stats_trips_by_responsable(qs, date_from, date_to):
+    bookings = qs.filter(status="Booking")
+    # agrupación y agregación
+    responsable_users = {}
+
+    for trip in bookings:
+        vendor = trip.responsable_user.other_name
+        if vendor not in responsable_users:
+
+            # ✅ Asegurar que el color sea string
+            user_color = '#999999'  # Color por defecto
+
+            if trip.responsable_user:
+                if hasattr(trip.responsable_user, 'color'):
+                    # Convertir explícitamente a string
+                    color_value = trip.responsable_user.color
+                    if color_value:
+                        # Si es un objeto ColorField, convertir a string
+                        user_color = str(color_value)
+
+            # Create empty vendors
+            responsable_users[vendor] = {
+                "total": 0,
+                "amountTotal": 0,
+                "audley": 0,
+                "amountAudley": 0.0,
+                "color": user_color,
+                "workingDays": get_working_days_worker(date_from, date_to, trip.responsable_user),
+            }
+
+        # Complete the information of the vendors with booking information
+        if trip.client and trip.client.name == "Audley Travel UK":
+            responsable_users[vendor]["audley"] += 1
+            if trip.amount:
+                responsable_users[vendor]["amountAudley"] += float(trip.amount)
+            
+        responsable_users[vendor]["total"] += 1
+        if trip.amount:
+            responsable_users[vendor]["amountTotal"] += float(trip.amount)
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
+    sorted_vendors = sorted(
+        responsable_users.items(),
+        key=lambda x: x[1]['total'],  # Ordenar por cantidad de cotizaciones A
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado
+    vendors_ordered_bookings = OrderedDict(sorted_vendors)
+
+    return dict(vendors_ordered_bookings)
+
+
+def stats_trips_by_operator(qs, date_from, date_to):
+    bookings = qs.filter(status="Booking")
+    # agrupación y agregación
+    operations_users = {}
+
+    for trip in bookings:
+        operator = trip.operations_user.other_name
+        if operator not in operations_users:
+
+            # ✅ Asegurar que el color sea string
+            user_color = '#999999'  # Color por defecto
+
+            if trip.operations_user:
+                if hasattr(trip.operations_user, 'color'):
+                    # Convertir explícitamente a string
+                    color_value = trip.operations_user.color
+                    if color_value:
+                        # Si es un objeto ColorField, convertir a string
+                        user_color = str(color_value)
+
+            # Create empty vendors
+            operations_users[operator] = {
+                "total": 0,
+                "amountTotal": 0,
+                "audley": 0,
+                "amountAudley": 0.0,
+                "color": user_color,
+                "workingDays": get_working_days_worker(date_from, date_to, trip.responsable_user),
+            }
+
+        # Complete the information of the vendors with booking information
+        if trip.client and trip.client.name == "Audley Travel UK":
+            operations_users[operator]["audley"] += 1
+            if trip.amount:
+                operations_users[operator]["amountAudley"] += float(trip.amount)
+            
+        operations_users[operator]["total"] += 1
+        if trip.amount:
+            operations_users[operator]["amountTotal"] += float(trip.amount)
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por 'a' (cotizaciones A) descendente
+    sorted_operators = sorted(
+        operations_users.items(),
+        key=lambda x: x[1]['total'],  # Ordenar por cantidad de cotizaciones A
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado
+    operators_ordered_bookings = OrderedDict(sorted_operators)
+
+    return dict(operators_ordered_bookings)
+
+
+def stats_trips_by_client(qs):
+    # agrupación y agregación
+    clients = {}
+    bookings = qs.filter(status="Booking")
+
+    for trip in bookings:
+        client = trip.client.name
+        if client not in clients:
+            # Create empty clients
+            clients[client] = {
+                "bookingsCount": 0,
+                "bookingsAmount": 0.0,
+                "cancelled": 0,
+                "totalDifficulty": 0,
+            }
+
+
+        clients[client]["bookingsCount"] += 1
+        clients[client]["totalDifficulty"] += int(trip.difficulty)
+        if trip.amount:
+            clients[client]["bookingsAmount"] += float(trip.amount)
+
+    for trip in qs:
+        if trip.status == "Cancelado":    
+            clients[client]["cancelled"] += 1
+        
+
+    # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por cantidad
+    sorted_clients = sorted(
+        clients.items(),
+        key=lambda x: x[1]['bookingsCount'],
+        reverse=True  # De mayor a menor
+    )
+
+    # ✅ Convertir de vuelta a diccionario ordenado
+    clients_ordered = OrderedDict(sorted_clients)
+
+    return dict(clients_ordered)
+
+
+@login_required
+def stats_presentation_trips(request):
+
+    department = request.user.department
+
+    # filtros opcionales
+    month = request.GET.get("month")
+    year = request.GET.get("year")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    season = request.GET.get("season")
+
+    print(request.GET.get("filter"))
+
+    # base queryset
+    qs = Trip.objects.select_related("client").filter(
+        department=department
+    )
+
+    # filtro por fechas
+    if month and year:
+        qs = qs.filter(travelling_date__month=month, travelling_date__year=year)
+    elif date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+            qs = qs.filter(travelling_date__range=(d_from, d_to))
+        except ValueError:
+            pass
+
+    this_year = datetime.strptime(date_from, "%Y-%m-%d").year
+    this_month = datetime.strptime(date_from, "%Y-%m-%d").month
+
+    if this_month > 4:
+        # String representation of the seasons if it is May or higher
+        this_season_str = str(this_year) + "/" + str(this_year + 1)
+        next_season_str = str(this_year + 1) + "/" + str(this_year + 2)
+        next2_season_str = str(this_year + 2) + "/" + str(this_year + 3)
+
+        # Dates in the specific seasons
+        this_season_from = date(this_year, 5, 1)
+        this_season_to = date(this_year + 1, 4, 30)
+        next_season_from = date(this_year + 1, 5, 1)
+        next_season_to = date(this_year + 2, 4, 30)
+        next2_season_from = date(this_year + 2, 5, 1)
+        next2_season_to = date(this_year + 3, 4, 30)
+
+    else:
+        # String representation of the seasons if it is January to April
+        this_season_str = str(this_year - 1) + "/" + str(this_year)
+        next_season_str = str(this_year) + "/" + str(this_year + 1)
+        next2_season_str = str(this_year + 1) + "/" + str(this_year + 2)
+
+        # Dates in the specific seasons
+        this_season_from = date(this_year - 1, 5, 1)
+        this_season_to = date(this_year, 4, 30)
+        next_season_from = date(this_year, 5, 1)
+        next_season_to = date(this_year + 1, 4, 30)
+        next2_season_from = date(this_year + 1, 5, 1)
+        next2_season_to = date(this_year + 2, 4, 30)
+
+    trips = qs.filter(status="Booking")
+
+    # === RESUMEN GLOBAL ===
+    total_count_trips = trips.count()
+    total_amount_trips = sum(float(e.amount or 0) for e in trips)
+
+    # Count of the trips
+    individual_count_trips = trips.filter(trip_type="FIT's").count()
+    audley_count_trips = trips.filter(client__name="Audley Travel UK").count()
+    group_count_trips = trips.filter(trip_type="Grupos").count()
+    fam_count_trips = trips.filter(trip_type="FAM Tours").count()
+
+    # Amounts for trips
+    individual_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="FIT's"))
+    audley_amount_trips = sum(float(e.amount or 0) for e in trips.filter(client__name="Audley Travel UK"))
+    group_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="Grupos"))
+    fam_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="FAM Tours"))
+
+    # Percentages
+    individual_perc_trips = round(float(individual_amount_trips / total_amount_trips * 100), 2)
+    audley_perc_trips = round(float(audley_amount_trips / total_amount_trips * 100), 2)
+    group_perc_trips = round(float(group_amount_trips / total_amount_trips * 100), 2)
+    fam_perc_trips = round(float(fam_amount_trips / total_amount_trips * 100), 2)
+
+    if total_count_trips > 0:
+        average_difficulty = round(sum(int(e.difficulty or 0) for e in trips) / total_count_trips, 2)
+    else:
+        average_difficulty = 0
+
+    difficulty_1 = trips.filter(difficulty="1").count()
+    difficulty_2 = trips.filter(difficulty="2").count()
+    difficulty_3 = trips.filter(difficulty="3").count()
+    difficulty_4 = trips.filter(difficulty="4").count()
+    difficulty_5 = trips.filter(difficulty="5").count()
+
+    # Cancellation information
+    cancellations_count = qs.filter(status="Cancelado").count()
+
+    # Cancellation amounts (difference with the last booking)
+    cancellations_amount = sum(float(e.amount or 0) for e in trips.filter(status="Cancelado"))
+
+    summary_table_trips = {
+        "difficulty_1": difficulty_1,
+        "difficulty_2": difficulty_2,
+        "difficulty_3": difficulty_3,
+        "difficulty_4": difficulty_4,
+        "difficulty_5": difficulty_5,
+        "average_difficulty": average_difficulty,
+        "total_count_trips": total_count_trips,
+        "total_amount_trips": total_amount_trips,
+        "fam_count_trips": fam_count_trips,
+        "fam_amount_trips": fam_amount_trips,
+        "individual_count_trips": individual_count_trips,
+        "individual_amount_trips": individual_amount_trips,
+        "group_count_trips": group_count_trips,
+        "group_amount_trips": group_amount_trips,
+        "individual_perc_trips": individual_perc_trips,
+        "group_perc_trips": group_perc_trips,
+        "fam_perc_trips": fam_perc_trips,
+        "audley_count_trips": audley_count_trips,
+        "audley_amount_trips": audley_amount_trips,
+        "audley_perc_trips": audley_perc_trips,
+        "cancellations_count": cancellations_count,
+        "cancellations_amount": cancellations_amount,
+    }
+
+    trips_by_responsable = stats_trips_by_responsable(qs, d_from, d_to)
+    trips_by_operator = stats_trips_by_operator(qs, d_from, d_to)
+    clients = stats_trips_by_client(qs)
+
+    return JsonResponse({
+        "summary_table_trips": summary_table_trips,
+        "trips_by_responsable": trips_by_responsable,
+        "trips_by_operator": trips_by_operator,
+        "clients": clients,
+    })
+
+
 def read_emails(request):
     load_dotenv()
     
@@ -2998,14 +3393,8 @@ def upload_data(csv_obj):
                         col_number+=1
                     elif col_number == 12:
                         if col in user_usernames:
-                            dh = User.objects.get(username=col)
+                            dh = User.objects.get(other_name=col)
                             trip.dh = dh
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 14:
-                        if col in contact_names:
-                            contact = ClientContact.objects.get(name=col)
-                            trip.contact = contact
                             trip.save()
                         col_number+=1
                     elif col_number == 17:

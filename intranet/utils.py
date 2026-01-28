@@ -90,7 +90,10 @@ def check_duplicate_trips(date_from, date_to):
         for trip_compared in filtered_trips:
             if trip.tourplanId:
                 if trip.tourplanId == trip_compared.tourplanId and trip.id != trip_compared.id:
-                    duplicated_files.append((trip, trip_compared))
+                    duplicated_files.append((trip))
+            if trip.status == "Booking" and trip.client_reference != "":
+                if trip.client_reference == trip_compared.client_reference and trip.id != trip_compared.id:
+                    duplicated_files.append((trip))
     
     return duplicated_files
 
