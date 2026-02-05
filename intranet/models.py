@@ -277,6 +277,7 @@ class Entry(models.Model):
 class Holidays(models.Model):
     date_from = models.DateField(verbose_name="holidays from")
     date_to = models.DateField(verbose_name="holidays to")
+    name = models.CharField(max_length=64, blank=True, null=True)
     type_holidays = models.CharField(max_length=64, choices=TYPE_HOLIDAYS)
     workable = models.BooleanField(default=False)
     working_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="working_users", null=True, blank=True)

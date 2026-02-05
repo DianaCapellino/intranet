@@ -15,3 +15,10 @@ def add(value, arg):
         return int(value) + int(arg)
     except (ValueError, TypeError):
         return None
+
+@register.filter
+def divided(value, arg):
+    try:
+        return int(value) / int(arg)
+    except (ValueError, TypeError):
+        return None

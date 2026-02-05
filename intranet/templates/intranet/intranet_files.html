@@ -1,6 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
     {% if request.user.isAdmin %}
         <h2>Crear nuevos Viajes de plani de Intranet</h2>
         <div id="update_bookings_container" class="text-center">
@@ -49,4 +50,5 @@
             {% endif %}
         {% endfor%}
     {% endif %}
+{% endif %}
 {% endblock %}

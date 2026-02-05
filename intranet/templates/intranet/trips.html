@@ -2,6 +2,7 @@
 {% load custom_filters %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
 <div id="new_trip" class="d-none">
     <div class="container">
         <div class="d-flex justify-content-between">
@@ -578,4 +579,5 @@
     </div>
 </div>
 <br>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,271 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Modificar Producto - {{ product.name }}</h2>
+        <a href="{% url 'acc_supplier' %}">
+            <button class="btn btn-dark" data-toggle="tooltip" title="Volver">
+                <i class="fa-solid fa-rotate-left"></i> Volver
+            </button>
+        </a>
+    </div>
+
+    {% if message %}
+        <div class="alert alert-warning text-center">{{ message }}</div>
+    {% endif %}
+
+    <form action="{% url 'modify_product' product.id %}" method="post">
+        {% csrf_token %}
+
+        <!-- Información básica -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Información básica</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Código *</label>
+                        <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" value="{{ product.code }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Nombre del Producto *</label>
+                        <input class="form-control" name="name" placeholder="Nombre del producto" value="{{ product.name }}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Orden *</label>
+                        <input class="form-control" name="order" type="number" placeholder="Orden" value="{{ product.order }}" required>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Descripción</label>
+                    <textarea class="form-control" name="description" rows="3" placeholder="Descripción del producto">{{ product.description|default:'' }}</textarea>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Proveedor *</label>
+                        <select name="supplier" class="form-select" required>
+                            {% for s in suppliers %}
+                                <option value="{{ s.id }}" {% if s.id == product.supplier.id %}selected{% endif %}>
+                                    {{ s.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Grupo de Producto *</label>
+                        <select name="group" class="form-select" required>
+                            {% for pg in product_groups %}
+                                <option value="{{ pg.id }}" {% if pg.id == product.group.id %}selected{% endif %}>
+                                    {{ pg.location.name }} - {{ pg.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Calidad/Categoría</label>
+                        <input class="form-control" name="quality" placeholder="Ej: Standard, Premium" value="{{ product.quality|default:'' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Unidad de Facturación (FCU) *</label>
+                        <select name="fcu" class="form-select" required>
+                            {% for v, label in FCU_OPTIONS %}
+                                <option value="{{ v }}" {% if v == product.fcu %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Unidad de Servicio (SCU) *</label>
+                        <input class="form-control" name="scu" type="number" min="1" placeholder="Ej: 1 (por noche), 7 (por semana)" value="{{ product.scu }}" required>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rankings -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Rankings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Niños</label>
+                        <select name="children_ranking" class="form-select">
+                            {% for v, label in CHILDREN_RANKING_OPTIONS %}
+                                <option value="{{ v }}" {% if v == product.children_ranking %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Accesibilidad</label>
+                        <select name="disabled_ranking" class="form-select">
+                            {% for v, label in DISABLED_RANKING_OPTIONS %}
+                                <option value="{{ v }}" {% if v == product.disabled_ranking %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Sustentabilidad</label>
+                        <select name="sustentability_ranking" class="form-select">
+                            {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
+                                <option value="{{ v }}" {% if v == product.sustentability_ranking %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Características -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Características</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Atracciones</label>
+                        <select name="attractions" class="form-select" multiple size="5">
+                            {% for v, label in ATTRACTIONS %}
+                                <option value="{{ v }}" {% if v in product.attractions %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Mantén Ctrl/Cmd para seleccionar múltiples</small>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Intereses</label>
+                        <select name="interests" class="form-select" multiple size="5">
+                            {% for v, label in INTERESTS %}
+                                <option value="{{ v }}" {% if v in product.interests %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Mantén Ctrl/Cmd para seleccionar múltiples</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visibilidad y Estado -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Visibilidad y Estado</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="shown" id="shown" {% if product.shown %}checked{% endif %}>
+                            <label class="form-check-label" for="shown">
+                                Visible para clientes
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="recommended" id="recommended" {% if product.recommended %}checked{% endif %}>
+                            <label class="form-check-label" for="recommended">
+                                Recomendado
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="isActivated" id="isActivated" {% if product.isActivated %}checked{% endif %}>
+                            <label class="form-check-label" for="isActivated">
+                                Activado
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clientes Disponibles -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Clientes con Acceso</h5>
+            </div>
+            <div class="card-body">
+                <label class="form-label">Seleccionar Clientes</label>
+                <select name="clients" class="form-select" multiple size="8">
+                    {% for client in clients %}
+                        <option value="{{ client.id }}" {% if client in product.clients.all %}selected{% endif %}>
+                            {{ client.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">Mantén Ctrl/Cmd para seleccionar múltiples. Si no seleccionas ninguno, estará disponible para todos.</small>
+            </div>
+        </div>
+
+        <!-- Notas -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Notas</h5>
+            </div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-2">Estas notas se despliegan al abrir la habitación en el tarifario</small>
+                <div class="mb-3">
+                    <label class="form-label">Nota adicional</label>
+                    <textarea class="form-control" name="note" rows="2" placeholder="Ejemplo: This room is very small">{{ product.note|default:'' }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Imágenes -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Imágenes (URLs)</h5>
+            </div>
+            <div class="card-body">
+                <small class="text-muted d-block mb-3">Ingresar nombre del archivo con su extensión. Ejemplo: room1.jpg</small>
+                
+                <div class="mb-3">
+                    <label class="form-label">Imagen 1</label>
+                    <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ product.pic1_url|default:'' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Imagen 2</label>
+                    <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ product.pic2_url|default:'' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Imagen 3</label>
+                    <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ product.pic3_url|default:'' }}">
+                </div>
+            </div>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="d-flex justify-content-between mb-5">
+            <a href="{% url 'modify_supplier_rates' supplier.id %}" class="btn btn-secondary btn-lg">
+                <i class="fa-solid fa-times"></i> Cancelar
+            </a>
+            <button type="submit" class="btn btn-success btn-lg">
+                <i class="fa-solid fa-save"></i> Guardar Cambios
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

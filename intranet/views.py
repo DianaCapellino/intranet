@@ -2073,6 +2073,13 @@ def entries_data(request):
             Q(note__icontains=search_value)
         )
 
+    if request.user.userType == "Cliente":
+        try:
+            client_obj = Client.objects.get(name=request.user.other_name)
+            qs = qs.filter(trip__client=client_obj)
+        except Client.DoesNotExist:
+            return HttpResponseRedirect(reverse("index"))
+
     total_records = Entry.objects.filter(trip__department=request.user.department).count()
     filtered_records = qs.count()
 
@@ -2096,35 +2103,39 @@ def entries_data(request):
         closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
         travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
 
-        # acciones con modal
-        acciones_html = f"""
-            <div class="d-flex justify-content-around p-2">
-                <a id="pencil-edit-entry" href="/modify_entry/{entry.id}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{entry.id}"></i></a>
-                <i class="fa-solid fa-trash" data-bs-toggle="modal" data-bs-target="#deleteModal{entry.id}"></i>
-            </div>
+        if request.user.userType == "Cliente":
+            acciones_html = f"""<div>None</div>
+            """
+        else:
+            # acciones con modal
+            acciones_html = f"""
+                <div class="d-flex justify-content-around p-2">
+                    <a id="pencil-edit-entry" href="/modify_entry/{entry.id}"><i class="fa-solid fa-pencil align-top" id="pencil-entries-{entry.id}"></i></a>
+                    <i class="fa-solid fa-trash" data-bs-toggle="modal" data-bs-target="#deleteModal{entry.id}"></i>
+                </div>
 
-            <!-- Modal de eliminación -->
-                <div class="modal fade modal-lg" id="deleteModal{entry.id}" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
-                                <!-- Botón cerrar con id único -->
-                                <button id="btn-close-entries-{entry.id}" type="button" 
-                                        class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body text-center">
-                                <h3>¿Está seguro que desea eliminar la entrada?</h3>
-                                <!-- Botón eliminar con data-id -->
-                                <button class="btn btn-dark btn-lg delete-entries-btn" 
-                                        id="delete-entry-{entry.id}">
-                                    ELIMINAR
-                                </button>
+                <!-- Modal de eliminación -->
+                    <div class="modal fade modal-lg" id="deleteModal{entry.id}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
+                                    <!-- Botón cerrar con id único -->
+                                    <button id="btn-close-entries-{entry.id}" type="button" 
+                                            class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body text-center">
+                                    <h3>¿Está seguro que desea eliminar la entrada?</h3>
+                                    <!-- Botón eliminar con data-id -->
+                                    <button class="btn btn-dark btn-lg delete-entries-btn" 
+                                            id="delete-entry-{entry.id}">
+                                        ELIMINAR
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-        """
+            """
 
         data.append({
             "starting_date": starting_date,

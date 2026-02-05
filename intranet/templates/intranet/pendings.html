@@ -5,7 +5,11 @@
     <br>
     <div class="d-flex align-items-center justify-content-between">
         <div>
-            <h2 class="d-inline">Pendientes</h2>
+            {% if user.userType != "Cliente" %}
+                <h2 class="d-inline">Pendientes</h2>
+            {% else %}
+            <h2 class="d-inline">Entries</h2>
+            {% endif %}
             <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
         </div>
         <div>
@@ -40,23 +44,43 @@
             <div class="table table-striped" style="width:100%">
                 <table id="entries" class="table table-hover">
                     <thead>
-                        <tr>
-                            <th>Fecha Pedido</th>
-                            <th>Fecha Respuesta</th>
-                            <th>Viaje</th>
-                            <th>Status</th>
-                            <th>Monto</th>
-                            <th>Cliente</th>
-                            <th>Vendedor</th>
-                            <th>Referencia</th>
-                            <th>Cot. por</th>
-                            <th>Trab. por</th>
-                            <th>Progreso</th>
-                            <th>Valoración</th>
-                            <th>Observación</th>
-                            <th>Fecha Viaje</th>
-                            <th>Acciones</th>
-                        </tr>
+                        {% if user.userType != "Cliente" %}
+                            <tr>
+                                <th>Fecha Pedido</th>
+                                <th>Fecha Respuesta</th>
+                                <th>Viaje</th>
+                                <th>Status</th>
+                                <th>Monto</th>
+                                <th>Cliente</th>
+                                <th>Vendedor</th>
+                                <th>Referencia</th>
+                                <th>Cot. por</th>
+                                <th>Trab. por</th>
+                                <th>Progreso</th>
+                                <th>Valoración</th>
+                                <th>Observación</th>
+                                <th>Fecha Viaje</th>
+                                <th>Acciones</th>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <th>Date</th>
+                                <th>Date Response</th>
+                                <th>Trip</th>
+                                <th>Status</th>
+                                <th>Amount</th>
+                                <th>Client</th>
+                                <th>Contact</th>
+                                <th>Reference</th>
+                                <th>Quoted by</th>
+                                <th>Worked by</th>
+                                <th>Progress</th>
+                                <th>Priority</th>
+                                <th>More info</th>
+                                <th>Trip date</th>
+                                <th>Actions</th>
+                            </tr>
+                        {% endif %}
                     </thead>
                     
                 </table>

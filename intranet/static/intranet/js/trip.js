@@ -1,3 +1,6 @@
+// Variable global para trackear el bloque en edición
+let currentEditingBlock = null;
+
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== "") {
@@ -45,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     create_entry_from_pendings();
 
     editing_blocks();
+    copyBlocks();
 
     // Creates the listeners for deleting elements
     deleting_functionality("countries");
@@ -74,8 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("group_products");
     create_datatable("locations");
     create_datatable("supplier");
-
-
+    
     init_entry_edit_modal();
 })
 
@@ -962,7 +965,14 @@ function editing_blocks() {
                 );
                 saveBlock(blockId, rows, this);
             } else {
+                // Si ya hay otro bloque en edición, cancelarlo primero
+                if (currentEditingBlock && currentEditingBlock !== blockId) {
+                    cancelBlockEdit(currentEditingBlock);
+                }
+                
                 // EDITAR
+                currentEditingBlock = blockId;
+                
                 const rows = document.querySelectorAll(
                     `.row-rateline[data-block="${blockId}"]`
                 );
@@ -971,42 +981,239 @@ function editing_blocks() {
                     enableEdit(row);
                 });
 
+                // ✅ Mostrar input de season
+                const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
+                const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
+                
+                if (seasonDisplay && seasonInput) {
+                    // Guardar valor original
+                    seasonInput.dataset.originalValue = seasonInput.value;
+                    seasonDisplay.classList.add("d-none");
+                    seasonInput.classList.remove("d-none");
+                }
+
+                // ✅ Mostrar input de group
+                const groupDisplay = document.querySelector(`.group-display[data-block="${blockId}"]`);
+                const groupInput = document.querySelector(`.group-input[data-block="${blockId}"]`);
+                
+                if (groupDisplay && groupInput) {
+                    // Guardar valor original y el ID del grupo
+                    groupInput.dataset.originalValue = groupInput.value;
+                    groupInput.dataset.originalGroupId = groupDisplay.dataset.groupId;
+                    groupDisplay.classList.add("d-none");
+                    groupInput.classList.remove("d-none");
+                }
+
                 // Cambiar el botón a modo "guardar"
-                this.textContent = "Guardar bloque";
+                this.innerHTML = '<i class="fa-solid fa-save"></i>';
                 this.classList.remove("btn-dark");
                 this.classList.add("btn-success");
                 this.dataset.editing = "true";
+                
+                // Mostrar botón cancelar
+                const cancelBtn = document.querySelector(`.cancel-block[data-block="${blockId}"]`);
+                if (cancelBtn) {
+                    cancelBtn.classList.remove("d-none");
+                }
+                
+                // Ocultar botón eliminar mientras edita
+                const deleteBtn = document.querySelector(`.delete-block[data-block="${blockId}"]`);
+                if (deleteBtn) {
+                    deleteBtn.classList.add("d-none");
+                }
             }
         });
     });
 }
 
 
+function copyBlocks() {
+    document.querySelectorAll(".copy-block").forEach(button => {
+        button.addEventListener("click", function(e) {
+            e.stopPropagation();
+            const blockId = this.dataset.block;
+            const dateFrom = this.dataset.from;
+            const dateTo = this.dataset.to;
+            
+            // Calcular diferencia de días del bloque original
+            const originalFrom = new Date(dateFrom);
+            const originalTo = new Date(dateTo);
+            const diffDays = Math.ceil((originalTo - originalFrom) / (1000 * 60 * 60 * 24));
+            
+            // Calcular nuevas fechas sugeridas (un día después del date_to original)
+            const suggestedFrom = new Date(originalTo);
+            suggestedFrom.setDate(suggestedFrom.getDate() + 1);
+            
+            const suggestedTo = new Date(suggestedFrom);
+            suggestedTo.setDate(suggestedTo.getDate() + diffDays);
+            
+            // Formatear fechas para input type="date" (YYYY-MM-DD)
+            const formatDate = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+            
+            const suggestedFromStr = formatDate(suggestedFrom);
+            const suggestedToStr = formatDate(suggestedTo);
+            
+            console.log("Fechas sugeridas:", {
+                original: { from: dateFrom, to: dateTo },
+                diffDays: diffDays,
+                suggested: { from: suggestedFromStr, to: suggestedToStr }
+            });
+            
+            // Mostrar modal para ingresar nuevas fechas
+            const modal = document.createElement('div');
+            modal.innerHTML = `
+                <div class="modal fade" id="copyBlockModal${blockId}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Copiar Bloque de Tarifas</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    <small>
+                                        <i class="fa-solid fa-info-circle"></i>
+                                        Bloque original: <strong>${dateFrom}</strong> a <strong>${dateTo}</strong> (${diffDays} días)
+                                    </small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha Desde</label>
+                                    <input type="date" 
+                                        class="form-control" 
+                                        id="newDateFrom${blockId}" 
+                                        value="${suggestedFromStr}"
+                                        required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha Hasta</label>
+                                    <input type="date" 
+                                        class="form-control" 
+                                        id="newDateTo${blockId}" 
+                                        value="${suggestedToStr}"
+                                        required>
+                                    <small class="text-muted">Duración sugerida: ${diffDays} días</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Nombre Vigencia</label>
+                                    <input type="text" 
+                                        class="form-control" 
+                                        id="newSeason${blockId}" 
+                                        value="${this.dataset.season}" 
+                                        required>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="button" class="btn btn-primary" onclick="confirmCopyBlock('${blockId}')">
+                                    <i class="fa-solid fa-copy"></i> Copiar Bloque
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            const modalInstance = new bootstrap.Modal(document.getElementById(`copyBlockModal${blockId}`));
+            modalInstance.show();
+            
+            // Auto-ajustar fecha_to cuando cambia fecha_from
+            const newDateFromInput = document.getElementById(`newDateFrom${blockId}`);
+            const newDateToInput = document.getElementById(`newDateTo${blockId}`);
+            
+            newDateFromInput.addEventListener('change', function() {
+                const selectedFrom = new Date(this.value);
+                const calculatedTo = new Date(selectedFrom);
+                calculatedTo.setDate(calculatedTo.getDate() + diffDays);
+                newDateToInput.value = formatDate(calculatedTo);
+            });
+            
+            newDateToInput.addEventListener('change', function() {
+                const selectedFrom = new Date(newDateFromInput.value);
+                const selectedTo = new Date(this.value);
+                const actualDiff = Math.ceil((selectedTo - selectedFrom) / (1000 * 60 * 60 * 24));
+                
+                // Mostrar advertencia si la duración es diferente
+                const existingWarning = document.getElementById(`durationWarning${blockId}`);
+                if (existingWarning) {
+                    existingWarning.remove();
+                }
+                
+                if (actualDiff !== diffDays) {
+                    const warning = document.createElement('div');
+                    warning.id = `durationWarning${blockId}`;
+                    warning.className = 'alert alert-warning mt-2';
+                    warning.innerHTML = `
+                        <small>
+                            <i class="fa-solid fa-exclamation-triangle"></i>
+                            La duración es de <strong>${actualDiff} días</strong>, diferente a los <strong>${diffDays} días</strong> del bloque original.
+                        </small>
+                    `;
+                    this.parentElement.appendChild(warning);
+                }
+            });
+
+            // Limpiar modal al cerrar
+            document.getElementById(`copyBlockModal${blockId}`).addEventListener('hidden.bs.modal', function () {
+                modal.remove();
+            });
+        });
+    });
+}
+
+
 function saveBlock(blockId, rows, button) {
-    const data = [];
+    const rateData = [];
+    const groupData = [];
 
     rows.forEach(row => {
+        // Recolectar datos de rates
         row.querySelectorAll(".rate-cell").forEach(cell => {
             const input = cell.querySelector("input");
             if (!input) return;
             
             const rateId = cell.dataset.rate;
             
-            // 👇 Validar que rate_id exista
             if (!rateId || rateId === "None" || rateId === "undefined") {
-                console.warn("Celda sin rate_id válido", cell);
                 return;
             }
 
-            data.push({
+            rateData.push({
                 rate_id: rateId,
                 field: cell.dataset.field,
                 value: input.value
             });
         });
+        
+        // ✅ Recolectar datos de grupos (nombre actualizado)
+        const groupCell = row.querySelector(".group-cell");
+        if (groupCell) {
+            const groupInput = groupCell.querySelector(".group-name-input");
+            const groupId = groupCell.dataset.groupId;
+            
+            if (groupInput && groupId) {
+                const newGroupName = groupInput.value.trim();
+                const originalGroupName = groupInput.dataset.originalValue;
+                
+                // Solo enviar si cambió
+                if (newGroupName !== originalGroupName && newGroupName !== "") {
+                    groupData.push({
+                        group_id: groupId,
+                        new_name: newGroupName
+                    });
+                }
+            }
+        }
     });
-
-    console.log("Datos a enviar:", data); // 👈 Debug
+    
+    // Obtener el nuevo valor de season
+    const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
+    const newSeason = seasonInput ? seasonInput.value : null;
 
     fetch("/tariff/modify/update-rate-block/", {
         method: "POST",
@@ -1015,14 +1222,17 @@ function saveBlock(blockId, rows, button) {
             "X-CSRFToken": getCookie("csrftoken")
         },
         body: JSON.stringify({
-            rates: data
+            rates: rateData,
+            groups: groupData,  // ✅ Enviar cambios de nombre de grupo
+            season: newSeason,
+            block_id: blockId
         })
     })
     .then(r => r.json())
     .then(resp => {
-        console.log("Respuesta:", resp); // 👈 Debug
         if (resp.ok) {
             restoreBlock(blockId, button);
+            alert(resp.message);
         } else {
             alert("Error al guardar: " + (resp.error || "Desconocido"));
         }
@@ -1039,37 +1249,163 @@ function restoreBlock(blockId, button) {
     );
 
     rows.forEach(row => {
+        // Restaurar celdas de rates
         row.querySelectorAll(".rate-cell").forEach(cell => {
             const input = cell.querySelector("input");
             if (input) {
                 cell.innerText = input.value || "N/A";
             }
         });
+        
+        // ✅ Restaurar celda de grupo
+        const groupCell = row.querySelector(".group-cell");
+        if (groupCell) {
+            const groupDisplay = groupCell.querySelector(".group-name-display");
+            const groupInput = groupCell.querySelector(".group-name-input");
+            
+            if (groupDisplay && groupInput) {
+                // Actualizar el display con el nuevo valor
+                groupDisplay.textContent = groupInput.value;
+                
+                groupDisplay.classList.remove("d-none");
+                groupInput.classList.add("d-none");
+            }
+        }
     });
+    
+    // Restaurar season display
+    const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
+    const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
+    
+    if (seasonDisplay && seasonInput) {
+        seasonDisplay.textContent = seasonInput.value;
+        seasonDisplay.classList.remove("d-none");
+        seasonInput.classList.add("d-none");
+    }
 
     // Restaurar el botón
-    button.innerText = "Editar bloque";
+    button.innerHTML = '<i class="fa-solid fa-pencil"></i>';
     button.classList.remove("btn-success");
     button.classList.add("btn-dark");
     button.dataset.editing = "false";
+    
+    // Ocultar botón cancelar
+    const cancelBtn = document.querySelector(`.cancel-block[data-block="${blockId}"]`);
+    if (cancelBtn) {
+        cancelBtn.classList.add("d-none");
+    }
+    
+    // Mostrar botón eliminar de nuevo
+    const deleteBtn = document.querySelector(`.delete-block[data-block="${blockId}"]`);
+    if (deleteBtn) {
+        deleteBtn.classList.remove("d-none");
+    }
+    
+    // Limpiar variable global
+    currentEditingBlock = null;
 }
 
 function enableEdit(row) {
+    // Editar celdas de rates
     row.querySelectorAll(".rate-cell").forEach(cell => {
         // Evita convertir dos veces
         if (cell.querySelector("input")) return;
 
-        const value = cell.innerText.trim() === "N/A" ? "" : cell.innerText.trim();
+        const value = cell.innerText.trim();
+        const cleanValue = value === "N/A" ? "" : value;
         const rateId = cell.dataset.rate;
         const field = cell.dataset.field;
 
         cell.innerHTML = `
             <input type="number"
                    step="0.01"
-                   class="form-control form-control-sm"
-                   value="${value}">
+                   class="form-control form-control-sm rate-input"
+                   value="${cleanValue}"
+                   data-original-value="${cleanValue}"
+                   data-rate="${rateId}"
+                   data-field="${field}"
+                   placeholder="${cleanValue}">
         `;
+        
+        // Agregar event listener para actualizar margen en tiempo real
+        const input = cell.querySelector('.rate-input');
+        
+        input.addEventListener('input', function() {
+            updateMarginForRow(row, this);
+        });
+        
+        // Trigger inicial
+        input.dispatchEvent(new Event('input'));
     });
+    
+    // ✅ Editar celda de grupo (input de texto)
+    const groupCell = row.querySelector(".group-cell");
+    if (groupCell && !groupCell.querySelector("input.group-name-input:not(.d-none)")) {
+        const groupDisplay = groupCell.querySelector(".group-name-display");
+        const groupInput = groupCell.querySelector(".group-name-input");
+        
+        if (groupDisplay && groupInput) {
+            groupInput.dataset.originalValue = groupInput.value;
+            groupDisplay.classList.add("d-none");
+            groupInput.classList.remove("d-none");
+        }
+    }
+}
+
+// Nueva función para actualizar márgenes de toda la fila
+function updateMarginForRow(row, changedInput) {
+    const rateId = changedInput.dataset.rate;
+    
+    // Buscar todos los inputs del mismo rate (SGL o DBL)
+    const rateInputs = row.querySelectorAll(`.rate-input[data-rate="${rateId}"]`);
+    
+    let cost = 0;
+    let sell = 0;
+    
+    // Recolectar valores actuales
+    rateInputs.forEach(input => {
+        const field = input.dataset.field;
+        const value = parseFloat(input.value) || 0;
+        
+        if (field === 'cost') {
+            cost = value;
+        } else if (field === 'sell') {
+            sell = value;
+        }
+    });
+    
+    // Buscar la celda de rentabilidad correspondiente
+    // La estructura es: cost, sell_tourplan, sell, margin
+    // Entonces si encontramos el input de sell, el siguiente td es el de margin
+    let marginCell = null;
+    
+    rateInputs.forEach(input => {
+        if (input.dataset.field === 'sell') {
+            const sellCell = input.closest('td');
+            marginCell = sellCell.nextElementSibling;
+        }
+    });
+    
+    // Actualizar el margen en la celda correspondiente
+    if (marginCell && cost > 0 && sell > 0) {
+        const margin = ((sell - cost) / sell) * 100;
+        marginCell.innerHTML = `<span class="margin-value">${margin.toFixed(1)}%</span>`;
+        
+        // Opcional: agregar código de color
+        const marginSpan = marginCell.querySelector('.margin-value');
+        if (margin < 11) {
+            marginSpan.classList.add('text-danger', 'fw-bold');
+            marginSpan.classList.remove('text-warning', 'text-success');
+        } else if (margin < 15) {
+            marginSpan.classList.add('text-warning', 'fw-bold');
+            marginSpan.classList.remove('text-danger', 'text-success');
+        } else {
+            marginSpan.classList.add('text-success', 'fw-bold');
+            marginSpan.classList.remove('text-danger', 'text-warning');
+        }
+    } else if (marginCell) {
+        marginCell.textContent = 'N/A';
+    }
 }
 
 function getCookie(name) {
@@ -1085,4 +1421,641 @@ function getCookie(name) {
         }
     }
     return cookieValue;
+}
+
+function confirmCopyBlock(blockId) {
+    const newDateFrom = document.getElementById(`newDateFrom${blockId}`).value;
+    const newDateTo = document.getElementById(`newDateTo${blockId}`).value;
+    const newSeason = document.getElementById(`newSeason${blockId}`).value;
+    
+    if (!newDateFrom || !newDateTo || !newSeason) {
+        alert("Todos los campos son obligatorios");
+        return;
+    }
+    
+    // Recolectar todas las líneas del bloque original
+    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+    const lines = [];
+    
+    rows.forEach(row => {
+        const ratelineId = row.dataset.ratelineId;
+        const rategroupId = row.dataset.rategroupId;
+        
+        console.log("Processing row:", {
+            ratelineId,
+            rategroupId
+        });
+        
+        if (!ratelineId || !rategroupId) {
+            console.warn("Fila sin IDs válidos:", row);
+            return;
+        }
+        
+        lines.push({
+            rateline_id: ratelineId,
+            rategroup_id: rategroupId
+        });
+    });
+    
+    console.log("Datos a enviar:", {
+        date_from: newDateFrom,
+        date_to: newDateTo,
+        season: newSeason,
+        lines: lines
+    });
+    
+    if (lines.length === 0) {
+        alert("No hay líneas válidas para copiar");
+        return;
+    }
+    
+    // Enviar al servidor
+    fetch("/tariff/modify/copy-rate-block/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({
+            date_from: newDateFrom,
+            date_to: newDateTo,
+            season: newSeason,
+            lines: lines
+        })
+    })
+    .then(r => r.json())
+    .then(resp => {
+        console.log("Respuesta del servidor:", resp);
+        if (resp.ok) {
+            alert(resp.message || "Bloque copiado exitosamente");
+            // Cerrar modal
+            const modalElement = document.getElementById(`copyBlockModal${blockId}`);
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+            // Recargar página después de un breve delay
+            setTimeout(() => location.reload(), 300);
+        } else {
+            alert("Error al copiar: " + (resp.error || "Desconocido"));
+        }
+    })
+    .catch(err => {
+        alert("Error de conexión: " + err.message);
+        console.error("Error completo:", err);
+    });
+}
+
+// ========================================
+// ELIMINAR BLOQUE
+// ========================================
+document.querySelectorAll(".delete-block").forEach(button => {
+    button.addEventListener("click", function(e) {
+        e.stopPropagation();
+        const blockId = this.dataset.block;
+        const dateFrom = this.dataset.from;
+        const dateTo = this.dataset.to;
+        const season = this.dataset.season;
+        
+        // Mostrar modal de confirmación
+        const modal = document.createElement('div');
+        modal.innerHTML = `
+            <div class="modal fade" id="deleteBlockModal${blockId}" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="fa-solid fa-exclamation-triangle"></i>
+                                Eliminar Bloque de Tarifas
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="mb-3">¿Está seguro que desea eliminar el bloque completo?</p>
+                            <div class="alert alert-warning">
+                                <strong>Vigencia:</strong> ${dateFrom} a ${dateTo}<br>
+                                <strong>Temporada:</strong> ${season}<br>
+                                <strong>Esta acción no se puede deshacer.</strong>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="button" class="btn btn-danger" onclick="confirmDeleteBlock('${blockId}')">
+                                <i class="fa-solid fa-trash"></i> Eliminar Bloque
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        const modalInstance = new bootstrap.Modal(document.getElementById(`deleteBlockModal${blockId}`));
+        modalInstance.show();
+        
+        // Limpiar modal al cerrar
+        document.getElementById(`deleteBlockModal${blockId}`).addEventListener('hidden.bs.modal', function () {
+            modal.remove();
+        });
+    });
+});
+
+function confirmDeleteBlock(blockId) {
+    // Recolectar todos los IDs de RateLine del bloque
+    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+    const ratelineIds = [];
+    
+    rows.forEach(row => {
+        const ratelineId = row.dataset.ratelineId;
+        if (ratelineId) {
+            ratelineIds.push(ratelineId);
+        }
+    });
+    
+    if (ratelineIds.length === 0) {
+        alert("No hay líneas para eliminar");
+        return;
+    }
+    
+    console.log("Eliminando RateLines:", ratelineIds);
+    
+    fetch("/tariff/modify/delete-rate-block/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({
+            rateline_ids: ratelineIds
+        })
+    })
+    .then(r => r.json())
+    .then(resp => {
+        console.log("Respuesta del servidor:", resp);
+        if (resp.ok) {
+            alert(resp.message || "Bloque eliminado exitosamente");
+            // Cerrar modal
+            const modalElement = document.getElementById(`deleteBlockModal${blockId}`);
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+            // Recargar página
+            setTimeout(() => location.reload(), 300);
+        } else {
+            alert("Error al eliminar: " + (resp.error || "Desconocido"));
+        }
+    })
+    .catch(err => {
+        alert("Error de conexión: " + err.message);
+        console.error("Error completo:", err);
+    });
+}
+
+// ========================================
+// CREAR NUEVO BLOQUE
+// ========================================
+document.getElementById("new_block_btn").addEventListener("click", function() {
+    // Obtener todos los productos del supplier
+    const productSelect = document.getElementById("product_filter_select");
+    const products = [];
+    
+    for (let i = 1; i < productSelect.options.length; i++) {
+        const option = productSelect.options[i];
+        products.push({
+            id: option.value,
+            name: option.text
+        });
+    }
+    
+    if (products.length === 0) {
+        alert("No hay productos disponibles para crear tarifas");
+        return;
+    }
+    
+    // Crear lista de checkboxes para productos
+    const productCheckboxes = products.map(p => `
+        <div class="form-check">
+            <input class="form-check-input product-checkbox" 
+                   type="checkbox" 
+                   value="${p.id}" 
+                   id="product_${p.id}"
+                   checked>
+            <label class="form-check-label" for="product_${p.id}">
+                ${p.name}
+            </label>
+        </div>
+    `).join('');
+    
+    const modal = document.createElement('div');
+    modal.innerHTML = `
+        <div class="modal fade" id="newBlockModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fa-solid fa-plus"></i>
+                            Crear Nuevo Bloque de Tarifas
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha Desde *</label>
+                                    <input type="date" class="form-control" id="blockDateFrom" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha Hasta *</label>
+                                    <input type="date" class="form-control" id="blockDateTo" required>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Nombre Vigencia/Temporada *</label>
+                            <input type="text" class="form-control" id="blockSeason" 
+                                   placeholder="Ej: Temporada Alta 2026" required>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Productos a incluir *</span>
+                                <div>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllProducts(true)">
+                                        Seleccionar todos
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllProducts(false)">
+                                        Deseleccionar todos
+                                    </button>
+                                </div>
+                            </label>
+                            <div class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                                ${productCheckboxes}
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h6 class="mb-3">Configuración de Tarifas</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Status *</label>
+                                    <select class="form-select" id="blockStatus" required>
+                                        <option value="Confirmed">Confirmed</option>
+                                        <option value="Provisional" selected>Provisional</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Increase (%)</label>
+                                    <input type="number" step="0.01" class="form-control" 
+                                           id="blockIncrease" placeholder="0.00">
+                                    <small class="text-muted">Opcional: incremento porcentual</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Margin *</label>
+                                    <select class="form-select" id="blockMargin" required>
+                                        <option value="Low">Low</option>
+                                        <option value="Regular" selected>Regular</option>
+                                        <option value="High">High</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Costo Base SGL</label>
+                                    <input type="number" step="0.01" class="form-control" 
+                                           id="baseCostSgl" value="0">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Costo Base DBL</label>
+                                    <input type="number" step="0.01" class="form-control" 
+                                           id="baseCostDbl" value="0">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Costo Base TPL</label>
+                                    <input type="number" step="0.01" class="form-control" 
+                                           id="baseCostTpl" value="0">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <small class="text-muted">
+                            <i class="fa-solid fa-info-circle"></i>
+                            Los costos base serán 0 por defecto. La configuración de status, increase y margin se aplicará a todas las tarifas del bloque.
+                        </small>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="confirmCreateBlock()">
+                            <i class="fa-solid fa-check"></i> Crear Bloque
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    const modalInstance = new bootstrap.Modal(document.getElementById('newBlockModal'));
+    modalInstance.show();
+    
+    // Limpiar modal al cerrar
+    document.getElementById('newBlockModal').addEventListener('hidden.bs.modal', function () {
+        modal.remove();
+    });
+});
+
+function selectAllProducts(checked) {
+    document.querySelectorAll('.product-checkbox').forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+}
+
+function confirmCreateBlock() {
+    const dateFrom = document.getElementById('blockDateFrom').value;
+    const dateTo = document.getElementById('blockDateTo').value;
+    const season = document.getElementById('blockSeason').value;
+    const status = document.getElementById('blockStatus').value;
+    const increase = document.getElementById('blockIncrease').value;
+    const margin = document.getElementById('blockMargin').value;
+    
+    const baseCostSgl = parseFloat(document.getElementById('baseCostSgl').value) || 0;
+    const baseCostDbl = parseFloat(document.getElementById('baseCostDbl').value) || 0;
+    const baseCostTpl = parseFloat(document.getElementById('baseCostTpl').value) || 0;
+    
+    // Validaciones
+    if (!dateFrom || !dateTo || !season) {
+        alert("Por favor completa todos los campos obligatorios");
+        return;
+    }
+    
+    if (!status || !margin) {
+        alert("Por favor selecciona el status y el margin");
+        return;
+    }
+    
+    if (new Date(dateFrom) > new Date(dateTo)) {
+        alert("La fecha desde no puede ser posterior a la fecha hasta");
+        return;
+    }
+    
+    // Obtener productos seleccionados
+    const selectedProducts = [];
+    document.querySelectorAll('.product-checkbox:checked').forEach(checkbox => {
+        selectedProducts.push(checkbox.value);
+    });
+    
+    if (selectedProducts.length === 0) {
+        alert("Debes seleccionar al menos un producto");
+        return;
+    }
+    
+    console.log("Creando nuevo bloque:", {
+        dateFrom,
+        dateTo,
+        season,
+        status,
+        increase: increase || null,
+        margin,
+        products: selectedProducts,
+        costs: { sgl: baseCostSgl, dbl: baseCostDbl, tpl: baseCostTpl }
+    });
+    
+    fetch("/tariff/modify/create-rate-block/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify({
+            date_from: dateFrom,
+            date_to: dateTo,
+            season: season,
+            status: status,
+            increase: increase ? parseFloat(increase) : null,
+            margin: margin,
+            product_ids: selectedProducts,
+            base_costs: {
+                sgl: baseCostSgl,
+                dbl: baseCostDbl,
+                tpl: baseCostTpl
+            }
+        })
+    })
+    .then(r => r.json())
+    .then(resp => {
+        console.log("Respuesta del servidor:", resp);
+        if (resp.ok) {
+            alert(resp.message || "Bloque creado exitosamente");
+            // Cerrar modal
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('newBlockModal'));
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+            // Recargar página
+            setTimeout(() => location.reload(), 300);
+        } else {
+            alert("Error al crear: " + (resp.error || "Desconocido"));
+        }
+    })
+    .catch(err => {
+        alert("Error de conexión: " + err.message);
+        console.error("Error completo:", err);
+    });
+}
+
+// Event listener para botones de cancelar
+document.querySelectorAll(".cancel-block").forEach(button => {
+    button.addEventListener("click", function() {
+        const blockId = this.dataset.block;
+        cancelBlockEdit(blockId);
+    });
+});
+
+// Event listener para ESC key
+document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape" && currentEditingBlock) {
+        cancelBlockEdit(currentEditingBlock);
+    }
+});
+
+function cancelBlockEdit(blockId) {
+    const rows = document.querySelectorAll(
+        `.row-rateline[data-block="${blockId}"]`
+    );
+    
+    // Restaurar valores originales
+    rows.forEach(row => {
+        // Restaurar rates
+        row.querySelectorAll(".rate-cell").forEach(cell => {
+            const input = cell.querySelector("input");
+            if (input) {
+                const originalValue = input.dataset.originalValue || input.placeholder || "N/A";
+                cell.innerText = originalValue;
+            }
+        });
+        
+        // ✅ Restaurar grupo
+        const groupCell = row.querySelector(".group-cell");
+        if (groupCell) {
+            const groupDisplay = groupCell.querySelector(".group-name-display");
+            const groupInput = groupCell.querySelector(".group-name-input");
+            
+            if (groupDisplay && groupInput) {
+                // Restaurar al valor original
+                groupInput.value = groupInput.dataset.originalValue || groupInput.value;
+                groupDisplay.textContent = groupInput.value;
+                
+                groupDisplay.classList.remove("d-none");
+                groupInput.classList.add("d-none");
+            }
+        }
+    });
+    
+    // Restaurar season display
+    const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
+    const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
+    
+    if (seasonDisplay && seasonInput) {
+        seasonInput.value = seasonInput.dataset.originalValue || seasonInput.value;
+        seasonDisplay.textContent = seasonInput.value;
+        seasonDisplay.classList.remove("d-none");
+        seasonInput.classList.add("d-none");
+    }
+    
+    // Restaurar botón editar
+    const editBtn = document.querySelector(`.edit-block[data-block="${blockId}"]`);
+    if (editBtn) {
+        editBtn.innerHTML = '<i class="fa-solid fa-pencil"></i>';
+        editBtn.classList.remove("btn-success");
+        editBtn.classList.add("btn-dark");
+        editBtn.dataset.editing = "false";
+    }
+    
+    // Ocultar botón cancelar
+    const cancelBtn = document.querySelector(`.cancel-block[data-block="${blockId}"]`);
+    if (cancelBtn) {
+        cancelBtn.classList.add("d-none");
+    }
+    
+    // Mostrar botón eliminar de nuevo
+    const deleteBtn = document.querySelector(`.delete-block[data-block="${blockId}"]`);
+    if (deleteBtn) {
+        deleteBtn.classList.remove("d-none");
+    }
+    
+    // Limpiar variable global
+    currentEditingBlock = null;
+}
+
+// ========================================
+// APLICAR CONFIGURACIÓN GLOBAL DEL BLOQUE
+// ========================================
+function applyBlockConfig(blockId) {
+    const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+    
+    const status = blockElement.querySelector('.block-status').value;
+    const increase = blockElement.querySelector('.block-increase').value;
+    const margin = blockElement.querySelector('.block-margin').value;
+    
+    if (!status || !margin) {
+        alert("Por favor selecciona el status y el margin");
+        return;
+    }
+    
+    if (!confirm("¿Estás seguro de aplicar esta configuración a TODAS las tarifas de este bloque?")) {
+        return;
+    }
+    
+    const data = {
+        block_id: blockId,
+        status: status,
+        increase: increase ? parseFloat(increase) : null,
+        margin: margin
+    };
+    
+    console.log("Aplicando configuración global:", data);
+    
+    fetch("/tariff/modify/apply-block-config/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken")
+        },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(resp => {
+        console.log("Respuesta del servidor:", resp);
+        if (resp.ok) {
+            alert(resp.message || "Configuración aplicada exitosamente");
+            // Actualizar visualmente las celdas de la tabla si es necesario
+            updateBlockRatesDisplay(blockId, status, increase, margin);
+            // O recargar la página
+            setTimeout(() => location.reload(), 500);
+        } else {
+            alert("Error al aplicar configuración: " + (resp.error || "Desconocido"));
+        }
+    })
+    .catch(err => {
+        alert("Error de conexión: " + err.message);
+        console.error("Error completo:", err);
+    });
+}
+
+// Función auxiliar para actualizar visualmente (opcional)
+function updateBlockRatesDisplay(blockId, status, increase, margin) {
+    const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+    const rateRows = blockElement.querySelectorAll('.rate-row');
+    
+    rateRows.forEach(row => {
+        // Actualizar celdas visibles si las tienes en la tabla
+        const statusCell = row.querySelector('.rate-status');
+        const increaseCell = row.querySelector('.rate-increase');
+        const marginCell = row.querySelector('.rate-margin');
+        
+        if (statusCell) statusCell.textContent = status;
+        if (increaseCell) increaseCell.textContent = increase || '-';
+        if (marginCell) marginCell.textContent = margin;
+    });
+}
+
+// ========================================
+// CARGAR VALORES ACTUALES DEL BLOQUE
+// ========================================
+function loadBlockConfig(blockId) {
+    // Esta función carga los valores actuales del bloque
+    // (asumiendo que el primer rate del bloque tiene la config)
+    fetch(`/tariff/modify/get-block-config/${blockId}/`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+            blockElement.querySelector('.block-status').value = data.status;
+            blockElement.querySelector('.block-increase').value = data.increase || '';
+            blockElement.querySelector('.block-margin').value = data.margin;
+        }
+    })
+    .catch(err => console.error("Error cargando config del bloque:", err));
 }

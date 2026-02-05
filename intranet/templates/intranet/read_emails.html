@@ -1,7 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-
+{% if user.userType != "Cliente" and user.isAdmin %}
     {% for email in emails %}
         <div>ASUNTO: {{ email.subject }}</div>
         <div>FECHA: {{ email.date }}</div>
@@ -9,5 +9,6 @@
         <div>ADJUNTO: {{ email.attachments }}</div>
         <hr>
     {% endfor %}
+{% endif %}
 
 {% endblock %}

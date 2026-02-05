@@ -1,15 +1,17 @@
 from django.shortcuts import render, redirect
-from django.http import HttpResponseRedirect, HttpResponse
+from django.http import HttpResponseRedirect, HttpResponse, FileResponse
 from django.urls import reverse
 from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
 from tariff.utils import apply_client_margin
-from intranet.models import Client
+from intranet.models import Client, Holidays
 import csv
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from datetime import date
 import logging
 from django.db.models import Prefetch, Q
+from django.conf import settings
+import os
 
 
 @login_required
@@ -37,8 +39,6 @@ def tariff_search(request):
     t_type = request.GET.get('type')
     season = request.GET.get('season')
     client_id = request.GET.get('client')
-
-    show_costs = request.session.get("show_costs", False)
 
     if t_type == "acc":
         rate_lines = (
@@ -69,7 +69,7 @@ def tariff_search(request):
             .prefetch_related("line_rates")
             .order_by(
                 "group__product__supplier__group__order",
-                "group__product__supplier__id",
+                "group__product__supplier__order",
                 "group__product__group__order",
                 "group__product__order",
                 "date_from",
@@ -118,22 +118,9 @@ def tariff_search(request):
 
         line.rates_by_column = rates
 
-        is_internal = not hasattr(request.user, "client")
-        if not is_internal:
-            show_costs = False
-
-        if show_costs and request.user.userType != "Cliente":
-            line.costs_by_column = {
-                r.column_options: r.cost
-                for r in line.line_rates.all()
-            }
-        else:
-            line.costs_by_column = {}
-
     return render(request, "tariff/tariff_table_partial.html", {
         "rate_lines": rate_lines,
         "tariff_type": t_type,
-        "show_costs": show_costs,
     })
 
 @login_required
@@ -282,3 +269,44 @@ def upload_data(csv_obj):
     csv_obj.save()
     csv_obj.delete()
     return tourplan_list
+
+
+def special_dates(request):
+    return render(
+        request,
+        "tariff/special_holidays.html",
+        {
+            "pdf_url": "documents/Argentina_National_Holidays_2026.pdf",
+        }
+    )
+
+@login_required
+def download_holidays_pdf(request, year):
+    if year == 2026:
+        file_path = os.path.join(
+            settings.BASE_DIR,
+            "static/documents/Argentina_National_Holidays_2026.pdf"
+        )
+        return FileResponse(
+            open(file_path, "rb"),
+            as_attachment=True,
+            filename="Argentina_National_Holidays_2026.pdf"
+        )
+    elif year == 2027:
+        file_path = os.path.join(
+            settings.BASE_DIR,
+            "static/documents/Argentina_National_Holidays_2027.pdf"
+        )
+        return FileResponse(
+            open(file_path, "rb"),
+            as_attachment=True,
+            filename="Argentina_National_Holidays_2027.pdf"
+        )
+    else:
+        # Implement later this exception
+        pass
+
+def history_of_changes(request):
+    return render(
+        request,"tariff/history_of_changes.html"
+        )

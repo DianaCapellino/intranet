@@ -2,6 +2,7 @@
 {% load custom_filters %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
 
 <div class="container py-2">
 
@@ -64,4 +65,5 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}

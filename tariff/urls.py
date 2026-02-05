@@ -6,7 +6,9 @@ urlpatterns = [
     path("", tariff.index, name="tariff"),
     path("tp_mod_list", tariff.tp_mod_list, name="tp_mod_list"),
     path('search/', tariff.tariff_search, name='tariff_search'),
-    path("toggle-costs/", tariff.toggle_costs, name="toggle_costs"),
+    path('special_dates', tariff.special_dates, name='special_dates'),
+    path('download_holidays_pdf/<int:year>', tariff.download_holidays_pdf, name='download_holidays_pdf'),
+    path('history_of_changes', tariff.history_of_changes, name="history_of_changes"),
 
     # Urls for tariff management
     path("modify", modify.modify_tariff, name="modify_tariff"),
@@ -31,4 +33,7 @@ urlpatterns = [
     path("modify/supplier-group/json/<int:group_id>", modify.json_supplier_group, name="json_supplier_group"),
     path("modify/product-group/json/<int:group_id>", modify.json_product_group, name="json_product_group"),
     path("modify/update-rate-block/", modify.update_rate_block, name="update_rate_block"),
+    path('modify/copy-rate-block/', modify.copy_rate_block, name='copy_rate_block'),
+    path('modify/delete-rate-block/', modify.delete_rate_block, name='delete_rate_block'),
+    path('modify/create-rate-block/', modify.create_rate_block, name='create_rate_block'),
 ]

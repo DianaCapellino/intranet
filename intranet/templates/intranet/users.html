@@ -1,6 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
     <div id="new_user" class="d-none">
         <div class="container">
             <div class="d-flex justify-content-between">
@@ -245,4 +246,5 @@
         </div>
     </div>
     <br>
+{% endif %}
 {% endblock %}

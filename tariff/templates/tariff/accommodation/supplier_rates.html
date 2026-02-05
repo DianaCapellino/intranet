@@ -1,28 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-    <div class="container">
-        <div id="new_supplier" class="d-none">
-
-            <div class="d-flex justify-content-between">
-                <h2>Crear Nueva Línea tarifaria</h2>
-                <div>
-                    <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
-                </div>
-            </div>
-            <br>
-
-            {% if message %}
-                <div class="message text-center">{{ message }}</div>
-            {% endif %}
-
-            <br>
-            <div class="text-center col">
-                <br>
-
-            </div>
-        </div>
-    </div>
+{% if user.userType != "Cliente" %}
     <div id="supplier_list">
         <div class="container">
             <br>
@@ -38,11 +17,17 @@
                     </select>
                 </div>
                 <div id="new_supplier_container">
-                    <div>
-                        <button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>
-                        <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
-                    </div>  
-                </div>
+                        <div>
+                            <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                            <a href="{% url 'acc_supplier' %}">
+                                <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
+                                    <i class="fa-solid fa-rotate-left"></i>
+                                </button>
+                            </a>
+                        </div>  
+                    </div>
             </div>
             {% if message_modify %}
                 <div class="message text-center">{{ message_modify }}</div>
@@ -53,37 +38,147 @@
                     <thead>
                         <tr>
                             <th>Nombre Hab.</th>
+                            <th>Grupo</th>
                             <th>SGL Costo</th>
                             <th>SGL Venta TP</th>
                             <th>SGL Venta AI</th>
+                            <th>SGL Rent</th>
                             <th>DBL Costo</th>
                             <th>DBL Venta TP</th>
                             <th>DBL Venta AI</th>
+                            <th>DBL Rent</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for block in rate_blocks %}
+                        {# HEADER DEL BLOQUE #}
                         <tr class="table-secondary">
-                            <td colspan="9">
-                                <strong>Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}</strong>
-                                <button class="btn btn-sm btn-dark ms-3 edit-block"
-                                        data-from="{{ block.date_from }}"
-                                        data-to="{{ block.date_to }}"
-                                        data-block="{{ forloop.counter }}"
-                                        data-editing="false">
-                                    Editar bloque
-                                </button>
+                            <td colspan="11">
+                                <div class="d-flex align-items-center gap-3">
+                                    <strong>
+                                        Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}
+                                    </strong>
+                                    
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="season-display text-primary fw-bold" data-block="{{ forloop.counter }}">
+                                            {{ block.season }}
+                                        </span>
+                                        <input type="text" 
+                                            class="form-control form-control-sm season-input d-none" 
+                                            data-block="{{ forloop.counter }}"
+                                            value="{{ block.season }}"
+                                            style="width: 150px;">
+                                        {% if user.isAdmin %}
+                                        <button class="btn btn-sm btn-outline-secondary copy-block"
+                                                data-block="{{ forloop.counter }}"
+                                                data-from="{{ block.date_from }}"
+                                                data-to="{{ block.date_to }}"
+                                                data-season="{{ block.season }}"
+                                                title="Copiar bloque">
+                                            <i class="fa-solid fa-copy"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                    {% if user.isAdmin %}
+                                        <div class="ms-auto d-flex gap-2">
+                                            <button class="btn btn-sm btn-dark edit-block"
+                                                    data-from="{{ block.date_from }}"
+                                                    data-to="{{ block.date_to }}"
+                                                    data-block="{{ forloop.counter }}"
+                                                    data-editing="false"
+                                                    title="Editar bloque">
+                                                <i class="fa-solid fa-pencil"></i>
+                                            </button>
+
+                                            <button class="btn btn-sm btn-secondary cancel-block d-none"
+                                                    data-block="{{ forloop.counter }}"><i class="fa-solid fa-x"></i>
+                                            </button>
+                                            
+                                            <button class="btn btn-sm btn-danger delete-block"
+                                                    data-block="{{ forloop.counter }}"
+                                                    data-from="{{ block.date_from }}"
+                                                    data-to="{{ block.date_to }}"
+                                                    data-season="{{ block.season }}"
+                                                    title="Eliminar bloque">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+
+                        {# NUEVA FILA: CONFIGURACIÓN GLOBAL DEL BLOQUE (OCULTA POR DEFECTO) #}
+                        <tr class="table-light block-config-row d-none" 
+                            data-block="{{ forloop.counter }}"
+                            data-date-from="{{ block.date_from }}"
+                            data-date-to="{{ block.date_to }}">
+                            <td colspan="11">
+                                <div class="p-3 bg-white border rounded">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <h6 class="mb-0">
+                                            <i class="fa-solid fa-sliders"></i> Configuración Global del Bloque
+                                        </h6>
+                                        <button class="btn btn-sm btn-primary apply-block-config"
+                                                data-block="{{ forloop.counter }}">
+                                            <i class="fa-solid fa-check"></i> Aplicar y Guardar
+                                        </button>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold">Status</label>
+                                            <select class="form-select form-select-sm block-status" 
+                                                    data-block="{{ forloop.counter }}">
+                                                <option value="Confirmed">Confirmed</option>
+                                                <option value="Provisional">Provisional</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold">Increase (%)</label>
+                                            <input type="number" 
+                                                   step="0.01" 
+                                                   class="form-control form-control-sm block-increase" 
+                                                   data-block="{{ forloop.counter }}"
+                                                   placeholder="0.00">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold">Margin</label>
+                                            <select class="form-select form-select-sm block-margin" 
+                                                    data-block="{{ forloop.counter }}">
+                                                <option value="Low">Low</option>
+                                                <option value="Regular">Regular</option>
+                                                <option value="High">High</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted d-block mt-2">
+                                        <i class="fa-solid fa-info-circle"></i> 
+                                        Estos valores se aplicarán a todas las tarifas de este bloque
+                                    </small>
+                                </div>
                             </td>
                         </tr>
                         
+                        {# FILAS DE TARIFAS #}
                         {% for line in block.lines %}
                             <tr class="row-rateline"
                                 data-rateline="{{ line.group.product.id }}"
                                 data-block="{{ forloop.parentloop.counter }}"
                                 data-from="{{ line.date_from }}"
-                                data-to="{{ line.date_to }}">
+                                data-to="{{ line.date_to }}"
+                                data-rateline-id="{{ line.id }}"
+                                data-rategroup-id="{{ line.group.id }}">
                                 <td>{{ line.group.product.name }}</td>
+
+                                {# ✅ Celda de grupo editable con input de texto #}
+                                <td class="group-cell" data-group-id="{{ line.group.id }}">
+                                    <span class="group-name-display">{{ line.group.name }}</span>
+                                    <input type="text" 
+                                        class="form-control form-control-sm group-name-input d-none" 
+                                        value="{{ line.group.name }}"
+                                        style="width: 150px;">
+                                </td>
 
                                 {# SGL #}
                                 <td class="rate-cell"
@@ -91,16 +186,16 @@
                                     data-field="cost">
                                     {{ line.sgl.cost|default:"N/A" }}
                                 </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.sgl.id }}"
-                                    data-field="sell">
-                                    {{ line.sgl.sell_tourplan|default:"N/A" }}
+                                <td {% if line.sgl.sell == line.sgl.sell_tourplan %}class="bg-secondary" {% else %} class="bg-warning" {% endif %}>
+                                    <span class="fw-bold">{{ line.sgl.sell_tourplan|floatformat:0 }}</span>
+                                    <small>({{ line.sgl.margin_tp|floatformat:1 }}%)</small>
                                 </td>
                                 <td class="rate-cell"
                                     data-rate="{{ line.sgl.id }}"
                                     data-field="sell">
                                     {{ line.sgl.sell|default:"N/A" }}
                                 </td>
+                                <td>{{ line.sgl.margin_ai|floatformat:1 }}%</td>
 
                                 {# DBL #}
                                 <td class="rate-cell"
@@ -108,9 +203,7 @@
                                     data-field="cost">
                                     {{ line.dbl.cost|default:"N/A" }}
                                 </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.dbl.id }}"
-                                    data-field="sell">
+                                <td class="bg-secondary">
                                     {{ line.dbl.sell_tourplan|default:"N/A" }}
                                 </td>
                                 <td class="rate-cell"
@@ -118,12 +211,16 @@
                                     data-field="sell">
                                     {{ line.dbl.sell|default:"N/A" }}
                                 </td>
-                                
+                                <td>{{ line.dbl.margin_ai|floatformat:1 }}%</td>
+                                {% if user.isAdmin %}
                                 <td>
                                     <div class="justify-content-around d-flex">
                                         <i class="fa-solid fa-trash" width="1px" id="trash-line-{{line.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
                                     </div>
                                 </td>
+                                {% else %}
+                                <td>No hay acciones</td>
+                                {% endif %}
                             </tr>
                             <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
                                 <div class="modal-dialog">
@@ -150,4 +247,5 @@
         </div>
     </div>
     <br>
+{% endif %}
 {% endblock %}

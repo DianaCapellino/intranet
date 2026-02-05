@@ -1,6 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
 <div id="advanced_search">
     <div class="container">
         <h2>Búsqueda Avanzada</h2>
@@ -105,4 +106,5 @@
 <br>
 <hr>
 <br>
+{% endif %}
 {% endblock %}

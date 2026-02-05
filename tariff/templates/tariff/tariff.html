@@ -18,7 +18,7 @@
 {% block body %}
 
     <div class="container">
-        <div class="d-flex justify-content-between m-3">
+        <div class="d-flex justify-content-between">
             {% if user.userType == "Cliente"%}
                 <h1>TARIFF</h1>
             {% else %}
@@ -27,20 +27,10 @@
 
             <div class="d-flex align-items-center justify-content-between">
                 {% if user.isAdmin %}
-
-                <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
-                <form method="post" action="{% url 'toggle_costs' %}" class="m-2">
-                    {% csrf_token %}
-                    <button type="button" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Ver Costos">
-                        
-                        {% if show_costs %}
-                            <i class="fa-solid fa-money-bill"></i>
-                        {% else %}
-                            <i class="fa-solid fa-hand-holding-dollar"></i>
-                        {% endif %}
-                    </button>
-                </form>
+                    <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
                 {% endif %}
+                    <a href="{% url 'history_of_changes' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="History of changes"><i class="fa-solid fa-history"></i></button></a>
+                    <a href="{% url 'special_dates' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Special Dates"><i class="fa-solid fa-calendar"></i></button></a>
             </div>
         </div>
     </div>
@@ -183,7 +173,7 @@
             <!-- Contenedor donde se cargan los resultados -->
             <div id="tariff-results">
                 {% if user.userType == "Cliente" %}
-                    <div class="text-center p-5 text-muted">
+                    <div class="text-center p-4 text-muted">
                         <i class="fa-solid fa-magnifying-glass fa-3x mb-3"></i>
                         <p>Please select the options above to display the rates.</p>
                     </div>
@@ -193,6 +183,146 @@
                         <p>Selecciona los filtros arriba para ver las tarifas.</p>
                     </div>
                 {% endif %}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header text-center">
+                <button
+                    class="btn btn-link text-decoration-none fw-bold"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#generalConditions"
+                    aria-expanded="false"
+                    aria-controls="generalConditions"
+                >
+                    GENERAL CONDITIONS
+                </button>
+            </div>
+
+            <div id="generalConditions" class="collapse">
+                <div class="card-body text-start">
+                    <!-- GENERAL CONDITIONS -->
+                    <h4>GENERAL</h4>
+                    <br>
+                    <ul>
+                        <li>All rates are net, per person, in USD American Dollars.</li>
+                        <br>
+                        <li>
+                            All rates include the current Argentinean Taxes. In case these taxes 
+                            are modified prices will suffer a change.
+                        </li>
+                        <br>
+                        <li>
+                            Hotel rates with breakfast DO NOT INCLUDE VAT, in order to apply for 
+                            this benefit we need full Client datails and copy of the passport of 
+                            every person travelling to Argentina 
+                            <strong class="fw-bold">a​t the moment of the booking</strong>, 
+                            otherwise additional 21% of VAT will apply and needs to be added to 
+                            the rates shown in this Tariff. If the hotel is paid and the booking 
+                            is cancelled, VAT will apply and will have to be paid additionally. 
+                            For any other service required to an hotel (wines, extra ammenities, 
+                            massages,etc), and for all the activities they provide as part of their 
+                            rate such as (but not limited to) transfers, additional meals, services 
+                            and excursions VAT will apply and is included in the rate shown in this 
+                            Tariff.
+                        </li>
+                        <br>
+                        <li>
+                            All rates are subject to changes without previous notice.
+                        </li>
+                        <br>
+                        <li>
+                            All the rates of  services are not valid for Easter, Long weekends, 
+                            Christmas and New Year, where special prices apply almost everywhere. 
+                            kindly check the holidays section <a href="{% url 'special_dates' %}">here
+                            </a> or check with us for further details as each property applies a 
+                            different policy. We have detailed this for some hotels were contracts 
+                            already contemplate it, but it also applies for hotels where this is 
+                            not mentioned in their tariff. 
+                            We need to check this closer to the corresponding dates.
+                        </li>
+                        <br>
+                        <li>All these rates do not imply any booking nor confirmation.</li>
+                        <br>
+                        <li>
+                            This tariff is valid for the dates informed in each property/service 
+                            at each destination.
+                        </li>
+                        <br>
+                        <li>
+                            All the Hotels include breakfast (unless specifically mentioned that 
+                            other meals are included or not included)
+                        </li>
+                        <br>
+                        <li>
+                            All transfers in Buenos Aires include tips for the divers. For the rest 
+                            of the destinations tips are not included.
+                        </li>
+                        <br>
+                        <li>
+                            For all transfers and connections in case flights are delayed Aliwen will 
+                            charge the necessary additional hours.
+                        </li>
+                        <br>
+                        <li>
+                            Entrance Fees to National Parks, Museums and Other Natural Reserves are 
+                            only included where specifically mentioned.
+                        </li>
+                        <br>
+                        <li>All Excursions are subject to weather conditions.</li>
+                        <br>
+                        <li>
+                            This Tariff includes most of the hotels and services which we recommend in 
+                            Argentina, but if you need further assistance for other options we will 
+                            be happy to send a Tailor Made quote for your passengers.
+                        </li>
+                    </ul>
+                    <hr>
+                    <!-- SECURITY CONDITIONS -->
+                    <h4>SECURITY</h4>
+                    <br>
+                    <ul>
+                        <li>
+                            All passengers need to have a personal "Travel Insurance". In case they do 
+                            not have their own we will be happy to quote this additional for you.
+                        </li>
+                    </ul>
+                    <hr>
+                    <!-- PAYMENT CONDITIONS -->
+                    <h4>PAYMENTS</h4>
+                    <br>
+                    <ul>
+                        <li>
+                            All services must be pre-paid at least 30 days prior to the arrival 
+                            of the passengers to Argentina.
+                        </li>
+                        <br>
+                        <li>
+                            In case the itinerary includes hotels which request pre payments, 
+                            this will be requested to confirm the booking together with the copy 
+                            of the passports.
+                        </li>
+                        <br>
+                        <li class="fw-bold">
+                            For all payments under USD 2.000,- American Dollars , we request a 
+                            Bank Transfer fee of USD 20,- which needs to be added to the total of 
+                            the services paid.
+                        </li>
+                    </ul>
+                    <hr>
+                    <!-- CANCELLATIONS CONDITIONS -->
+                    <h4>CANCELLATIONS</h4>
+                    <br>
+                    <ul>
+                        <li>
+                            For itineraries cancelled between 60 and 30 days prior to the arrival to Argentina, Aliwen Incoming will refund all the services and Hotels which do refund us the payments. Discounting any bank expenses resulting in the payments already done. This will depend on the policies of each hotel and service of the itinerary.
+                        </li>
+                        <br>
+                        <li>
+                            For itineraries cancelled between 29 days and the day of the arrival to Argentina, Aliwen Incoming will charge a cancellation penalty of <strong class="fw-bold">15 % of the total Invoice of the Itinerary. Plus the cancellation of all the hotels and services which charge us cancellation penalties and the banks expenses resulting on the payments already done.</strong>
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>

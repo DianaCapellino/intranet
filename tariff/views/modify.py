@@ -1,7 +1,7 @@
 from django.shortcuts import render, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
-from tariff.models import Supplier, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS
+from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -503,6 +503,16 @@ def json_supplier(request, supplier_id):
 # Modifying a particular supplier rates
 @login_required
 def modify_supplier_rates(request, supplier_id):
+
+    if request.user.userType == "Cliente":
+        this_year = date.today().year
+
+        return render(request, "tariff/tariff.html", {
+            "locations":Location.objects.all(),
+            "clients": Client.objects.all(),
+            "this_year": this_year,
+        })
+
     # Gets the object of the supplier modifying
     supplier = Supplier.objects.get(id=supplier_id)
 
@@ -516,7 +526,7 @@ def modify_supplier_rates(request, supplier_id):
         .filter(group__product__supplier=supplier)
         .select_related("group__product")
         .prefetch_related("line_rates")
-        .order_by("date_from")
+        .order_by("date_from", "group__product__order")
     )
 
     for line in rate_lines:
@@ -532,98 +542,71 @@ def modify_supplier_rates(request, supplier_id):
             elif rate.column_options == "TPL":
                 line.tpl = rate
 
+        # Calcular márgenes para cada rate
+        if line.sgl:
+            if line.sgl.cost > 0 and line.sgl.sell_tourplan > 0:
+                line.sgl.margin_tp = ((line.sgl.sell_tourplan - line.sgl.cost) / line.sgl.sell_tourplan) * 100
+            else:
+                line.sgl.margin_tp = 0
+            
+            if line.sgl.cost > 0 and line.sgl.sell > 0:
+                line.sgl.margin_ai = ((line.sgl.sell - line.sgl.cost) / line.sgl.sell) * 100
+            else:
+                line.sgl.margin_ai = 0
+        
+        if line.dbl:
+            if line.dbl.cost > 0 and line.dbl.sell_tourplan > 0:
+                line.dbl.margin_tp = ((line.dbl.sell_tourplan - line.dbl.cost) / line.dbl.sell_tourplan) * 100
+            else:
+                line.dbl.margin_tp = 0
+            
+            if line.dbl.cost > 0 and line.dbl.sell > 0:
+                line.dbl.margin_ai = ((line.dbl.sell - line.dbl.cost) / line.dbl.sell) * 100
+            else:
+                line.dbl.margin_ai = 0
+        
+        if line.tpl:
+            if line.tpl.cost > 0 and line.tpl.sell_tourplan > 0:
+                line.tpl.margin_tp = ((line.tpl.sell_tourplan - line.tpl.cost) / line.tpl.sell_tourplan) * 100
+            else:
+                line.tpl.margin_tp = 0
+            
+            if line.tpl.cost > 0 and line.tpl.sell > 0:
+                line.tpl.margin_ai = ((line.tpl.sell - line.tpl.cost) / line.tpl.sell) * 100
+            else:
+                line.tpl.margin_ai = 0
+
     blocks = defaultdict(list)
 
     for line in rate_lines:
-        key = (line.date_from, line.date_to)
+        key = (line.date_from, line.date_to, line.season)
         blocks[key].append(line)
 
     rate_blocks = []
 
-    for (date_from, date_to), lines in blocks.items():
+    for (date_from, date_to, season), lines in blocks.items():
+        sorted_lines = sorted(lines, key=lambda x: x.group.product.orden if hasattr(x.group.product, 'orden') and x.group.product.orden is not None else 999999)
+        
         rate_blocks.append({
             "date_from": date_from,
             "date_to": date_to,
-            "lines": lines
+            "season": season,
+            "lines": sorted_lines
         })
 
-    # Gets the information from the form
-    if request.method == "POST":
-
-        # Attempt to modify supplier
-        code = request.POST["code"].upper()
-        name = request.POST["name"]
-        category = request.POST["category"]
-        group_form = request.POST["group"]
-        margin = request.POST["margin"]
-        order = request.POST["order"]
-
-        # Validations
-        if not name or not code or not category or not group_form or not margin:
-            return render(request, "tariff/accommodation/supplier.html", {
-                "message_modify": "Todos los campos deben ser completados",
-                "suppliers": Supplier.objects.filter(group__type_service="AC"),
-                "locations": Location.objects.all(),
-                "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-                "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-                "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-                "ATTRACTIONS": ATTRACTIONS,
-                "INTERESTS": INTERESTS,
-                "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-                "supplier_groups": supplier_groups.order_by("location__name", "name"),
-            })
-
-        group = SupplierGroup.objects.get(pk=group_form)
-        print(group)
-        
-        # Modifies the model of the supplier from the form information
-        supplier.name=name
-        supplier.code=code
-        supplier.description=request.POST["description"]
-        supplier.hotel_quality=category
-        supplier.group=group
-        supplier.order=order
-        supplier.children_ranking=request.POST["children_ranking"]
-        supplier.disabled_ranking=request.POST["disabled_ranking"]
-        supplier.sustentability_ranking=request.POST["sustentability_ranking"]
-        supplier.attractions=request.POST.getlist("attractions")
-        supplier.interests=request.POST.getlist("interests")
-        supplier.margin=request.POST["margin"]
-        supplier.note=request.POST.get("note")
-        supplier.prepayment=request.POST.get("prepayment")
-        supplier.pic1_url=request.POST.get("pic1_url")
-        supplier.pic2_url=request.POST.get("pic2_url")
-        supplier.pic3_url=request.POST.get("pic3_url")
-        
-        supplier.save()
-
-        return HttpResponseRedirect(reverse("acc_supplier"), {
-            "supplier": supplier,
-            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-            "ATTRACTIONS": ATTRACTIONS,
-            "INTERESTS": INTERESTS,
-            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "products": products,
-            "product_groups": product_groups,
-            "rate_lines": rate_lines,
-            "supplier_groups": supplier_groups .order_by("location__name", "name"),
-        })
-    else:
-        return render(request, "tariff/accommodation/supplier_rates.html", {
-            "supplier": supplier,
-            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-            "ATTRACTIONS": ATTRACTIONS,
-            "INTERESTS": INTERESTS,
-            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "products": products,
-            "product_groups": product_groups,
-            "rate_lines": rate_lines,
-            "rate_blocks": rate_blocks,
-        })
+    return render(request, "tariff/accommodation/supplier_rates.html", {
+        "supplier": supplier,
+        "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+        "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+        "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+        "ATTRACTIONS": ATTRACTIONS,
+        "INTERESTS": INTERESTS,
+        "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
+        "products": products,
+        "product_groups": product_groups,
+        "rate_lines": rate_lines,
+        "rate_blocks": rate_blocks,
+    })
 
 
 """
@@ -633,188 +616,193 @@ PRODUCT
 # Modifying a particular product
 @login_required
 def modify_product(request, product_id):
-    # Gets the object of the product modifying
+    # Obtener el producto
     product = Product.objects.get(id=product_id)
-    product_groups = ProductGroup.objects.filter(type_service="AC")
     supplier = product.supplier
-    products = supplier.supplier_products.all()
-
-    # Create the list of lines in the correct order
-    rate_lines = (
-        RateLine.objects
-        .filter(group__product__supplier=supplier)
-        .select_related("group__product")
-        .prefetch_related("line_rates")
-        .order_by("date_from")
-    )
-
-    for line in rate_lines:
-        line.sgl = None
-        line.dbl = None
-        line.tpl = None
-
-        for rate in line.line_rates.all():
-            if rate.column_options == "SGL":
-                line.sgl = rate
-            elif rate.column_options == "DBL":
-                line.dbl = rate
-            elif rate.column_options == "TPL":
-                line.tpl = rate
-
-    blocks = defaultdict(list)
-
-    for line in rate_lines:
-        key = (line.date_from, line.date_to)
-        blocks[key].append(line)
-
-    rate_blocks = []
-
-    for (date_from, date_to), lines in blocks.items():
-        rate_blocks.append({
-            "date_from": date_from,
-            "date_to": date_to,
-            "lines": lines
-        })
-
-    # Gets the information from the form
+    
+    # Obtener datos necesarios para los selects
+    suppliers = Supplier.objects.filter(group__type_service="AC").order_by("name")
+    product_groups = ProductGroup.objects.filter(type_service="AC").order_by("location__name", "name")
+    clients = Client.objects.all().order_by("name")
+    
     if request.method == "POST":
-
-        # Attempt to modify supplier
+        # Obtener información del formulario
         code = request.POST["code"].upper()
         name = request.POST["name"]
-        category = request.POST["category"]
-        group_form = request.POST["group"]
-        margin = request.POST["margin"]
+        description = request.POST.get("description", "")
+        supplier_id = request.POST["supplier"]
+        group_id = request.POST["group"]
         order = request.POST["order"]
-
-        # Validations
-        if not name or not code or not category or not group_form or not margin:
-            return render(request, "tariff/accommodation/supplier.html", {
-                "message_modify": "Todos los campos deben ser completados",
-                "suppliers": Supplier.objects.filter(group__type_service="AC"),
-                "locations": Location.objects.all(),
+        quality = request.POST.get("quality", "")
+        fcu = request.POST["fcu"]
+        scu = request.POST["scu"]
+        note = request.POST.get("note", "")
+        
+        # Validaciones
+        if not name or not code or not supplier_id or not group_id or not order:
+            return render(request, "tariff/accommodation/modify_product.html", {
+                "message": "Todos los campos obligatorios deben ser completados",
+                "product": product,
+                "suppliers": suppliers,
+                "product_groups": product_groups,
+                "clients": clients,
                 "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
                 "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
                 "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
                 "ATTRACTIONS": ATTRACTIONS,
                 "INTERESTS": INTERESTS,
-                "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-                "supplier_groups": supplier_groups.order_by("location__name", "name"),
+                "FCU_OPTIONS": FCU_OPTIONS,
             })
-
-        group = SupplierGroup.objects.get(pk=group_form)
-        print(group)
         
-        # Modifies the model of the supplier from the form information
-        supplier.name=name
-        supplier.code=code
-        supplier.description=request.POST["description"]
-        supplier.hotel_quality=category
-        supplier.group=group
-        supplier.order=order
-        supplier.children_ranking=request.POST["children_ranking"]
-        supplier.disabled_ranking=request.POST["disabled_ranking"]
-        supplier.sustentability_ranking=request.POST["sustentability_ranking"]
-        supplier.attractions=request.POST.getlist("attractions")
-        supplier.interests=request.POST.getlist("interests")
-        supplier.margin=request.POST["margin"]
-        supplier.note=request.POST.get("note")
-        supplier.prepayment=request.POST.get("prepayment")
-        supplier.pic1_url=request.POST.get("pic1_url")
-        supplier.pic2_url=request.POST.get("pic2_url")
-        supplier.pic3_url=request.POST.get("pic3_url")
+        # Obtener objetos relacionados
+        new_supplier = Supplier.objects.get(pk=supplier_id)
+        new_group = ProductGroup.objects.get(pk=group_id)
         
-        supplier.save()
-
-        return HttpResponseRedirect(reverse("acc_supplier"), {
-            "supplier": supplier,
-            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-            "ATTRACTIONS": ATTRACTIONS,
-            "INTERESTS": INTERESTS,
-            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "products": products,
-            "product_groups": product_groups,
-            "rate_lines": rate_lines,
-            "supplier_groups": supplier_groups .order_by("location__name", "name"),
-        })
+        # Modificar el producto
+        product.code = code
+        product.name = name
+        product.description = description
+        product.supplier = new_supplier
+        product.group = new_group
+        product.order = order
+        product.quality = quality
+        product.fcu = fcu
+        product.scu = scu
+        product.note = note
+        product.children_ranking = request.POST["children_ranking"]
+        product.disabled_ranking = request.POST["disabled_ranking"]
+        product.sustentability_ranking = request.POST["sustentability_ranking"]
+        product.attractions = request.POST.getlist("attractions")
+        product.interests = request.POST.getlist("interests")
+        product.pic1_url = request.POST.get("pic1_url", "")
+        product.pic2_url = request.POST.get("pic2_url", "")
+        product.pic3_url = request.POST.get("pic3_url", "")
+        product.shown = request.POST.get("shown") == "on"
+        product.recommended = request.POST.get("recommended") == "on"
+        product.isActivated = request.POST.get("isActivated") == "on"
+        
+        # Actualizar clientes disponibles
+        selected_clients = request.POST.getlist("clients")
+        product.clients.set(selected_clients)
+        
+        product.save()
+        
+        # Redirigir a la página de tarifas del proveedor
+        return HttpResponseRedirect(reverse("modify_supplier_rates", args=[supplier.id]))
+    
     else:
         return render(request, "tariff/accommodation/modify_product.html", {
+            "product": product,
             "supplier": supplier,
+            "suppliers": suppliers,
+            "product_groups": product_groups,
+            "clients": clients,
             "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
             "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
             "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
             "ATTRACTIONS": ATTRACTIONS,
             "INTERESTS": INTERESTS,
-            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "products": products,
-            "product_groups": product_groups,
-            "rate_lines": rate_lines,
-            "default_product": product,
-            "rate_blocks": rate_blocks,
+            "FCU_OPTIONS": FCU_OPTIONS,
         })
 
 
+@login_required
 @csrf_exempt
 def update_rate_block(request):
     try:
-        # Verificar que el body no esté vacío
         if not request.body:
             return JsonResponse({"ok": False, "error": "No se recibieron datos"}, status=400)
         
         data = json.loads(request.body)
         
-        # Verificar que exista el campo rates
         if "rates" not in data:
             return JsonResponse({"ok": False, "error": "Falta el campo 'rates'"}, status=400)
         
-        # Actualizar cada rate
         updated_count = 0
         errors = []
         
+        # Actualizar rates
         for r in data["rates"]:
             rate_id = r.get("rate_id")
             field = r.get("field")
             value = r.get("value")
             
-            # Validaciones
             if not rate_id or not field:
                 continue
             
-            # Verificar que el rate_id sea válido y convertirlo a int
             try:
                 rate_id = int(rate_id)
             except (ValueError, TypeError):
                 errors.append(f"ID inválido: {rate_id}")
                 continue
                 
-            # Validar que el campo sea permitido
             if field not in ["cost", "sell", "sell_tourplan"]:
                 errors.append(f"Campo no permitido: {field}")
                 continue
             
-            # Convertir el valor al tipo correcto
             try:
                 if field == "cost":
-                    # cost es FloatField
                     value = float(value) if value != "" else 0.0
                 else:
-                    # sell y sell_tourplan son PositiveIntegerField
                     value = int(float(value)) if value != "" else 0
             except (ValueError, TypeError):
                 errors.append(f"Valor inválido para {field}: {value}")
                 continue
             
-            # Verificar que el Rate existe
             if not Rate.objects.filter(id=rate_id).exists():
                 errors.append(f"Rate con ID {rate_id} no existe")
                 continue
             
-            # Actualizar
             updated = Rate.objects.filter(id=rate_id).update(**{field: value})
             updated_count += updated
         
+        # 👇 Actualizar season si se envió
+        if "season" in data and data["season"]:
+            # Obtener los rate_ids del bloque
+            rate_ids = [r.get("rate_id") for r in data["rates"] if r.get("rate_id")]
+            
+            # Encontrar las RateLines asociadas
+            ratelines = RateLine.objects.filter(
+                line_rates__id__in=rate_ids
+            ).distinct()
+            
+            # Actualizar el season
+            ratelines.update(season=data["season"])
+
+        if "status" in data and data["status"]:
+            return
+        
+        if "margin" in data and data["margin"]:
+            return
+        
+        if "increase" in data and data["increase"]:
+            return
+        
+        # ✅ Actualizar nombres de RateGroup
+        if "groups" in data and data["groups"]:
+            for g in data["groups"]:
+                group_id = g.get("group_id")
+                new_name = g.get("new_name")
+                
+                if not group_id or not new_name:
+                    continue
+                
+                try:
+                    group_id = int(group_id)
+                    
+                    # Verificar que exista el RateGroup
+                    if not RateGroup.objects.filter(id=group_id).exists():
+                        errors.append(f"RateGroup con ID {group_id} no existe")
+                        continue
+                    
+                    # Actualizar el nombre del grupo
+                    RateGroup.objects.filter(id=group_id).update(name=new_name.strip())
+                    updated_count += 1
+                    
+                except (ValueError, TypeError):
+                    errors.append(f"ID de grupo inválido: {group_id}")
+                    continue
+
         return JsonResponse({
             "ok": True, 
             "updated": updated_count,
@@ -822,14 +810,7 @@ def update_rate_block(request):
             "message": f"Se actualizaron {updated_count} tarifas"
         })
         
-    except json.JSONDecodeError as e:
-        return JsonResponse({
-            "ok": False, 
-            "error": f"Error al parsear JSON: {str(e)}"
-        }, status=400)
-        
     except Exception as e:
-        # Log del error completo para debugging
         import traceback
         print("Error completo:")
         print(traceback.format_exc())
@@ -837,4 +818,274 @@ def update_rate_block(request):
         return JsonResponse({
             "ok": False, 
             "error": f"Error en el servidor: {str(e)}"
+        }, status=500)
+
+
+@login_required
+@csrf_exempt
+def copy_rate_block(request):
+    try:
+        if not request.body:
+            return JsonResponse({"ok": False, "error": "No se recibieron datos"}, status=400)
+        
+        data = json.loads(request.body)
+        
+        print("Datos recibidos:", data)  # 👈 Debug
+        
+        date_from = data.get("date_from")
+        date_to = data.get("date_to")
+        season = data.get("season")
+        lines = data.get("lines", [])
+        
+        if not date_from or not date_to or not season:
+            return JsonResponse({"ok": False, "error": "Faltan datos requeridos (fechas o season)"}, status=400)
+        
+        if not lines:
+            return JsonResponse({"ok": False, "error": "No hay líneas para copiar"}, status=400)
+        
+        created_ratelines = 0
+        created_rates = 0
+        errors = []
+        
+        # Para cada línea original
+        for line_data in lines:
+            rateline_id = line_data.get("rateline_id")
+            rategroup_id = line_data.get("rategroup_id")
+            
+            print(f"Procesando línea: rateline_id={rateline_id}, rategroup_id={rategroup_id}")  # 👈 Debug
+            
+            if not rateline_id or not rategroup_id:
+                errors.append(f"Línea sin IDs válidos")
+                continue
+            
+            # Obtener la RateLine original
+            try:
+                original_rateline = RateLine.objects.get(id=rateline_id)
+            except RateLine.DoesNotExist:
+                errors.append(f"RateLine {rateline_id} no existe")
+                continue
+            
+            # Obtener el RateGroup
+            try:
+                rate_group = RateGroup.objects.get(id=rategroup_id)
+            except RateGroup.DoesNotExist:
+                errors.append(f"RateGroup {rategroup_id} no existe")
+                continue
+            
+            # Crear nueva RateLine
+            new_rateline = RateLine.objects.create(
+                date_from=date_from,
+                date_to=date_to,
+                group=rate_group,
+                season=season
+            )
+            created_ratelines += 1
+            
+            print(f"Nueva RateLine creada: {new_rateline.id}")  # 👈 Debug
+            
+            # Copiar todos los Rates de la línea original
+            original_rates = Rate.objects.filter(rate_line=original_rateline)
+            
+            print(f"Copiando {original_rates.count()} rates")  # 👈 Debug
+            
+            for original_rate in original_rates:
+                new_rate = Rate.objects.create(
+                    rate_line=new_rateline,
+                    status=original_rate.status,
+                    increase=original_rate.increase,
+                    cost=original_rate.cost,
+                    margin=original_rate.margin,
+                    sell=original_rate.sell,
+                    sell_tourplan=original_rate.sell_tourplan,
+                    column_options=original_rate.column_options,
+                    has_rate=original_rate.has_rate,
+                    text_value=original_rate.text_value
+                )
+                created_rates += 1
+                print(f"Rate creado: {new_rate.id} - {new_rate.column_options}")  # 👈 Debug
+        
+        if created_ratelines == 0:
+            return JsonResponse({
+                "ok": False,
+                "error": "No se pudo crear ninguna línea",
+                "details": errors
+            }, status=400)
+        
+        return JsonResponse({
+            "ok": True,
+            "created_ratelines": created_ratelines,
+            "created_rates": created_rates,
+            "errors": errors if errors else None,
+            "message": f"Se crearon {created_ratelines} líneas con {created_rates} tarifas"
+        })
+        
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print("Error completo:")
+        print(error_detail)
+        
+        return JsonResponse({
+            "ok": False,
+            "error": f"Error en el servidor: {str(e)}",
+            "traceback": error_detail
+        }, status=500)
+
+
+@login_required
+@csrf_exempt
+def delete_rate_block(request):
+    try:
+        if not request.body:
+            return JsonResponse({"ok": False, "error": "No se recibieron datos"}, status=400)
+        
+        data = json.loads(request.body)
+        rateline_ids = data.get("rateline_ids", [])
+        
+        if not rateline_ids:
+            return JsonResponse({"ok": False, "error": "No hay líneas para eliminar"}, status=400)
+        
+        print(f"Eliminando RateLines: {rateline_ids}")
+        
+        # Obtener las RateLines
+        ratelines = RateLine.objects.filter(id__in=rateline_ids)
+        count = ratelines.count()
+        
+        if count == 0:
+            return JsonResponse({"ok": False, "error": "No se encontraron líneas para eliminar"}, status=404)
+        
+        # Los Rates se eliminan automáticamente por CASCADE
+        ratelines.delete()
+        
+        return JsonResponse({
+            "ok": True,
+            "deleted": count,
+            "message": f"Se eliminaron {count} líneas tarifarias"
+        })
+        
+    except Exception as e:
+        import traceback
+        print("Error completo:")
+        print(traceback.format_exc())
+        
+        return JsonResponse({
+            "ok": False,
+            "error": f"Error en el servidor: {str(e)}"
+        }, status=500)
+
+
+@login_required
+@csrf_exempt
+def create_rate_block(request):
+    try:
+        if not request.body:
+            return JsonResponse({"ok": False, "error": "No se recibieron datos"}, status=400)
+        
+        data = json.loads(request.body)
+        
+        print("Datos recibidos:", data)
+        
+        date_from = data.get("date_from")
+        date_to = data.get("date_to")
+        season = data.get("season")
+        product_ids = data.get("product_ids", [])
+        base_costs = data.get("base_costs", {})
+        increase = data.get("increase")
+        margin = data.get("margin")
+        status = data.get("status")
+        
+        if not date_from or not date_to or not season:
+            return JsonResponse({"ok": False, "error": "Faltan datos requeridos"}, status=400)
+        
+        if not product_ids:
+            return JsonResponse({"ok": False, "error": "Debes seleccionar al menos un producto"}, status=400)
+        
+        created_ratelines = 0
+        created_rates = 0
+        errors = []
+        
+        # Para cada producto seleccionado
+        for product_id in product_ids:
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                errors.append(f"Producto {product_id} no existe")
+                continue
+            
+            # Obtener o crear RateGroups para este producto
+            # Asumimos que cada producto tiene al menos un RateGroup
+            rate_groups = RateGroup.objects.filter(product=product)
+            
+            if not rate_groups.exists():
+                # Crear un RateGroup por defecto si no existe
+                rate_group = RateGroup.objects.create(
+                    name="Breakfast included",
+                    order=1,
+                    product=product
+                )
+                rate_groups = [rate_group]
+            
+            # Crear RateLine para cada RateGroup
+            for rate_group in rate_groups:
+                new_rateline = RateLine.objects.create(
+                    date_from=date_from,
+                    date_to=date_to,
+                    group=rate_group,
+                    season=season
+                )
+                created_ratelines += 1
+                
+                # Obtener el margin del supplier
+                supplier = product.supplier
+                margin_value = supplier.margin if supplier else 1.0
+                
+                # Crear Rates para SGL, DBL, TPL
+                for column_type in ["SGL", "DBL", "TPL"]:
+                    cost = base_costs.get(column_type.lower(), 0)
+                    
+                    # Calcular sell basado en cost y margin
+                    sell = int(cost * (1 + margin_value / 100))
+                    sell_tourplan = int(cost * (1 + margin_value / 100))
+                    
+                    Rate.objects.create(
+                        rate_line=new_rateline,
+                        status=status,
+                        increase=increase,
+                        cost=cost,
+                        margin=margin,
+                        sell=sell,
+                        sell_tourplan=sell_tourplan,
+                        column_options=column_type,
+                        has_rate=True,
+                        text_value=None
+                    )
+                    created_rates += 1
+                
+                print(f"RateLine creada: {new_rateline.id} para {product.name}")
+        
+        if created_ratelines == 0:
+            return JsonResponse({
+                "ok": False,
+                "error": "No se pudo crear ninguna línea",
+                "details": errors
+            }, status=400)
+        
+        return JsonResponse({
+            "ok": True,
+            "created_ratelines": created_ratelines,
+            "created_rates": created_rates,
+            "errors": errors if errors else None,
+            "message": f"Se crearon {created_ratelines} líneas con {created_rates} tarifas"
+        })
+        
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print("Error completo:")
+        print(error_detail)
+        
+        return JsonResponse({
+            "ok": False,
+            "error": f"Error en el servidor: {str(e)}",
+            "traceback": error_detail
         }, status=500)

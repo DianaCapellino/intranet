@@ -1,9 +1,9 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-
+{% if user.userType != "Cliente" %}
 <div id="calendar">
 
 </div>
-
+{% endif %}
 {% endblock %}

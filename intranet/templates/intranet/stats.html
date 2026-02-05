@@ -2,6 +2,7 @@
 {% load custom_filters %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
 <div class="container text-center mb-2">
     <h1>ESTADÍSTICAS</h1>
     <hr>
@@ -135,4 +136,5 @@
 
     </div>
 </div>
+{% endif %}
 {% endblock %}

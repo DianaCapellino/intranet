@@ -1,6 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
     <div class="container">
         <div id="new_location" class="d-none">
 
@@ -341,4 +342,5 @@
         </div>
     </div>
     <br>
+{% endif %}
 {% endblock %}

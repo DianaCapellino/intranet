@@ -1,6 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+{% if user.userType != "Cliente" %}
     <h2>Crear Nuevo País</h2>
     <br>
     
@@ -101,4 +102,5 @@
         </div>
     </div>
     <br>
+{% endif %}
 {% endblock %}

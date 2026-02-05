@@ -8,6 +8,8 @@
 
 {% if tariff_type == "acc" %}
 
+<div class="fw-bold text-primary">Prices vary by hotel. Please refer to the validity details. All prices are per person, in US dollars (USD), inclusive of taxes.</div>
+
 {# === SupplierGroup (barra negra) === #}
 {% regroup rate_lines by group.product.supplier.group.id as supplier_groups %}
 
@@ -40,18 +42,47 @@
                         {{ supplier.name|upper }}
                     </span>
 
-                    {% if supplier_block.list.0.group.product.recommended %}
+                    {% if supplier.recommended %}
                         <img src="../../static/tariff/sello2.png"
                              width="22" class="ms-2">
                     {% endif %}
                     <div class="ms-3">{{ supplier.hotel_quality }}</div>
                 </div>
-
-                <i class="fa-solid fa-chevron-down text-muted small"></i>
+                <div>
+                    <i class="fa-solid fa-chevron-down text-muted small"></i>
+                </div>
             </div>
 
             <div id="collapseSupplier{{ supplier.id }}" class="collapse">
                 <div class="card-body p-0">
+
+                    {% if supplier.prepayment %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-dollar-sign"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.prepayment }}</div>
+                        </div>
+                    {% endif %}
+
+                    {% if supplier.child_note %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-baby"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.child_note }}</div>
+                        </div>
+                    {% endif %}
+
+                    {% if supplier.stay_note %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-bed"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.stay_note }}</div>
+                        </div>
+                    {% endif %}
+
+                    {% if supplier.closing_note %}
+                        <div class="d-flex align-items-center m-3">
+                            <i class="fa-solid fa-clock"></i>
+                            <div class="text-primary fw-bold ms-2">{{ supplier.closing_note }}</div>
+                        </div>
+                    {% endif %}
 
                     {% if supplier.note %}
                         <div class="d-flex align-items-center m-3">
@@ -60,14 +91,9 @@
                         </div>
                     {% endif %}
 
-                    {% if supplier.prepayment %}
-                        <div class="d-flex align-items-center m-3">
-                            <i class="fa-solid fa-dollar-sign"></i>
-                            <div class="text-primary fw-bold ms-2">{{ supplier.prepayment }}</div>
-                        </div>
+                    {% if request.user.userType != "Cliente" %}
+                        <button class="btn btn-sm btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}"><i class="fa fa-solid fa-info"></i></button>
                     {% endif %}
-                    
-                    <button class="d-none btn btn-dark ms-2">MORE INFO</button>
                     {# === ProductGroup (desayuno / otros) === #}
                     {% regroup supplier_block.list by group.product.group.id as product_groups %}
 
@@ -112,6 +138,10 @@
                                                     <span class="fw-normal">
                                                         – {{ line.group.name }}
                                                     </span>
+                                                    {% if line.group.product.note %}
+                                                        <i class="btn btn-sm fa-solid fa-exclamation text-primary fw-bold" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowProductNote{{ line.group.product.id }}"></i>
+                                                    {% else %}
+                                                    {% endif %}
                                                 </div>
                                             </td>
 
@@ -124,16 +154,11 @@
                                             </td>
 
                                             <td class="text-center fw-bold border-0">
-                                                {{ line.rates_by_column.SGL|default:"N/A" }}
-                                                    {% if show_costs %}
-                                                    <div class="small text-muted">
-                                                        Cost: {{ line.costs_by_column.SGL|default:"–" }}
-                                                    </div>
-                                                {% endif %}
+                                                {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
                                             </td>
 
                                             <td class="text-center fw-bold border-0">
-                                                {{ line.rates_by_column.DBL|default:"N/A" }}
+                                                {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
                                             </td>
 
                                             <td class="text-center fw-bold border-0 d-none">
@@ -141,6 +166,20 @@
                                             </td>
                                         </tr>
 
+                                        <div class="modal fade" id="windowProductNote{{ line.group.product.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                                            <div class="modal-dialog modal-lg"> <div class="modal-content text-dark"> <div class="modal-header">
+                                                        <h5 class="modal-title" id="label{{ line.group.product.id }}">Important note about {{ line.group.product.name }} - {{ supplier.name}}</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                                    </div>
+                                                    <div class="modal-body text-start">
+                                                        <div>{{ line.group.product.note}}</div>
+                                                        <div class="container text-center mt-4">
+                                                            <button type="button" class="btn btn-dark" data-bs-dismiss="modal">CERRAR</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     {% endfor %}
                                     <tr class="vigency-separator">
                                         <td colspan="5" style="height:30px"></td>
@@ -157,6 +196,33 @@
 
                     {% endfor %}
 
+                    <div class="modal fade" id="windowMoreInfo{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
+                        <div class="modal-dialog modal-lg"> <div class="modal-content text-dark"> <div class="modal-header">
+                                    <h5 class="modal-title" id="label{{ supplier.id }}">More information about {{ supplier.name }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                </div>
+                                <div class="modal-body text-start">
+                                    {% if supplier.description %}
+                                        <h4>Description</h4>
+                                        <p>{{ supplier.description }}</p>
+                                    {% endif %}
+                                    {% if supplier.note %}
+                                        <h4>Note</h4>
+                                        <p>{{ supplier.note }}</p>
+                                    {% endif %}
+                                    {% if request.user.userType != "Cliente" %}
+                                        <hr>
+                                        <a href="{% url 'modify_supplier_rates' supplier.id %}">
+                                            <button class="btn btn-lg btn-outline-primary"><i class="fa fa-solid fa-hand-holding-dollar mx-3"></i></button></a>
+                                    {% endif %}
+                                    <div class="container text-center mt-4">
+                                        <button type="button" class="btn btn-dark" data-bs-dismiss="modal">CERRAR</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -172,6 +238,8 @@
 {# ===================================================== #}
 
 {% if tariff_type != "acc" %}
+
+<div class="fw-bold text-primary">All prices are per person, in US dollars (USD), inclusive of taxes.</div>
 
 {% regroup rate_lines by group.product.group.id as product_groups %}
 

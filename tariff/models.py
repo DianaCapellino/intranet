@@ -116,6 +116,12 @@ TYPE_QUALITY = [
     ("Otro", "Otro")
 ]
 
+TYPE_HISTORY = [
+    ("Update", "Updated existing rates"),
+    ("New", "New property/product"),
+    ("Add", "Added rates to existing property/product")
+]
+
 class Location(models.Model):
     code = models.CharField(max_length=3)
     name = models.CharField(max_length=64)
@@ -159,13 +165,19 @@ class Supplier(models.Model):
     sustentability_ranking = models.PositiveSmallIntegerField(choices=SUSTENTABILITY_RANKING_OPTIONS)
     attractions = MultiSelectField(choices=ATTRACTIONS, max_length=64, blank=True, null=True)
     interests = MultiSelectField(choices=INTERESTS, max_length=64, blank=True, null=True)
+    
+    # Notes to show in the tariff
     note = models.CharField(max_length=500, blank=True, default=None)
+    child_note = models.CharField(max_length=150, blank=True, null=True)
+    prepayment = models.CharField(max_length=500, null=True, blank=True)
+    stay_note = models.CharField(max_length=150, null=True, blank=True)
+    closing_note = models.CharField(max_length=300, null=True, blank=True)
+
     recommended = models.BooleanField(default=False)
     order = models.PositiveIntegerField()
     group = models.ForeignKey(SupplierGroup, on_delete=models.CASCADE, related_name="group_products")
     hotel_quality = models.CharField(choices=HOTEL_QUALITY_OPTIONS, max_length=64, blank=True, null=True)
     margin = models.FloatField()
-    prepayment = models.CharField(max_length=500, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name}"
@@ -202,7 +214,8 @@ class Product(models.Model):
     
     # Important information
     note = models.CharField(max_length=150, blank=True, null=True)
-    
+    childNote = models.CharField(max_length=150, blank=True, null=True)
+
     # Visible for clients
     shown = models.BooleanField(default=True)
 
@@ -251,7 +264,6 @@ class Rate(models.Model):
     increase = models.FloatField(null=True, blank=True)
     cost = models.FloatField()
     margin = models.CharField(choices=MARGIN_OPTIONS, max_length=64)
-    increase = models.FloatField(null=True, blank=True)
     sell = models.PositiveIntegerField()
     sell_tourplan = models.PositiveIntegerField()
     column_options = models.CharField(max_length=64)
@@ -348,3 +360,15 @@ class Feedback(models.Model):
     complaint = models.BooleanField(default=False)
     solution = models.CharField(max_length=3000, null=True, blank=True)
     cost = models.FloatField(default=0, null=True, blank=True)
+
+
+class Change(models.Model):
+    date = models.DateField(default=django.utils.timezone.now, verbose_name='date status')
+    type = models.CharField(max_length=64, choices=TYPE_HISTORY)
+    rate_line = models.ForeignKey(RateLine, on_delete=models.CASCADE, related_name="ratelines")
+
+    def __str__ (self):
+        return f"{self.type.upper()} - Travel frame: {self.rate_line.date_from }/{self.rate_line.date_to} - Supplier: {self.rate_line.group.product.supplier.name} - Product: {self.rate_line.group.product.name}"
+
+    class Meta:
+        ordering = ["-date"]
