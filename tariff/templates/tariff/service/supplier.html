@@ -7,7 +7,7 @@
             <div class="d-flex justify-content-between">
                 <h2>Crear Nuevo Proveedor</h2>
                 <div>
-                    <a href="{% url 'acc_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                    <a href="{% url 'svs_supplier' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
                 </div>
             </div>
             <br>
@@ -19,7 +19,7 @@
             <br>
             <div class="text-center col">
                 <br>
-                <form class="rw-3 text-center" action="{% url 'acc_supplier' %}" method="post">
+                <form class="rw-3 text-center" action="{% url 'svs_supplier' %}" method="post">
                     {% csrf_token %}
                     <h5 class="mb-3">Información básica</h5>
 
@@ -32,7 +32,7 @@
                         </div>
                         <div class="col-3">
                             <select name="margin" class="form-select" required>
-                                {% for label, v in MARGIN_ACC_OPTIONS %}
+                                {% for label, v in MARGIN_SVS_OPTIONS %}
                                     {% if label == "Regular" %}
                                         <option value="{{ v }}" selected>{{ label }} - {{ v }}</option>                      
                                     {% else %}
@@ -48,62 +48,20 @@
                     </div>
 
                     <hr>
-
                     <h5 class="mb-3">Clasificación</h5>
 
                     <div class="row mb-3">
                         <div class="col">
-                            <label class="form-label">Categoría</label>
-                            <select name="category" class="form-select" required>
-                                {% for v, label in HOTEL_QUALITY_OPTIONS %}
-                                    <option value="{{ v }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col">
-                            <label class="form-label">Grupo: Barrio / Área</label>
-                            <a href="{% url 'acc_supplier_group' %}"
+                            <label class="form-label">Destino</label>
+                            <a href="{% url 'locations' %}"
                             data-toggle="tooltip"
                             data-placement="left"
-                            title="Gestionar Grupos">
+                            title="Gestionar Destinos">
                                 <i class="fa-solid fa-pencil"></i>
                             </a>
-                            <select name="group" class="form-select" required>
-                                {% for group in supplier_groups %}
-                                    <option value="{{ group.id }}">{{ group.location.name }} - {{ group.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <hr>
-
-                    <h5 class="mb-3">Rankings</h5>
-
-                    <div class="row mb-3">
-                        <div class="col">
-                            <label class="form-label">Niños</label>
-                            <select name="children_ranking" class="form-select">
-                                {% for v, label in CHILDREN_RANKING_OPTIONS %}
-                                    <option value="{{ v }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div class="col">
-                            <label class="form-label">Accesibilidad</label>
-                            <select name="disabled_ranking" class="form-select">
-                                {% for v, label in DISABLED_RANKING_OPTIONS %}
-                                    <option value="{{ v }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div class="col">
-                            <label class="form-label">Sustentabilidad</label>
-                            <select name="sustentability_ranking" class="form-select">
-                                {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
-                                    <option value="{{ v }}">{{ label }}</option>
+                            <select name="location" class="form-select" required>
+                                {% for location in locations %}
+                                    <option value="{{ location.id }}">{{ location.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -136,16 +94,11 @@
                     <hr>
                     
                     <h5 class="mb-3">Notas</h5>
-                    <small class="mb-3" muted>Estas notas aparecen debajo del nombre en el tarifario</small>
+                    <small class="mb-3" muted>Estas notas aparecerán dentro del tarifario</small>
 
                     <div class="row mb-3">
                         <div class="col">
-                            <small class="mb-3" muted>Ejemplo: Min age is 12 years old</small>
                             <textarea class="form-control" name="note" rows="1" placeholder="Nota adicional"></textarea>
-                        </div>
-                        <div class="col">
-                            <small class="mb-3" muted>Ejemplo: 30% prepayment is required to confirm</small>
-                            <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago"></textarea>
                         </div>
                     </div>
 
@@ -173,7 +126,7 @@
         <div class="container">
             <br>
             <div class="d-flex align-items-center justify-content-between">
-                <h2>Proveedores - ALOJAMIENTO</h2>
+                <h2>Proveedores - SERVICIOS</h2>
                 <div>
                     <select class="form-select" aria-label="location_filter" name="location_filter" id="location_filter_select">
                         <option value="all">Todos</option>
@@ -206,10 +159,8 @@
                             <th>Código</th>
                             <th>Margen</th>
                             <th>Orden</th>
-                            <th>Categoría</th>
                             <th>Grupo</th>
                             <th>Nota</th>
-                            <th>Prepago</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -224,14 +175,8 @@
                             <td id="supplier-code-{{supplier.id}}">{{ supplier.code }}</td>
                             <td id="supplier-margen{{supplier.id}}">{{ supplier.margin }}</td>
                             <td id="supplier-order{{supplier.id}}">{{ supplier.order }}</td>
-                            <td id="supplier-quality{{supplier.id}}">{{ supplier.hotel_quality }}</td>
                             <td id="supplier-group{{supplier.id}}">{{ supplier.group.name }}</td>
                             {% if supplier.note %}
-                                <td id="supplier-note{{supplier.id}}">Sí</td>
-                            {% else %}
-                                <td id="supplier-note{{supplier.id}}">No</td>
-                            {% endif %}
-                            {% if supplier.prepayment %}
                                 <td id="supplier-note{{supplier.id}}">Sí</td>
                             {% else %}
                                 <td id="supplier-note{{supplier.id}}">No</td>
@@ -270,9 +215,9 @@
                                                         data-bs-toggle="tooltip"
                                                         data-bs-html="true"
                                                         title="
-                                                        Low – 0.89 - 20% comisión 
-Regular – 0.85 - Netas o con comisión mayor a 20%
-High – 0.82 - Tarifas especiales negociadas
+                                                        Low – 0.86 - Baja comisión 
+Regular – 0.8 - Markup regular
+High – 0.7 - Tangos
 ** Para clientes B y A se suma el adicional luego **"
                                                     ></i>
                                                 </div>
@@ -288,86 +233,11 @@ High – 0.82 - Tarifas especiales negociadas
 
                                             <div class="row mb-3">
                                                 <div class="col">
-                                                    <label class="form-label">Categoría</label>
-                                                    <select name="category" class="form-select" required>
-                                                        {% for v, label in HOTEL_QUALITY_OPTIONS %}
-                                                            <option value="{{ v }}"
-                                                                {% if v == supplier.hotel_quality %}selected{% endif %}
-                                                            >
-                                                                {{ label }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-                                                <div class="col">
-                                                    <label class="form-label">Grupo: Barrio / Área</label>
-                                                    <a href="{% url 'acc_supplier_group' %}"
-                                                    data-toggle="tooltip"
-                                                    data-placement="left"
-                                                    title="Gestionar Grupos">
-                                                        <i class="fa-solid fa-pencil"></i>
-                                                    </a>
-                                                    <select name="group" class="form-select" required>
-                                                        {% for group in supplier_groups %}
-                                                            <option value="{{ group.id }}"
-                                                                {% if group.id == supplier.group.id %}selected{% endif %}
-                                                            >
-                                                                {{ group.location.name }} - {{ group.name }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-                                                <div class="col">
                                                     <label class="form-label">Orden</label>
                                                     <input class="form-control" name="order" type="number" placeholder="Orden" value="{{ supplier.order }}" required>
                                                 </div>
                                             </div>
                                             
-                                            <hr>
-
-                                            <h5 class="mb-3">Rankings</h5>
-
-                                            <div class="row mb-3">
-                                                <div class="col">
-                                                    <label class="form-label">Niños</label>
-                                                    <select name="children_ranking" class="form-select">
-                                                        {% for v, label in CHILDREN_RANKING_OPTIONS %}
-                                                            <option value="{{ v }}"
-                                                                {% if v == supplier.children_ranking %}selected{% endif %}
-                                                            >
-                                                                {{ label }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-
-                                                <div class="col">
-                                                    <label class="form-label">Accesibilidad</label>
-                                                    <select name="disabled_ranking" class="form-select">
-                                                        {% for v, label in DISABLED_RANKING_OPTIONS %}
-                                                            <option value="{{ v }}"
-                                                                {% if v == supplier.disabled_ranking %}selected{% endif %}
-                                                            >
-                                                                {{ label }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-
-                                                <div class="col">
-                                                    <label class="form-label">Sustentabilidad</label>
-                                                    <select name="sustentability_ranking" class="form-select">
-                                                        {% for v, label in SUSTENTABILITY_RANKING_OPTIONS %}
-                                                            <option value="{{ v }}"
-                                                                {% if v == supplier.sustentability_ranking %}selected{% endif %}
-                                                            >
-                                                                {{ label }}
-                                                            </option>
-                                                        {% endfor %}
-                                                    </select>
-                                                </div>
-                                            </div>
-
                                             <hr>
 
                                             <h5 class="mb-3">Características</h5>
@@ -403,16 +273,11 @@ High – 0.82 - Tarifas especiales negociadas
                                             <hr>
                                             
                                             <h5 class="mb-3">Notas</h5>
-                                            <small class="mb-3" muted>Estas notas aparecen debajo del nombre en el tarifario</small>
+                                            <small class="mb-3" muted>Estas notas aparecerán dentro del tarifario</small>
 
                                             <div class="row mb-3">
                                                 <div class="col">
-                                                    <small class="mb-3" muted>Ejemplo: Min age is 12 years old</small>
                                                     <textarea class="form-control" name="note" rows="1" placeholder="Nota adicional">{{ supplier.note|default:'' }}</textarea>
-                                                </div>
-                                                <div class="col">
-                                                    <small class="mb-3" muted>Ejemplo: 30% prepayment is required to confirm</small>
-                                                    <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago">{{ supplier.prepayment|default:'' }}</textarea>
                                                 </div>
                                             </div>
 
@@ -477,9 +342,9 @@ High – 0.82 - Tarifas especiales negociadas
                                         </div>
                                         <hr>
                                         <div class="d-flex align-items-center justify-content-between">
-                                            <h2>Productos (habitaciones)</h2>
+                                            <h2>Productos (opciones de servicios)</h2>
                                             <div id="new_product_container">
-                                                <a href="{% url 'acc_product' supplier.id %}" ><button type="button" id="new_product_btn{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva habitación"><i class="fa-solid fa-plus"></i></button></a>
+                                                <a href="{% url 'svs_product' supplier.id %}" ><button type="button" id="new_product_btn{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo producto"><i class="fa-solid fa-plus"></i></button></a>
                                                 <a href="{% url 'modify_supplier_rates' supplier.id %}" ><button type="button" id="edit-rates{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Gestionar tarifas"><i class="fa-solid fa-dollar-sign"></i></button></a>
                                             </div>
                                         </div>

@@ -1,6 +1,9 @@
 // Variable global para trackear el bloque en edición
 let currentEditingBlock = null;
 
+// Al inicio del archivo, agregar variable global para rastrear vínculos
+let linkedCostsByBlock = new Map(); // key: blockId, value: boolean
+
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== "") {
@@ -973,35 +976,30 @@ function editing_blocks() {
                 // EDITAR
                 currentEditingBlock = blockId;
                 
+                // Por defecto, costos están vinculados
+                if (!linkedCostsByBlock.has(blockId)) {
+                    linkedCostsByBlock.set(blockId, true);
+                }
+                
                 const rows = document.querySelectorAll(
                     `.row-rateline[data-block="${blockId}"]`
                 );
                 
+                // ✅ Crear toggle ANTES de habilitar edición
+                createBlockCostToggle(blockId);
+                
                 rows.forEach(row => {
-                    enableEdit(row);
+                    enableEdit(row, blockId);
                 });
 
-                // ✅ Mostrar input de season
+                // Mostrar input de season
                 const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
                 const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
                 
                 if (seasonDisplay && seasonInput) {
-                    // Guardar valor original
                     seasonInput.dataset.originalValue = seasonInput.value;
                     seasonDisplay.classList.add("d-none");
                     seasonInput.classList.remove("d-none");
-                }
-
-                // ✅ Mostrar input de group
-                const groupDisplay = document.querySelector(`.group-display[data-block="${blockId}"]`);
-                const groupInput = document.querySelector(`.group-input[data-block="${blockId}"]`);
-                
-                if (groupDisplay && groupInput) {
-                    // Guardar valor original y el ID del grupo
-                    groupInput.dataset.originalValue = groupInput.value;
-                    groupInput.dataset.originalGroupId = groupDisplay.dataset.groupId;
-                    groupDisplay.classList.add("d-none");
-                    groupInput.classList.remove("d-none");
                 }
 
                 // Cambiar el botón a modo "guardar"
@@ -1021,11 +1019,97 @@ function editing_blocks() {
                 if (deleteBtn) {
                     deleteBtn.classList.add("d-none");
                 }
+                
+                const marginDisplay = document.querySelector(`.margin-display[data-block="${blockId}"]`);
+                const marginInput = document.querySelector(`.margin-input[data-block="${blockId}"]`);
+
+                if (marginDisplay && marginInput) {
+                    marginInput.dataset.originalValue = marginInput.value;
+                    marginDisplay.classList.add("d-none");
+                    marginInput.classList.remove("d-none");
+
+                    // Escuchar cambios en el margen para actualizar ventas del bloque
+                    marginInput.addEventListener('input', function() {
+                        const newMargin = parseFloat(this.value) || 0;
+                        const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+                        
+                        rows.forEach(row => {
+                            // Actualizar SGL y DBL con el nuevo margen global del bloque
+                            ['SGL', 'DBL', 'one', 'two'].forEach(type => {
+                                const costInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${type}"]`);
+                                if (costInput) {
+                                    const costValue = parseFloat(costInput.value) || 0;
+                                    // Llamamos a la función de cálculo (ver paso 2)
+                                    updateSellPriceFromMargin(row, type, costValue, newMargin);
+                                }
+                            });
+                        });
+                    });
+                }
             }
         });
     });
+
 }
 
+// ✅ Nueva función para crear el toggle a nivel de bloque
+function createBlockCostToggle(blockId) {
+    // Buscar el header del bloque
+    const blockHeader = document.querySelector(`tr.table-secondary td[colspan="11"]`);
+    
+    if (!blockHeader) return;
+    
+    // Verificar si ya existe el toggle
+    if (document.getElementById(`linkCostBlock_${blockId}`)) return;
+    
+    const toggleContainer = document.createElement('div');
+    toggleContainer.className = 'cost-link-toggle-block d-inline-flex ms-3';
+    toggleContainer.innerHTML = `
+        <div class="form-check form-switch d-inline-flex align-items-center" style="font-size: 0.875rem;">
+            <input class="form-check-input me-2" type="checkbox" 
+                   id="linkCostBlock_${blockId}" 
+                   ${linkedCostsByBlock.get(blockId) ? 'checked' : ''}>
+            <label class="form-check-label text-info fw-bold" for="linkCostBlock_${blockId}">
+                <i class="fa-solid fa-link"></i> Vincular costos SGL/DBL
+            </label>
+        </div>
+    `;
+    
+    // Insertar después del botón de copiar
+    const copyBtn = blockHeader.querySelector('.copy-block');
+    if (copyBtn) {
+        copyBtn.parentElement.appendChild(toggleContainer);
+    } else {
+        blockHeader.querySelector('.d-flex').appendChild(toggleContainer);
+    }
+    
+    // Event listener para el toggle
+    const toggleInput = toggleContainer.querySelector('input');
+    toggleInput.addEventListener('change', function() {
+        linkedCostsByBlock.set(blockId, this.checked);
+        
+        if (this.checked) {
+            // Sincronizar todos los costos del bloque
+            syncAllCostsInBlock(blockId);
+        }
+    });
+}
+
+// ✅ Función para sincronizar todos los costos cuando se activa el toggle
+function syncAllCostsInBlock(blockId) {
+    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+    
+    rows.forEach(row => {
+        const sglCostInput = row.querySelector('.rate-input[data-field="cost"][data-rate-type="SGL"]');
+        const dblCostInput = row.querySelector('.rate-input[data-field="cost"][data-rate-type="DBL"]');
+        
+        if (sglCostInput && dblCostInput) {
+            dblCostInput.value = sglCostInput.value;
+            // Disparar evento para recalcular venta
+            dblCostInput.dispatchEvent(new Event('input'));
+        }
+    });
+}
 
 function copyBlocks() {
     document.querySelectorAll(".copy-block").forEach(button => {
@@ -1300,21 +1384,29 @@ function restoreBlock(blockId, button) {
     if (deleteBtn) {
         deleteBtn.classList.remove("d-none");
     }
+
+    const marginDisplay = document.querySelector(`.margin-display[data-block="${blockId}"]`);
+    const marginInput = document.querySelector(`.margin-input[data-block="${blockId}"]`);
+    if (marginDisplay && marginInput) {
+        marginDisplay.textContent = marginInput.value;
+        marginDisplay.classList.remove("d-none");
+        marginInput.classList.add("d-none");
+    }
     
     // Limpiar variable global
     currentEditingBlock = null;
 }
 
-function enableEdit(row) {
+function enableEdit(row, blockId) {
     // Editar celdas de rates
     row.querySelectorAll(".rate-cell").forEach(cell => {
-        // Evita convertir dos veces
         if (cell.querySelector("input")) return;
 
         const value = cell.innerText.trim();
         const cleanValue = value === "N/A" ? "" : value;
         const rateId = cell.dataset.rate;
         const field = cell.dataset.field;
+        const rateType = cell.dataset.rateType;
 
         cell.innerHTML = `
             <input type="number"
@@ -1324,21 +1416,19 @@ function enableEdit(row) {
                    data-original-value="${cleanValue}"
                    data-rate="${rateId}"
                    data-field="${field}"
+                   data-rate-type="${rateType}"
                    placeholder="${cleanValue}">
         `;
         
-        // Agregar event listener para actualizar margen en tiempo real
         const input = cell.querySelector('.rate-input');
         
         input.addEventListener('input', function() {
-            updateMarginForRow(row, this);
+            handleRateInputChange(row, this, blockId);
         });
-        
-        // Trigger inicial
-        input.dispatchEvent(new Event('input'));
+    
     });
     
-    // ✅ Editar celda de grupo (input de texto)
+    // Editar celda de grupo
     const groupCell = row.querySelector(".group-cell");
     if (groupCell && !groupCell.querySelector("input.group-name-input:not(.d-none)")) {
         const groupDisplay = groupCell.querySelector(".group-name-display");
@@ -1352,46 +1442,82 @@ function enableEdit(row) {
     }
 }
 
-// Nueva función para actualizar márgenes de toda la fila
+function handleRateInputChange(row, changedInput, blockId) {
+    const field = changedInput.dataset.field;
+    const rateType = changedInput.dataset.rateType;
+    const isLinked = linkedCostsByBlock.get(blockId);
+    
+    // Si cambia el costo
+    if (field === 'cost') {
+        const costValue = parseFloat(changedInput.value) || 0;
+
+        // Si están vinculados, actualizar el "otro" input de costo primero
+        if (isLinked) {
+            const otherType = rateType === 'SGL' ? 'DBL' : 'SGL';
+            const otherCostInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${otherType}"]`);
+            
+            if (otherCostInput && otherCostInput.value !== changedInput.value) {
+                otherCostInput.value = changedInput.value;
+                // Actualizar la venta del tipo vinculado
+                updateSellPriceFromMargin(row, otherType, costValue);
+            }
+        }
+        
+        // Actualizar la venta del tipo actual
+        updateSellPriceFromMargin(row, rateType, costValue);
+    }
+    
+    // Si el usuario modifica la venta manualmente, recalculamos el margen mostrado
+    if (field === 'sell') {
+        updateMarginForRow(row, changedInput);
+    }
+}
+
+function updateSellPriceFromMargin(row, rateType, costValue) {
+    const blockId = row.dataset.block;
+    const marginInput = document.querySelector(`.margin-input[data-block="${blockId}"]`);
+    
+    // Si no hay input de margen o el costo es 0, no hacemos nada
+    if (!marginInput || costValue <= 0) return;
+
+    const currentMargin = parseFloat(marginInput.value);
+    
+    // Validar margen para evitar división por cero o resultados negativos
+    if (isNaN(currentMargin) || currentMargin >= 100 || currentMargin <= 0) return;
+
+    // FÓRMULA: Venta = Costo / (1 - Margen/100)
+    const rawSell = costValue / currentMargin;
+    
+    const sellInput = row.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
+    if (sellInput) {
+        sellInput.value = Math.ceil(rawSell); // Redondeo para arriba (125.01 -> 126)
+    }
+}
+
 function updateMarginForRow(row, changedInput) {
-    const rateId = changedInput.dataset.rate;
+    const rateType = changedInput.dataset.rateType;
     
-    // Buscar todos los inputs del mismo rate (SGL o DBL)
-    const rateInputs = row.querySelectorAll(`.rate-input[data-rate="${rateId}"]`);
+    // Buscar cost y sell del mismo tipo de rate
+    const costInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${rateType}"]`);
+    const sellInput = row.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
     
-    let cost = 0;
-    let sell = 0;
+    if (!costInput || !sellInput) {
+        console.warn(`No se encontraron inputs para ${rateType}`);
+        return;
+    }
     
-    // Recolectar valores actuales
-    rateInputs.forEach(input => {
-        const field = input.dataset.field;
-        const value = parseFloat(input.value) || 0;
-        
-        if (field === 'cost') {
-            cost = value;
-        } else if (field === 'sell') {
-            sell = value;
-        }
-    });
+    const cost = parseFloat(costInput.value) || 0;
+    const sell = parseFloat(sellInput.value) || 0;
     
-    // Buscar la celda de rentabilidad correspondiente
-    // La estructura es: cost, sell_tourplan, sell, margin
-    // Entonces si encontramos el input de sell, el siguiente td es el de margin
-    let marginCell = null;
+    // Buscar la celda de margen
+    const marginCell = row.querySelector(`td:has(> .margin-value[data-rate-type="${rateType}"])`);
     
-    rateInputs.forEach(input => {
-        if (input.dataset.field === 'sell') {
-            const sellCell = input.closest('td');
-            marginCell = sellCell.nextElementSibling;
-        }
-    });
+    if (!marginCell) return;
     
-    // Actualizar el margen en la celda correspondiente
-    if (marginCell && cost > 0 && sell > 0) {
+    if (cost > 0 && sell > 0) {
         const margin = ((sell - cost) / sell) * 100;
-        marginCell.innerHTML = `<span class="margin-value">${margin.toFixed(1)}%</span>`;
+        marginCell.innerHTML = `<span class="margin-value" data-rate-type="${rateType}">${margin.toFixed(1)}%</span>`;
         
-        // Opcional: agregar código de color
         const marginSpan = marginCell.querySelector('.margin-value');
         if (margin < 11) {
             marginSpan.classList.add('text-danger', 'fw-bold');
@@ -1403,8 +1529,8 @@ function updateMarginForRow(row, changedInput) {
             marginSpan.classList.add('text-success', 'fw-bold');
             marginSpan.classList.remove('text-danger', 'text-warning');
         }
-    } else if (marginCell) {
-        marginCell.textContent = 'N/A';
+    } else {
+        marginCell.innerHTML = '<span class="margin-value" data-rate-type="' + rateType + '">N/A</span>';
     }
 }
 
@@ -1735,31 +1861,7 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
                         </div>
                         
                         <hr>
-                        
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label class="form-label">Costo Base SGL</label>
-                                    <input type="number" step="0.01" class="form-control" 
-                                           id="baseCostSgl" value="0">
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label class="form-label">Costo Base DBL</label>
-                                    <input type="number" step="0.01" class="form-control" 
-                                           id="baseCostDbl" value="0">
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label class="form-label">Costo Base TPL</label>
-                                    <input type="number" step="0.01" class="form-control" 
-                                           id="baseCostTpl" value="0">
-                                </div>
-                            </div>
-                        </div>
-                        
+                                                
                         <small class="text-muted">
                             <i class="fa-solid fa-info-circle"></i>
                             Los costos base serán 0 por defecto. La configuración de status, increase y margin se aplicará a todas las tarifas del bloque.
@@ -1799,11 +1901,7 @@ function confirmCreateBlock() {
     const status = document.getElementById('blockStatus').value;
     const increase = document.getElementById('blockIncrease').value;
     const margin = document.getElementById('blockMargin').value;
-    
-    const baseCostSgl = parseFloat(document.getElementById('baseCostSgl').value) || 0;
-    const baseCostDbl = parseFloat(document.getElementById('baseCostDbl').value) || 0;
-    const baseCostTpl = parseFloat(document.getElementById('baseCostTpl').value) || 0;
-    
+      
     // Validaciones
     if (!dateFrom || !dateTo || !season) {
         alert("Por favor completa todos los campos obligatorios");
@@ -1839,7 +1937,6 @@ function confirmCreateBlock() {
         increase: increase || null,
         margin,
         products: selectedProducts,
-        costs: { sgl: baseCostSgl, dbl: baseCostDbl, tpl: baseCostTpl }
     });
     
     fetch("/tariff/modify/create-rate-block/", {
@@ -1856,11 +1953,6 @@ function confirmCreateBlock() {
             increase: increase ? parseFloat(increase) : null,
             margin: margin,
             product_ids: selectedProducts,
-            base_costs: {
-                sgl: baseCostSgl,
-                dbl: baseCostDbl,
-                tpl: baseCostTpl
-            }
         })
     })
     .then(r => r.json())
@@ -1901,72 +1993,69 @@ document.addEventListener("keydown", function(e) {
 });
 
 function cancelBlockEdit(blockId) {
-    const rows = document.querySelectorAll(
-        `.row-rateline[data-block="${blockId}"]`
-    );
+    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
     
-    // Restaurar valores originales
+    // 1. Resetear variables de control
+    linkedCostsByBlock.delete(blockId);
+    currentEditingBlock = null;
+
+    // 2. Limpiar UI de bloque (Toggle de vinculación)
+    const toggle = document.getElementById(`linkCostBlock_${blockId}`);
+    if (toggle) {
+        toggle.closest('.cost-link-toggle-block').remove();
+    }
+
+    // 3. Revertir MARGEN y TEMPORADA (Input -> Span)
+    const displays = ['margin', 'season'];
+    displays.forEach(type => {
+        const display = document.querySelector(`.${type}-display[data-block="${blockId}"]`);
+        const input = document.querySelector(`.${type}-input[data-block="${blockId}"]`);
+        if (display && input) {
+            input.value = input.dataset.originalValue || input.value;
+            display.textContent = input.value; // Volver al texto original
+            display.classList.remove("d-none");
+            input.classList.add("d-none");
+        }
+    });
+
+    // 4. Revertir CELDAS DE TARIFAS (Venta, Costo, etc.)
     rows.forEach(row => {
-        // Restaurar rates
         row.querySelectorAll(".rate-cell").forEach(cell => {
             const input = cell.querySelector("input");
             if (input) {
-                const originalValue = input.dataset.originalValue || input.placeholder || "N/A";
-                cell.innerText = originalValue;
+                // ✅ CLAVE: Restaurar el texto original guardado en el dataset
+                const original = input.dataset.originalValue;
+                cell.innerText = (original === "" || original === undefined) ? "N/A" : original;
             }
         });
-        
-        // ✅ Restaurar grupo
+
+        // Revertir Nombre de Grupo
         const groupCell = row.querySelector(".group-cell");
         if (groupCell) {
-            const groupDisplay = groupCell.querySelector(".group-name-display");
-            const groupInput = groupCell.querySelector(".group-name-input");
-            
-            if (groupDisplay && groupInput) {
-                // Restaurar al valor original
-                groupInput.value = groupInput.dataset.originalValue || groupInput.value;
-                groupDisplay.textContent = groupInput.value;
-                
-                groupDisplay.classList.remove("d-none");
-                groupInput.classList.add("d-none");
+            const gDisplay = groupCell.querySelector(".group-name-display");
+            const gInput = groupCell.querySelector(".group-name-input");
+            if (gDisplay && gInput) {
+                gInput.value = gInput.dataset.originalValue || gInput.value;
+                gDisplay.textContent = gInput.value;
+                gDisplay.classList.remove("d-none");
+                gInput.classList.add("d-none");
             }
         }
+        
+        // Opcional: Si tienes una función que refresca los colores de los márgenes estáticos, 
+        // podrías llamarla aquí para que los colores vuelvan a su estado original.
     });
-    
-    // Restaurar season display
-    const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
-    const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
-    
-    if (seasonDisplay && seasonInput) {
-        seasonInput.value = seasonInput.dataset.originalValue || seasonInput.value;
-        seasonDisplay.textContent = seasonInput.value;
-        seasonDisplay.classList.remove("d-none");
-        seasonInput.classList.add("d-none");
-    }
-    
-    // Restaurar botón editar
+
+    // 5. Restaurar botones de acción
     const editBtn = document.querySelector(`.edit-block[data-block="${blockId}"]`);
     if (editBtn) {
         editBtn.innerHTML = '<i class="fa-solid fa-pencil"></i>';
-        editBtn.classList.remove("btn-success");
-        editBtn.classList.add("btn-dark");
+        editBtn.classList.replace("btn-success", "btn-dark");
         editBtn.dataset.editing = "false";
     }
-    
-    // Ocultar botón cancelar
-    const cancelBtn = document.querySelector(`.cancel-block[data-block="${blockId}"]`);
-    if (cancelBtn) {
-        cancelBtn.classList.add("d-none");
-    }
-    
-    // Mostrar botón eliminar de nuevo
-    const deleteBtn = document.querySelector(`.delete-block[data-block="${blockId}"]`);
-    if (deleteBtn) {
-        deleteBtn.classList.remove("d-none");
-    }
-    
-    // Limpiar variable global
-    currentEditingBlock = null;
+
+    document.querySelector(`.cancel-block[data-block="${blockId}"]`)?.classList.add("d-none");
+    document.querySelector(`.delete-block[data-block="${blockId}"]`)?.classList.remove("d-none");
 }
 
 // ========================================

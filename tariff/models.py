@@ -214,7 +214,7 @@ class Product(models.Model):
     
     # Important information
     note = models.CharField(max_length=150, blank=True, null=True)
-    childNote = models.CharField(max_length=150, blank=True, null=True)
+    child_note = models.CharField(max_length=150, blank=True, null=True)
 
     # Visible for clients
     shown = models.BooleanField(default=True)

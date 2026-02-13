@@ -14,6 +14,12 @@ MARGIN_SVS_OPTIONS = [
     ("High", "0.8"),
 ]
 
+MARGIN_ACC_OPTIONS = [
+    ("Low", "0.89"),
+    ("Regular", "0.85"),
+    ("High", "0.82"),
+]
+
 @login_required
 def modify_tariff(request):
     return render(request, "tariff/modify_tariff.html")
@@ -22,6 +28,12 @@ def modify_tariff(request):
 @login_required
 def accommodation(request):
     return render(request, "tariff/accommodation.html")
+
+
+@login_required
+def service(request):
+    return render(request, "tariff/service.html")
+
 
 """
 LOCATIONS
@@ -313,7 +325,13 @@ def modify_product_group(request, group_id):
                     "groups": ProductGroup.objects.filter(type_service="AC"),
                     "locations": Location.objects.all(),
                 })
-        
+            else:
+                return render(request, "tariff/service/product_group.html", {
+                    "message_modify": "Todos los campos deben ser completados",
+                    "groups": ProductGroup.objects.filter(type_service="NA"),
+                    "locations": Location.objects.all(),
+                })
+
         location = Location.objects.get(pk=location_form)
 
         # Modifies the model of the supplier group from the form information
@@ -331,9 +349,9 @@ def modify_product_group(request, group_id):
                 "locations": Location.objects.all(),
             })
         else:
-            return HttpResponseRedirect(reverse("acc_product_group"), {
+            return HttpResponseRedirect(reverse("svs_product_group"), {
                 "message_modify": "Se ha modificado correctamente",
-                "groups": ProductGroup.objects.filter(type_service="AC"),
+                "groups": ProductGroup.objects.filter(type_service="NA"),
                 "locations": Location.objects.all(),
             })
 
@@ -393,7 +411,13 @@ SUPPLIER
 def modify_supplier(request, supplier_id):
     # Gets the object of the supplier modifying
     supplier = Supplier.objects.get(id=supplier_id)
-    supplier_groups = SupplierGroup.objects.filter(type_service="AC")
+
+    type_service = supplier.group.type_service
+
+    supplier_groups = SupplierGroup.objects.filter(type_service=type_service)
+    product_groups = ProductGroup.objects.filter(type_service=type_service)
+
+    default_location = Location.objects.get(code="BUE")
 
     # Gets the information from the form
     if request.method == "POST":
@@ -401,61 +425,93 @@ def modify_supplier(request, supplier_id):
         # Attempt to modify supplier
         code = request.POST["code"].upper()
         name = request.POST["name"]
-        category = request.POST["category"]
-        group_form = request.POST["group"]
         margin = request.POST["margin"]
         order = request.POST["order"]
 
-        # Validations
-        if not name or not code or not category or not group_form or not margin:
-            return render(request, "tariff/accommodation/supplier.html", {
-                "message_modify": "Todos los campos deben ser completados",
-                "suppliers": Supplier.objects.filter(group__type_service="AC"),
-                "locations": Location.objects.all(),
-                "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-                "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-                "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-                "ATTRACTIONS": ATTRACTIONS,
-                "INTERESTS": INTERESTS,
-                "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-                "supplier_groups": supplier_groups.order_by("location__name", "name"),
-            })
+        if type_service == "AC":
+            category = request.POST["category"]
+            group_form = request.POST["group"]
 
-        group = SupplierGroup.objects.get(pk=group_form)
-        print(group)
-        
+        # Validations
+        if not name or not code or not margin:
+            if type_service == "AC":
+                return render(request, "tariff/accommodation/supplier.html", {
+                    "message_modify": "Todos los campos deben ser completados",
+                    "suppliers": Supplier.objects.filter(group__type_service=type_service),
+                    "locations": Location.objects.all(),
+                    "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+                    "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+                    "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+                    "ATTRACTIONS": ATTRACTIONS,
+                    "INTERESTS": INTERESTS,
+                    "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
+                    "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
+                    "supplier_groups": supplier_groups.order_by("location__name", "name"),
+                })
+            else:
+                return render(request, "tariff/service/supplier.html", {
+                    "suppliers": Supplier.objects.filter(group__type_service=type_service),
+                    "locations": Location.objects.all(),
+                    "products": Product.objects.filter(type_service="NA"),
+                    "ATTRACTIONS": ATTRACTIONS,
+                    "INTERESTS": INTERESTS,
+                    "product_groups": product_groups .order_by("location__name", "name"),
+                    "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
+                    "default_location": default_location,
+                    "locations": Location.objects.all(),
+                })
+
+        if type_service == "AC":
+            group = SupplierGroup.objects.get(pk=group_form)
+
+        if type_service == "AC":
+            supplier.children_ranking=request.POST["children_ranking"]
+            supplier.disabled_ranking=request.POST["disabled_ranking"]
+            supplier.sustentability_ranking=request.POST["sustentability_ranking"]
+            supplier.hotel_quality=category
+            supplier.group=group
+            supplier.prepayment=request.POST.get("prepayment")
+
         # Modifies the model of the supplier from the form information
         supplier.name=name
         supplier.code=code
-        supplier.description=request.POST["description"]
-        supplier.hotel_quality=category
-        supplier.group=group
         supplier.order=order
-        supplier.children_ranking=request.POST["children_ranking"]
-        supplier.disabled_ranking=request.POST["disabled_ranking"]
-        supplier.sustentability_ranking=request.POST["sustentability_ranking"]
+        supplier.description=request.POST["description"]
         supplier.attractions=request.POST.getlist("attractions")
         supplier.interests=request.POST.getlist("interests")
         supplier.margin=request.POST["margin"]
         supplier.note=request.POST.get("note")
-        supplier.prepayment=request.POST.get("prepayment")
         supplier.pic1_url=request.POST.get("pic1_url")
         supplier.pic2_url=request.POST.get("pic2_url")
         supplier.pic3_url=request.POST.get("pic3_url")
         
         supplier.save()
 
-        return HttpResponseRedirect(reverse("acc_supplier"), {
-            "suppliers": Supplier.objects.filter(group__type_service="AC"),
-            "locations": Location.objects.all(),
-            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-            "ATTRACTIONS": ATTRACTIONS,
-            "INTERESTS": INTERESTS,
-            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "supplier_groups": supplier_groups .order_by("location__name", "name"),
-        })
+        if type_service == "AC":
+            return HttpResponseRedirect(reverse("acc_supplier"), {
+                "suppliers": Supplier.objects.filter(group__type_service=type_service),
+                "locations": Location.objects.all(),
+                "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+                "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+                "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+                "ATTRACTIONS": ATTRACTIONS,
+                "INTERESTS": INTERESTS,
+                "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
+                "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
+                "supplier_groups": supplier_groups .order_by("location__name", "name"),
+            })
+        else:
+            return HttpResponseRedirect(reverse("svs_supplier"), {
+                "suppliers": Supplier.objects.filter(group__type_service=type_service),
+                "locations": Location.objects.all(),
+                "products": Product.objects.filter(type_service="NA"),
+                "ATTRACTIONS": ATTRACTIONS,
+                "INTERESTS": INTERESTS,
+                "product_groups": product_groups .order_by("location__name", "name"),
+                "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
+                "default_location": default_location,
+                "locations": Location.objects.all(),
+            })
 
 
 # Json to edit and delete a particular supplier
@@ -518,7 +574,9 @@ def modify_supplier_rates(request, supplier_id):
 
     products = Product.objects.filter(supplier=supplier)
 
-    product_groups = ProductGroup.objects.filter(type_service="AC")
+    type_service = supplier.group.type_service
+
+    product_groups = ProductGroup.objects.filter(type_service=type_service)
 
     # Create the list of lines in the correct order
     rate_lines = (
@@ -529,52 +587,142 @@ def modify_supplier_rates(request, supplier_id):
         .order_by("date_from", "group__product__order")
     )
 
-    for line in rate_lines:
-        line.sgl = None
-        line.dbl = None
-        line.tpl = None
+    if type_service == "AC":
+        for line in rate_lines:
+            line.sgl = None
+            line.dbl = None
+            line.tpl = None
 
-        for rate in line.line_rates.all():
-            if rate.column_options == "SGL":
-                line.sgl = rate
-            elif rate.column_options == "DBL":
-                line.dbl = rate
-            elif rate.column_options == "TPL":
-                line.tpl = rate
+            for rate in line.line_rates.all():
+                if rate.column_options == "SGL":
+                    line.sgl = rate
+                elif rate.column_options == "DBL":
+                    line.dbl = rate
+                elif rate.column_options == "TPL":
+                    line.tpl = rate
 
-        # Calcular márgenes para cada rate
-        if line.sgl:
-            if line.sgl.cost > 0 and line.sgl.sell_tourplan > 0:
-                line.sgl.margin_tp = ((line.sgl.sell_tourplan - line.sgl.cost) / line.sgl.sell_tourplan) * 100
-            else:
-                line.sgl.margin_tp = 0
+            # Calcular márgenes para cada rate
+            if line.sgl:
+                if line.sgl.cost > 0 and line.sgl.sell_tourplan > 0:
+                    line.sgl.margin_tp = ((line.sgl.sell_tourplan - line.sgl.cost) / line.sgl.sell_tourplan) * 100
+                else:
+                    line.sgl.margin_tp = 0
+                
+                if line.sgl.cost > 0 and line.sgl.sell > 0:
+                    line.sgl.margin_ai = ((line.sgl.sell - line.sgl.cost) / line.sgl.sell) * 100
+                else:
+                    line.sgl.margin_ai = 0
             
-            if line.sgl.cost > 0 and line.sgl.sell > 0:
-                line.sgl.margin_ai = ((line.sgl.sell - line.sgl.cost) / line.sgl.sell) * 100
-            else:
-                line.sgl.margin_ai = 0
-        
-        if line.dbl:
-            if line.dbl.cost > 0 and line.dbl.sell_tourplan > 0:
-                line.dbl.margin_tp = ((line.dbl.sell_tourplan - line.dbl.cost) / line.dbl.sell_tourplan) * 100
-            else:
-                line.dbl.margin_tp = 0
+            if line.dbl:
+                if line.dbl.cost > 0 and line.dbl.sell_tourplan > 0:
+                    line.dbl.margin_tp = ((line.dbl.sell_tourplan - line.dbl.cost) / line.dbl.sell_tourplan) * 100
+                else:
+                    line.dbl.margin_tp = 0
+                
+                if line.dbl.cost > 0 and line.dbl.sell > 0:
+                    line.dbl.margin_ai = ((line.dbl.sell - line.dbl.cost) / line.dbl.sell) * 100
+                else:
+                    line.dbl.margin_ai = 0
             
-            if line.dbl.cost > 0 and line.dbl.sell > 0:
-                line.dbl.margin_ai = ((line.dbl.sell - line.dbl.cost) / line.dbl.sell) * 100
-            else:
-                line.dbl.margin_ai = 0
-        
-        if line.tpl:
-            if line.tpl.cost > 0 and line.tpl.sell_tourplan > 0:
-                line.tpl.margin_tp = ((line.tpl.sell_tourplan - line.tpl.cost) / line.tpl.sell_tourplan) * 100
-            else:
-                line.tpl.margin_tp = 0
+            if line.tpl:
+                if line.tpl.cost > 0 and line.tpl.sell_tourplan > 0:
+                    line.tpl.margin_tp = ((line.tpl.sell_tourplan - line.tpl.cost) / line.tpl.sell_tourplan) * 100
+                else:
+                    line.tpl.margin_tp = 0
+                
+                if line.tpl.cost > 0 and line.tpl.sell > 0:
+                    line.tpl.margin_ai = ((line.tpl.sell - line.tpl.cost) / line.tpl.sell) * 100
+                else:
+                    line.tpl.margin_ai = 0
+    else:
+        for line in rate_lines:
+            line.one = None
+            line.two = None
+            line.three = None
+            line.four = None
+            line.five = None
+            line.six = None
+
+            for rate in line.line_rates.all():
+                if rate.column_options == "1":
+                    line.one = rate
+                elif rate.column_options == "2":
+                    line.two = rate
+                elif rate.column_options == "3":
+                    line.three = rate
+                elif rate.column_options == "4":
+                    line.four = rate
+                elif rate.column_options == "5":
+                    line.five = rate
+                elif rate.column_options == "6":
+                    line.six = rate
+
+            # Calcular márgenes para cada rate
+            if line.one:
+                if line.one.cost > 0 and line.one.sell_tourplan > 0:
+                    line.one.margin_tp = ((line.one.sell_tourplan - line.one.cost) / line.one.sell_tourplan) * 100
+                else:
+                    line.one.margin_tp = 0
+                
+                if line.one.cost > 0 and line.one.sell > 0:
+                    line.one.margin_ai = ((line.one.sell - line.one.cost) / line.one.sell) * 100
+                else:
+                    line.one.margin_ai = 0
             
-            if line.tpl.cost > 0 and line.tpl.sell > 0:
-                line.tpl.margin_ai = ((line.tpl.sell - line.tpl.cost) / line.tpl.sell) * 100
-            else:
-                line.tpl.margin_ai = 0
+            if line.two:
+                if line.two.cost > 0 and line.two.sell_tourplan > 0:
+                    line.two.margin_tp = ((line.two.sell_tourplan - line.dtwobl.cost) / line.two.sell_tourplan) * 100
+                else:
+                    line.two.margin_tp = 0
+                
+                if line.two.cost > 0 and line.two.sell > 0:
+                    line.two.margin_ai = ((line.two.sell - line.two.cost) / line.two.sell) * 100
+                else:
+                    line.two.margin_ai = 0
+            
+            if line.three:
+                if line.three.cost > 0 and line.three.sell_tourplan > 0:
+                    line.three.margin_tp = ((line.three.sell_tourplan - line.three.cost) / line.three.sell_tourplan) * 100
+                else:
+                    line.three.margin_tp = 0
+                
+                if line.three.cost > 0 and line.three.sell > 0:
+                    line.three.margin_ai = ((line.three.sell - line.three.cost) / line.three.sell) * 100
+                else:
+                    line.three.margin_ai = 0
+
+            if line.four:
+                if line.four.cost > 0 and line.four.sell_tourplan > 0:
+                    line.four.margin_tp = ((line.four.sell_tourplan - line.four.cost) / line.four.sell_tourplan) * 100
+                else:
+                    line.four.margin_tp = 0
+                
+                if line.four.cost > 0 and line.four.sell > 0:
+                    line.four.margin_ai = ((line.four.sell - line.four.cost) / line.four.sell) * 100
+                else:
+                    line.four.margin_ai = 0
+
+            if line.five:
+                if line.five.cost > 0 and line.five.sell_tourplan > 0:
+                    line.five.margin_tp = ((line.five.sell_tourplan - line.five.cost) / line.five.sell_tourplan) * 100
+                else:
+                    line.five.margin_tp = 0
+                
+                if line.five.cost > 0 and line.five.sell > 0:
+                    line.five.margin_ai = ((line.five.sell - line.five.cost) / line.five.sell) * 100
+                else:
+                    line.five.margin_ai = 0
+
+            if line.six:
+                if line.six.cost > 0 and line.six.sell_tourplan > 0:
+                    line.six.margin_tp = ((line.six.sell_tourplan - line.six.cost) / line.six.sell_tourplan) * 100
+                else:
+                    line.six.margin_tp = 0
+                
+                if line.six.cost > 0 and line.six.sell > 0:
+                    line.six.margin_ai = ((line.six.sell - line.six.cost) / line.six.sell) * 100
+                else:
+                    line.six.margin_ai = 0
 
     blocks = defaultdict(list)
 
@@ -591,22 +739,37 @@ def modify_supplier_rates(request, supplier_id):
             "date_from": date_from,
             "date_to": date_to,
             "season": season,
-            "lines": sorted_lines
+            "lines": sorted_lines,
+            "margin": supplier.margin,
         })
 
-    return render(request, "tariff/accommodation/supplier_rates.html", {
-        "supplier": supplier,
-        "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-        "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-        "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-        "ATTRACTIONS": ATTRACTIONS,
-        "INTERESTS": INTERESTS,
-        "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-        "products": products,
-        "product_groups": product_groups,
-        "rate_lines": rate_lines,
-        "rate_blocks": rate_blocks,
-    })
+    if type_service == "AC":
+        return render(request, "tariff/accommodation/supplier_rates.html", {
+            "supplier": supplier,
+            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+            "ATTRACTIONS": ATTRACTIONS,
+            "INTERESTS": INTERESTS,
+            "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
+            "products": products,
+            "product_groups": product_groups,
+            "rate_lines": rate_lines,
+            "rate_blocks": rate_blocks,
+        })
+    else:
+        return render(request, "tariff/service/supplier_rates.html", {
+            "supplier": supplier,
+            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+            "ATTRACTIONS": ATTRACTIONS,
+            "INTERESTS": INTERESTS,
+            "products": products,
+            "product_groups": product_groups,
+            "rate_lines": rate_lines,
+            "rate_blocks": rate_blocks,
+        })
 
 
 """
@@ -619,10 +782,12 @@ def modify_product(request, product_id):
     # Obtener el producto
     product = Product.objects.get(id=product_id)
     supplier = product.supplier
+
+    type_service = product.group.type_service
     
     # Obtener datos necesarios para los selects
-    suppliers = Supplier.objects.filter(group__type_service="AC").order_by("name")
-    product_groups = ProductGroup.objects.filter(type_service="AC").order_by("location__name", "name")
+    suppliers = Supplier.objects.filter(group__type_service=type_service).order_by("name")
+    product_groups = ProductGroup.objects.filter(type_service=type_service).order_by("location__name", "name")
     clients = Client.objects.all().order_by("name")
     
     if request.method == "POST":
@@ -691,19 +856,35 @@ def modify_product(request, product_id):
         return HttpResponseRedirect(reverse("modify_supplier_rates", args=[supplier.id]))
     
     else:
-        return render(request, "tariff/accommodation/modify_product.html", {
-            "product": product,
-            "supplier": supplier,
-            "suppliers": suppliers,
-            "product_groups": product_groups,
-            "clients": clients,
-            "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
-            "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
-            "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
-            "ATTRACTIONS": ATTRACTIONS,
-            "INTERESTS": INTERESTS,
-            "FCU_OPTIONS": FCU_OPTIONS,
-        })
+
+        if type_service == "AC":
+            return render(request, "tariff/accommodation/modify_product.html", {
+                "product": product,
+                "supplier": supplier,
+                "suppliers": suppliers,
+                "product_groups": product_groups,
+                "clients": clients,
+                "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+                "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+                "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+                "ATTRACTIONS": ATTRACTIONS,
+                "INTERESTS": INTERESTS,
+                "FCU_OPTIONS": FCU_OPTIONS,
+            })
+        else:
+            return render(request, "tariff/service/modify_product.html", {
+                "product": product,
+                "supplier": supplier,
+                "suppliers": suppliers,
+                "product_groups": product_groups,
+                "clients": clients,
+                "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
+                "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
+                "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
+                "ATTRACTIONS": ATTRACTIONS,
+                "INTERESTS": INTERESTS,
+                "FCU_OPTIONS": FCU_OPTIONS,
+            })
 
 
 @login_required
@@ -1018,8 +1199,14 @@ def create_rate_block(request):
             
             if not rate_groups.exists():
                 # Crear un RateGroup por defecto si no existe
+
+                if product.group.type_service == "AC":
+                    name = "Breakfast included"
+                else:
+                    name = "To be defined"
+
                 rate_group = RateGroup.objects.create(
-                    name="Breakfast included",
+                    name=name,
                     order=1,
                     product=product
                 )
@@ -1037,15 +1224,15 @@ def create_rate_block(request):
                 
                 # Obtener el margin del supplier
                 supplier = product.supplier
-                margin_value = supplier.margin if supplier else 1.0
                 
+                if product.group.type_service == "AC":
+                    columns = ["SGL", "DBL", "TPL"]
+                else:
+                    columns = ["1", "2", "3", "4", "5", "6"]
+
                 # Crear Rates para SGL, DBL, TPL
-                for column_type in ["SGL", "DBL", "TPL"]:
-                    cost = base_costs.get(column_type.lower(), 0)
-                    
-                    # Calcular sell basado en cost y margin
-                    sell = int(cost * (1 + margin_value / 100))
-                    sell_tourplan = int(cost * (1 + margin_value / 100))
+                for column_type in columns:
+                    cost = 0
                     
                     Rate.objects.create(
                         rate_line=new_rateline,
@@ -1053,8 +1240,8 @@ def create_rate_block(request):
                         increase=increase,
                         cost=cost,
                         margin=margin,
-                        sell=sell,
-                        sell_tourplan=sell_tourplan,
+                        sell=0,
+                        sell_tourplan=0,
                         column_options=column_type,
                         has_rate=True,
                         text_value=None

@@ -1,5 +1,5 @@
 from django.urls import path
-from tariff.views import tariff, modify, accommodation
+from tariff.views import tariff, modify, accommodation, service
 
 urlpatterns = [
     # General urls
@@ -13,12 +13,20 @@ urlpatterns = [
     # Urls for tariff management
     path("modify", modify.modify_tariff, name="modify_tariff"),
     path("modify/accommodation", modify.accommodation, name="accommodation"),
+    path("modify/service", modify.service, name="service"),    
     path("modify/locations", modify.locations, name="locations"),
+
+    # Urls for accommodation management
     path("modify/acc_supplier", accommodation.supplier, name="acc_supplier"),
     path("modify/acc_supplier_group", accommodation.supplier_group, name="acc_supplier_group"),
     path("modify/acc_product/<int:supplier_id>", accommodation.product, name="acc_product"),
     path("modify/acc_product_group", accommodation.product_group, name="acc_product_group"),
 
+    # Urls for service management
+    path("modify/svs_supplier", service.supplier, name="svs_supplier"),
+    path("modify/svs_product/<int:supplier_id>", service.product, name="svs_product"),
+    path("modify/svs_product_group", service.product_group, name="svs_product_group"),
+    
     # Urls for tariff changes
     path("modify/locations/modify/<int:location_id>", modify.modify_location, name="modify_location"),
     path("modify/suppliers/modify/<int:supplier_id>", modify.modify_supplier, name="modify_supplier"),

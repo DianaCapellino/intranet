@@ -21,7 +21,7 @@
                             <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
                                 <i class="fa-solid fa-plus"></i>
                             </button>
-                            <a href="{% url 'acc_supplier' %}">
+                            <a href="{% url 'svs_supplier' %}">
                                 <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
                                     <i class="fa-solid fa-rotate-left"></i>
                                 </button>
@@ -39,14 +39,14 @@
                         <tr>
                             <th>Nombre Hab.</th>
                             <th>Grupo</th>
-                            <th>SGL Costo</th>
-                            <th>SGL Venta TP</th>
-                            <th>SGL Venta AI</th>
-                            <th>SGL Rent</th>
-                            <th>DBL Costo</th>
-                            <th>DBL Venta TP</th>
-                            <th>DBL Venta AI</th>
-                            <th>DBL Rent</th>
+                            <th>Costo</th>
+                            <th>1 Venta TP</th>
+                            <th>1 Venta AI</th>
+                            <th>1 Rent</th>
+                            <th>2 Costo</th>
+                            <th>2 Venta TP</th>
+                            <th>2 Venta AI</th>
+                            <th>2 Rent</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -140,50 +140,42 @@
                                         style="width: 150px;">
                                 </td>
 
-                                {# SGL #}
+                                {# 1 #}
                                 <td class="rate-cell"
-                                    data-rate="{{ line.sgl.id }}"
+                                    data-rate="{{ line.one.id }}"
                                     data-field="cost"
-                                    data-rate-type="SGL"
-                                    data-rate-margin="{{ line.sgl.margin }}">
-                                    {{ line.sgl.cost|default:"N/A" }}
+                                    data-rate-margin="{{ line.one.margin }}">
+                                    {{ line.one.cost|default:"N/A" }}
                                 </td>
-                                <td {% if line.sgl.sell == line.sgl.sell_tourplan %}class="bg-secondary" {% else %} class="bg-warning" {% endif %}>
-                                    <span class="fw-bold">{{ line.sgl.sell_tourplan|floatformat:0 }}</span>
-                                    <small>({{ line.sgl.margin_tp|floatformat:1 }}%)</small>
+                                <td {% if line.one.sell == line.one.sell_tourplan %}class="bg-secondary" {% else %} class="bg-warning" {% endif %}>
+                                    <span class="fw-bold">{{ line.one.sell_tourplan|floatformat:0 }}</span>
+                                    <small>({{ line.one.margin_tp|floatformat:1 }}%)</small>
                                 </td>
                                 <td class="rate-cell"
-                                    data-rate="{{ line.sgl.id }}"
+                                    data-rate="{{ line.one.id }}"
                                     data-field="sell"
-                                    data-rate-type="SGL"
-                                    data-rate-margin="{{ line.sgl.margin }}">
-                                    {{ line.sgl.sell|default:"N/A" }}
+                                    data-rate-margin="{{ line.one.margin }}">
+                                    {{ line.one.sell|default:"N/A" }}
                                 </td>
-                                <td>
-                                    <span class="margin-value" data-rate-type="SGL">{{ line.sgl.margin_ai|floatformat:1 }}%</span>
-                                </td>
+                                <td>{{ line.one.margin_ai|floatformat:1 }}%</td>
 
-                                {# DBL #}
+                                {# 2 #}
                                 <td class="rate-cell"
-                                    data-rate="{{ line.dbl.id }}"
+                                    data-rate="{{ line.two.id }}"
                                     data-field="cost"
-                                    data-rate-type="DBL"
-                                    data-rate-margin="{{ line.dbl.margin }}">
-                                    {{ line.dbl.cost|default:"N/A" }}
+                                    data-rate-margin="{{ line.two.margin }}">
+                                    {{ line.two.cost|default:"N/A" }}
                                 </td>
                                 <td class="bg-secondary">
-                                    {{ line.dbl.sell_tourplan|default:"N/A" }}
+                                    {{ line.two.sell_tourplan|default:"N/A" }}
                                 </td>
                                 <td class="rate-cell"
-                                    data-rate="{{ line.dbl.id }}"
+                                    data-rate="{{ line.two.id }}"
                                     data-field="sell"
-                                    data-rate-type="DBL"
-                                    data-rate-margin="{{ line.dbl.margin }}">
-                                    {{ line.dbl.sell|default:"N/A" }}
+                                    data-rate-margin="{{ line.two.margin }}">
+                                    {{ line.two.sell|default:"N/A" }}
                                 </td>
-                                <td>
-                                    <span class="margin-value" data-rate-type="DBL">{{ line.dbl.margin_ai|floatformat:1 }}%</span>
-                                </td>
+                                <td>{{ line.two.margin_ai|floatformat:1 }}%</td>
                                 {% if user.isAdmin %}
                                 <td>
                                     <div class="justify-content-around d-flex">

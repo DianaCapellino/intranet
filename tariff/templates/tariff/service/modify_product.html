@@ -4,7 +4,7 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Modificar Producto - {{ product.name }}</h2>
-        <a href="{% url 'acc_supplier' %}">
+        <a href="{% url 'svs_supplier' %}">
             <button class="btn btn-dark" data-toggle="tooltip" title="Volver">
                 <i class="fa-solid fa-rotate-left"></i> Volver
             </button>
@@ -83,7 +83,7 @@
                         </select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">Tipo de costo (SCU) *</label>
+                        <label class="form-label">Tipo de Costo (SCU) *</label>
                         <input class="form-control" name="scu" type="number" min="1" placeholder="Ej: 1 (por noche), 7 (por semana)" value="{{ product.scu }}" required>
                     </div>
                 </div>
@@ -226,7 +226,7 @@
                 <h5 class="mb-0">Notas</h5>
             </div>
             <div class="card-body">
-                <small class="text-muted d-block mb-2">Estas notas se despliegan al abrir la habitación en el tarifario</small>
+                <small class="text-muted d-block mb-2">Esta nota aparece debajo del nombre del producto</small>
                 <div class="mb-3">
                     <label class="form-label">Nota adicional</label>
                     <textarea class="form-control" name="note" rows="2" placeholder="Ejemplo: This room is very small">{{ product.note|default:'' }}</textarea>
