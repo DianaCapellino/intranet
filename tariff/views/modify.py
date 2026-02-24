@@ -1,7 +1,7 @@
 from django.shortcuts import render, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
-from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS
+from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -802,6 +802,9 @@ def modify_product(request, product_id):
         fcu = request.POST["fcu"]
         scu = request.POST["scu"]
         note = request.POST.get("note", "")
+
+        if type_service == "NA":
+            tour_timing = request.POST["timing"]
         
         # Validaciones
         if not name or not code or not supplier_id or not group_id or not order:
@@ -849,6 +852,9 @@ def modify_product(request, product_id):
         # Actualizar clientes disponibles
         selected_clients = request.POST.getlist("clients")
         product.clients.set(selected_clients)
+
+        if type_service == "NA":
+            product.tour_timing = tour_timing
         
         product.save()
         
@@ -884,6 +890,7 @@ def modify_product(request, product_id):
                 "ATTRACTIONS": ATTRACTIONS,
                 "INTERESTS": INTERESTS,
                 "FCU_OPTIONS": FCU_OPTIONS,
+                "tours_timing": TOURS_TIMING,
             })
 
 

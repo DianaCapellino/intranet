@@ -1,4 +1,5 @@
 {% load custom_filters %}
+{% load static %}
 
 {% if rate_lines %}
 
@@ -90,13 +91,13 @@
                             <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
                         </div>
                     {% endif %}
-
-                    {% if request.user.userType != "Cliente" %}
-                        <button class="btn btn-sm btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}"><i class="fa fa-solid fa-info"></i></button>
-                    {% endif %}
-                    {# === ProductGroup (desayuno / otros) === #}
-                    {% regroup supplier_block.list by group.product.group.id as product_groups %}
-
+                    <div class="text-center">
+                        {% if request.user.userType != "Cliente" %}
+                            <button class="btn btn btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}">MORE INFORMATION</button>
+                        {% endif %}
+                        {# === ProductGroup (desayuno / otros) === #}
+                        {% regroup supplier_block.list by group.product.group.id as product_groups %}
+                    </div>
                     {% for pg in product_groups %}
 
                         <div class="px-3 pt-3 pb-1 text-muted small fw-bold text-uppercase">
@@ -106,10 +107,10 @@
                         <table class="table table-hover table-sm mb-0">
                             <thead>
                                 <tr class="text-muted small bg-light border-bottom border-primary">
-                                    <th class="ps-3 border-0" style="width:35%;">
+                                    <th class="ps-3 border-0" style="width:45%;">
                                         Room Category
                                     </th>
-                                    <th class="border-0" style="width:30%;">
+                                    <th class="border-0" style="width:20%;">
                                         Validity
                                     </th>
                                     <th class="text-center border-0">SGL</th>
@@ -198,22 +199,184 @@
 
                     <div class="modal fade" id="windowMoreInfo{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
                         <div class="modal-dialog modal-lg"> <div class="modal-content text-dark"> <div class="modal-header">
-                                    <h5 class="modal-title" id="label{{ supplier.id }}">More information about {{ supplier.name }}</h5>
+                                    <h5 class="modal-title" id="label{{ supplier.id }}">More information about <strong>{{ supplier.name }}</strong></h5>
                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                 </div>
                                 <div class="modal-body text-start">
+                                    {% if supplier.pic1_url and supplier.pic2_url and supplier.pic3_url %}
+                                    <div class="d-flex justify-content-between">
+                                        <img src="{% static 'tariff/' %}{{ supplier.pic1_url }}" width="230px">
+                                        <img src="{% static 'tariff/' %}{{ supplier.pic2_url }}" width="230px">
+                                        <img src="{% static 'tariff/' %}{{ supplier.pic3_url }}" width="230px">
+                                    </div>
+                                    {% endif %}
+                                    {% if supplier.interests %}
+                                        <hr>
+                                        <h5 class="mb-2">
+                                            <i class="fa-solid fa-heart me-2 text-primary"></i>
+                                            For passengers who are interested in:
+                                        </h5>
+                                        <div class="mb-3">
+                                            {% for interest in supplier.interests %}
+                                                <span class="badge bg-secondary me-1 mb-1 fs-6">
+                                                    {{ interest }}
+                                                </span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <h4>Rankings</h4>
+                                    <div class="row">
+                                        <div class="col-4 align-items-center">
+                                            <h5>Children</h5>
+                                            {% if supplier.children_ranking == 1 %}
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                            {% elif supplier.children_ranking == 2 %}
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                            {% elif supplier.children_ranking == 3 %}
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                            {% elif supplier.children_ranking == 4 %}
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-secondary"></i>
+                                            {% elif supplier.children_ranking == 5 %}
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                                <i class="fa-solid fa-child text-primary"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div class="col-4 align-items-center">
+                                            <h5>Reduced mobility</h5>
+                                            {% if supplier.disabled_ranking == 1 %}
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                            {% elif supplier.disabled_ranking == 2 %}
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                            {% elif supplier.disabled_ranking == 3 %}
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                            {% elif supplier.disabled_ranking == 4 %}
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-secondary"></i>
+                                            {% elif supplier.disabled_ranking == 5 %}
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                                <i class="fa-solid fa-wheelchair text-primary"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div class="col-4 align-items-center">
+                                            <h5>Sustentability</h5>
+                                            {% if supplier.sustentability_ranking == 1 %}
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                            {% elif supplier.sustentability_ranking == 2 %}
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                            {% elif supplier.sustentability_ranking == 3 %}
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                            {% elif supplier.sustentability_ranking == 4 %}
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-secondary"></i>
+                                            {% elif supplier.sustentability_ranking == 5 %}
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                                <i class="fa-solid fa-tree text-primary"></i>
+                                            {% endif %}
+                                        </div>
+                                    </div>
                                     {% if supplier.description %}
+                                    <br>
                                         <h4>Description</h4>
-                                        <p>{{ supplier.description }}</p>
+                                        <p>{{ supplier.description|linebreaks }}</p>
+                                    {% endif %}
+                                    <h4>Notes</h4>
+                                    {% if supplier.prepayment %}
+                                        <div class="d-flex align-items-center m-3">
+                                            <i class="fa-solid fa-dollar-sign"></i>
+                                            <div class="text-primary fw-bold ms-2">{{ supplier.prepayment }}</div>
+                                        </div>
+                                    {% endif %}
+                                    {% if supplier.child_note %}
+                                        <div class="d-flex align-items-center m-3">
+                                            <i class="fa-solid fa-baby"></i>
+                                            <div class="text-primary fw-bold ms-2">{{ supplier.child_note }}</div>
+                                        </div>
+                                    {% endif %}
+                                    {% if supplier.stay_note %}
+                                        <div class="d-flex align-items-center m-3">
+                                            <i class="fa-solid fa-bed"></i>
+                                            <div class="text-primary fw-bold ms-2">{{ supplier.stay_note }}</div>
+                                        </div>
+                                    {% endif %}
+                                    {% if supplier.closing_note %}
+                                        <div class="d-flex align-items-center m-3">
+                                            <i class="fa-solid fa-clock"></i>
+                                            <div class="text-primary fw-bold ms-2">{{ supplier.closing_note }}</div>
+                                        </div>
                                     {% endif %}
                                     {% if supplier.note %}
-                                        <h4>Note</h4>
-                                        <p>{{ supplier.note }}</p>
+                                        <div class="d-flex align-items-center m-3">
+                                            <i class="fa-solid fa-exclamation"></i>
+                                            <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
+                                        </div>
                                     {% endif %}
                                     {% if request.user.userType != "Cliente" %}
                                         <hr>
-                                        <a href="{% url 'modify_supplier_rates' supplier.id %}">
-                                            <button class="btn btn-lg btn-outline-primary"><i class="fa fa-solid fa-hand-holding-dollar mx-3"></i></button></a>
+                                        <div class="d-flex justify-content-between">
+                                            <div>
+                                                <a href="{% url 'modify_supplier_rates' supplier.id %}">
+                                                    <button class="btn btn-lg btn-outline-primary"><i class="fa fa-solid fa-hand-holding-dollar mx-3"></i> VER COSTOS</button></a>
+                                            </div>
+                                            <div>
+                                            <a href="{% url 'report_error_tariff_hotel' supplier.id %}">
+                                                <button class="btn btn-lg btn-outline-primary"><i class="fa fa-solid fa-envelope mx-3"></i> REPORTAR ERROR</button></a>
+                                            </div>
+                                        </div>
                                     {% endif %}
                                     <div class="container text-center mt-4">
                                         <button type="button" class="btn btn-dark" data-bs-dismiss="modal">CERRAR</button>
@@ -256,8 +419,8 @@
     <table class="table table-hover table-sm mb-4">
         <thead>
             <tr class="text-muted small bg-light border-bottom border-primary">
-                <th class="ps-3 border-0" style="width:35%;">Service</th>
-                <th class="border-0" style="width:30%;">Validity</th>
+                <th class="ps-3 border-0" style="width:45%;">Service</th>
+                <th class="border-0" style="width:20%;">Validity</th>
                 <th class="text-center border-0">1 Pax</th>
                 <th class="text-center border-0">2 Pax</th>
                 <th class="text-center border-0">3 Pax</th>
@@ -271,7 +434,40 @@
         {% for line in pg.list %}
             <tr class="border-bottom">
                 <td class="ps-3">
-                    <strong>{{ line.group.product.name }}</strong>
+                    <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
+                        {% if line.group.product.tour_timing %}
+                            {% if line.group.product.tour_timing == "AM" %}
+                                <i class="fa-solid fa-sun px-2"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Morning">
+                                </i>
+                            {% elif line.group.product.tour_timing == "PM" %}
+                                <i class="fa-regular fa-sun px-2"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Afternoon">
+                                </i>
+                            {% elif line.group.product.tour_timing == "AM/PM" %}
+                                <i class="fa-solid fa-sun px-2"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Morning">
+                                </i>
+                                <i class="fa-regular fa-sun px"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Afternoon">
+                                </i>
+                            {% elif line.group.product.tour_timing == "Night" %}
+                                <i class="fa-solid fa-moon px-2"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Evening">
+                                </i>
+                            {% endif %}
+                        {% endif %}
+
                     <div class="small text-muted">
                         {{ line.group.name }}
                     </div>
@@ -313,6 +509,68 @@
                     {{ line.rates_by_column.6|default:"N/A" }}
                 </td>
             </tr>
+
+            <div class="modal fade" id="windowMoreInfoProduct{{ line.group.product.id }}" tabindex="-1" aria-labelledby="labelProduct{{ line.group.product.id }}">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content text-dark">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="labelProduct{{ line.group.product.id }}">More information about <strong>{{ line.group.product.name }}</strong> - 
+                                {% if line.group.product.tour_timing %}
+                                    {% if line.group.product.tour_timing == "AM" %}
+                                        <i class="fa-solid fa-sun px-2"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Morning">
+                                        </i>
+                                    {% elif line.group.product.tour_timing == "PM" %}
+                                        <i class="fa-regular fa-sun px-2"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Afternoon">
+                                        </i>
+                                    {% elif line.group.product.tour_timing == "AM/PM" %}
+                                        <i class="fa-solid fa-sun px-2"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Morning">
+                                        </i>
+                                        <i class="fa-regular fa-sun px"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Afternoon">
+                                        </i>
+                                    {% elif line.group.product.tour_timing == "Night" %}
+                                        <i class="fa-solid fa-moon px-2"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="Evening">
+                                        </i>
+                                    {% endif %}
+                                {% endif %}
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                        </div>
+                        <div class="modal-body text-start">
+                            {% if line.group.product.description %}
+                                <h4>Description</h4>
+                                <p>{{ line.group.product.description|linebreaks }}</p>
+                            {% endif %}
+                            {% if line.group.product.note %}
+                                <h4>Note</h4>
+                                <p>{{ line.group.product.note }}</p>
+                            {% endif %}
+                            {% if request.user.userType != "Cliente" %}
+                                <hr>
+                                <a href="{% url 'modify_supplier_rates' line.group.product.supplier.id %}">
+                                    <button class="btn btn-lg btn-outline-primary"><i class="fa fa-solid fa-hand-holding-dollar mx-3"></i></button></a>
+                            {% endif %}
+                            <div class="container text-center mt-4">
+                                <button type="button" class="btn btn-dark" data-bs-dismiss="modal">CERRAR</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         {% endfor %}
 
         </tbody>

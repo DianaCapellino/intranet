@@ -3,6 +3,7 @@ from django.http import HttpResponseRedirect, HttpResponse, FileResponse
 from django.urls import reverse
 from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
 from tariff.utils import apply_client_margin
+from intranet.utils import report_tariff_error_hotel, send_templated_email
 from intranet.models import Client, Holidays
 import csv
 from django.contrib.auth.decorators import login_required
@@ -270,7 +271,7 @@ def upload_data(csv_obj):
     csv_obj.delete()
     return tourplan_list
 
-
+@login_required
 def special_dates(request):
     return render(
         request,
@@ -306,7 +307,33 @@ def download_holidays_pdf(request, year):
         # Implement later this exception
         pass
 
+@login_required
 def history_of_changes(request):
     return render(
         request,"tariff/history_of_changes.html"
         )
+
+@login_required
+def report_error_hotel(request, supplier_id):
+
+    supplier_obj = Supplier.objects.get(pk=supplier_id)
+    
+    if request.method == "POST":
+
+        note = request.POST["note"]
+
+        subject, email, template, context = report_tariff_error_hotel(request.user, supplier_obj, note)
+
+        send_templated_email(subject, email, template, context)
+
+        this_year = date.today().year
+
+        return render(request, "tariff/tariff.html", {
+            "locations":Location.objects.all(),
+            "clients": Client.objects.all(),
+            "this_year": this_year,
+        })
+
+    return render(request, "tariff/report_error.html", {
+        "supplier": supplier_obj,
+    })

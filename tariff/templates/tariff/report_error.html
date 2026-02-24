@@ -1,0 +1,36 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+{% if user.userType != "Cliente" %}
+    <div class="container">
+        <div class="d-flex justify-content-between">
+            <h2>Reportando error en Tarifario de hotel
+                <strong>{{ supplier.name }}</strong></h2>
+            <div>
+                <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+            </div>
+        </div>
+
+        {% if message %}
+            <div class="message text-center">{{ message }}</div>
+        {% endif %}
+
+        <br>
+        <br>
+        <div class="text-center">
+            <form class="rw-3 text-center" action="{% url 'report_error_tariff_hotel' supplier.id %}" method="post">
+                {% csrf_token %}
+                <div class="form">
+                    <div class="row">
+                        <div class="mb-3 col-12">
+                            <textarea class="form-control" rows="3" name="note" id="note" placeholder="Describir el error o sugerencia a agregar..."></textarea>
+                        </div>
+                    </div>
+                    <input class="btn btn-dark" type="submit" value="GUARDAR">
+                </div>
+            </form>
+        </div>
+    </div>
+
+{% endif %}
+{% endblock %}

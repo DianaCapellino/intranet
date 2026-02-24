@@ -122,6 +122,7 @@ function create_datatable (type) {
                 { data: "starting_date" },
                 { data: "closing_date" },
                 { data: "trip" },
+                { data: "type" },
                 { data: "status" },
                 { data: "amount" },
                 { data: "client" },
@@ -131,6 +132,7 @@ function create_datatable (type) {
                 { data: "user_working" },
                 { data: "progress" },
                 { data: "importance" },
+                { data: "difficulty" },
                 { data: "note" },
                 { data: "travelling_date" },
                 { data: "acciones", orderable: false }
@@ -172,7 +174,8 @@ function create_datatable (type) {
             columnDefs: [
                 { orderable: false, targets: -1 },
                 { width: '20%', target: 2 },
-                { visible: false, targets: [4, 7, 11, 12]}
+                { width: '2px', target: 13 },
+                { visible: false, targets: [5, 8, 12, 13, 14]}
             ],
             order: [[0, "desc"]],
               // callback que corre cada vez que DataTables crea un <tr>

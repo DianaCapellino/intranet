@@ -1,11 +1,15 @@
+
 from datetime import datetime, date, timedelta
 from .models import Entry, Holidays, Trip, Absence
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.conf import settings
 
 def update_entries():
-    
+
     # All entries
     entries = Entry.objects.all()
-    
+
     for entry in entries:
         update_timingStatus(entry)
 
@@ -50,7 +54,7 @@ def update_timingStatus(entry):
 
 
 def get_working_days(from_date, to_date):
-    
+
     # Normalize the dates
     if hasattr(from_date, "date"):
         from_date = from_date.date()
@@ -80,7 +84,7 @@ def get_working_days_worker(from_date, to_date, worker):
     absence_worker = Absence.objects.filter(absence_user=worker).filter(date_from__range=(from_date, to_date)).count()
 
     return working_days + holidays_worker - absence_worker
-    
+
 
 def check_duplicate_trips(date_from, date_to):
     duplicated_files = []
@@ -91,10 +95,7 @@ def check_duplicate_trips(date_from, date_to):
             if trip.tourplanId:
                 if trip.tourplanId == trip_compared.tourplanId and trip.id != trip_compared.id:
                     duplicated_files.append((trip))
-            if trip.status == "Booking" and trip.client_reference != "":
-                if trip.client_reference == trip_compared.client_reference and trip.id != trip_compared.id:
-                    duplicated_files.append((trip))
-    
+
     return duplicated_files
 
 
@@ -104,7 +105,7 @@ def check_missing_amounts(date_from, date_to):
     for entry in Entry.objects.filter(starting_date__range=(date_from, date_to)):
         if (entry.amount == 0 or entry.amount is None) and (entry.status == "Quote" and entry.version_quote == "A" or entry.status == "Booking" and entry.version == "1"):
             missing_amounts_entries.append(entry)
-    
+
     return missing_amounts_entries
 
 
@@ -114,7 +115,7 @@ def check_incongruent_trip_dates(date_from, date_to):
     for trip in Trip.objects.filter(travelling_date__range=(date_from, date_to)):
         if trip.starting_date == trip.travelling_date or trip.travelling_date < trip.starting_date:
             incongruent_trips.append(trip)
-    
+
     return incongruent_trips
 
 
@@ -125,5 +126,54 @@ def check_incongruent_entry_dates(date_from, date_to):
         difference = (entry.closing_date - entry.starting_date).days
         if entry.starting_date == entry.trip.travelling_date or entry.starting_date > entry.closing_date or difference < 0 or difference > 30:
             incongruent_entries.append(entry)
-    
+
     return incongruent_entries
+
+
+def send_templated_email(subject, to_emails, template_name, context):
+    html_content = render_to_string(template_name, context)
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body="Este email requiere HTML.",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=to_emails,
+    )
+
+    msg.attach_alternative(html_content, "text/html")
+    msg.send()
+
+def test_email():
+
+    subject = "Advertencias Rentabilidad"
+    email = ["diana@aliwenincoming.com.ar"]
+    template = "emails/margin_warning.html"
+
+    trip_one = Trip.objects.get(tourplanId="ALFT109352")
+
+    context = {
+        "user_name": "Diana",
+        "bookings": {
+            "booking1": trip_one,
+            },
+        "note": "La nota es de prueba"
+        }
+
+    return subject, email, template, context
+
+def report_tariff_error_hotel(user, supplier_obj, note):
+
+    supplier = supplier_obj.name
+    user_name = user.other_name
+
+    subject = f"INTRANET - Error en el tarifario - Hotel {supplier}"
+    email = ["diana@aliwenincoming.com.ar"]
+    template = "emails/tariff_error.html"
+
+    context = {
+        "user_name": user_name,
+        "supplier": supplier,
+        "note": note,
+        }
+
+    return subject, email, template, context

@@ -35,6 +35,8 @@ urlpatterns = [
     path("modify/supplier_group/modify/<int:group_id>", modify.modify_supplier_group, name="modify_supplier_group"),
     path("modify/product_group/modify/<int:group_id>", modify.modify_product_group, name="modify_product_group"),
 
+    path("report_error/<int:supplier_id>", tariff.report_error_hotel, name="report_error_tariff_hotel"),
+
     # Json urls
     path("modify/location/json/<int:location_id>", modify.json_location, name="json_location"),
     path("modify/supplier/json/<int:supplier_id>", modify.json_supplier, name="json_supplier"),

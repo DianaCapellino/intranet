@@ -45,7 +45,7 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label">Proveedor *</label>
                         <select name="supplier" class="form-select" required>
                             {% for s in suppliers %}
@@ -55,12 +55,22 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label">Grupo de Producto *</label>
                         <select name="group" class="form-select" required>
                             {% for pg in product_groups %}
                                 <option value="{{ pg.id }}" {% if pg.id == product.group.id %}selected{% endif %}>
                                     {{ pg.location.name }} - {{ pg.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Horario tour: AM / PM / Noche</label>
+                        <select name="timing" class="form-select" required>
+                            {% for timing in tours_timing %}
+                                <option value="{{ timing.0 }}" {% if timing.0 == product.tour_timing %}selected{% endif %}>
+                                    {{ timing.0 }} - {{ timing.1 }}
                                 </option>
                             {% endfor %}
                         </select>

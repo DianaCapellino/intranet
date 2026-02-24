@@ -122,6 +122,13 @@ TYPE_HISTORY = [
     ("Add", "Added rates to existing property/product")
 ]
 
+TOURS_TIMING = [
+    ("AM", "Morning"),
+    ("PM", "Afternoon"),
+    ("AM/PM", "Morning & Afternoon"),
+    ("Night", "Evening"),
+]
+
 class Location(models.Model):
     code = models.CharField(max_length=3)
     name = models.CharField(max_length=64)
@@ -232,6 +239,9 @@ class Product(models.Model):
     order = models.PositiveIntegerField()
     group = models.ForeignKey(ProductGroup, on_delete=models.CASCADE, related_name="group_products")
     clients = models.ManyToManyField(Client, related_name="available_clients", blank=True)
+
+    # If the tour is in the morning, afternoon or evening
+    tour_timing = models.CharField(choices=TOURS_TIMING, max_length=64, blank=True, null=True)
 
     def __str__(self):
         return f"{self.supplier} - {self.name} - {self.group}"

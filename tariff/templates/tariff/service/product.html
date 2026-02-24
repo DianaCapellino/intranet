@@ -30,7 +30,9 @@
                         <div class="col-6">
                             <input class="form-control" name="name" placeholder="Nombre del proveedor" required>
                         </div>
-                        <div class="col">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
                             <label class="form-label">Grupo: Regular / Privado</label>
                             <a href="{% url 'svs_product_group' %}"
                             data-toggle="tooltip"
@@ -41,6 +43,14 @@
                             <select name="group" class="form-select" required>
                                 {% for group in product_groups %}
                                     <option value="{{ group.id }}">{{ group.location.name }} - {{ group.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Horario tour: AM / PM / Noche</label>
+                            <select name="timing" class="form-select" required>
+                                {% for timing in tours_timing %}
+                                    <option value="{{ timing.0 }}">{{ timing.0 }} - {{ timing.1 }}</option>
                                 {% endfor %}
                             </select>
                         </div>

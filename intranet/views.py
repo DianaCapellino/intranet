@@ -768,6 +768,7 @@ def create_trip(request):
         try:
             # Get all the info from the form
             name = request.POST.get("name", "").strip()
+            quantity_pax = request.POST["quantity_pax"]
             starting_date = request.POST.get("starting_date")
             travelling_date = request.POST.get("travelling_date")
             client_form = request.POST.get("client")
@@ -835,6 +836,7 @@ def create_trip(request):
             # Creates the model of the trip from the form information
             new_trip = Trip.objects.create(
                 name=name,
+                quantity_pax=quantity_pax,
                 status=status,
                 client=client,
                 client_reference=client_reference,
@@ -2018,6 +2020,7 @@ def entries_data(request):
         "starting_date",
         "closing_date",
         "trip__name",
+        "trip__trip_type",
         "status",
         "amount",
         "trip__client__name",
@@ -2027,6 +2030,7 @@ def entries_data(request):
         "user_working__username",
         "progress",
         "importance",
+        "difficulty",
         "note",
         "trip__travelling_date",
         "id"  # para acciones
@@ -2092,6 +2096,9 @@ def entries_data(request):
     # Preparar datos
     data = []
     for entry in page_obj:
+
+        trip_name = f"{entry.trip.name if entry.trip else "" } x {entry.trip.quantity_pax}"
+
         # status con versión
         status = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}"
 
@@ -2136,11 +2143,12 @@ def entries_data(request):
                         </div>
                     </div>
             """
-
+        
         data.append({
             "starting_date": starting_date,
             "closing_date": closing_date,
-            "trip": entry.trip.name if entry.trip else "",
+            "trip": trip_name,
+            "type": entry.trip.trip_type,
             "status": status,
             "amount": amount,
             "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
@@ -2150,6 +2158,7 @@ def entries_data(request):
             "user_working": entry.user_working.username,
             "progress": entry.progress,
             "importance": entry.importance,
+            "difficulty": entry.trip.difficulty,
             "note": entry.note or "n/a",
             "travelling_date": travelling_date,
             "acciones": acciones_html,

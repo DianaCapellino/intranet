@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from tariff.models import Supplier, SupplierGroup, Product, ProductGroup, Location, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS
+from tariff.models import Supplier, SupplierGroup, Product, ProductGroup, Location, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, TOURS_TIMING
 from intranet.models import Client
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -145,6 +145,7 @@ def product(request, supplier_id):
                 "ATTRACTIONS": ATTRACTIONS,
                 "INTERESTS": INTERESTS,
                 "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
+                "tours_timing": TOURS_TIMING,
                 "clients": Client.objects.all(),
                 "default_location": default_location,
                 "supplier": supplier,
@@ -165,6 +166,7 @@ def product(request, supplier_id):
             name=name,
             code=code,
             description=request.POST["description"],
+            tour_timing=request.POST["timing"],
             supplier=supplier,
             children_ranking=supplier.children_ranking,
             disabled_ranking=supplier.disabled_ranking,
@@ -215,6 +217,7 @@ def product(request, supplier_id):
             "ATTRACTIONS": ATTRACTIONS,
             "INTERESTS": INTERESTS,
             "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
+            "tours_timing": TOURS_TIMING,
             "clients": Client.objects.all(),
             "default_location": default_location,
             "supplier": supplier,
