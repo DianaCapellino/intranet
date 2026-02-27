@@ -9,7 +9,8 @@ urlpatterns = [
     path('special_dates', tariff.special_dates, name='special_dates'),
     path('download_holidays_pdf/<int:year>', tariff.download_holidays_pdf, name='download_holidays_pdf'),
     path('history_of_changes', tariff.history_of_changes, name="history_of_changes"),
-
+    path("export/services/excel/", tariff.export_services_excel, name="export_services_excel"),
+    
     # Urls for tariff management
     path("modify", modify.modify_tariff, name="modify_tariff"),
     path("modify/accommodation", modify.accommodation, name="accommodation"),
@@ -34,16 +35,20 @@ urlpatterns = [
     path("modify/supplier/<int:supplier_id>/rates/", modify.modify_supplier_rates, name="modify_supplier_rates"),
     path("modify/supplier_group/modify/<int:group_id>", modify.modify_supplier_group, name="modify_supplier_group"),
     path("modify/product_group/modify/<int:group_id>", modify.modify_product_group, name="modify_product_group"),
+    path("changes/<int:change_id>/modify/", modify.modify_change, name="modify_change"),
 
-    path("report_error/<int:supplier_id>", tariff.report_error_hotel, name="report_error_tariff_hotel"),
+    path("report_error/hotel/<int:supplier_id>", tariff.report_error_hotel, name="report_error_tariff_hotel"),
+    path("report_error/service/<int:product_id>", tariff.report_error_service, name="report_error_tariff_service"),
 
     # Json urls
     path("modify/location/json/<int:location_id>", modify.json_location, name="json_location"),
     path("modify/supplier/json/<int:supplier_id>", modify.json_supplier, name="json_supplier"),
+    path("changes/json/<int:change_id>", modify.json_changes, name="json_changes"),
     path("modify/supplier-group/json/<int:group_id>", modify.json_supplier_group, name="json_supplier_group"),
     path("modify/product-group/json/<int:group_id>", modify.json_product_group, name="json_product_group"),
     path("modify/update-rate-block/", modify.update_rate_block, name="update_rate_block"),
     path('modify/copy-rate-block/', modify.copy_rate_block, name='copy_rate_block'),
     path('modify/delete-rate-block/', modify.delete_rate_block, name='delete_rate_block'),
     path('modify/create-rate-block/', modify.create_rate_block, name='create_rate_block'),
+    path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
 ]

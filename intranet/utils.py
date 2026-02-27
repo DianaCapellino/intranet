@@ -1,4 +1,3 @@
-
 from datetime import datetime, date, timedelta
 from .models import Entry, Holidays, Trip, Absence
 from django.core.mail import EmailMultiAlternatives
@@ -167,6 +166,25 @@ def report_tariff_error_hotel(user, supplier_obj, note):
     user_name = user.other_name
 
     subject = f"INTRANET - Error en el tarifario - Hotel {supplier}"
+    email = ["diana@aliwenincoming.com.ar"]
+    template = "emails/tariff_error.html"
+
+    context = {
+        "user_name": user_name,
+        "supplier": supplier,
+        "note": note,
+        }
+
+    return subject, email, template, context
+
+
+def report_tariff_error_service(user, product_obj, note):
+
+    product = product_obj.name
+    user_name = user.other_name
+    location = product_obj.group.location.name
+
+    subject = f"INTRANET - Error en el tarifario - Servicio {product} - {location}"
     email = ["diana@aliwenincoming.com.ar"]
     template = "emails/tariff_error.html"
 

@@ -1,11 +1,13 @@
 from django.shortcuts import render, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
-from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING
+from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, Change, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING, TYPE_HISTORY
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from collections import defaultdict
+from datetime import date
+from django.db.models import Avg
 import json
 
 MARGIN_SVS_OPTIONS = [
@@ -556,6 +558,21 @@ def json_supplier(request, supplier_id):
         }, status=400)
 
 
+def calculate_margins(rate):
+    if not rate:
+        return
+
+    if rate.cost > 0 and rate.sell_tourplan > 0:
+        rate.margin_tp = ((rate.sell_tourplan - rate.cost) / rate.sell_tourplan) * 100
+    else:
+        rate.margin_tp = 0
+
+    if rate.cost > 0 and rate.sell > 0:
+        rate.margin_ai = ((rate.sell - rate.cost) / rate.sell) * 100
+    else:
+        rate.margin_ai = 0
+
+
 # Modifying a particular supplier rates
 @login_required
 def modify_supplier_rates(request, supplier_id):
@@ -601,128 +618,26 @@ def modify_supplier_rates(request, supplier_id):
                 elif rate.column_options == "TPL":
                     line.tpl = rate
 
-            # Calcular márgenes para cada rate
-            if line.sgl:
-                if line.sgl.cost > 0 and line.sgl.sell_tourplan > 0:
-                    line.sgl.margin_tp = ((line.sgl.sell_tourplan - line.sgl.cost) / line.sgl.sell_tourplan) * 100
-                else:
-                    line.sgl.margin_tp = 0
-                
-                if line.sgl.cost > 0 and line.sgl.sell > 0:
-                    line.sgl.margin_ai = ((line.sgl.sell - line.sgl.cost) / line.sgl.sell) * 100
-                else:
-                    line.sgl.margin_ai = 0
-            
-            if line.dbl:
-                if line.dbl.cost > 0 and line.dbl.sell_tourplan > 0:
-                    line.dbl.margin_tp = ((line.dbl.sell_tourplan - line.dbl.cost) / line.dbl.sell_tourplan) * 100
-                else:
-                    line.dbl.margin_tp = 0
-                
-                if line.dbl.cost > 0 and line.dbl.sell > 0:
-                    line.dbl.margin_ai = ((line.dbl.sell - line.dbl.cost) / line.dbl.sell) * 100
-                else:
-                    line.dbl.margin_ai = 0
-            
-            if line.tpl:
-                if line.tpl.cost > 0 and line.tpl.sell_tourplan > 0:
-                    line.tpl.margin_tp = ((line.tpl.sell_tourplan - line.tpl.cost) / line.tpl.sell_tourplan) * 100
-                else:
-                    line.tpl.margin_tp = 0
-                
-                if line.tpl.cost > 0 and line.tpl.sell > 0:
-                    line.tpl.margin_ai = ((line.tpl.sell - line.tpl.cost) / line.tpl.sell) * 100
-                else:
-                    line.tpl.margin_ai = 0
+            calculate_margins(line.sgl)
+            calculate_margins(line.dbl)
+            calculate_margins(line.tpl)
     else:
         for line in rate_lines:
-            line.one = None
-            line.two = None
-            line.three = None
-            line.four = None
-            line.five = None
-            line.six = None
+            bases_map = {str(i): None for i in range(1, 7)}
 
             for rate in line.line_rates.all():
-                if rate.column_options == "1":
-                    line.one = rate
-                elif rate.column_options == "2":
-                    line.two = rate
-                elif rate.column_options == "3":
-                    line.three = rate
-                elif rate.column_options == "4":
-                    line.four = rate
-                elif rate.column_options == "5":
-                    line.five = rate
-                elif rate.column_options == "6":
-                    line.six = rate
+                if rate.column_options in bases_map:
+                    bases_map[rate.column_options] = rate
 
-            # Calcular márgenes para cada rate
-            if line.one:
-                if line.one.cost > 0 and line.one.sell_tourplan > 0:
-                    line.one.margin_tp = ((line.one.sell_tourplan - line.one.cost) / line.one.sell_tourplan) * 100
-                else:
-                    line.one.margin_tp = 0
-                
-                if line.one.cost > 0 and line.one.sell > 0:
-                    line.one.margin_ai = ((line.one.sell - line.one.cost) / line.one.sell) * 100
-                else:
-                    line.one.margin_ai = 0
-            
-            if line.two:
-                if line.two.cost > 0 and line.two.sell_tourplan > 0:
-                    line.two.margin_tp = ((line.two.sell_tourplan - line.dtwobl.cost) / line.two.sell_tourplan) * 100
-                else:
-                    line.two.margin_tp = 0
-                
-                if line.two.cost > 0 and line.two.sell > 0:
-                    line.two.margin_ai = ((line.two.sell - line.two.cost) / line.two.sell) * 100
-                else:
-                    line.two.margin_ai = 0
-            
-            if line.three:
-                if line.three.cost > 0 and line.three.sell_tourplan > 0:
-                    line.three.margin_tp = ((line.three.sell_tourplan - line.three.cost) / line.three.sell_tourplan) * 100
-                else:
-                    line.three.margin_tp = 0
-                
-                if line.three.cost > 0 and line.three.sell > 0:
-                    line.three.margin_ai = ((line.three.sell - line.three.cost) / line.three.sell) * 100
-                else:
-                    line.three.margin_ai = 0
+            line.bases = []
+            for i in range(1, 7):
+                rate = bases_map[str(i)]
+                calculate_margins(rate)
 
-            if line.four:
-                if line.four.cost > 0 and line.four.sell_tourplan > 0:
-                    line.four.margin_tp = ((line.four.sell_tourplan - line.four.cost) / line.four.sell_tourplan) * 100
-                else:
-                    line.four.margin_tp = 0
-                
-                if line.four.cost > 0 and line.four.sell > 0:
-                    line.four.margin_ai = ((line.four.sell - line.four.cost) / line.four.sell) * 100
-                else:
-                    line.four.margin_ai = 0
-
-            if line.five:
-                if line.five.cost > 0 and line.five.sell_tourplan > 0:
-                    line.five.margin_tp = ((line.five.sell_tourplan - line.five.cost) / line.five.sell_tourplan) * 100
-                else:
-                    line.five.margin_tp = 0
-                
-                if line.five.cost > 0 and line.five.sell > 0:
-                    line.five.margin_ai = ((line.five.sell - line.five.cost) / line.five.sell) * 100
-                else:
-                    line.five.margin_ai = 0
-
-            if line.six:
-                if line.six.cost > 0 and line.six.sell_tourplan > 0:
-                    line.six.margin_tp = ((line.six.sell_tourplan - line.six.cost) / line.six.sell_tourplan) * 100
-                else:
-                    line.six.margin_tp = 0
-                
-                if line.six.cost > 0 and line.six.sell > 0:
-                    line.six.margin_ai = ((line.six.sell - line.six.cost) / line.six.sell) * 100
-                else:
-                    line.six.margin_ai = 0
+                line.bases.append({
+                    "pax": i,
+                    "rate": rate
+                })
 
     blocks = defaultdict(list)
 
@@ -909,6 +824,24 @@ def update_rate_block(request):
         updated_count = 0
         errors = []
         
+        rate_ids = [r.get("rate_id") for r in data["rates"] if r.get("rate_id")]
+
+        ratelines = RateLine.objects.filter(
+            line_rates__id__in=rate_ids
+        ).distinct()
+
+        rateline_data = {}
+
+        for rl in ratelines:
+            old_avg = rl.line_rates.aggregate(
+                avg=Avg("sell")
+            )["avg"] or 0
+
+            rateline_data[rl.id] = {
+                "instance": rl,
+                "old_avg": old_avg
+            }
+
         # Actualizar rates
         for r in data["rates"]:
             rate_id = r.get("rate_id")
@@ -990,6 +923,40 @@ def update_rate_block(request):
                 except (ValueError, TypeError):
                     errors.append(f"ID de grupo inválido: {group_id}")
                     continue
+
+        for rl_id, data_rl in rateline_data.items():
+            rl = data_rl["instance"]
+            old_avg = data_rl["old_avg"]
+
+            new_avg = rl.line_rates.aggregate(
+                avg=Avg("sell")
+            )["avg"] or 0
+
+            if old_avg == 0 and new_avg > 0:
+
+                previous = RateLine.objects.filter(
+                    group=rl.group,
+                    season=rl.season
+                ).exclude(id=rl.id).order_by("-date_from").first()
+                
+                if previous:
+                    previous_avg = previous.line_rates.aggregate(
+                        avg=Avg("sell")
+                    )["avg"] or 0
+                else:
+                    previous_avg = 0
+
+                change_type = "Add"
+                percent = ((new_avg - previous_avg) / previous_avg * 100) if previous_avg != 0 else 0
+            else:
+                change_type = "Update"
+                percent = ((new_avg - old_avg) / old_avg * 100) if old_avg != 0 else 0
+
+            Change.objects.create(
+                rate_line=rl,
+                type=change_type,
+                amount=round(percent, 2)
+            )
 
         return JsonResponse({
             "ok": True, 
@@ -1098,7 +1065,7 @@ def copy_rate_block(request):
                 "error": "No se pudo crear ninguna línea",
                 "details": errors
             }, status=400)
-        
+
         return JsonResponse({
             "ok": True,
             "created_ratelines": created_ratelines,
@@ -1205,10 +1172,12 @@ def create_rate_block(request):
             rate_groups = RateGroup.objects.filter(product=product)
             
             if not rate_groups.exists():
-                # Crear un RateGroup por defecto si no existe
 
+                # Create RateGroup for accommodation
                 if product.group.type_service == "AC":
                     name = "Breakfast included"
+
+                # Create RateGroup for services
                 else:
                     name = "To be defined"
 
@@ -1218,7 +1187,7 @@ def create_rate_block(request):
                     product=product
                 )
                 rate_groups = [rate_group]
-            
+           
             # Crear RateLine para cada RateGroup
             for rate_group in rate_groups:
                 new_rateline = RateLine.objects.create(
@@ -1254,6 +1223,20 @@ def create_rate_block(request):
                         text_value=None
                     )
                     created_rates += 1
+
+                # Check if it is the first rate_line in the product
+                rate_lines_count = RateLine.objects.filter(
+                    group__product=product
+                ).count()
+
+                if rate_lines_count == 1:
+                    # Create the history of changes
+                    new_change = Change.objects.create(
+                        date = date.today(),
+                        type = "New",
+                        rate_line = new_rateline,
+                    )
+                    new_change.save()
                 
                 print(f"RateLine creada: {new_rateline.id} para {product.name}")
         
@@ -1283,3 +1266,55 @@ def create_rate_block(request):
             "error": f"Error en el servidor: {str(e)}",
             "traceback": error_detail
         }, status=500)
+
+
+def modify_change(request, change_id):
+
+    change = Change.objects.get(id=change_id)
+
+    if request.method == "POST":
+        type = request.POST["type"]
+        amount = request.POST["percentage"]
+
+        # Update information
+        change.type = type
+        change.amount = amount
+        change.save()
+
+        today = date.today()
+
+        last_year = date(today.year - 1, today.month, today.day)
+
+        changes = Change.objects.filter(date__range=(last_year, today))
+
+        return HttpResponseRedirect(reverse("history_of_changes"), {
+            "changes": changes,
+            "types": TYPE_HISTORY,
+        })
+
+# Json to edit and delete a particular change
+@login_required
+@csrf_exempt
+def json_changes(request, change_id):
+    
+    # Query for change
+    try:
+        change_obj = Change.objects.get(pk=change_id)
+        change = model_to_dict(change_obj)
+    except Change.DoesNotExist:
+        return JsonResponse({"error": "Change not found"}, status=404)
+
+    # Return change contents
+    if request.method == "GET":
+        return JsonResponse(change, safe=False)
+    
+    # Deletes the change
+    elif request.method == "DELETE":
+        change_obj.delete()
+        return HttpResponse(status=204)
+
+    # ClientContact requests must be via GET or PUT or DELETE
+    else:
+        return JsonResponse({
+            "error": "GET or PUT or DELETE request required."
+        }, status=400)

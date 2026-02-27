@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, TourplanLine, Feedback
+from .models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, TourplanLine, Feedback, Change
 
 
 admin.site.register(Location)
@@ -15,3 +15,4 @@ admin.site.register(CostItem)
 admin.site.register(CsvFileTourplan)
 admin.site.register(TourplanLine)
 admin.site.register(Feedback)
+admin.site.register(Change)

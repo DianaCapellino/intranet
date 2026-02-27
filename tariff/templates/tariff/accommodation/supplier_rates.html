@@ -10,25 +10,27 @@
                 <div>
                     <select class="form-select" aria-label="product_filter" name="product_filter" id="product_filter_select">
                         <option value="all">Todos</option>
-                        
                         {% for product in products %}
                             <option value="{{ product.id }}">{{ product.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div id="new_supplier_container">
-                        <div>
-                            <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
-                                <i class="fa-solid fa-plus"></i>
+                    <div>
+                        {% if user.isAdmin %}
+                        <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                        {% endif %}
+                        <a href="{% url 'acc_supplier' %}">
+                            <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
+                                <i class="fa-solid fa-rotate-left"></i>
                             </button>
-                            <a href="{% url 'acc_supplier' %}">
-                                <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
-                                    <i class="fa-solid fa-rotate-left"></i>
-                                </button>
-                            </a>
-                        </div>  
+                        </a>
                     </div>
+                </div>
             </div>
+
             {% if message_modify %}
                 <div class="message text-center">{{ message_modify }}</div>
             {% endif %}
@@ -39,33 +41,27 @@
                         <tr>
                             <th>Nombre Hab.</th>
                             <th>Grupo</th>
-                            <th>SGL Costo</th>
-                            <th>SGL Venta TP</th>
-                            <th>SGL Venta AI</th>
-                            <th>SGL Rent</th>
-                            <th>DBL Costo</th>
-                            <th>DBL Venta TP</th>
-                            <th>DBL Venta AI</th>
-                            <th>DBL Rent</th>
-                            <th>Acciones</th>
+                            <th>Tarifas</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for block in rate_blocks %}
-                        {# HEADER DEL BLOQUE #}
+
+                        {# ── HEADER DEL BLOQUE ── #}
                         <tr class="table-secondary">
-                            <td colspan="11">
+                            <td colspan="4">
                                 <div class="d-flex align-items-center gap-3">
                                     <strong>
                                         Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}
                                     </strong>
-                                    
+
                                     <div class="d-flex align-items-center gap-2">
                                         <span class="season-display text-primary fw-bold" data-block="{{ forloop.counter }}">
                                             {{ block.season }}
                                         </span>
-                                        <input type="text" 
-                                            class="form-control form-control-sm season-input d-none" 
+                                        <input type="text"
+                                            class="form-control form-control-sm season-input d-none"
                                             data-block="{{ forloop.counter }}"
                                             value="{{ block.season }}"
                                             style="width: 150px;">
@@ -80,137 +76,205 @@
                                         </button>
                                         {% endif %}
                                     </div>
-                                    <div>Markup: </div>
+
+                                    <div>Markup:</div>
                                     <div>
                                         <span class="margin-display text-primary fw-bold" data-block="{{ forloop.counter }}">
                                             {{ block.margin }}
                                         </span>
-                                        <input type="text" 
-                                            class="form-control form-control-sm margin-input d-none" 
+                                        <input type="text"
+                                            class="form-control form-control-sm margin-input d-none"
                                             data-block="{{ forloop.counter }}"
                                             value="{{ block.margin }}"
                                             style="width: 150px;">
                                     </div>
-                                    {% if user.isAdmin %}
-                                        <div class="ms-auto d-flex gap-2">
-                                            <button class="btn btn-sm btn-dark edit-block"
-                                                    data-from="{{ block.date_from }}"
-                                                    data-to="{{ block.date_to }}"
-                                                    data-block="{{ forloop.counter }}"
-                                                    data-editing="false"
-                                                    title="Editar bloque">
-                                                <i class="fa-solid fa-pencil"></i>
-                                            </button>
 
-                                            <button class="btn btn-sm btn-secondary cancel-block d-none"
-                                                    data-block="{{ forloop.counter }}"><i class="fa-solid fa-x"></i>
-                                            </button>
-                                            
-                                            <button class="btn btn-sm btn-danger delete-block"
-                                                    data-block="{{ forloop.counter }}"
-                                                    data-from="{{ block.date_from }}"
-                                                    data-to="{{ block.date_to }}"
-                                                    data-season="{{ block.season }}"
-                                                    title="Eliminar bloque">
-                                                <i class="fa-solid fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    {% endif %}
+                                    
+                                    <div class="ms-auto d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-dark toggle-all-block"
+                                                data-block="{{ forloop.counter }}"
+                                                data-expanded="false"
+                                                title="Expandir/Colapsar todo">
+                                            <i class="fa-solid fa-chevron-down"></i>
+                                        </button>
+                                        {% if user.isAdmin %}
+                                        <button class="btn btn-sm btn-dark edit-block"
+                                                data-from="{{ block.date_from }}"
+                                                data-to="{{ block.date_to }}"
+                                                data-block="{{ forloop.counter }}"
+                                                data-editing="false"
+                                                title="Editar bloque">
+                                            <i class="fa-solid fa-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary cancel-block d-none"
+                                                data-block="{{ forloop.counter }}">
+                                            <i class="fa-solid fa-x"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-danger delete-block"
+                                                data-block="{{ forloop.counter }}"
+                                                data-from="{{ block.date_from }}"
+                                                data-to="{{ block.date_to }}"
+                                                data-season="{{ block.season }}"
+                                                title="Eliminar bloque">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </td>
                         </tr>
-                        
-                        {# FILAS DE TARIFAS #}
+
+                        {# ── FILAS DE TARIFAS ── #}
                         {% for line in block.lines %}
-                            <tr class="row-rateline"
-                                data-rateline="{{ line.group.product.id }}"
-                                data-block="{{ forloop.parentloop.counter }}"
-                                data-from="{{ line.date_from }}"
-                                data-to="{{ line.date_to }}"
-                                data-rateline-id="{{ line.id }}"
-                                data-rategroup-id="{{ line.group.id }}">
-                                <td>{{ line.group.product.name }}</td>
 
-                                {# ✅ Celda de grupo editable con input de texto #}
-                                <td class="group-cell" data-group-id="{{ line.group.id }}">
-                                    <span class="group-name-display">{{ line.group.name }}</span>
-                                    <input type="text" 
-                                        class="form-control form-control-sm group-name-input d-none" 
-                                        value="{{ line.group.name }}"
-                                        style="width: 150px;">
-                                </td>
+                        {# Fila principal (trigger del collapse) #}
+                        <tr class="row-rateline"
+                            data-rateline="{{ line.group.product.id }}"
+                            data-block="{{ forloop.parentloop.counter }}"
+                            data-from="{{ line.date_from }}"
+                            data-to="{{ line.date_to }}"
+                            data-rateline-id="{{ line.id }}"
+                            data-rategroup-id="{{ line.group.id }}">
 
-                                {# SGL #}
-                                <td class="rate-cell"
-                                    data-rate="{{ line.sgl.id }}"
-                                    data-field="cost"
-                                    data-rate-type="SGL"
-                                    data-rate-margin="{{ line.sgl.margin }}">
-                                    {{ line.sgl.cost|default:"N/A" }}
-                                </td>
-                                <td {% if line.sgl.sell == line.sgl.sell_tourplan %}class="bg-secondary" {% else %} class="bg-warning" {% endif %}>
-                                    <span class="fw-bold">{{ line.sgl.sell_tourplan|floatformat:0 }}</span>
-                                    <small>({{ line.sgl.margin_tp|floatformat:1 }}%)</small>
-                                </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.sgl.id }}"
-                                    data-field="sell"
-                                    data-rate-type="SGL"
-                                    data-rate-margin="{{ line.sgl.margin }}">
-                                    {{ line.sgl.sell|default:"N/A" }}
-                                </td>
-                                <td>
-                                    <span class="margin-value" data-rate-type="SGL">{{ line.sgl.margin_ai|floatformat:1 }}%</span>
-                                </td>
+                            {# PRODUCTO #}
+                            <td>
+                                <button class="btn btn-sm btn-link text-decoration-none toggle-line"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#collapseLine{{ line.id }}">
+                                    <i class="fa-solid fa-chevron-right me-2"></i>
+                                    {{ line.group.product.name }}
+                                </button>
+                            </td>
 
-                                {# DBL #}
-                                <td class="rate-cell"
-                                    data-rate="{{ line.dbl.id }}"
-                                    data-field="cost"
-                                    data-rate-type="DBL"
-                                    data-rate-margin="{{ line.dbl.margin }}">
-                                    {{ line.dbl.cost|default:"N/A" }}
-                                </td>
-                                <td class="bg-secondary">
-                                    {{ line.dbl.sell_tourplan|default:"N/A" }}
-                                </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.dbl.id }}"
-                                    data-field="sell"
-                                    data-rate-type="DBL"
-                                    data-rate-margin="{{ line.dbl.margin }}">
-                                    {{ line.dbl.sell|default:"N/A" }}
-                                </td>
-                                <td>
-                                    <span class="margin-value" data-rate-type="DBL">{{ line.dbl.margin_ai|floatformat:1 }}%</span>
-                                </td>
+                            {# GRUPO #}
+                            <td class="group-cell" data-group-id="{{ line.group.id }}">
+                                <span class="group-name-display">{{ line.group.name }}</span>
+                                <input type="text"
+                                    class="form-control form-control-sm group-name-input d-none"
+                                    value="{{ line.group.name }}"
+                                    style="width: 150px;">
+                            </td>
+
+                            {# VACÍO #}
+                            <td></td>
+
+                            {# ACCIONES #}
+                            <td>
                                 {% if user.isAdmin %}
-                                <td>
-                                    <div class="justify-content-around d-flex">
-                                        <i class="fa-solid fa-trash" width="1px" id="trash-line-{{line.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
-                                    </div>
-                                </td>
-                                {% else %}
-                                <td>No hay acciones</td>
+                                <i class="fa-solid fa-trash text-danger"
+                                   data-bs-toggle="modal"
+                                   data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
                                 {% endif %}
-                            </tr>
-                            <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
-                                <div class="modal-dialog">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h1 class="modal-title fs-8" id="label{{ line.id }}">Eliminando {{ line.group }}</h1>
-                                            <button id="btn-close-line-{{ line.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                                        </div>
-                                        <div class="modal-body">
-                                            <h3>¿Está seguro que desea eliminar la línea {{ line.group }} - {{ line.date_from }} / {{ line.date_to }}?</h3>
-                                            <br>
-                                            <div class="container text-center">
-                                                <button id="delete-line-{{ line.id }}" class="btn btn-dark btn-lg delete-line-btn">ELIMINAR</button></a>
-                                            </div>
+                            </td>
+                        </tr>
+
+                        {# Fila collapse con tabla SGL / DBL #}
+                        <tr>
+                            <td colspan="4" class="p-0 border-0">
+                                <div class="collapse" id="collapseLine{{ line.id }}">
+                                    <div class="p-3 bg-light">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="small text-muted">
+                                                <tr>
+                                                    <th style="width: 60px;">Base</th>
+                                                    <th>Costo</th>
+                                                    <th>Venta TP</th>
+                                                    <th>Venta AI</th>
+                                                    <th>Rent</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+
+                                                {# ── SGL ── #}
+                                                <tr>
+                                                    <td>
+                                                        <span class="badge bg-dark fs-6">SGL</span>
+                                                    </td>
+                                                    {% if line.sgl %}
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ line.sgl.id }}"
+                                                            data-field="cost"
+                                                            data-rate-type="SGL">
+                                                            {{ line.sgl.cost|default:"N/A" }}
+                                                        </td>
+                                                        <td {% if line.sgl.sell == line.sgl.sell_tourplan %}class="bg-secondary"{% else %}class="bg-warning"{% endif %}>
+                                                            <strong>{{ line.sgl.sell_tourplan|floatformat:0|default:"N/A" }}</strong>
+                                                            <small class="text-muted">({{ line.sgl.margin_tp|floatformat:1 }}%)</small>
+                                                        </td>
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ line.sgl.id }}"
+                                                            data-field="sell"
+                                                            data-rate-type="SGL">
+                                                            {{ line.sgl.sell|default:"N/A" }}
+                                                        </td>
+                                                        <td class="margin-cell" data-rate-type="SGL">
+                                                            <span class="margin-value {% if line.sgl.margin_ai < 11 %}text-danger fw-bold{% elif line.sgl.margin_ai < 15 %}text-warning fw-bold{% else %}text-success fw-bold{% endif %}">
+                                                                {{ line.sgl.margin_ai|floatformat:1 }}%
+                                                            </span>
+                                                        </td>
+                                                    {% else %}
+                                                        <td colspan="4" class="text-muted">Sin tarifa SGL</td>
+                                                    {% endif %}
+                                                </tr>
+
+                                                {# ── DBL ── #}
+                                                <tr>
+                                                    <td>
+                                                        <span class="badge bg-secondary fs-6">DBL</span>
+                                                    </td>
+                                                    {% if line.dbl %}
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ line.dbl.id }}"
+                                                            data-field="cost"
+                                                            data-rate-type="DBL">
+                                                            {{ line.dbl.cost|default:"N/A" }}
+                                                        </td>
+                                                        <td class="bg-secondary">
+                                                            <strong>{{ line.dbl.sell_tourplan|floatformat:0|default:"N/A" }}</strong>
+                                                            <small class="text-muted">({{ line.dbl.margin_tp|floatformat:1 }}%)</small>
+                                                        </td>
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ line.dbl.id }}"
+                                                            data-field="sell"
+                                                            data-rate-type="DBL">
+                                                            {{ line.dbl.sell|default:"N/A" }}
+                                                        </td>
+                                                        <td class="margin-cell" data-rate-type="DBL">
+                                                            <span class="margin-value {% if line.dbl.margin_ai < 11 %}text-danger fw-bold{% elif line.dbl.margin_ai < 15 %}text-warning fw-bold{% else %}text-success fw-bold{% endif %}">
+                                                                {{ line.dbl.margin_ai|floatformat:1 }}%
+                                                            </span>
+                                                        </td>
+                                                    {% else %}
+                                                        <td colspan="4" class="text-muted">Sin tarifa DBL</td>
+                                                    {% endif %}
+                                                </tr>
+
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+
+                        {# Modal eliminar línea #}
+                        <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h1 class="modal-title fs-8">Eliminando {{ line.group }}</h1>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <h3>¿Está seguro que desea eliminar la línea {{ line.group }} - {{ line.date_from }} / {{ line.date_to }}?</h3>
+                                        <br>
+                                        <div class="container text-center">
+                                            <button id="delete-line-{{ line.id }}" class="btn btn-dark btn-lg delete-line-btn">ELIMINAR</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
                         {% endfor %}
                     {% endfor %}
                     </tbody>

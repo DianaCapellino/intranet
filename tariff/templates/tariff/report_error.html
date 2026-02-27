@@ -4,8 +4,13 @@
 {% if user.userType != "Cliente" %}
     <div class="container">
         <div class="d-flex justify-content-between">
+            {% if type == "acc" %}
             <h2>Reportando error en Tarifario de hotel
                 <strong>{{ supplier.name }}</strong></h2>
+            {% else %}
+            <h2>Reportando error en Tarifario de producto
+                <strong>{{ product.name }}</strong></h2>
+            {% endif %}
             <div>
                 <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
             </div>
@@ -18,7 +23,11 @@
         <br>
         <br>
         <div class="text-center">
+            {% if type == "acc" %}
             <form class="rw-3 text-center" action="{% url 'report_error_tariff_hotel' supplier.id %}" method="post">
+            {% else %}
+            <form class="rw-3 text-center" action="{% url 'report_error_tariff_service' product.id %}" method="post">
+            {% endif %}
                 {% csrf_token %}
                 <div class="form">
                     <div class="row">

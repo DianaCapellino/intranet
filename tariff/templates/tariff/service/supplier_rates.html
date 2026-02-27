@@ -18,9 +18,11 @@
                 </div>
                 <div id="new_supplier_container">
                         <div>
+                            {% if user.isAdmin %}
                             <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
                                 <i class="fa-solid fa-plus"></i>
                             </button>
+                            {% endif %}
                             <a href="{% url 'svs_supplier' %}">
                                 <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
                                     <i class="fa-solid fa-rotate-left"></i>
@@ -37,17 +39,10 @@
                 <table class="table table-hover">
                     <thead>
                         <tr>
-                            <th>Nombre Hab.</th>
+                            <th>Nombre</th>
                             <th>Grupo</th>
-                            <th>Costo</th>
-                            <th>1 Venta TP</th>
-                            <th>1 Venta AI</th>
-                            <th>1 Rent</th>
-                            <th>2 Costo</th>
-                            <th>2 Venta TP</th>
-                            <th>2 Venta AI</th>
-                            <th>2 Rent</th>
-                            <th>Acciones</th>
+                            <th>Tarifas</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -91,8 +86,16 @@
                                             value="{{ block.margin }}"
                                             style="width: 150px;">
                                     </div>
-                                    {% if user.isAdmin %}
+                                        {# ✅ Nuevo botón expandir/colapsar todo el bloque #}
+
                                         <div class="ms-auto d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-dark toggle-all-block"
+                                                    data-block="{{ forloop.counter }}"
+                                                    data-expanded="false"
+                                                    title="Expandir/Colapsar todo">
+                                                <i class="fa-solid fa-chevron-down"></i>
+                                            </button>
+                                            {% if user.isAdmin %}
                                             <button class="btn btn-sm btn-dark edit-block"
                                                     data-from="{{ block.date_from }}"
                                                     data-to="{{ block.date_to }}"
@@ -114,78 +117,119 @@
                                                     title="Eliminar bloque">
                                                 <i class="fa-solid fa-trash"></i>
                                             </button>
+                                            {% endif %}
                                         </div>
-                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
                         
                         {# FILAS DE TARIFAS #}
                         {% for line in block.lines %}
-                            <tr class="row-rateline"
-                                data-rateline="{{ line.group.product.id }}"
-                                data-block="{{ forloop.parentloop.counter }}"
-                                data-from="{{ line.date_from }}"
-                                data-to="{{ line.date_to }}"
-                                data-rateline-id="{{ line.id }}"
-                                data-rategroup-id="{{ line.group.id }}">
-                                <td>{{ line.group.product.name }}</td>
+                        <tr class="row-rateline"
+                            data-block="{{ forloop.parentloop.counter }}"
+                            data-rateline-id="{{ line.id }}"
+                            data-rategroup-id="{{ line.group.id }}">
 
-                                {# ✅ Celda de grupo editable con input de texto #}
-                                <td class="group-cell" data-group-id="{{ line.group.id }}">
-                                    <span class="group-name-display">{{ line.group.name }}</span>
-                                    <input type="text" 
-                                        class="form-control form-control-sm group-name-input d-none" 
-                                        value="{{ line.group.name }}"
-                                        style="width: 150px;">
-                                </td>
+                            <!-- PRODUCTO -->
+                            <td>
+                                <button class="btn btn-sm btn-link text-decoration-none toggle-line"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#collapseLine{{ line.id }}">
+                                    <i class="fa-solid fa-chevron-right me-2"></i>
+                                    {{ line.group.product.name }}
+                                </button>
+                            </td>
 
-                                {# 1 #}
-                                <td class="rate-cell"
-                                    data-rate="{{ line.one.id }}"
-                                    data-field="cost"
-                                    data-rate-margin="{{ line.one.margin }}">
-                                    {{ line.one.cost|default:"N/A" }}
-                                </td>
-                                <td {% if line.one.sell == line.one.sell_tourplan %}class="bg-secondary" {% else %} class="bg-warning" {% endif %}>
-                                    <span class="fw-bold">{{ line.one.sell_tourplan|floatformat:0 }}</span>
-                                    <small>({{ line.one.margin_tp|floatformat:1 }}%)</small>
-                                </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.one.id }}"
-                                    data-field="sell"
-                                    data-rate-margin="{{ line.one.margin }}">
-                                    {{ line.one.sell|default:"N/A" }}
-                                </td>
-                                <td>{{ line.one.margin_ai|floatformat:1 }}%</td>
+                            <!-- GRUPO -->
+                            <td class="group-cell" data-group-id="{{ line.group.id }}">
+                                <span class="group-name-display">{{ line.group.name }}</span>
+                                <input type="text"
+                                    class="form-control form-control-sm d-none group-name-input"
+                                    value="{{ line.group.name }}">
+                            </td>
 
-                                {# 2 #}
-                                <td class="rate-cell"
-                                    data-rate="{{ line.two.id }}"
-                                    data-field="cost"
-                                    data-rate-margin="{{ line.two.margin }}">
-                                    {{ line.two.cost|default:"N/A" }}
-                                </td>
-                                <td class="bg-secondary">
-                                    {{ line.two.sell_tourplan|default:"N/A" }}
-                                </td>
-                                <td class="rate-cell"
-                                    data-rate="{{ line.two.id }}"
-                                    data-field="sell"
-                                    data-rate-margin="{{ line.two.margin }}">
-                                    {{ line.two.sell|default:"N/A" }}
-                                </td>
-                                <td>{{ line.two.margin_ai|floatformat:1 }}%</td>
+                            <!-- VACÍO -->
+                            <td></td>
+
+                            <!-- ACCIONES -->
+                            <td>
                                 {% if user.isAdmin %}
-                                <td>
-                                    <div class="justify-content-around d-flex">
-                                        <i class="fa-solid fa-trash" width="1px" id="trash-line-{{line.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
-                                    </div>
-                                </td>
-                                {% else %}
-                                <td>No hay acciones</td>
+                                    <i class="fa-solid fa-trash text-danger"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
                                 {% endif %}
-                            </tr>
+                            </td>
+
+                        </tr>
+                        <tr>
+                            <td colspan="4" class="p-0 border-0">
+
+                                <div class="collapse" id="collapseLine{{ line.id }}">
+                                    <div class="p-3 bg-light">
+
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="small text-muted">
+                                                <tr>
+                                                    <th style="width:80px;">Base</th>
+                                                    <th>Costo</th>
+                                                    <th>Venta TP</th>
+                                                    <th>Venta AI</th>
+                                                    <th>Rent</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                {% for base in line.bases %}
+                                                <tr>
+
+                                                    <td>
+                                                        <span class="badge bg-dark fs-6">
+                                                            {{ base.pax }}
+                                                        </span>
+                                                    </td>
+
+                                                    {% if base.rate %}
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ base.rate.id }}"
+                                                            data-field="cost"
+                                                            data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                            {{ base.rate.cost|default:"N/A" }}
+                                                        </td>
+
+                                                        <td>
+                                                            <strong>{{ base.rate.sell_tourplan|default:"N/A" }}</strong>
+                                                            <small class="text-muted">
+                                                                ({{ base.rate.margin_tp|floatformat:1 }}%)
+                                                            </small>
+                                                        </td>
+
+                                                        <td class="rate-cell"
+                                                            data-rate="{{ base.rate.id }}"
+                                                            data-field="sell"
+                                                            data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                            {{ base.rate.sell|default:"N/A" }}
+                                                        </td>
+
+                                                        <td class="margin-cell" data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                            {{ base.rate.margin_ai|floatformat:1 }}%
+                                                        </td>
+
+                                                    {% else %}
+                                                        <td colspan="4" class="text-muted">
+                                                            Sin tarifa
+                                                        </td>
+                                                    {% endif %}
+
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+
+                                    </div>
+                                </div>
+
+                            </td>
+                        </tr>
                             <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
                                 <div class="modal-dialog">
                                     <div class="modal-content">

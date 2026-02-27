@@ -31,6 +31,7 @@
                 {% endif %}
                     <a href="{% url 'history_of_changes' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="History of changes"><i class="fa-solid fa-history"></i></button></a>
                     <a href="{% url 'special_dates' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Special Dates"><i class="fa-solid fa-calendar"></i></button></a>
+                    <a id="export-excel" href="{% url 'export_services_excel' %}" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Download Excel"><i class="fa-solid fa-file-excel"></i></a>
             </div>
         </div>
     </div>
@@ -326,4 +327,37 @@
             </div>
         </div>
     </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function updateExportLink() {
+    const client = document.querySelector("[name='client']")?.value;
+    const season = document.querySelector("[name='season']")?.value;
+    const location = document.querySelector("[name='location']")?.value;
+    const type = document.querySelector("[name='type']")?.value;
+
+    const params = new URLSearchParams();
+
+    if (client) params.append("client", client);
+    if (season) params.append("season", season);
+    if (location) params.append("location", location);
+    if (type) params.append("type", type);
+
+    const link = document.getElementById("export-excel");
+    if (link) {
+        link.href = "{% url 'export_services_excel' %}?" + params.toString();
+        console.log("Excel URL:", link.href);
+    }
+}
+
+document.addEventListener("change", function(e) {
+    if (e.target.matches("[name='client'], [name='season'], [name='location'], [name='type']")) {
+        updateExportLink();
+    }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+    updateExportLink();
+});
+</script>
 {% endblock %}

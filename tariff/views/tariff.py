@@ -1,18 +1,23 @@
 from django.shortcuts import render, redirect
 from django.http import HttpResponseRedirect, HttpResponse, FileResponse
 from django.urls import reverse
-from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine
+from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine, Change, TYPE_HISTORY
 from tariff.utils import apply_client_margin
-from intranet.utils import report_tariff_error_hotel, send_templated_email
+from intranet.utils import report_tariff_error_hotel, send_templated_email, report_tariff_error_service
 from intranet.models import Client, Holidays
 import csv
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.csrf import csrf_exempt
 from datetime import date
 import logging
-from django.db.models import Prefetch, Q
 from django.conf import settings
 import os
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image
+from django.http import JsonResponse
+from django.db.models import Q
+from django.core.paginator import Paginator
 
 
 @login_required
@@ -29,12 +34,8 @@ def index(request):
 logger = logging.getLogger(__name__)
 
 
-@login_required
-def tariff_search(request):
+def get_filtered_rate_lines(request):
 
-    has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
-    if not has_params:
-        return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
 
     loc_id = request.GET.get('location')
     t_type = request.GET.get('type')
@@ -96,7 +97,7 @@ def tariff_search(request):
             date_from__lte=season_end,
             date_to__gte=season_start
         )
-        
+
     if client_id:
         client = Client.objects.get(id=client_id)
         rate_lines = rate_lines.filter(group__product__clients__id=client_id)
@@ -119,10 +120,177 @@ def tariff_search(request):
 
         line.rates_by_column = rates
 
+    return rate_lines, t_type
+
+
+@login_required
+def tariff_search(request):
+
+    has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
+    if not has_params:
+        return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
+
+    rate_lines, t_type = get_filtered_rate_lines(request)
+
     return render(request, "tariff/tariff_table_partial.html", {
         "rate_lines": rate_lines,
         "tariff_type": t_type,
     })
+
+
+def export_services_excel(request):
+
+    has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
+    if not has_params:
+        return HttpResponse("No data to export")
+
+    rate_lines, t_type = get_filtered_rate_lines(request)
+    # 👆 MISMA lógica que tu vista principal
+
+    header_fill = PatternFill(start_color="D88775", end_color="D88775", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for line in rate_lines:
+        print(line.rates_by_column)
+        break
+
+    if t_type == "acc":
+        type_label = "Accommodation"
+    else:
+        type_label = "Services"
+
+    loc_id = request.GET.get("location")
+    season = request.GET.get("season")
+
+    location_label = ""
+    if loc_id:
+        location = Location.objects.filter(id=loc_id).first()
+        if location:
+            location_label = location.name
+
+    season_label = ""
+    if season:
+        year = int(season)
+        season_label = f"{year}/{year+1}"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Aliwen Tariff"
+
+    filename = f"Aliwen Tariff - {type_label}"
+
+    if location_label:
+        filename += f" - {location_label}"
+
+    if season_label:
+        filename += f" - {season_label}"
+
+    filename += ".xlsx"
+
+    ws.freeze_panes = "A2"
+
+    if t_type == "svs":
+        ws.append([
+            "Product",
+            "Type",
+            "Group",
+            "From",
+            "To",
+            "1 Pax",
+            "2 Pax",
+            "3 Pax",
+            "4 Pax",
+            "5 Pax",
+            "6 Pax",
+        ])
+        for line in rate_lines:
+            ws.append([
+                line.group.product.name,
+                line.group.name,
+                line.group.product.group.name,
+                line.date_from,
+                line.date_to,
+                line.rates_by_column.get('1'),
+                line.rates_by_column.get('2'),
+                line.rates_by_column.get('3'),
+                line.rates_by_column.get('4'),
+                line.rates_by_column.get('5'),
+                line.rates_by_column.get('6'),
+            ])
+    else:
+        ws.append([
+            "Supplier",
+            "Room",
+            "Type",
+            "Condition",
+            "From",
+            "To",
+            "SGL",
+            "DBL",
+        ])
+        for line in rate_lines:
+            ws.append([
+                getattr(line.group.product.supplier, "name", ""),
+                line.group.product.name,
+                line.group.name,
+                line.group.product.group.name,
+                line.date_from,
+                line.date_to,
+                line.rates_by_column.get('SGL'),
+                line.rates_by_column.get('DBL'),
+            ])
+
+    # Format of the header
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Correct the width of the columns
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column_cells[0].column)
+
+        for cell in column_cells:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except:
+                pass
+
+        ws.column_dimensions[column_letter].width = max_length + 2
+
+    # Aligment of the cells
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.alignment = Alignment(horizontal="left")
+
+    # Borders and more formats
+    thin = Side(border_style="thin", color="DDDDDD")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.border = border
+
+    alt_fill = PatternFill(start_color="F7F9FC", end_color="F7F9FC", fill_type="solid")
+
+    for idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
+        if idx % 2 == 0:
+            for cell in row:
+                cell.fill = alt_fill
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    wb.save(response)
+    return response
+
 
 @login_required
 def toggle_costs(request):
@@ -309,9 +477,15 @@ def download_holidays_pdf(request, year):
 
 @login_required
 def history_of_changes(request):
+
     return render(
-        request,"tariff/history_of_changes.html"
-        )
+        request,
+        "tariff/history_of_changes.html",
+        {
+            "types": TYPE_HISTORY,
+            "is_admin": request.user.isAdmin,
+        }
+    )
 
 @login_required
 def report_error_hotel(request, supplier_id):
@@ -336,4 +510,70 @@ def report_error_hotel(request, supplier_id):
 
     return render(request, "tariff/report_error.html", {
         "supplier": supplier_obj,
+        "type": "acc",
     })
+
+@login_required
+def report_error_service(request, product_id):
+
+    product_obj = Product.objects.get(pk=product_id)
+    
+    if request.method == "POST":
+
+        note = request.POST["note"]
+
+        subject, email, template, context = report_tariff_error_service(request.user, product_obj, note)
+
+        send_templated_email(subject, email, template, context)
+
+        this_year = date.today().year
+
+        return render(request, "tariff/tariff.html", {
+            "locations":Location.objects.all(),
+            "clients": Client.objects.all(),
+            "this_year": this_year,
+        })
+
+    return render(request, "tariff/report_error.html", {
+        "product": product_obj,
+        "type": "svs",
+    })
+
+@login_required
+def history_of_changes_data(request):
+    today = date.today()
+    last_year = date(today.year - 1, today.month, today.day)
+
+    changes = (
+        Change.objects
+        .select_related(
+            "rate_line",
+            "rate_line__group",
+            "rate_line__group__product",
+            "rate_line__group__product__supplier",
+            "rate_line__group__product__supplier__group",
+            "rate_line__group__product__supplier__group__location",
+        )
+        .filter(date__range=(last_year, today))
+    )
+
+    data = []
+    for change in changes:
+        product = change.rate_line.group.product
+        if product.type_service == "AC":
+            supplier_display = str(product.supplier)
+        else:
+            supplier_display = f"{product.supplier.group.location} - Services"
+
+        row = {
+            "id": change.id,
+            "date": str(change.date),
+            "supplier": supplier_display,
+            "product": f"{product.name}, {change.rate_line.group.name}",
+            "validity": f"{change.rate_line.date_from}/{change.rate_line.date_to}",
+            "type": change.type,
+            "amount": f"{change.amount} %",
+        }
+        data.append(row)
+
+    return JsonResponse({"data": data})

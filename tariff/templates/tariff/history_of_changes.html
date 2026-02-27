@@ -11,5 +11,129 @@
     <div>This is the list of all the changes made in the last 12 months.</div>
     <hr>
     
+    <table id="changesTable" class="table table-hover">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Supplier/Destination</th>
+                <th>Product</th>
+                <th>Validity</th>
+                <th>Type</th>
+                <th>Percentage</th>
+                {% if user.isAdmin %}
+                <th>Acciones</th>
+                {% endif %}
+            </tr>
+        </thead>
+            
+    </table>
+    <div id="modals-container"></div>
 </div>
+
+{% endblock %}
+{% block extra_js %}
+
+<script>
+    const IS_ADMIN = "{{ request.user.isAdmin }}" === "True";
+    const CSRF_TOKEN = "{{ csrf_token }}";
+
+    const table = $("#changesTable").DataTable({
+        ajax: {
+            url: "{% url 'history_of_changes_data' %}",
+            dataSrc: "data",
+        },
+        columns: [
+            { data: "date" },
+            { data: "supplier" },
+            { data: "product" },
+            { data: "validity"},
+            { data: "type" },
+            { data: "amount" },
+            ...(IS_ADMIN ? [{
+                data: null,
+                orderable: false,
+                searchable: false,
+                render: (data) => `
+                    <div class="d-flex justify-content-around">
+                        <i class="fa-solid fa-pencil"
+                        id="pencil-change-${data.id}"
+                        aria-hidden="true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#windowChangePencil${data.id}"
+                        style="cursor:pointer"></i>
+                        <i class="fa-solid fa-trash"
+                        id="trash-change-${data.id}"
+                        aria-hidden="true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#windowChangeTrash${data.id}"
+                        style="cursor:pointer"></i>
+                    </div>`
+            }] : []),
+        ],
+        pageLength: 25,
+        order: [[0, "desc"]],
+
+        // Inyectar modales en el DOM cuando se renderizan las filas
+        rowCallback: function(row, data) {
+            $(row).attr("id", `row-changes-${data.id}`);
+            if (!IS_ADMIN) return;
+            if (document.getElementById(`windowChangePencil${data.id}`)) return; // ya existe
+
+            const modalsHTML = `
+                <!-- Modal Editar -->
+                <div class="modal fade modal-lg" id="windowChangePencil${data.id}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1 class="modal-title fs-8">Modificando Cambio - Línea: ${data.product}</h1>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form action="/tariff/changes/${data.id}/modify/" method="post">
+                                    <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF_TOKEN}">
+                                    <div class="row">
+                                        <div class="mb-3 col">
+                                            <label class="form-label">Tipo de Cambio</label>
+                                            <select class="form-control" name="type">
+                                                <!-- Opciones cargadas dinámicamente si las necesitás -->
+                                                <option value="${data.type}" selected>${data.type}</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3 col">
+                                            <label class="form-label">Porcentaje Cambio</label>
+                                            <input class="form-control" type="number" name="percentage"
+                                                step="0.01" value="${parseFloat(data.amount)}">
+                                        </div>
+                                    </div>
+                                    <input class="btn btn-dark btn-lg" type="submit" value="MODIFICAR">
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Eliminar -->
+                <div class="modal fade modal-lg" id="windowChangeTrash${data.id}" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h1 class="modal-title fs-8">Eliminando ${data.product} - ${data.date}</h1>
+                                <button type="button" class="btn-close" id="btn-close-changes-${data.id}" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body text-center">
+                                <h3>¿Está seguro que desea eliminar la línea?</h3>
+                                <br>
+                                <button id="delete-change-${data.id}"
+                                        class="btn btn-dark btn-lg delete-changes-btn"
+                                        data-id="${data.id}">ELIMINAR</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            document.getElementById("modals-container").insertAdjacentHTML("beforeend", modalsHTML);
+        }
+    });
+</script>
+
 {% endblock %}

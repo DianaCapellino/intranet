@@ -128,5 +128,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="{% static 'intranet/js/trip.js' %}?n=1"></script>
     <script src="{% static 'intranet/js/stats.js' %}?n=1"></script>
+    {% block extra_js %}
+    {% endblock %}
   </body>      
 </html>

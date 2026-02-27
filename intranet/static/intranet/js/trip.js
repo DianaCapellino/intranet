@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     deleting_functionality("supplier-group");
     deleting_functionality("product-group");
     deleting_functionality("supplier");
+    deleting_functionality("changes");
 
     create_chart("pendings_chart");
 
@@ -83,7 +84,53 @@ document.addEventListener('DOMContentLoaded', () => {
     create_datatable("supplier");
     
     init_entry_edit_modal();
+
+    toggleFuncionality();
+
 })
+
+function toggleFuncionality() {
+    const toggleLines = document.querySelectorAll(".toggle-line");
+    if (toggleLines) {
+        toggleLines.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const icon = this.querySelector('i');
+                icon.classList.toggle('rotate');
+            });
+        });
+    }
+    
+    const toggleBlocks = document.querySelectorAll(".toggle-all-block");
+    if (toggleBlocks) {
+        toggleBlocks.forEach(button => {
+            button.addEventListener("click", function() {
+                const blockId  = this.dataset.block;
+                const expanded = this.dataset.expanded === "true";
+                
+                const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+                
+                rows.forEach(row => {
+                    const collapseRow = row.nextElementSibling;
+                    if (!collapseRow) return;
+                    const collapseDiv = collapseRow.querySelector(".collapse");
+                    if (!collapseDiv) return;
+
+                    if (expanded) {
+                        collapseDiv.classList.remove("show");
+                    } else {
+                        collapseDiv.classList.add("show");
+                    }
+                });
+                
+                // Alternar estado e ícono
+                this.dataset.expanded = expanded ? "false" : "true";
+                this.querySelector("i").className = expanded 
+                    ? "fa-solid fa-chevron-down" 
+                    : "fa-solid fa-chevron-up";
+            });
+        });
+    }
+}
 
 function modify_date_and_datetime() {
     const now = new Date();
@@ -557,7 +604,7 @@ function deleting_functionality(type) {
 
         const row = document.getElementById(`row-${type}-${id}`);
 
-        if (type === "supplier-group" || type === "location") {
+        if (type === "supplier-group" || type === "location" || type === "changes")  {
             fetch(`${type}/json/${id}`, {
                 method: "DELETE",
                 headers: {
@@ -1038,13 +1085,20 @@ function editing_blocks() {
                         
                         rows.forEach(row => {
                             // Actualizar SGL y DBL con el nuevo margen global del bloque
-                            ['SGL', 'DBL', 'one', 'two'].forEach(type => {
-                                const costInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${type}"]`);
-                                if (costInput) {
-                                    const costValue = parseFloat(costInput.value) || 0;
-                                    // Llamamos a la función de cálculo (ver paso 2)
-                                    updateSellPriceFromMargin(row, type, costValue, newMargin);
+                            const costInputs = row.querySelectorAll('.rate-input[data-field="cost"]');
+
+                            costInputs.forEach(costInput => {
+
+                                const type = costInput.dataset.rateType;
+
+                                if (!type) {
+                                    console.warn("Input cost sin data-rate-type", costInput);
+                                    return;
                                 }
+
+                                const costValue = parseFloat(costInput.value) || 0;
+
+                                updateSellPriceFromMargin(row, type, costValue, newMargin);
                             });
                         });
                     });
@@ -1057,14 +1111,16 @@ function editing_blocks() {
 
 // ✅ Nueva función para crear el toggle a nivel de bloque
 function createBlockCostToggle(blockId) {
-    // Buscar el header del bloque
-    const blockHeader = document.querySelector(`tr.table-secondary td[colspan="11"]`);
+    // ✅ Buscar el header del bloque correcto usando data-block
+    const editBtn = document.querySelector(`.edit-block[data-block="${blockId}"]`);
+    if (!editBtn) return;
     
+    const blockHeader = editBtn.closest('td');
     if (!blockHeader) return;
-    
+
     // Verificar si ya existe el toggle
     if (document.getElementById(`linkCostBlock_${blockId}`)) return;
-    
+
     const toggleContainer = document.createElement('div');
     toggleContainer.className = 'cost-link-toggle-block d-inline-flex ms-3';
     toggleContainer.innerHTML = `
@@ -1077,7 +1133,7 @@ function createBlockCostToggle(blockId) {
             </label>
         </div>
     `;
-    
+
     // Insertar después del botón de copiar
     const copyBtn = blockHeader.querySelector('.copy-block');
     if (copyBtn) {
@@ -1085,14 +1141,12 @@ function createBlockCostToggle(blockId) {
     } else {
         blockHeader.querySelector('.d-flex').appendChild(toggleContainer);
     }
-    
+
     // Event listener para el toggle
     const toggleInput = toggleContainer.querySelector('input');
     toggleInput.addEventListener('change', function() {
         linkedCostsByBlock.set(blockId, this.checked);
-        
         if (this.checked) {
-            // Sincronizar todos los costos del bloque
             syncAllCostsInBlock(blockId);
         }
     });
@@ -1259,16 +1313,29 @@ function saveBlock(blockId, rows, button) {
     const groupData = [];
 
     rows.forEach(row => {
-        // Recolectar datos de rates
-        row.querySelectorAll(".rate-cell").forEach(cell => {
+        let rateCells = [];
+
+        const collapseRow = row.nextElementSibling;
+
+        // ✅ Buscar el div.collapse dentro del <tr> hermano
+        if (collapseRow) {
+            const collapseDiv = collapseRow.querySelector(".collapse");
+            if (collapseDiv) {
+                rateCells = collapseDiv.querySelectorAll(".rate-cell");
+            }
+        }
+
+        // Fallback: buscar directamente en el row
+        if (rateCells.length === 0) {
+            rateCells = row.querySelectorAll(".rate-cell");
+        }
+
+        rateCells.forEach(cell => {
             const input = cell.querySelector("input");
             if (!input) return;
-            
+
             const rateId = cell.dataset.rate;
-            
-            if (!rateId || rateId === "None" || rateId === "undefined") {
-                return;
-            }
+            if (!rateId || rateId === "None" || rateId === "undefined") return;
 
             rateData.push({
                 rate_id: rateId,
@@ -1276,29 +1343,22 @@ function saveBlock(blockId, rows, button) {
                 value: input.value
             });
         });
-        
-        // ✅ Recolectar datos de grupos (nombre actualizado)
+
+        // Grupo (sin cambios)
         const groupCell = row.querySelector(".group-cell");
         if (groupCell) {
             const groupInput = groupCell.querySelector(".group-name-input");
             const groupId = groupCell.dataset.groupId;
-            
             if (groupInput && groupId) {
                 const newGroupName = groupInput.value.trim();
                 const originalGroupName = groupInput.dataset.originalValue;
-                
-                // Solo enviar si cambió
                 if (newGroupName !== originalGroupName && newGroupName !== "") {
-                    groupData.push({
-                        group_id: groupId,
-                        new_name: newGroupName
-                    });
+                    groupData.push({ group_id: groupId, new_name: newGroupName });
                 }
             }
         }
     });
-    
-    // Obtener el nuevo valor de season
+
     const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
     const newSeason = seasonInput ? seasonInput.value : null;
 
@@ -1310,7 +1370,7 @@ function saveBlock(blockId, rows, button) {
         },
         body: JSON.stringify({
             rates: rateData,
-            groups: groupData,  // ✅ Enviar cambios de nombre de grupo
+            groups: groupData,
             season: newSeason,
             block_id: blockId
         })
@@ -1331,63 +1391,61 @@ function saveBlock(blockId, rows, button) {
 }
 
 function restoreBlock(blockId, button) {
-    const rows = document.querySelectorAll(
-        `.row-rateline[data-block="${blockId}"]`
-    );
+    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
 
     rows.forEach(row => {
-        // Restaurar celdas de rates
-        row.querySelectorAll(".rate-cell").forEach(cell => {
-            const input = cell.querySelector("input");
-            if (input) {
-                cell.innerText = input.value || "N/A";
+        // ✅ Buscar el div.collapse dentro del <tr> hermano
+        const collapseRow = row.nextElementSibling;
+        if (collapseRow) {
+            const collapseDiv = collapseRow.querySelector(".collapse");
+            if (collapseDiv) {
+
+                // ✅ Cerrar el collapse
+                const bsCollapse = new bootstrap.Collapse(collapseDiv, { toggle: false });
+                bsCollapse.hide();
+
+                collapseDiv.querySelectorAll(".rate-cell").forEach(cell => {
+                    const input = cell.querySelector("input");
+                    if (input) {
+                        cell.innerText = input.value || "N/A";
+                    }
+                });
             }
-        });
-        
-        // ✅ Restaurar celda de grupo
+        }
+
+        // Restaurar celda de grupo (sin cambios)
         const groupCell = row.querySelector(".group-cell");
         if (groupCell) {
             const groupDisplay = groupCell.querySelector(".group-name-display");
             const groupInput = groupCell.querySelector(".group-name-input");
-            
             if (groupDisplay && groupInput) {
-                // Actualizar el display con el nuevo valor
                 groupDisplay.textContent = groupInput.value;
-                
                 groupDisplay.classList.remove("d-none");
                 groupInput.classList.add("d-none");
             }
         }
     });
-    
-    // Restaurar season display
+
+    // Restaurar season
     const seasonDisplay = document.querySelector(`.season-display[data-block="${blockId}"]`);
     const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
-    
     if (seasonDisplay && seasonInput) {
         seasonDisplay.textContent = seasonInput.value;
         seasonDisplay.classList.remove("d-none");
         seasonInput.classList.add("d-none");
     }
 
-    // Restaurar el botón
+    // Restaurar botón
     button.innerHTML = '<i class="fa-solid fa-pencil"></i>';
     button.classList.remove("btn-success");
     button.classList.add("btn-dark");
     button.dataset.editing = "false";
-    
-    // Ocultar botón cancelar
-    const cancelBtn = document.querySelector(`.cancel-block[data-block="${blockId}"]`);
-    if (cancelBtn) {
-        cancelBtn.classList.add("d-none");
-    }
-    
-    // Mostrar botón eliminar de nuevo
-    const deleteBtn = document.querySelector(`.delete-block[data-block="${blockId}"]`);
-    if (deleteBtn) {
-        deleteBtn.classList.remove("d-none");
-    }
 
+    // Ocultar cancelar, mostrar eliminar
+    document.querySelector(`.cancel-block[data-block="${blockId}"]`)?.classList.add("d-none");
+    document.querySelector(`.delete-block[data-block="${blockId}"]`)?.classList.remove("d-none");
+
+    // Restaurar margin
     const marginDisplay = document.querySelector(`.margin-display[data-block="${blockId}"]`);
     const marginInput = document.querySelector(`.margin-input[data-block="${blockId}"]`);
     if (marginDisplay && marginInput) {
@@ -1395,21 +1453,29 @@ function restoreBlock(blockId, button) {
         marginDisplay.classList.remove("d-none");
         marginInput.classList.add("d-none");
     }
-    
-    // Limpiar variable global
+
     currentEditingBlock = null;
 }
 
 function enableEdit(row, blockId) {
-    // Editar celdas de rates
-    row.querySelectorAll(".rate-cell").forEach(cell => {
+    const collapseRow = row.nextElementSibling;
+    if (!collapseRow) return;
+
+    const collapseDiv = collapseRow.querySelector(".collapse");
+    if (!collapseDiv) return;
+
+    // ✅ Abrir el collapse automáticamente al editar
+    const bsCollapse = new bootstrap.Collapse(collapseDiv, { toggle: false });
+    bsCollapse.show();
+
+    collapseDiv.querySelectorAll(".rate-cell").forEach(cell => {
         if (cell.querySelector("input")) return;
 
         const value = cell.innerText.trim();
         const cleanValue = value === "N/A" ? "" : value;
         const rateId = cell.dataset.rate;
         const field = cell.dataset.field;
-        const rateType = cell.dataset.rateType;
+        const rateType = cell.dataset.rateType || "";
 
         cell.innerHTML = `
             <input type="number"
@@ -1420,23 +1486,20 @@ function enableEdit(row, blockId) {
                    data-rate="${rateId}"
                    data-field="${field}"
                    data-rate-type="${rateType}"
-                   placeholder="${cleanValue}">
+                   placeholder="">
         `;
-        
-        const input = cell.querySelector('.rate-input');
-        
-        input.addEventListener('input', function() {
+
+        const input = cell.querySelector(".rate-input");
+        input.addEventListener("input", function () {
             handleRateInputChange(row, this, blockId);
         });
-    
     });
-    
-    // Editar celda de grupo
+
+    // Editar celda de grupo (sin cambios)
     const groupCell = row.querySelector(".group-cell");
     if (groupCell && !groupCell.querySelector("input.group-name-input:not(.d-none)")) {
         const groupDisplay = groupCell.querySelector(".group-name-display");
         const groupInput = groupCell.querySelector(".group-name-input");
-        
         if (groupDisplay && groupInput) {
             groupInput.dataset.originalValue = groupInput.value;
             groupDisplay.classList.add("d-none");
@@ -1445,95 +1508,111 @@ function enableEdit(row, blockId) {
     }
 }
 
+// Agregar esta función junto a las demás utilidades
+function getRateCellsContainer(row) {
+    const collapseRow = row.nextElementSibling;
+    if (collapseRow) {
+        const collapseDiv = collapseRow.querySelector(".collapse");
+        if (collapseDiv) return collapseDiv;  // servicios/alojamiento con collapse
+    }
+    return row;  // fallback sin collapse
+}
+
 function handleRateInputChange(row, changedInput, blockId) {
     const field = changedInput.dataset.field;
     const rateType = changedInput.dataset.rateType;
     const isLinked = linkedCostsByBlock.get(blockId);
-    
-    // Si cambia el costo
+
     if (field === 'cost') {
         const costValue = parseFloat(changedInput.value) || 0;
 
-        // Si están vinculados, actualizar el "otro" input de costo primero
         if (isLinked) {
             const otherType = rateType === 'SGL' ? 'DBL' : 'SGL';
-            const otherCostInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${otherType}"]`);
-            
-            if (otherCostInput && otherCostInput.value !== changedInput.value) {
-                otherCostInput.value = changedInput.value;
-                // Actualizar la venta del tipo vinculado
-                updateSellPriceFromMargin(row, otherType, costValue);
+            // ✅ Buscar el otro input también en collapseDiv
+            const collapseDiv = getCollapseDiv(row);
+            if (collapseDiv) {
+                const otherCostInput = collapseDiv.querySelector(`.rate-input[data-field="cost"][data-rate-type="${otherType}"]`);
+                if (otherCostInput && otherCostInput.value !== changedInput.value) {
+                    otherCostInput.value = changedInput.value;
+                    updateSellPriceFromMargin(row, otherType, costValue);
+                }
             }
         }
-        
-        // Actualizar la venta del tipo actual
+
         updateSellPriceFromMargin(row, rateType, costValue);
     }
-    
-    // Si el usuario modifica la venta manualmente, recalculamos el margen mostrado
+
     if (field === 'sell') {
+        if (isLinked) {
+            const otherType      = rateType === 'SGL' ? 'DBL' : 'SGL';
+            const container      = getRateCellsContainer(row);
+            const otherSellInput = container.querySelector(`.rate-input[data-field="sell"][data-rate-type="${otherType}"]`);
+            
+            console.log("rateType:", rateType);
+            console.log("otherType:", otherType);
+            console.log("otherSellInput encontrado:", otherSellInput);
+            console.log("otherSellInput data-rate-type:", otherSellInput?.dataset.rateType);
+            
+            if (otherSellInput && otherSellInput.value !== changedInput.value) {
+                otherSellInput.value = changedInput.value;
+                updateMarginForRow(row, otherSellInput);
+            }
+        }
         updateMarginForRow(row, changedInput);
     }
+}
+
+// Helper para obtener el collapseDiv desde un row-rateline
+function getCollapseDiv(row) {
+    const collapseRow = row.nextElementSibling;
+    return collapseRow ? collapseRow.querySelector(".collapse") : null;
 }
 
 function updateSellPriceFromMargin(row, rateType, costValue) {
     const blockId = row.dataset.block;
     const marginInput = document.querySelector(`.margin-input[data-block="${blockId}"]`);
-    
-    // Si no hay input de margen o el costo es 0, no hacemos nada
+
     if (!marginInput || costValue <= 0) return;
 
     const currentMargin = parseFloat(marginInput.value);
-    
-    // Validar margen para evitar división por cero o resultados negativos
     if (isNaN(currentMargin) || currentMargin >= 100 || currentMargin <= 0) return;
 
-    // FÓRMULA: Venta = Costo / (1 - Margen/100)
-    const rawSell = costValue / currentMargin;
-    
-    const sellInput = row.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
+    // ✅ Buscar el input de sell dentro del collapseDiv
+    const collapseDiv = getCollapseDiv(row);
+    if (!collapseDiv) return;
+
+    const sellInput = collapseDiv.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
     if (sellInput) {
-        sellInput.value = Math.ceil(rawSell); // Redondeo para arriba (125.01 -> 126)
+        const rawSell = costValue / currentMargin;
+        sellInput.value = Math.ceil(rawSell);
     }
 }
 
 function updateMarginForRow(row, changedInput) {
     const rateType = changedInput.dataset.rateType;
-    
-    // Buscar cost y sell del mismo tipo de rate
-    const costInput = row.querySelector(`.rate-input[data-field="cost"][data-rate-type="${rateType}"]`);
-    const sellInput = row.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
-    
-    if (!costInput || !sellInput) {
-        console.warn(`No se encontraron inputs para ${rateType}`);
-        return;
-    }
-    
+
+    // ✅ Buscar cost dentro del collapseDiv
+    const collapseDiv = getCollapseDiv(row);
+    if (!collapseDiv) return;
+
+    const costInput = collapseDiv.querySelector(`.rate-input[data-field="cost"][data-rate-type="${rateType}"]`);
+    const sellInput = collapseDiv.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
+
+    if (!costInput || !sellInput) return;
+
     const cost = parseFloat(costInput.value) || 0;
     const sell = parseFloat(sellInput.value) || 0;
-    
-    // Buscar la celda de margen
-    const marginCell = row.querySelector(`td:has(> .margin-value[data-rate-type="${rateType}"])`);
-    
+
+    // ✅ Buscar la celda de margen con la nueva clase y data-rate-type
+    const marginCell = collapseDiv.querySelector(`.margin-cell[data-rate-type="${rateType}"]`);
     if (!marginCell) return;
-    
+
     if (cost > 0 && sell > 0) {
         const margin = ((sell - cost) / sell) * 100;
-        marginCell.innerHTML = `<span class="margin-value" data-rate-type="${rateType}">${margin.toFixed(1)}%</span>`;
-        
-        const marginSpan = marginCell.querySelector('.margin-value');
-        if (margin < 11) {
-            marginSpan.classList.add('text-danger', 'fw-bold');
-            marginSpan.classList.remove('text-warning', 'text-success');
-        } else if (margin < 15) {
-            marginSpan.classList.add('text-warning', 'fw-bold');
-            marginSpan.classList.remove('text-danger', 'text-success');
-        } else {
-            marginSpan.classList.add('text-success', 'fw-bold');
-            marginSpan.classList.remove('text-danger', 'text-warning');
-        }
+        const colorClass = margin < 11 ? 'text-danger' : margin < 15 ? 'text-warning' : 'text-success';
+        marginCell.innerHTML = `<span class="fw-bold ${colorClass}">${margin.toFixed(1)}%</span>`;
     } else {
-        marginCell.innerHTML = '<span class="margin-value" data-rate-type="' + rateType + '">N/A</span>';
+        marginCell.innerHTML = 'N/A';
     }
 }
 
@@ -2023,14 +2102,24 @@ function cancelBlockEdit(blockId) {
 
     // 4. Revertir CELDAS DE TARIFAS (Venta, Costo, etc.)
     rows.forEach(row => {
-        row.querySelectorAll(".rate-cell").forEach(cell => {
-            const input = cell.querySelector("input");
-            if (input) {
-                // ✅ CLAVE: Restaurar el texto original guardado en el dataset
-                const original = input.dataset.originalValue;
-                cell.innerText = (original === "" || original === undefined) ? "N/A" : original;
+        // ✅ Mismo fix
+        const collapseRow = row.nextElementSibling;
+        if (collapseRow) {
+            const collapseDiv = collapseRow.querySelector(".collapse");
+            if (collapseDiv) {
+                // ✅ Cerrar el collapse
+                const bsCollapse = new bootstrap.Collapse(collapseDiv, { toggle: false });
+                bsCollapse.hide();
+
+                collapseDiv.querySelectorAll(".rate-cell").forEach(cell => {
+                    const input = cell.querySelector("input");
+                    if (input) {
+                        const original = input.dataset.originalValue;
+                        cell.innerText = (original === "" || original === undefined) ? "N/A" : original;
+                    }
+                });
             }
-        });
+        }
 
         // Revertir Nombre de Grupo
         const groupCell = row.querySelector(".group-cell");

@@ -376,7 +376,8 @@ class Change(models.Model):
     date = models.DateField(default=django.utils.timezone.now, verbose_name='date status')
     type = models.CharField(max_length=64, choices=TYPE_HISTORY)
     rate_line = models.ForeignKey(RateLine, on_delete=models.CASCADE, related_name="ratelines")
-
+    amount = models.FloatField(default=0)
+    
     def __str__ (self):
         return f"{self.type.upper()} - Travel frame: {self.rate_line.date_from }/{self.rate_line.date_to} - Supplier: {self.rate_line.group.product.supplier.name} - Product: {self.rate_line.group.product.name}"
 

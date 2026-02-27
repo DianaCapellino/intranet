@@ -115,6 +115,11 @@ nav ul li {
     font-size: 0.95rem;
 }
 
+.rotate {
+    transform: rotate(90deg);
+    transition: 0.2s;
+}
+
 @media (min-width: 400px) {
     #brand-name {
       font-size: 1.5rem;
