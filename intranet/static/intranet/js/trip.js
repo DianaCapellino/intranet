@@ -1,8 +1,6 @@
 // Variable global para trackear el bloque en edición
 let currentEditingBlock = null;
 
-// Al inicio del archivo, agregar variable global para rastrear vínculos
-let linkedCostsByBlock = new Map(); // key: blockId, value: boolean
 
 function getCookie(name) {
     let cookieValue = null;
@@ -1026,18 +1024,10 @@ function editing_blocks() {
                 // EDITAR
                 currentEditingBlock = blockId;
                 
-                // Por defecto, costos están vinculados
-                if (!linkedCostsByBlock.has(blockId)) {
-                    linkedCostsByBlock.set(blockId, true);
-                }
-                
                 const rows = document.querySelectorAll(
                     `.row-rateline[data-block="${blockId}"]`
                 );
-                
-                // ✅ Crear toggle ANTES de habilitar edición
-                createBlockCostToggle(blockId);
-                
+
                 rows.forEach(row => {
                     enableEdit(row, blockId);
                 });
@@ -1109,64 +1099,6 @@ function editing_blocks() {
 
 }
 
-// ✅ Nueva función para crear el toggle a nivel de bloque
-function createBlockCostToggle(blockId) {
-    // ✅ Buscar el header del bloque correcto usando data-block
-    const editBtn = document.querySelector(`.edit-block[data-block="${blockId}"]`);
-    if (!editBtn) return;
-    
-    const blockHeader = editBtn.closest('td');
-    if (!blockHeader) return;
-
-    // Verificar si ya existe el toggle
-    if (document.getElementById(`linkCostBlock_${blockId}`)) return;
-
-    const toggleContainer = document.createElement('div');
-    toggleContainer.className = 'cost-link-toggle-block d-inline-flex ms-3';
-    toggleContainer.innerHTML = `
-        <div class="form-check form-switch d-inline-flex align-items-center" style="font-size: 0.875rem;">
-            <input class="form-check-input me-2" type="checkbox" 
-                   id="linkCostBlock_${blockId}" 
-                   ${linkedCostsByBlock.get(blockId) ? 'checked' : ''}>
-            <label class="form-check-label text-info fw-bold" for="linkCostBlock_${blockId}">
-                <i class="fa-solid fa-link"></i> Vincular costos SGL/DBL
-            </label>
-        </div>
-    `;
-
-    // Insertar después del botón de copiar
-    const copyBtn = blockHeader.querySelector('.copy-block');
-    if (copyBtn) {
-        copyBtn.parentElement.appendChild(toggleContainer);
-    } else {
-        blockHeader.querySelector('.d-flex').appendChild(toggleContainer);
-    }
-
-    // Event listener para el toggle
-    const toggleInput = toggleContainer.querySelector('input');
-    toggleInput.addEventListener('change', function() {
-        linkedCostsByBlock.set(blockId, this.checked);
-        if (this.checked) {
-            syncAllCostsInBlock(blockId);
-        }
-    });
-}
-
-// ✅ Función para sincronizar todos los costos cuando se activa el toggle
-function syncAllCostsInBlock(blockId) {
-    const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
-    
-    rows.forEach(row => {
-        const sglCostInput = row.querySelector('.rate-input[data-field="cost"][data-rate-type="SGL"]');
-        const dblCostInput = row.querySelector('.rate-input[data-field="cost"][data-rate-type="DBL"]');
-        
-        if (sglCostInput && dblCostInput) {
-            dblCostInput.value = sglCostInput.value;
-            // Disparar evento para recalcular venta
-            dblCostInput.dispatchEvent(new Event('input'));
-        }
-    });
-}
 
 function copyBlocks() {
     document.querySelectorAll(".copy-block").forEach(button => {
@@ -1521,43 +1453,13 @@ function getRateCellsContainer(row) {
 function handleRateInputChange(row, changedInput, blockId) {
     const field = changedInput.dataset.field;
     const rateType = changedInput.dataset.rateType;
-    const isLinked = linkedCostsByBlock.get(blockId);
 
     if (field === 'cost') {
         const costValue = parseFloat(changedInput.value) || 0;
-
-        if (isLinked) {
-            const otherType = rateType === 'SGL' ? 'DBL' : 'SGL';
-            // ✅ Buscar el otro input también en collapseDiv
-            const collapseDiv = getCollapseDiv(row);
-            if (collapseDiv) {
-                const otherCostInput = collapseDiv.querySelector(`.rate-input[data-field="cost"][data-rate-type="${otherType}"]`);
-                if (otherCostInput && otherCostInput.value !== changedInput.value) {
-                    otherCostInput.value = changedInput.value;
-                    updateSellPriceFromMargin(row, otherType, costValue);
-                }
-            }
-        }
-
         updateSellPriceFromMargin(row, rateType, costValue);
     }
 
     if (field === 'sell') {
-        if (isLinked) {
-            const otherType      = rateType === 'SGL' ? 'DBL' : 'SGL';
-            const container      = getRateCellsContainer(row);
-            const otherSellInput = container.querySelector(`.rate-input[data-field="sell"][data-rate-type="${otherType}"]`);
-            
-            console.log("rateType:", rateType);
-            console.log("otherType:", otherType);
-            console.log("otherSellInput encontrado:", otherSellInput);
-            console.log("otherSellInput data-rate-type:", otherSellInput?.dataset.rateType);
-            
-            if (otherSellInput && otherSellInput.value !== changedInput.value) {
-                otherSellInput.value = changedInput.value;
-                updateMarginForRow(row, otherSellInput);
-            }
-        }
         updateMarginForRow(row, changedInput);
     }
 }
@@ -2078,16 +1980,9 @@ function cancelBlockEdit(blockId) {
     const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
     
     // 1. Resetear variables de control
-    linkedCostsByBlock.delete(blockId);
     currentEditingBlock = null;
 
-    // 2. Limpiar UI de bloque (Toggle de vinculación)
-    const toggle = document.getElementById(`linkCostBlock_${blockId}`);
-    if (toggle) {
-        toggle.closest('.cost-link-toggle-block').remove();
-    }
-
-    // 3. Revertir MARGEN y TEMPORADA (Input -> Span)
+    // 2. Revertir MARGEN y TEMPORADA (Input -> Span)
     const displays = ['margin', 'season'];
     displays.forEach(type => {
         const display = document.querySelector(`.${type}-display[data-block="${blockId}"]`);
