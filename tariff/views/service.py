@@ -171,6 +171,8 @@ def product(request, supplier_id):
             children_ranking=supplier.children_ranking,
             disabled_ranking=supplier.disabled_ranking,
             sustentability_ranking=supplier.sustentability_ranking,
+            attractions=request.POST.getlist("attractions"),
+            interests=request.POST.getlist("interests"),
             note=request.POST.get("note"),
             type_service="NA",
             recommended=False,
