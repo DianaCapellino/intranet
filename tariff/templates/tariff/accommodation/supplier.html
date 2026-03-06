@@ -176,21 +176,17 @@
                 <h2>Proveedores - ALOJAMIENTO</h2>
                 <div>
                     <select class="form-select" aria-label="location_filter" name="location_filter" id="location_filter_select">
-                        <option value="all">Todos</option>
+                        <option value="all" selected>Todos</option>
                         {% for location in locations %}
-                            {% if location.id == default_location.id %}
-                                <option value="{{ location.id }}" selected>{{ location.code }} - {{ location.name }}</option>
-                            {% else %}
-                                <option value="{{ location.id }}">{{ location.code }} - {{ location.name }}</option>
-                            {% endif %}
+                            <option value="{{ location.id }}">{{ location.code }} - {{ location.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div id="new_supplier_container">
                     <div>
-                        <button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>
+                        {% if user.isAdmin %}<button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>{% endif %}
                         <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
-                    </div>  
+                    </div>
                 </div>
             </div>
             {% if message_modify %}
@@ -210,14 +206,13 @@
                             <th>Grupo</th>
                             <th>Nota</th>
                             <th>Prepago</th>
-                            <th>Acciones</th>
+                            {% if user.isAdmin %}<th>Acciones</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for supplier in suppliers %}
                         <tr data-bs-toggle="modal" data-bs-target="#windowSupplier{{ supplier.id }}" id="row-supplier-{{supplier.id}}" class="row-supplier"
                             data-location="{{ supplier.group.location.id }}"
-                            {% if supplier.group.location.id != default_location.id %}hidden{% endif %}
                         >
                             <td id="supplier-{{supplier.id}}">{{ supplier.name }}</td>
                             <td id="supplier-{{supplier.id}}">{{ supplier.group.location.code }}</td>
@@ -236,12 +231,14 @@
                             {% else %}
                                 <td id="supplier-note{{supplier.id}}">No</td>
                             {% endif %}
+                            {% if user.isAdmin %}
                             <td>
                                 <div class="justify-content-around d-flex">
                                     <i class="fa-solid fa-pencil" width="1px" id="pencil-supplier-{{supplier.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowSupplierPencil{{ supplier.id }}"></i>
                                     <i class="fa-solid fa-trash" width="1px" id="trash-supplier-{{supplier.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowSupplierTrash{{ supplier.id }}"></i>
                                 </div>
                             </td>
+                            {% endif %}
                         </tr>
                         <div class="modal fade modal-lg" id="windowSupplierPencil{{ supplier.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
                             <div class="modal-dialog">
@@ -479,7 +476,7 @@ High – 0.82 - Tarifas especiales negociadas
                                         <div class="d-flex align-items-center justify-content-between">
                                             <h2>Productos (habitaciones)</h2>
                                             <div id="new_product_container">
-                                                <a href="{% url 'acc_product' supplier.id %}" ><button type="button" id="new_product_btn{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva habitación"><i class="fa-solid fa-plus"></i></button></a>
+                                                {% if user.isAdmin %}<a href="{% url 'acc_product' supplier.id %}" ><button type="button" id="new_product_btn{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nueva habitación"><i class="fa-solid fa-plus"></i></button></a>{% endif %}
                                                 <a href="{% url 'modify_supplier_rates' supplier.id %}" ><button type="button" id="edit-rates{{ supplier.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Gestionar tarifas"><i class="fa-solid fa-dollar-sign"></i></button></a>
                                             </div>
                                         </div>
@@ -492,7 +489,7 @@ High – 0.82 - Tarifas especiales negociadas
                                                 <div class="col-1">Activo</div>
                                                 <div class="col-3">Tipo</div>
                                                 <div class="col-1">Orden</div>
-                                                <div class="col-1">Editar</div>
+                                                {% if user.isAdmin %}<div class="col-1">Editar</div>{% endif %}
                                             </div>
                                             <hr>
                                             {% for product in supplier.supplier_products.all %}
@@ -511,11 +508,13 @@ High – 0.82 - Tarifas especiales negociadas
                                                     {% endif %}
                                                     <div class="col-3">{{ product.group.name }}</div>
                                                     <div class="col-1">{{ product.order }}</div>
+                                                    {% if user.isAdmin %}
                                                     <div class="col-1">
                                                         <a href="{% url 'modify_product' product.id %}">
                                                             <i class="fa-solid fa-pencil" width="1px" id="pencil-product-{{product.id}}" aria-hidden="true"></i>
                                                         </a>
                                                     </div>
+                                                    {% endif %}
                                                 </div>
                                             {% empty %}
                                                 <div class="text-muted">Este proveedor no tiene productos cargados</div>

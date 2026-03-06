@@ -17,8 +17,6 @@ MARGIN_ACC_OPTIONS = [
 def supplier(request):
 
     supplier_groups = SupplierGroup.objects.filter(type_service="AC")
-    
-    default_location = Location.objects.get(code="BUE")
 
     suppliers = Supplier.objects.filter(
         group__type_service="AC"
@@ -47,7 +45,6 @@ def supplier(request):
                 "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
                 "supplier_groups": supplier_groups .order_by("location__name", "name"),
                 "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
-                "default_location": default_location,
             })
 
         group = SupplierGroup.objects.get(pk=group_form)
@@ -93,7 +90,6 @@ def supplier(request):
             "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
             "supplier_groups": supplier_groups .order_by("location__name", "name"),
             "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
-            "default_location": default_location,       
         })
 
     else:
@@ -110,7 +106,6 @@ def supplier(request):
             "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
             "supplier_groups": supplier_groups .order_by("location__name", "name"),
             "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
-            "default_location": default_location,      
         })
 
 @login_required

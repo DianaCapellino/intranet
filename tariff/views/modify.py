@@ -1155,6 +1155,8 @@ def create_rate_block(request):
         if not product_ids:
             return JsonResponse({"ok": False, "error": "Debes seleccionar al menos un producto"}, status=400)
         
+        print(margin, status)
+
         created_ratelines = 0
         created_rates = 0
         errors = []

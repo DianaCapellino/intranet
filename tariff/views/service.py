@@ -16,8 +16,6 @@ MARGIN_SVS_OPTIONS = [
 def supplier(request):
 
     product_groups = ProductGroup.objects.filter(type_service="NA")
-    
-    default_location = Location.objects.get(code="BUE")
 
     suppliers = Supplier.objects.filter(
         group__type_service="NA"
@@ -41,7 +39,6 @@ def supplier(request):
                 "INTERESTS": INTERESTS,
                 "product_groups": product_groups .order_by("location__name", "name"),
                 "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
-                "default_location": default_location,
             })
 
         location = Location.objects.get(pk=location_id)
@@ -90,7 +87,6 @@ def supplier(request):
             "INTERESTS": INTERESTS,
             "product_groups": product_groups .order_by("location__name", "name"),
             "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
-            "default_location": default_location,       
         })
 
     else:
@@ -103,7 +99,6 @@ def supplier(request):
             "INTERESTS": INTERESTS,
             "product_groups": product_groups .order_by("location__name", "name"),
             "MARGIN_SVS_OPTIONS": MARGIN_SVS_OPTIONS,
-            "default_location": default_location,     
         })
 
 

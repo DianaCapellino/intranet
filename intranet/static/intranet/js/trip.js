@@ -961,23 +961,25 @@ function create_chart(id) {
 }
 
 function suppliers_location_functionality() {
-    
     const filter_select = document.getElementById("location_filter_select");
+    const supplierTableEl = document.getElementById("supplier");
 
-    if (filter_select) {
-        filter_select.addEventListener("change", function () {
-            const selectedLocation = this.value;
-            const suppliers = document.querySelectorAll(".row-supplier");
+    if (!filter_select || !supplierTableEl) return;
 
-            suppliers.forEach(option => {
-                if (selectedLocation === "all") {
-                    option.hidden = false;
-                } else {
-                    option.hidden = option.dataset.location !== selectedLocation;
-                }
-            });
-        });
-    }
+    let selectedLocation = "all";
+
+    DataTable.ext.search.push(function(settings, _data, dataIndex) {
+        if (settings.nTable !== supplierTableEl) return true;
+        if (selectedLocation === "all") return true;
+
+        const row = $(supplierTableEl).DataTable().row(dataIndex).node();
+        return row && row.dataset.location === selectedLocation;
+    });
+
+    filter_select.addEventListener("change", function () {
+        selectedLocation = this.value;
+        $(supplierTableEl).DataTable().draw();
+    });
 }
 
 function lines_product_functionality() {

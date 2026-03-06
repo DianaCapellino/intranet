@@ -3447,7 +3447,7 @@ def upload_data(csv_obj):
                     elif col_number == 22:
                         trip.amount = col
                         trip.save()
-                        tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).last()
+                        tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).first()
                         if tp_entry:
                             tp_entry.amount = col
                             tp_entry.save()
