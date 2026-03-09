@@ -3,6 +3,7 @@ from .models import Entry, Holidays, Trip, Absence
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
+from tariff.models import Change, User
 
 def update_entries():
 
@@ -176,6 +177,78 @@ def report_tariff_error_hotel(user, supplier_obj, note):
         }
 
     return subject, email, template, context
+
+
+def build_tariff_client_news_context(client, date_from=None):
+    """
+    Build the context for tariff_client_news.html.
+
+    Groups Change objects by location, then separates AC (accommodation)
+    from NA (services) changes. AC changes are further grouped by supplier.
+
+    Args:
+        client: Client instance
+        date_from: optional date to filter Changes from (inclusive)
+    Returns:
+        (subject, to_emails, template, context) tuple
+    """
+    changes_qs = Change.objects.select_related(
+        "rate_line__group__product__supplier",
+        "rate_line__group__product__group__location",
+    )
+    if date_from:
+        changes_qs = changes_qs.filter(date__gte=date_from)
+
+    # Build a dict keyed by location id to preserve ordering
+    locations_map = {}  # location_id -> {"name": ..., "ac": {supplier_id: {...}}, "na": [...]}
+
+    for change in changes_qs:
+        product = change.rate_line.group.product
+        location = product.group.location
+        supplier = product.supplier
+
+        if location.id not in locations_map:
+            locations_map[location.id] = {
+                "name": location.name,
+                "_order": location.order,
+                "ac": {},   # supplier_id -> {"name": ..., "changes": [...]}
+                "na": [],
+            }
+
+        loc = locations_map[location.id]
+        change_entry = {"type": change.type, "product": change.rate_line.group.product.name, "from": change.rate_line.date_from, "to": change.rate_line.date_to}
+
+        if product.type_service == "AC":
+            if supplier.id not in loc["ac"]:
+                loc["ac"][supplier.id] = {"name": supplier.name, "changes": []}
+            loc["ac"][supplier.id]["changes"].append(change_entry)
+        else:
+            loc["na"].append(change_entry)
+
+    # Sort locations by their order field and flatten to list
+    sorted_locations = sorted(locations_map.values(), key=lambda l: l["_order"])
+    locations = []
+    for loc in sorted_locations:
+        ac_changes = list(loc["ac"].values()) if loc["ac"] else None
+        na_changes = loc["na"] if loc["na"] else None
+        if ac_changes or na_changes:
+            locations.append({
+                "name": loc["name"],
+                "ac_changes": ac_changes,
+                "na_changes": na_changes,
+            })
+
+    to_emails = client.email
+
+    subject = f"Aliwen Incoming – Rate Update"
+    template = "emails/tariff_client_news.html"
+    context = {
+        "client_name": client.other_name,
+        "today": date.today().strftime("%B %d, %Y"),
+        "locations": locations,
+    }
+
+    return subject, to_emails, template, context
 
 
 def report_tariff_error_service(user, product_obj, note):

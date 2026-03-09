@@ -32,10 +32,11 @@
 
 {% endblock %}
 {% block extra_js %}
-
+{{ types|json_script:"type-history-data" }}
 <script>
     const IS_ADMIN = "{{ request.user.isAdmin }}" === "True";
     const CSRF_TOKEN = "{{ csrf_token }}";
+    const TYPE_HISTORY = JSON.parse(document.getElementById('type-history-data').textContent);
 
     const table = $("#changesTable").DataTable({
         ajax: {
@@ -95,8 +96,7 @@
                                         <div class="mb-3 col">
                                             <label class="form-label">Tipo de Cambio</label>
                                             <select class="form-control" name="type">
-                                                <!-- Opciones cargadas dinámicamente si las necesitás -->
-                                                <option value="${data.type}" selected>${data.type}</option>
+                                                ${TYPE_HISTORY.map(([value, label]) => `<option value="${value}"${value === data.type ? " selected" : ""}>${value}</option>`).join("")}
                                             </select>
                                         </div>
                                         <div class="mb-3 col">

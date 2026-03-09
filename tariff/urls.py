@@ -51,4 +51,6 @@ urlpatterns = [
     path('modify/delete-rate-block/', modify.delete_rate_block, name='delete_rate_block'),
     path('modify/create-rate-block/', modify.create_rate_block, name='create_rate_block'),
     path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
+    path("tp/apply-changes/",  tariff.apply_changes,   name="apply_changes"),
+    path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),
 ]

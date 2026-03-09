@@ -145,6 +145,7 @@ class Location(models.Model):
     max_nights = models.PositiveSmallIntegerField()
     margin_svs = models.FloatField()
     margin_acc = models.FloatField()
+    order = models.PositiveSmallIntegerField()
 
     def __str__(self):
         return f"{self.name}"

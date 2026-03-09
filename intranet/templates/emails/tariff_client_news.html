@@ -1,0 +1,412 @@
+{% load static %}
+{% load i18n %}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting"/>
+  <title>Aliwen – Rate Update</title>
+  <style type="text/css">
+    /* Client-safe resets */
+    body { margin: 0 !important; padding: 0 !important; background-color: #EDEAE5 !important; }
+    table { border-collapse: collapse !important; }
+    img   { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    a     { text-decoration: none; }
+
+    /* Responsive */
+    @media screen and (max-width: 600px) {
+      .email-wrapper  { width: 100% !important; }
+      .pad-sides      { padding-left: 24px !important; padding-right: 24px !important; }
+      .greeting       { font-size: 18px !important; }
+    }
+
+    /* Gmail blue-link override */
+    u + #body a { color: inherit !important; text-decoration: none !important; }
+  </style>
+</head>
+<body id="body" style="margin:0;padding:0;background-color:#EDEAE5;">
+
+<!-- ░░ OUTER WRAPPER ░░ -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#EDEAE5;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <!-- ░░ EMAIL CARD ░░ -->
+      <table role="presentation" class="email-wrapper" width="640" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:640px;background-color:#ffffff;">
+
+
+        <!-- ══ HEADER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:36px 48px 28px;text-align:center;" class="pad-sides">
+
+            <!-- Logo -->
+            <!--
+              Production: replace src with {% static 'img/aliwen-logo-white.svg' %}
+              The URL below is a live fallback while you set up static files.
+            -->
+            <img src="{% static 'intranet/images/logo.png' %}"
+                 alt="Aliwen Incoming" height="40"
+                 style="display:inline-block;height:40px;margin:0 auto 18px;" />
+
+            <!-- Copper rule -->
+            <table role="presentation" width="48" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 18px;">
+              <tr>
+                <td height="2" style="background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+              </tr>
+            </table>
+
+            <!-- Tagline -->
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:10px;
+                      letter-spacing:0.2em;text-transform:uppercase;color:#d7998b;">
+              Destination Management Company &nbsp;&middot;&nbsp; Argentina
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══ EYEBROW BANNER ════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#D88775;padding:11px 48px;text-align:center;" class="pad-sides">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">
+              Rate Update &nbsp;&middot;&nbsp; {{ today }}
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══ INTRO ══════════════════════════════════════════ -->
+        <tr>
+          <td style="padding:44px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+
+            <h1 class="greeting"
+                style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                       font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
+              Dear <em style="font-style:italic;color:#D88775;">{{ client_name }} team</em>,
+            </h1>
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0 0 14px;">
+              We hope this message finds you well. On behalf of the Aliwen team, we are pleased
+              to share the latest updates to our rates and product portfolio. Whether you are
+              planning a new programme or revisiting an existing one, we trust this information
+              will be a valuable reference for your upcoming proposals.
+            </p>
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0;">
+              Below you will find a summary of the most recent changes, organised by destination.
+              Should you have any questions or wish to discuss specific details, your dedicated
+              contact is always happy to assist.
+            </p>
+
+          </td>
+        </tr>
+
+
+        <!-- ══ DESTINATIONS LOOP ══════════════════════════════ -->
+        {% for location in locations %}
+        <tr>
+          <td style="padding:0 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+
+            <!-- ── Location Header ── -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:28px 0 20px;">
+              <tr>
+                <!-- Name -->
+                <td style="font-family:Georgia,'Times New Roman',serif;font-size:20px;
+                           font-style:italic;color:#1C1C1C;white-space:nowrap;
+                           padding-right:16px;">
+                  {{ location.name }}
+                </td>
+                <!-- Rule -->
+                <td width="100%">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td height="1" style="background-color:#D88775;opacity:0.4;
+                                            font-size:0;line-height:0;">&nbsp;</td>
+                    </tr>
+                  </table>
+                </td>
+                <!-- Dot -->
+                <td style="padding-left:16px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="6" height="6"
+                          style="width:6px;height:6px;border-radius:3px;
+                                 background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- ── Accommodation ── -->
+            {% if location.ac_changes %}
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.2em;text-transform:uppercase;color:#D88775;
+                      margin:0 0 12px;">
+              Accommodation
+            </p>
+
+            {% for supplier in location.ac_changes %}
+            <!-- Supplier Card -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:10px;">
+              <tr>
+                <!-- Left copper border -->
+                <td width="3" style="width:3px;background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+                <!-- Card content -->
+                <td style="background-color:#F0EEEB;padding:16px 20px;">
+
+                  <p style="font-family:Georgia,'Times New Roman',serif;font-size:14px;
+                             font-weight:bold;color:#1C1C1C;margin:0 0 10px;">
+                    {{ supplier.name }}
+                  </p>
+
+                  {% for ch in supplier.changes %}
+                  <!-- Change row -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                    style="margin-bottom:{% if not forloop.last %}7px{% else %}0{% endif %};">
+                    <tr>
+                      <!-- Badge -->
+                      <td valign="top" style="padding-right:10px;white-space:nowrap;">
+                        {% if ch.type == "New" %}
+                          <span style="display:inline-block;background-color:#B5651D;color:#ffffff;
+                                       font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                       font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                       padding:3px 7px;border-radius:2px;">New</span>
+                        {% elif ch.type == "Update" %}
+                          <span style="display:inline-block;background-color:#5A5A5A;color:#ffffff;
+                                       font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                       font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                       padding:3px 7px;border-radius:2px;">Updated</span>
+                        {% else %}
+                          <span style="display:inline-block;background-color:#3D7A5E;color:#ffffff;
+                                       font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                       font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                       padding:3px 7px;border-radius:2px;">Added</span>
+                        {% endif %}
+                      </td>
+                      <!-- Label -->
+                      <td valign="top"
+                          style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                                 line-height:1.55;color:#5A5A5A;">
+                        <strong>{{ ch.product }}</strong> - From: {{ ch.from }} / To: {{ ch.to }}
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+            {% endif %}
+
+
+            <!-- ── Services & Experiences ── -->
+            {% if location.na_changes %}
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                letter-spacing:0.2em;text-transform:uppercase;color:#D88775;
+                margin:{% if location.ac_changes %}20px{% else %}0{% endif %} 0 12px;">
+              Services &amp; Experiences
+            </p>
+
+            {% for ch in location.na_changes %}
+            <!-- NA row -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:7px;padding-bottom:7px;
+                   {% if not forloop.last %}border-bottom:1px dashed #D9CFC6;{% endif %}">
+              <tr>
+                <!-- Badge -->
+                <td valign="top" style="padding-right:10px;white-space:nowrap;">
+                  {% if ch.type == "New" %}
+                    <span style="display:inline-block;background-color:#B5651D;color:#ffffff;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                 font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                 padding:3px 7px;border-radius:2px;">New</span>
+                  {% elif ch.type == "Update" %}
+                    <span style="display:inline-block;background-color:#5A5A5A;color:#ffffff;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                 font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                 padding:3px 7px;border-radius:2px;">Updated</span>
+                  {% else %}
+                    <span style="display:inline-block;background-color:#3D7A5E;color:#ffffff;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:8px;
+                                 font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                                 padding:3px 7px;border-radius:2px;">Added</span>
+                  {% endif %}
+                </td>
+                <!-- Label -->
+                <td valign="top"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                           line-height:1.55;color:#5A5A5A;">
+                  <strong>{{ ch.product }}</strong> - From: {{ ch.from }} / To: {{ ch.to }}
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+
+            {% endif %}
+
+          </td>
+        </tr>
+        {% endfor %}
+
+
+        <!-- ══ CTA ════════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#F5EDE3;padding:36px 48px;text-align:center;
+                     border-top:2px solid #D88775;" class="pad-sides">
+
+            <p style="font-family:Georgia,'Times New Roman',serif;font-size:17px;
+                      font-style:italic;color:#1C1C1C;line-height:1.5;margin:0 0 20px;">
+              Ready to build your next programme?<br />
+              <strong style="font-style:normal;color:#D88775;">
+                We are here to help you craft the perfect itinerary.
+              </strong>
+            </p>
+
+            <a href="mailto:quote@aliwenincoming.com.ar"
+               style="display:inline-block;background-color:#D88775;color:#ffffff;
+                      font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;
+                      letter-spacing:0.18em;text-transform:uppercase;
+                      padding:13px 32px;border-radius:2px;text-decoration:none;">
+              Get in touch
+            </a>
+
+          </td>
+        </tr>
+
+
+        <!-- ══ SENDER / SIGN-OFF ══════════════════════════════ -->
+        <tr>
+          <td style="padding:28px 48px;border-top:1px solid #D9CFC6;" class="pad-sides">
+            <p style="font-family:Georgia,'Times New Roman',serif;font-size:15px;
+                      font-weight:bold;color:#1C1C1C;margin:0 0 4px;">
+              Aliwen Team
+            </p>
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                      letter-spacing:0.08em;text-transform:uppercase;color:#D88775;
+                      margin:0 0 8px;">
+              Destination Management Company
+            </p>
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                      color:#5A5A5A;line-height:1.6;margin:0;">
+              <a href="mailto:quote@aliwenincoming.com.ar"
+                 style="color:#D88775;text-decoration:none;">
+                quote@aliwenincoming.com.ar
+              </a><br />
+              <a href="https://aliwenincoming.com"
+                 style="color:#5A5A5A;text-decoration:none;">
+                aliwenincoming.com
+              </a>
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══ FOOTER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
+
+            <!-- Logo -->
+            <img src="https://aliwenincoming.com/wp-content/uploads/logo2.svg"
+                 alt="Aliwen" height="26"
+                 style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
+
+            <!-- Social icons -->
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 14px;">
+              <tr>
+                <td style="padding:0 4px;">
+                  <a href="https://www.instagram.com/aliwen_incoming/"
+                     style="display:inline-block;width:28px;height:28px;
+                            background-color:rgba(255,255,255,0.08);border-radius:14px;
+                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
+                            color:#999999;text-align:center;line-height:28px;
+                            text-decoration:none;">
+                    IG
+                  </a>
+                </td>
+                <td style="padding:0 4px;">
+                  <a href="https://www.linkedin.com/company/argentinaaliwenincoming"
+                     style="display:inline-block;width:28px;height:28px;
+                            background-color:rgba(255,255,255,0.08);border-radius:14px;
+                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
+                            color:#999999;text-align:center;line-height:28px;
+                            text-decoration:none;">
+                    in
+                  </a>
+                </td>
+                <td style="padding:0 4px;">
+                  <a href="https://www.facebook.com/ArgentinaAliwenIncoming"
+                     style="display:inline-block;width:28px;height:28px;
+                            background-color:rgba(255,255,255,0.08);border-radius:14px;
+                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
+                            color:#999999;text-align:center;line-height:28px;
+                            text-decoration:none;">
+                    FB
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Links -->
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 14px;">
+              <tr>
+                <td style="padding:0 10px;">
+                  <a href="https://aliwenincoming.com/destinations/"
+                     style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                            letter-spacing:0.15em;text-transform:uppercase;
+                            color:#999999;text-decoration:none;">
+                    Destinations
+                  </a>
+                </td>
+                <td style="padding:0 10px;">
+                  <a href="https://aliwenincoming.com/holiday-experiences/"
+                     style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                            letter-spacing:0.15em;text-transform:uppercase;
+                            color:#999999;text-decoration:none;">
+                    Experiences
+                  </a>
+                </td>
+                <td style="padding:0 10px;">
+                  <a href="mailto:quote@aliwenincoming.com.ar"
+                     style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                            letter-spacing:0.15em;text-transform:uppercase;
+                            color:#999999;text-decoration:none;">
+                    Contact
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Copyright -->
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      color:#666666;line-height:1.6;margin:0;">
+              &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
+              You are receiving this message because you are a registered Aliwen partner.
+            </p>
+
+          </td>
+        </tr>
+
+      </table>
+      <!-- /EMAIL CARD -->
+
+    </td>
+  </tr>
+</table>
+<!-- /OUTER WRAPPER -->
+
+</body>
+</html>

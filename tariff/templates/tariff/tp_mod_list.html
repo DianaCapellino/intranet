@@ -1,69 +1,419 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-    {% if user.isAdmin %}
+{% if user.isAdmin %}
 
-        <h2>Actualizar Alojamiento</h2>
-        <div id="update_tariff_container" class="text-center">
-            <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Actualizar Tarifario con Tourplan" data-bs-toggle="modal" data-bs-target="#windowTourplan"><i class="fa-solid fa-upload display-8"></i></button>
-        </div>
-        <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelUpdateTariff">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h1 class="modal-title fs-8" id="labelCreateEntry">Subir planilla de Tourplan</h1>
-                        <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+<h2>Actualizar Alojamiento</h2>
+<div id="update_tariff_container" class="text-center">
+    <button type="button" class="btn btn-dark btn-lg"
+            data-bs-toggle="modal" data-bs-target="#windowTourplan"
+            title="Actualizar Tarifario con Tourplan">
+        <i class="fa-solid fa-upload display-8"></i>
+    </button>
+</div>
+
+{# ------------------------------------------------------------------ Django messages #}
+{% if messages %}
+<div class="mt-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+        {{ message|safe }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# Banner cuando hay cambios pendientes #}
+{% if has_pending %}
+<div class="alert alert-warning d-flex align-items-center justify-content-between mt-3" id="pending-banner">
+    <span><i class="fa-solid fa-clock me-2"></i>Hay tarifas pendientes de revisión.</span>
+    <div class="d-flex gap-2">
+        <button class="btn btn-warning btn-sm" id="btn-open-review">Ver cambios</button>
+        <button class="btn btn-outline-secondary btn-sm" id="btn-discard-all-banner">Descartar todo</button>
+    </div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------ Modal: subir CSV #}
+<div class="modal fade modal-lg" id="windowTourplan" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-8">Subir planilla de Tourplan</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
+                <br>
+                <form class="text-center" action="{% url 'tp_mod_list' %}" method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ form.file_name }}
+                    <br><br>
+                    <div class="container text-center">
+                        <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
+                        <button type="button" class="btn btn-dark btn-lg" data-bs-dismiss="modal">CANCELAR</button>
                     </div>
-                    <div class="modal-body">
-                        <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
-                        <br>
-                        <form class="rw-3 text-center" action="{% url 'tp_mod_list' %}" method="post" id="tp-tariff-form" enctype="multipart/form-data">
-                        {% csrf_token %}
-                        {{ form.file_name }}
-                        <br>
-                        <div class="container text-center">
-                            <a href=""><button id="upload_file" class="btn btn-dark btn-lg" type="submit">SUBIR</button></a>
-                            <a href="{% url 'tp_mod_list' %}"><button id="close-new-entry" class="btn btn-dark btn-lg">CANCELAR</button></a>
+                    <br>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ------------------------------------------------------------------ Modal: revisar cambios #}
+{% if has_pending %}
+<div class="modal fade modal-xl" id="windowReview" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-scrollable" style="max-width:900px">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">Revisión de tarifas Tourplan</h1>
+                {# X cierra el modal pero NO descarta los datos — quedan en sesión #}
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+
+            <div class="modal-body p-0">
+                {# Barra resumen #}
+                <div class="d-flex align-items-center gap-4 px-4 py-3 border-bottom bg-light flex-wrap">
+                    <div class="text-center">
+                        <div class="fw-bold fs-4" id="count-update">0</div>
+                        <div class="text-muted small">Para actualizar</div>
+                    </div>
+                    <div class="vr"></div>
+                    <div class="text-center">
+                        <div class="fw-bold fs-4" id="count-add">0</div>
+                        <div class="text-muted small">Para agregar</div>
+                    </div>
+                    <div class="vr"></div>
+                    <div class="text-center">
+                        <div class="fw-bold fs-4 text-danger" id="count-delete">0</div>
+                        <div class="text-muted small">Para eliminar</div>
+                    </div>
+                    <div class="vr"></div>
+                    <div class="text-center">
+                        <div class="fw-bold fs-4 text-muted" id="count-ignored">0</div>
+                        <div class="text-muted small">Ignorados</div>
+                    </div>
+                    <div class="ms-auto d-flex gap-2 flex-wrap">
+                        <button class="btn btn-outline-danger btn-sm" onclick="discardAll()">Descartar todo</button>
+                        <button class="btn btn-dark" id="btn-confirm-all" onclick="confirmChanges()">
+                            Confirmar cambios
+                        </button>
+                    </div>
+                </div>
+
+                <div class="px-4 py-3">
+
+                    {# Cabecera de columnas (Update/Add) #}
+                    <div class="d-flex gap-2 px-2 pb-1 mb-1 border-bottom text-muted" style="font-size:.72rem;letter-spacing:.06em;text-transform:uppercase">
+                        <div style="min-width:90px"></div>
+                        <div class="flex-grow-1"></div>
+                        <div style="width:80px;text-align:right">Costo</div>
+                        <div style="width:100px;text-align:right">Sell TP</div>
+                        <div style="width:110px;text-align:right">Sell AI</div>
+                        <div style="width:130px"></div>
+                    </div>
+
+                    {# Sección UPDATE #}
+                    <div id="section-update">
+                        <div class="d-flex align-items-center justify-content-between mb-2 mt-3">
+                            <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">⟳ Actualizar</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Update')">Ignorar todos</button>
+                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Update')">Restaurar</button>
+                            </div>
                         </div>
-                        <br>
-                        </form>
+                        <div id="rows-update"></div>
                     </div>
-                </div>
-            </div>
-        </div>
-        <br>
-        <div class="row">
-            <div class="col-12">
-                <div style="width:100%">
-                    <table id="tariff-table" class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Destination</th>
-                                <th>Supplier</th>
-                                <th>Product</th>
-                                <th>Validity</th>
-                                <th>Type</th>
-                                <th>Cost</th>
-                                <th>Sell</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for line in tourplan_list %}
-                                <tr>
-                                    <td>{{ line.location_code }}</td>
-                                    <td>{{ line.supplier_name }}</td>
-                                    <td>{{ line.option_description }}</td>
-                                    <td>{{ line.date_from }} to {{ line.date_to }}</td>
-                                    <td>{{ line.serv_item }}</td>
-                                    <td>{{ line.fit_cost }}</td>
-                                    <td>{{ line.fit_sell }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    {% endif %}
 
+                    {# Sección ADD #}
+                    <div id="section-add">
+                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
+                            <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">+ Agregar</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Add')">Ignorar todos</button>
+                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Add')">Restaurar</button>
+                            </div>
+                        </div>
+                        <div id="rows-add"></div>
+                    </div>
+
+                    {# Sección DELETE #}
+                    <div id="section-delete">
+                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
+                            <span class="text-danger small text-uppercase fw-semibold" style="letter-spacing:.08em">✕ Eliminar RateLines sin coincidencia</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Delete')">Ignorar todos</button>
+                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Delete')">Restaurar</button>
+                            </div>
+                        </div>
+                        <div id="rows-delete"></div>
+                    </div>
+
+                </div>
+            </div>{# /modal-body #}
+        </div>
+    </div>
+</div>
+
+<script>
+const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
+const CSRF    = "{{ csrf_token }}";
+
+// State — each item gets _id, ignored, edited_sell (only sell_ai is editable by user)
+const state = CHANGES.map((item, idx) => ({
+    ...item,
+    _id:         item._id !== undefined ? item._id : idx,   // preserve server-side id if re-opened
+    ignored:     false,
+    edited_sell: item.sell,   // user edits this; starts = sell_tourplan
+}));
+
+// ---------------------------------------------------------------- render
+function renderAll() {
+    renderSection("Update",  "rows-update");
+    renderSection("Add",     "rows-add");
+    renderSection("Delete",  "rows-delete");
+    updateCounts();
+}
+
+function renderSection(action, containerId) {
+    const container = document.getElementById(containerId);
+    const items = state.filter(i => i.action === action);
+    const renderer = action === "Delete" ? rowHTMLDelete : rowHTML;
+    container.innerHTML = items.length
+        ? items.map(renderer).join("")
+        : `<p class="text-muted small fst-italic ps-2">Sin ítems en esta sección.</p>`;
+}
+
+function fmt(n) {
+    return n != null ? Number(n).toLocaleString("es-AR", {minimumFractionDigits:0, maximumFractionDigits:2}) : "—";
+}
+
+function rowHTML(item) {
+    const isUpdate   = item.action === "Update";
+    const isIgnored  = item.ignored;
+    const sellEdited = item.edited_sell !== item.sell_tourplan;
+
+    const badgeClass = isUpdate
+        ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+        : "bg-success-subtle text-success-emphasis border border-success-subtle";
+
+    // Sell TP column: show old → new for Update
+    const sellTPCell = isUpdate
+        ? `<div style="width:100px;text-align:right">
+               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell_tourplan)}</span>
+               <span class="fw-semibold text-warning-emphasis">${fmt(item.sell_tourplan)}</span>
+           </div>`
+        : `<div style="width:100px;text-align:right">
+               <span class="fw-semibold text-success-emphasis">${fmt(item.sell_tourplan)}</span>
+           </div>`;
+
+    // Cost column: show old → new for Update
+    const costCell = isUpdate
+        ? `<div style="width:80px;text-align:right">
+               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_cost)}</span>
+               <span class="fw-semibold">${fmt(item.cost)}</span>
+           </div>`
+        : `<div style="width:80px;text-align:right">
+               <span class="fw-semibold">${fmt(item.cost)}</span>
+           </div>`;
+
+    // Sell AI: show current_sell struck-through (Update only), then suggested = sell_tourplan, editable
+    const sellAIPrev = isUpdate && item.current_sell != null
+        ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>`
+        : '';
+    const sellAICell = isIgnored
+        ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
+        : `<div style="width:110px;text-align:right">
+               <div id="sell-ai-display-${item._id}" class="${item.isEditing ? 'd-none' : ''}">
+                   ${sellAIPrev}
+                   <span class="${sellEdited ? 'text-primary fw-semibold' : 'fw-semibold'}">${fmt(item.edited_sell)}</span>
+                   ${sellEdited ? '<span class="text-muted ms-1" style="font-size:.65rem">(editado)</span>' : ''}
+               </div>
+               <div id="sell-ai-edit-${item._id}" class="${item.isEditing ? '' : 'd-none'}">
+                   <input type="number" class="form-control form-control-sm"
+                          style="width:90px;display:inline-block;text-align:right"
+                          value="${item.edited_sell}"
+                          oninput="setSell(${item._id}, this.value)">
+               </div>
+           </div>`;
+
+    const editBtn = !isIgnored
+        ? `<button class="btn btn-sm btn-outline-secondary" onclick="toggleEdit(${item._id})" title="${item.isEditing ? 'Cerrar' : 'Editar sell AI'}">
+               ${item.isEditing ? '✓' : '✎'}
+           </button>`
+        : '';
+
+    return `
+    <div class="card mb-2 ${isIgnored ? 'opacity-50' : ''}" id="row-${item._id}">
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <div style="min-width:90px">
+                <span class="badge rounded-pill ${badgeClass}" style="font-size:.68rem">${item.action}</span>
+                <div class="text-muted mt-1" style="font-size:.68rem">${item.column_options} · ${item.fcu}</div>
+            </div>
+            <div class="flex-grow-1">
+                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}</div>
+                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
+                ${item.rate_group_name ? `<div class="text-muted" style="font-size:.68rem;font-style:italic">${item.rate_group_name}</div>` : ""}
+            </div>
+            ${costCell}
+            ${sellTPCell}
+            ${sellAICell}
+            <div class="d-flex gap-1" style="min-width:130px;justify-content:flex-end">
+                ${editBtn}
+                <button class="btn btn-sm ${isIgnored ? 'btn-outline-success' : 'btn-outline-danger'}"
+                        onclick="toggleIgnore(${item._id})">
+                    ${isIgnored ? "Restaurar" : "Ignorar"}
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------- Delete row renderer
+function rowHTMLDelete(item) {
+    const isIgnored = item.ignored;
+    const ratesSummary = (item.rates_summary || [])
+        .map(r => `<span class="badge bg-secondary-subtle text-secondary-emphasis border me-1" style="font-size:.68rem">${r.column_options} · ${fmt(r.sell_tourplan)}</span>`)
+        .join("");
+
+    return `
+    <div class="card mb-2 border-danger-subtle ${isIgnored ? "opacity-50" : ""}" id="row-${item._id}">
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <div style="min-width:90px">
+                <span class="badge rounded-pill bg-danger-subtle text-danger-emphasis border border-danger-subtle" style="font-size:.68rem">Eliminar</span>
+                <div class="text-muted mt-1" style="font-size:.68rem">${item.season || "—"}</div>
+            </div>
+            <div class="flex-grow-1">
+                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}</div>
+                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
+                <div class="mt-1">${ratesSummary}</div>
+            </div>
+            <div class="d-flex gap-1" style="min-width:100px;justify-content:flex-end">
+                <button class="btn btn-sm ${isIgnored ? "btn-outline-success" : "btn-outline-danger"}"
+                        onclick="toggleIgnore(${item._id})">
+                    ${isIgnored ? "Restaurar" : "Ignorar"}
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------- actions
+function toggleIgnore(id) {
+    const item = state.find(i => i._id === id);
+    item.ignored  = !item.ignored;
+    item.isEditing = false;
+    renderAll();
+}
+
+function toggleEdit(id) {
+    const item = state.find(i => i._id === id);
+    item.isEditing = !item.isEditing;
+    renderAll();
+}
+
+function setSell(id, val) {
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed)) state.find(i => i._id === id).edited_sell = parsed;
+}
+
+function ignoreAll(action) {
+    state.filter(i => i.action === action).forEach(i => { i.ignored = true; i.isEditing = false; });
+    renderAll();
+}
+
+function restoreAll(action) {
+    state.filter(i => i.action === action).forEach(i => i.ignored = false);
+    renderAll();
+}
+
+function updateCounts() {
+    const active = state.filter(i => !i.ignored);
+    document.getElementById("count-update").textContent  = active.filter(i => i.action === "Update").length;
+    document.getElementById("count-add").textContent     = active.filter(i => i.action === "Add").length;
+    document.getElementById("count-delete").textContent  = active.filter(i => i.action === "Delete").length;
+    document.getElementById("count-ignored").textContent = state.filter(i => i.ignored).length;
+    const n = active.length;
+    document.getElementById("btn-confirm-all").textContent = `Confirmar ${n} cambio${n !== 1 ? "s" : ""}`;
+    document.getElementById("btn-confirm-all").disabled = n === 0;
+}
+
+// ---------------------------------------------------------------- confirm / discard
+function confirmChanges() {
+    const confirmed   = state.filter(i => !i.ignored).map(item => ({
+        _id:            item._id,
+        action:         item.action,
+        rate_id:        item.rate_id,
+        rate_group_id:  item.rate_group_id,
+        rate_line_id:   item.rate_line_id,   // for Delete
+        cost:           item.cost,
+        sell_tourplan:  item.sell_tourplan,
+        sell:           item.edited_sell,
+        price_code:     item.price_code,
+        date_from:      item.date_from,
+        date_to:        item.date_to,
+        column_options: item.column_options,
+        fcu:            item.fcu,
+    }));
+    const ignored_ids = state.filter(i => i.ignored).map(i => i._id);
+
+    fetch("{% url 'apply_changes' %}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ confirmed, ignored_ids }),
+    }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
+}
+
+function discardAll() {
+    fetch("{% url 'discard_changes' %}", {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF },
+    }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
+}
+
+// ---------------------------------------------------------------- init
+function openReviewModal() {
+    renderAll();
+    const modalEl = document.getElementById("windowReview");
+    const modal   = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+function tryOpenModal() {
+    if (typeof bootstrap !== "undefined") {
+        document.getElementById("btn-open-review").onclick = openReviewModal;
+        document.getElementById("btn-discard-all-banner").onclick = discardAll;
+        openReviewModal();
+    } else {
+        setTimeout(tryOpenModal, 100);
+    }
+}
+
+document.addEventListener("DOMContentLoaded", tryOpenModal);
+</script>
+{% endif %}
+
+<br>
+<div class="row">
+    <div class="col-12">
+        <table id="tariff-table" class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Destino</th>
+                    <th>Proveedor</th>
+                    <th>Producto</th>
+                    <th>Validez</th>
+                    <th>Base</th>
+                    <th>Sell TP</th>
+                    <th>Sell AI</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+{% endif %}{# /isAdmin #}
 {% endblock %}

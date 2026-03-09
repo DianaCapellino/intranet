@@ -117,6 +117,7 @@ class User(AbstractUser):
     isAdmin = models.BooleanField(default=False)
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
+    tariff_news = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["username"]
