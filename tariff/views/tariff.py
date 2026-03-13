@@ -7,7 +7,7 @@ from intranet.utils import report_tariff_error_hotel, send_templated_email, repo
 from intranet.models import Client, Holidays
 import csv
 from django.contrib.auth.decorators import login_required
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import logging
 from django.conf import settings
 import os
@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image
 from django.http import JsonResponse
-from django.db.models import Q
+from django.db.models import Q, Avg
 from django.core.paginator import Paginator
 import json
 from collections import defaultdict
@@ -29,7 +29,7 @@ def index(request):
     this_year = date.today().year
 
     return render(request, "tariff/tariff.html", {
-        "locations":Location.objects.all(),
+        "locations": Location.objects.all().order_by("order"),
         "clients": Client.objects.all(),
         "this_year": this_year,
     })
@@ -92,26 +92,41 @@ def get_filtered_rate_lines(request):
 
     if season:
         year = int(season)
+        season_start = date(year, 5, 1)        # 01 May año
+        season_end   = date(year + 1, 4, 30)   # 30 Apr año siguiente
 
-        season_start = date(year, 5, 1)        # 01 May
-        season_end   = date(year + 1, 4, 30)   # 30 Apr siguiente año
-
+        # Una tarifa pertenece a la temporada si se superpone con su rango,
+        # es decir: empieza antes de que termine la temporada
+        #           Y termina después de que empieza la temporada.
         rate_lines = rate_lines.filter(
-            date_from__lte=season_end,
-            date_to__gte=season_start
+            date_from__lte=season_end,    # empieza antes del 30 Apr
+            date_to__gte=season_start,    # termina después del 01 May
         )
 
     if client_id:
         client = Client.objects.get(id=client_id)
         rate_lines = rate_lines.filter(group__product__clients__id=client_id)
     else:
-        client = Client.objects.get(name=request.user.other_name)
-        rate_lines = rate_lines.filter(group__product__clients__id=client.id)
+        client = getattr(request.user, 'client', None)
+        if client is None:
+            try:
+                client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                client = None
+        if client:
+            rate_lines = rate_lines.filter(group__product__clients__id=client.id)
+        else:
+            rate_lines = rate_lines.none()
+
+    is_client = request.user.userType == "Cliente"
 
     for line in rate_lines:
         rates = {}
+        provisional_columns = set()
 
         for r in line.line_rates.all():
+            if is_client and r.status != "Confirmed":
+                continue
 
             sell_adjusted = apply_client_margin(
                 rate=r,
@@ -120,10 +135,13 @@ def get_filtered_rate_lines(request):
             )
 
             rates[r.column_options] = sell_adjusted
+            if r.status == "Provisional":
+                provisional_columns.add(r.column_options)
 
         line.rates_by_column = rates
+        line.provisional_columns = provisional_columns
 
-    return rate_lines, t_type
+    return rate_lines, t_type, is_client
 
 
 @login_required
@@ -133,11 +151,12 @@ def tariff_search(request):
     if not has_params:
         return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
 
-    rate_lines, t_type = get_filtered_rate_lines(request)
+    rate_lines, t_type, is_client = get_filtered_rate_lines(request)
 
     return render(request, "tariff/tariff_table_partial.html", {
         "rate_lines": rate_lines,
         "tariff_type": t_type,
+        "is_client": is_client,
     })
 
 
@@ -147,7 +166,7 @@ def export_services_excel(request):
     if not has_params:
         return HttpResponse("No data to export")
 
-    rate_lines, t_type = get_filtered_rate_lines(request)
+    rate_lines, t_type, is_client = get_filtered_rate_lines(request)
     # 👆 MISMA lógica que tu vista principal
 
     header_fill = PatternFill(start_color="D88775", end_color="D88775", fill_type="solid")
@@ -402,16 +421,16 @@ def upload_data(csv_obj):
         "to_delete":    0,
     }
 
-    supplier_codes = set(Supplier.objects.values_list("code", flat=True))
+    supplier_codes = set(
+        Supplier.objects.filter(update_tp=True).values_list("code", flat=True)
+    )
     product_map = {
         (p.supplier.code, p.code): p
-        for p in Product.objects.select_related("supplier").all()
+        for p in Product.objects.select_related("supplier", "group").filter(supplier__update_tp=True)
     }
 
-    # Track which (product_id, date_from, date_to) combos appeared in the CSV
-    # so we can find RateLines in the DB that have no CSV counterpart
-    csv_product_dates = set()   # set of (product_id, date_from_db, date_to_db)
-    csv_products_seen = set()   # set of product_id — to scope the Delete search
+    csv_product_dates = set()
+    csv_products_seen = set()
 
     ctx_supplier     = None
     ctx_supplier_obj = None
@@ -421,6 +440,13 @@ def upload_data(csv_obj):
     ctx_date_to      = None
     ctx_date_from_db = None
     ctx_date_to_db   = None
+    ctx_last_sgl_cost = 0.0
+    ctx_last_dbl_cost = 0.0
+    ctx_dbl_seen      = False  # True once "Double" row processed for this product/date
+
+    # result_index[(product_pk, date_from_db, date_to_db, column_options, rate_group_id)]
+    # → index in result list, so supplement rows replace the base row instead of appending.
+    result_index = {}
 
     with open(csv_obj.file_name.path, "r") as f:
         reader = csv.reader(f, delimiter=";")
@@ -436,6 +462,7 @@ def upload_data(csv_obj):
             c7  = cols[6].strip()
             c8  = cols[7].strip()
             c9  = cols[8].strip()
+            c10 = cols[9].strip()
             c11 = cols[10].strip()
             c13 = cols[12].strip()
             c16 = cols[15].strip()
@@ -448,26 +475,32 @@ def upload_data(csv_obj):
                     ctx_product = ctx_price_code = None
                     ctx_date_from = ctx_date_to = None
                     continue
-                ctx_supplier = c1
+                ctx_supplier     = c1
                 ctx_supplier_obj = Supplier.objects.get(code=c1)
 
-            # ---- inherit: product
+            # ---- inherit: product — reset accumulators
             if c4:
-                key = (ctx_supplier, c4)
-                ctx_product = product_map.get(key)
+                key               = (ctx_supplier, c4)
+                ctx_product       = product_map.get(key)
+                ctx_last_sgl_cost = 0.0
+                ctx_last_dbl_cost = 0.0
+                ctx_dbl_seen      = False
 
             # ---- inherit: price_code
             if c7:
                 ctx_price_code = c7
 
-            # ---- inherit: dates
+            # ---- inherit: dates — reset accumulators on new date block
             if c8:
+                ctx_last_sgl_cost = 0.0
+                ctx_last_dbl_cost = 0.0
+                ctx_dbl_seen      = False
                 try:
-                    date_obj = datetime.strptime(c8, "%d/%m/%Y")
+                    date_obj         = datetime.strptime(c8, "%d/%m/%Y")
                     ctx_date_from    = c8
                     ctx_date_from_db = date_obj.date()
                 except ValueError:
-                    ctx_date_from = ctx_date_from_db = None
+                    ctx_date_from = ctx_date_from_db = None             
 
             if c9:
                 try:
@@ -476,11 +509,38 @@ def upload_data(csv_obj):
                 except ValueError:
                     ctx_date_to = ctx_date_to_db = None
 
-            # ---- per-row: room type
+            if c10 == "K":
+                status = "Confirmed"
+            elif c10 == "P":
+                status = "Provisional"
+            else:
+                status = "Confirmed"
+                
+
+            # ---- per-row: room type classification
+            c11_upper = c11.upper()
+
             if c11 == "Single":
+                column_options    = "SGL"
+                is_supplement     = False
+            elif "SGL" in c11_upper:
+                # SGL supplement — accumulates onto Single
                 column_options = "SGL"
-            elif c11 in ("Double", "Twin"):
+                is_supplement  = True
+            elif c11 == "Double":
                 column_options = "DBL"
+                is_supplement  = False
+                ctx_dbl_seen   = True
+            elif c11 == "Twin":
+                # Use Twin only if no Double seen yet for this product/date
+                if ctx_dbl_seen:
+                    continue
+                column_options = "DBL"
+                is_supplement  = False
+            elif "DBL" in c11_upper:
+                # DBL supplement — accumulates onto Double
+                column_options = "DBL"
+                is_supplement  = True
             else:
                 continue
 
@@ -492,21 +552,27 @@ def upload_data(csv_obj):
             else:
                 continue
 
-            # ---- price_code → RateGroup name filter
-            # Maps CSV price_code to the RateGroup names to search within.
-            # CX/TD: treat as zero-cost comparison (no real cost from CSV needed).
+            # ---- validate context
+            if not ctx_product or not ctx_supplier_obj:
+                continue
+            if not ctx_date_from_db or not ctx_date_to_db:
+                continue
+            if ctx_date_from_db <= today:
+                continue
+
+            # ---- price_code validation
             PRICE_CODE_MAP = {
                 "AU": ["Audley Exclusive Rates"],
-                "NR": ["Net rates - per night", "Rates per night for 1 night"],
-                "DM": ["Net rates - per night", "Rates per night for 1 night"],
-                "CX": None,   # zero-cost sentinel
-                "TD": None,   # zero-cost sentinel
+                "NR": ["Net Rates - per night", "Rates per night for 1 night"],
+                "DM": ["Net Rates - per night", "Rates per night for 1 night"],
+                "CX": None,
+                "TD": None,
             }
             if ctx_price_code not in PRICE_CODE_MAP:
-                continue   # unknown price_code — ignore row
+                continue
 
-            is_zero_cost = PRICE_CODE_MAP[ctx_price_code] is None
-            target_group_names = PRICE_CODE_MAP[ctx_price_code]  # list or None
+            is_zero_cost       = PRICE_CODE_MAP[ctx_price_code] is None
+            preferred_pg_names = PRICE_CODE_MAP[ctx_price_code]
 
             # ---- per-row: cost
             if is_zero_cost:
@@ -520,15 +586,22 @@ def upload_data(csv_obj):
                 except ValueError:
                     continue
 
-            # ---- validate context
-            if not ctx_product or not ctx_supplier_obj:
-                continue
-            if not ctx_date_from_db or not ctx_date_to_db:
-                continue
-            if ctx_date_from_db <= today:
-                continue
+            # ---- accumulate SGL / DBL costs symmetrically
+            if not is_zero_cost:
+                if column_options == "SGL":
+                    if is_supplement:
+                        ctx_last_sgl_cost += cost
+                    else:
+                        ctx_last_sgl_cost = cost   # new base
+                    cost = ctx_last_sgl_cost
+                elif column_options == "DBL":
+                    if is_supplement:
+                        ctx_last_dbl_cost += cost
+                    else:
+                        ctx_last_dbl_cost = cost   # new base
+                    cost = ctx_last_dbl_cost
 
-            # ---- calculate sell_tourplan
+            # ---- calculate sell_tourplan with final accumulated cost
             if is_zero_cost:
                 sell_tourplan = 0
             else:
@@ -537,42 +610,76 @@ def upload_data(csv_obj):
                     continue
                 sell_tourplan = math.ceil(cost / margin)
 
-            margin = ctx_supplier_obj.margin
+            # The exact amount in Supplier
+            margin_num = ctx_supplier_obj.margin
+            
+            # The range option of the margin: High/Low/Regular
+            margin_info = ctx_supplier_obj.margin_info
 
             # ---- track product+date combo for Delete detection
             csv_products_seen.add(ctx_product.pk)
             csv_product_dates.add((ctx_product.pk, ctx_date_from_db, ctx_date_to_db))
 
-            stats["rows_read"] += 1
+            # ---- resolve target RateGroup(s)
+            all_rate_groups = list(RateGroup.objects.filter(product=ctx_product).order_by("order"))
 
-            # ---- find matching RateGroup(s) for this price_code
-            rg_qs = RateGroup.objects.filter(product=ctx_product)
-            if target_group_names:
-                rg_qs = rg_qs.filter(name__in=target_group_names)
-            target_rate_groups = list(rg_qs.order_by("order"))
-
-            if not target_rate_groups:
-                # No matching RateGroup exists yet — nothing to compare against, skip
+            if not all_rate_groups:
+                # Brand-new product — no RateGroup exists yet.
+                # Emit a single Add entry; apply_confirmed_changes will create the group.
+                dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db, column_options, None)
+                if dedup_key not in result_index:
+                    entry = {
+                        "action":                "Add",
+                        "current_sell_tourplan": None,
+                        "current_sell":          None,
+                        "current_cost":          None,
+                        "rate_id":               None,
+                        "rate_group_id":         None,
+                    }
+                    entry.update({
+                        "product_code":    ctx_product.code,
+                        "product_name":    str(ctx_product),
+                        "product_id":      ctx_product.pk,
+                        "rate_group_name": "Standard",
+                        "price_code":      ctx_price_code,
+                        "date_from":       ctx_date_from,
+                        "date_to":         ctx_date_to,
+                        "column_options":  column_options,
+                        "fcu":             fcu,
+                        "cost":            cost,
+                        "status":          status,
+                        "sell_tourplan":   sell_tourplan,
+                        "sell":            sell_tourplan,
+                        "margin":          margin_num,
+                        "margin_info":     margin_info,
+                        "season":          "To be defined",
+                    })
+                    entry["_id"] = stats["rows_read"]
+                    stats["rows_read"] += 1
+                    stats["to_add"]    += 1
+                    result_index[dedup_key] = len(result)
+                    result.append(entry)
                 continue
 
-            row_index = stats["rows_read"] - 1
-            base_item = {
-                "_id":            row_index,
-                "product_code":   ctx_product.code,
-                "product_name":   str(ctx_product),
-                "price_code":     ctx_price_code,
-                "date_from":      ctx_date_from,
-                "date_to":        ctx_date_to,
-                "column_options": column_options,
-                "fcu":            fcu,
-                "cost":           cost,
-                "sell_tourplan":  sell_tourplan,
-                "sell":           sell_tourplan,
-                "margin":         margin,
-            }
+            if preferred_pg_names is not None:
+                if ctx_product.group.name in preferred_pg_names:
+                    target_rate_groups = all_rate_groups
+                else:
+                    target_rate_groups = [all_rate_groups[0]]
+            else:
+                target_rate_groups = all_rate_groups
 
-            # ---- classify Update / Add — check each target RateGroup
+            # ---- classify Update / Add — one entry per RateGroup
+            # Supplement rows REPLACE the base row in result (same dedup key)
             for rate_group in target_rate_groups:
+                dedup_key = (
+                    ctx_product.pk,
+                    ctx_date_from_db,
+                    ctx_date_to_db,
+                    column_options,
+                    rate_group.pk,
+                )
+
                 matching_rate_line = (
                     RateLine.objects.filter(
                         group=rate_group,
@@ -583,8 +690,6 @@ def upload_data(csv_obj):
                     .first()
                 )
 
-                item_base = {**base_item, "_id": row_index, "rate_group_name": rate_group.name}
-
                 if matching_rate_line:
                     existing_rate = Rate.objects.filter(
                         rate_line=matching_rate_line,
@@ -593,45 +698,89 @@ def upload_data(csv_obj):
 
                     if existing_rate:
                         if existing_rate.sell_tourplan != sell_tourplan:
-                            stats["to_update"] += 1
-                            result.append({
-                                **item_base,
+                            entry = {
                                 "action":                "Update",
                                 "current_sell_tourplan": existing_rate.sell_tourplan,
                                 "current_sell":          existing_rate.sell,
                                 "current_cost":          existing_rate.cost,
                                 "rate_id":               existing_rate.pk,
                                 "rate_group_id":         None,
-                            })
+                            }
                         else:
+                            # Up to date — ensure no stale entry from base row remains
+                            if dedup_key in result_index:
+                                idx = result_index.pop(dedup_key)
+                                result.pop(idx)
+                                # Re-index everything after the removed entry
+                                result_index = {
+                                    k: (v - 1 if v > idx else v)
+                                    for k, v in result_index.items()
+                                }
+                                stats["to_update"] -= 1
                             stats["up_to_date"] += 1
+                            continue
                     else:
-                        stats["to_add"] += 1
-                        result.append({
-                            **item_base,
+                        entry = {
                             "action":                "Add",
                             "current_sell_tourplan": None,
                             "current_sell":          None,
                             "current_cost":          None,
                             "rate_id":               None,
                             "rate_group_id":         matching_rate_line.group.pk,
-                        })
+                        }
                 else:
-                    stats["to_add"] += 1
-                    result.append({
-                        **item_base,
+                    entry = {
                         "action":                "Add",
                         "current_sell_tourplan": None,
                         "current_sell":          None,
                         "current_cost":          None,
                         "rate_id":               None,
                         "rate_group_id":         rate_group.pk,
-                    })
-                row_index += 1  # each rate_group gets its own _id
+                    }
 
-    # ------------------------------------------------------------------ Delete detection
-    # Find RateLines that belong to products seen in the CSV, are still current/future,
-    # but whose (product, date_from, date_to) combo never appeared in the CSV.
+                # Common fields
+                entry.update({
+                    "product_code":   ctx_product.code,
+                    "product_name":   str(ctx_product),
+                    "product_id":     ctx_product.pk,
+                    "price_code":     ctx_price_code,
+                    "date_from":      ctx_date_from,
+                    "date_to":        ctx_date_to,
+                    "column_options": column_options,
+                    "fcu":            fcu,
+                    "cost":           cost,
+                    "status":         status,
+                    "sell_tourplan":  sell_tourplan,
+                    "sell":           sell_tourplan,
+                    "margin":         margin_num,
+                    "margin_info":    margin_info,
+                    "rate_group_name": rate_group.name,
+                    "season":         "To be defined",
+                })
+
+                if dedup_key in result_index:
+                    # Supplement: replace base row in-place with updated cost
+                    idx = result_index[dedup_key]
+                    entry["_id"] = result[idx]["_id"]   # keep original _id
+                    result[idx]  = entry
+                    # Adjust stats: undo the base row count, re-add for supplement
+                    if entry["action"] == "Update":
+                        pass  # already counted
+                    # (stats already incremented when base was added — no double count)
+                else:
+                    # Base row (or only row): append fresh
+                    entry["_id"] = stats["rows_read"]
+                    stats["rows_read"] += 1
+
+                    if entry["action"] == "Update":
+                        stats["to_update"] += 1
+                    else:
+                        stats["to_add"] += 1
+
+                    result_index[dedup_key] = len(result)
+                    result.append(entry)
+
+    # ---- Delete detection
     if csv_products_seen:
         orphan_lines = (
             RateLine.objects.filter(
@@ -639,20 +788,24 @@ def upload_data(csv_obj):
                 date_from__gt=today,
             )
             .select_related("group__product__supplier")
-            .prefetch_related("line_rates")  # prefetch related Rates
+            .prefetch_related("line_rates")
         )
 
-        next_id = stats["rows_read"]  # continue _id sequence
+        next_id = stats["rows_read"]
         for rl in orphan_lines:
             product = rl.group.product
             combo   = (product.pk, rl.date_from, rl.date_to)
             if combo in csv_product_dates:
-                continue  # this line was in the CSV — not orphan
+                continue
 
-            # Collect existing rates for display
             rates = list(rl.line_rates.all())
             rates_summary = [
-                {"column_options": r.column_options, "sell_tourplan": r.sell_tourplan, "sell": r.sell, "cost": r.cost}
+                {
+                    "column_options": r.column_options,
+                    "sell_tourplan":  r.sell_tourplan,
+                    "sell":           r.sell,
+                    "cost":           r.cost,
+                }
                 for r in rates
             ]
 
@@ -667,7 +820,6 @@ def upload_data(csv_obj):
                 "season":         rl.season,
                 "rate_line_id":   rl.pk,
                 "rates_summary":  rates_summary,
-                # unused by Delete but kept for uniform shape
                 "price_code": None, "column_options": None, "fcu": None,
                 "cost": None, "sell_tourplan": None, "sell": None, "margin": None,
                 "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
@@ -683,34 +835,98 @@ def upload_data(csv_obj):
 
 
 def apply_confirmed_changes(confirmed_items):
+
+    # ── Paso 1: recolectar old_avg por rate_line ANTES de aplicar cambios ──
+    rate_ids_to_update = [
+        item["rate_id"]
+        for item in confirmed_items
+        if item.get("action") == "Update" and item.get("rate_id")
+    ]
+    rateline_data = {}
+    if rate_ids_to_update:
+        ratelines = RateLine.objects.filter(
+            line_rates__id__in=rate_ids_to_update
+        ).distinct()
+        for rl in ratelines:
+            old_avg = rl.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
+            rateline_data[rl.id] = {
+                "instance": rl,
+                "old_avg":  old_avg,
+            }
+
+    # ── Paso 1b: para items Add, registrar ANTES si el producto ya tiene
+    #            RateLines (para distinguir "New" vs "Add" después) ──────
+    add_items = [
+        item for item in confirmed_items if item.get("action") == "Add"
+    ]
+    # product_id → True si ya tenía al menos una RateLine antes de este batch
+    product_had_ratelines = {}
+    for item in add_items:
+        rate_group_id = item.get("rate_group_id")
+        if not rate_group_id:
+            continue
+        try:
+            rg = RateGroup.objects.select_related("product").get(pk=rate_group_id)
+        except RateGroup.DoesNotExist:
+            continue
+        product_id = rg.product_id
+        if product_id not in product_had_ratelines:
+            product_had_ratelines[product_id] = (
+                RateLine.objects
+                .filter(group__product_id=product_id)
+                .exists()
+            )
+
+    # ── Paso 2: aplicar los cambios ──────────────────────────────────────
+    added_rate_lines = []   # (RateLine instance, product_id)
+
     for item in confirmed_items:
         action        = item.get("action")
         cost          = item.get("cost", 0)
         sell_tourplan = item.get("sell_tourplan")
         sell          = item.get("sell", sell_tourplan)
+        status      = item.get("status") or "Confirmed"
+        margin_info = item.get("margin_info") or ""
 
         if action == "Update":
-            Rate.objects.filter(pk=item["rate_id"]).update(
-                cost=cost,
-                sell_tourplan=sell_tourplan,
-                sell=sell,
-            )
+            update_fields = {
+                "cost":          cost,
+                "sell_tourplan": sell_tourplan,
+                "sell":          sell,
+                "status":        status,
+            }
+            if margin_info:
+                update_fields["margin"] = margin_info
+            Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
 
         elif action == "Add":
             rate_group_id = item.get("rate_group_id")
             if not rate_group_id:
-                continue
-
+                # Brand-new product: create the RateGroup first
+                product_id = item.get("product_id")
+                if not product_id:
+                    continue
+                rg_name = item.get("rate_group_name") or "Standard"
+                rate_group_obj, _ = RateGroup.objects.get_or_create(
+                    product_id=product_id,
+                    name=rg_name,
+                    defaults={"order": 1},
+                )
+                rate_group_id = rate_group_obj.pk
             date_from = datetime.strptime(item["date_from"], "%d/%m/%Y").date()
             date_to   = datetime.strptime(item["date_to"],   "%d/%m/%Y").date()
-
             rate_line, _ = RateLine.objects.get_or_create(
                 group_id=rate_group_id,
                 date_from=date_from,
                 date_to=date_to,
-                defaults={"season": "To be defined"},
+                defaults={"season": item.get("season") or "To be defined"},
             )
-
+            # Resolve margin_info from DB if not present in session item (old data)
+            if not margin_info:
+                try:
+                    margin_info = rate_line.group.product.supplier.margin_info
+                except Exception:
+                    margin_info = ""
             Rate.objects.get_or_create(
                 rate_line=rate_line,
                 column_options=item["column_options"],
@@ -718,16 +934,92 @@ def apply_confirmed_changes(confirmed_items):
                     "cost":          cost,
                     "sell_tourplan": sell_tourplan,
                     "sell":          sell,
-                    "status":        "Active",
-                    "margin":        "0",
+                    "status":        status,
+                    "margin":        margin_info,
                     "has_rate":      True,
                 },
             )
+            # Deduplicate by rate_line id
+            if not any(rl.id == rate_line.id for rl, _ in added_rate_lines):
+                product_id = rate_line.group.product_id
+                added_rate_lines.append((rate_line, product_id))
 
         elif action == "Delete":
             rate_line_id = item.get("rate_line_id")
             if rate_line_id:
                 RateLine.objects.filter(pk=rate_line_id).delete()
+
+    # ── Paso 3a: Change para Update ──────────────────────────────────────
+    for rl_id, data_rl in rateline_data.items():
+        rl      = data_rl["instance"]
+        old_avg = data_rl["old_avg"]
+        new_avg = rl.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
+
+        if old_avg == new_avg:
+            continue
+
+        if old_avg == 0 and new_avg > 0:
+            previous = (
+                RateLine.objects
+                .filter(group=rl.group, season=rl.season)
+                .exclude(id=rl.id)
+                .order_by("-date_from")
+                .first()
+            )
+            previous_avg = (
+                previous.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
+                if previous else 0
+            )
+            change_type = "Add"
+            percent = (
+                (new_avg - previous_avg) / previous_avg * 100
+                if previous_avg != 0 else 0
+            )
+        else:
+            change_type = "Update"
+            percent = (new_avg - old_avg) / old_avg * 100
+
+        Change.objects.create(
+            rate_line=rl,
+            type=change_type,
+            amount=round(percent, 2),
+        )
+
+    # ── Paso 3b: Change para Add / New ───────────────────────────────────
+    for rl, product_id in added_rate_lines:
+        new_avg = rl.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
+        if new_avg == 0:
+            continue
+
+        # Usar el snapshot previo al batch para decidir New vs Add
+        had_ratelines = product_had_ratelines.get(product_id, False)
+
+        if not had_ratelines:
+            change_type = "New"
+            percent     = 0
+        else:
+            previous = (
+                RateLine.objects
+                .filter(group=rl.group, season=rl.season)
+                .exclude(id=rl.id)
+                .order_by("-date_from")
+                .first()
+            )
+            previous_avg = (
+                previous.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
+                if previous else 0
+            )
+            change_type = "Add"
+            percent = (
+                (new_avg - previous_avg) / previous_avg * 100
+                if previous_avg != 0 else 0
+            )
+
+        Change.objects.create(
+            rate_line=rl,
+            type=change_type,
+            amount=round(percent, 2),
+        )
 
 
 @login_required
@@ -782,7 +1074,7 @@ def history_of_changes(request):
 def report_error_hotel(request, supplier_id):
 
     supplier_obj = Supplier.objects.get(pk=supplier_id)
-    
+
     if request.method == "POST":
 
         note = request.POST["note"]
@@ -808,7 +1100,7 @@ def report_error_hotel(request, supplier_id):
 def report_error_service(request, product_id):
 
     product_obj = Product.objects.get(pk=product_id)
-    
+
     if request.method == "POST":
 
         note = request.POST["note"]
@@ -848,6 +1140,18 @@ def history_of_changes_data(request):
         .filter(date__range=(last_year, today))
     )
 
+    if request.user.userType == "Cliente":
+        client = getattr(request.user, 'client', None)
+        if client is None:
+            try:
+                client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                client = None
+        if client:
+            changes = changes.filter(rate_line__group__product__clients=client)
+        else:
+            changes = changes.none()
+
     data = []
     for change in changes:
         product = change.rate_line.group.product
@@ -868,3 +1172,203 @@ def history_of_changes_data(request):
         data.append(row)
 
     return JsonResponse({"data": data})
+
+
+@login_required
+def hotel_comparison(request):
+    client_id      = request.GET.get('client')
+    date_ins       = request.GET.getlist('date_in')
+    date_outs      = request.GET.getlist('date_out')
+    loc_ids        = request.GET.getlist('location')
+    suppliers_raw  = request.GET.getlist('supplier')
+    products_raw   = request.GET.getlist('product')      # ← nuevo
+    room_types_raw = request.GET.getlist('room_type')
+
+    is_internal = request.user.userType != "Cliente"
+
+    all_suppliers = (
+        Supplier.objects
+        .filter(supplier_products__type_service="AC")
+        .select_related("group__location")
+        .distinct()
+        .order_by("name")
+    )
+
+    # ── Todos los productos AC, con supplier y location para el filtrado JS ──
+    all_products = (
+        Product.objects
+        .filter(type_service="AC")
+        .select_related("supplier", "group__location")
+        .order_by("name")
+    )
+
+    clients_qs = (
+        Client.objects.filter(department="AI").order_by("name")
+        if is_internal else Client.objects.none()
+    )
+
+    context = {
+        "locations":         Location.objects.all().order_by("order"),
+        "all_suppliers":     all_suppliers,
+        "all_products":      all_products,                              # ← nuevo
+        "clients":           clients_qs,
+        "selected_client":   int(client_id) if client_id else None,
+        "is_internal":       is_internal,
+        "searched":          False,
+        # First-slot pre-fill
+        "first_date_in":    date_ins[0]       if date_ins       else "",
+        "first_date_out":   date_outs[0]      if date_outs      else "",
+        "first_location":   int(loc_ids[0])   if loc_ids and loc_ids[0]       else None,
+        "first_supplier":   int(suppliers_raw[0]) if suppliers_raw and suppliers_raw[0] else None,
+        "first_product":    int(products_raw[0])  if products_raw and products_raw[0]   else None,  # ← nuevo
+        "first_room_type":  room_types_raw[0] if room_types_raw else "DBL",
+    }
+
+    if not date_ins or not date_ins[0]:
+        return render(request, "tariff/hotel_comparison.html", context)
+
+    context["searched"] = True
+
+    # Client margin
+    client_category = "C"
+    if client_id:
+        try:
+            client_category = Client.objects.get(id=client_id).category
+        except Client.DoesNotExist:
+            pass
+    elif not is_internal:
+        try:
+            linked = getattr(request.user, 'client', None)
+            if linked:
+                client_category = linked.category
+            else:
+                client_category = Client.objects.get(name=request.user.other_name).category
+        except Client.DoesNotExist:
+            pass
+
+    # Normalize slot lists — date_ins is the source of truth for slot count.
+    # Using date_ins length avoids zip misalignment when optional fields
+    # (product, supplier) send fewer values than date_in/date_out.
+    n_slots = len(date_ins)
+    def pad(lst, default='', n=n_slots):
+        return (lst + [default] * n)[:n]
+
+    date_outs      = pad(date_outs)
+    loc_ids        = pad(loc_ids)
+    suppliers_raw  = pad(suppliers_raw)
+    products_raw   = pad(products_raw)
+    room_types_raw = pad(room_types_raw, 'DBL')
+
+    base_qs = (
+        RateLine.objects
+        .filter(group__product__type_service="AC")
+        .select_related("group__product__supplier__group__location", "group__product__group")
+        .prefetch_related("line_rates")
+    )
+
+    rows = []
+    seen_keys = set()
+    slot_errors = []
+
+    for di_str, do_str, loc_id, sup_id, prod_id, rt in zip(
+        date_ins, date_outs, loc_ids, suppliers_raw, products_raw, room_types_raw
+    ):
+        if not di_str or not do_str:
+            continue
+        try:
+            date_in  = datetime.strptime(di_str, "%Y-%m-%d").date()
+            date_out = datetime.strptime(do_str, "%Y-%m-%d").date()
+        except ValueError:
+            slot_errors.append(f"Invalid date: {di_str} / {do_str}")
+            continue
+        if date_in >= date_out:
+            slot_errors.append(f"Check-out must be after check-in ({di_str}).")
+            continue
+
+        nights = []
+        d = date_in
+        while d < date_out:
+            nights.append(d)
+            d += timedelta(days=1)
+        n_nights = len(nights)
+
+        qs = base_qs.filter(
+            date_from__lte=date_out - timedelta(days=1),
+            date_to__gte=date_in,
+        )
+        if loc_id:
+            qs = qs.filter(group__product__group__location_id=loc_id)
+        if sup_id:
+            qs = qs.filter(group__product__supplier_id=sup_id)
+        if prod_id:                                                    # ← nuevo
+            qs = qs.filter(group__product_id=prod_id)
+
+        rate_index = defaultdict(dict)
+        group_meta = {}
+
+        for line in qs:
+            rg = line.group
+            if rg.id not in group_meta:
+                group_meta[rg.id] = {"rate_group": rg, "product": rg.product, "supplier": rg.product.supplier}
+            for r in line.line_rates.all():
+                if r.column_options != rt:
+                    continue
+                if not is_internal and r.status == "Provisional":
+                    continue
+                sell = apply_client_margin(rate=r, client_category=client_category, service_type="AC")
+                per_person = sell / 2 if rt == "DBL" else sell
+                is_prov = r.status == "Provisional"
+                for night in nights:
+                    if line.date_from <= night <= line.date_to and night not in rate_index[rg.id]:
+                        rate_index[rg.id][night] = {"value": per_person, "provisional": is_prov}
+
+        for rg_id, rates_by_night in rate_index.items():
+            dedup = (rg_id, rt, di_str, do_str, sup_id, prod_id)
+            if dedup in seen_keys:
+                continue
+            seen_keys.add(dedup)
+            meta = group_meta[rg_id]
+            has_all  = all(n in rates_by_night for n in nights)
+            has_prov = any(v["provisional"] for v in rates_by_night.values())
+            total_val = round(sum(rates_by_night[n]["value"] for n in nights), 2) if has_all else None
+            avg_night = round(total_val / n_nights, 2) if total_val is not None else None
+            rows.append({
+                "supplier":        meta["supplier"],
+                "product":         meta["product"],
+                "rate_group":      meta["rate_group"],
+                "column":          rt,
+                "nights":          nights,
+                "rates":           rates_by_night,
+                "n_nights":        n_nights,
+                "total":           total_val,
+                "avg_night":       avg_night,
+                "has_all_nights":  has_all,
+                "has_provisional": has_prov,
+                "diff":            None,
+            })
+
+    if slot_errors:
+        context["error"] = " ".join(slot_errors)
+
+    all_nights = sorted({n for row in rows for n in row["nights"]})
+    rows.sort(key=lambda r: (r["avg_night"] is None, r["avg_night"] or 0))
+
+    complete = [r for r in rows if r["avg_night"] is not None]
+    min_avg = min((r["avg_night"] for r in complete), default=None)
+
+    for row in rows:
+        if row["avg_night"] is not None and min_avg is not None:
+            row["diff"] = round(row["avg_night"] - min_avg, 2)
+        row_nights = set(row["nights"])
+        row["rate_list"] = [
+            row["rates"].get(n) if n in row_nights else "NA"
+            for n in all_nights
+        ]
+
+    context.update({
+        "rows":       rows,
+        "min_avg":    min_avg,
+        "all_nights": all_nights,
+    })
+
+    return render(request, "tariff/hotel_comparison.html", context)

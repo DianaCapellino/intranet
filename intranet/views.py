@@ -417,6 +417,10 @@ def create_user(request):
                 "users": User.objects.all()
             })
 
+        client_id = request.POST.get("client_id") if type == "Cliente" else None
+        if type == "Cliente":
+            isAdmin = False
+
         # Creates the model of the user from the form information
         try:
             new_user = User.objects.create_user(
@@ -427,6 +431,7 @@ def create_user(request):
                 department=department,
                 isAdmin=isAdmin,
                 userType=type,
+                client_id=client_id or None,
             )
             new_user.save()
         except IntegrityError:
@@ -434,20 +439,23 @@ def create_user(request):
                 "message_new": "El usuario ya existe",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all()
+                "users": User.objects.all(),
+                "clients": Client.objects.order_by("name"),
             })
 
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
-            "users": User.objects.all()
+            "users": User.objects.all(),
+            "clients": Client.objects.order_by("name"),
         })
 
     else:
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
-            "users": User.objects.all()
+            "users": User.objects.all(),
+            "clients": Client.objects.order_by("name"),
         })
     
 @login_required
@@ -511,24 +519,29 @@ def modify_user(request, user_id):
                 "users": User.objects.all()
             })
 
-        # Modifies the model of the user from the form information
+        client_id = request.POST.get("client_id") if type == "Cliente" else None
+        if type == "Cliente":
+            isAdmin = False
 
-        user.other_name=name
-        user.username=username
-        user.email=email
-        user.department=department
-        user.isAdmin=isAdmin
-        user.isActivated=isActivated
-        user.is_active=is_active
-        user.userType=type
-        user.color=color
+        # Modifies the model of the user from the form information
+        user.other_name = name
+        user.username = username
+        user.email = email
+        user.department = department
+        user.isAdmin = isAdmin
+        user.isActivated = isActivated
+        user.is_active = is_active
+        user.userType = type
+        user.color = color
+        user.client_id = client_id or None
 
         user.save()
 
         return HttpResponseRedirect(reverse("users"), {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
-            "users": User.objects.all()
+            "users": User.objects.all(),
+            "clients": Client.objects.order_by("name"),
         })
     
 
@@ -2097,7 +2110,7 @@ def entries_data(request):
     data = []
     for entry in page_obj:
 
-        trip_name = f"{entry.trip.name if entry.trip else "" } x {entry.trip.quantity_pax}"
+        trip_name = f"{entry.trip.name if entry.trip else ''} x {entry.trip.quantity_pax}"
 
         # status con versión
         status = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}"

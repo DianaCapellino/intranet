@@ -47,7 +47,7 @@
               Production: replace src with {% static 'img/aliwen-logo-white.svg' %}
               The URL below is a live fallback while you set up static files.
             -->
-            <img src="{% static 'intranet/images/logo.png' %}"
+            <img src="{{ logo_url }}"
                  alt="Aliwen Incoming" height="40"
                  style="display:inline-block;height:40px;margin:0 auto 18px;" />
 
@@ -177,17 +177,20 @@
                       <!-- Badge -->
                       <td valign="top" style="padding-right:10px;white-space:nowrap;">
                         {% if ch.type == "New" %}
-                          <span style="display:inline-block;background-color:#B5651D;color:#ffffff;
+                          <span style="display:inline-block;background-color:#d1fae5;color:#065f46;
+                                       border:1px solid #6ee7b7;
                                        font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                        font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                        padding:3px 7px;border-radius:2px;">New</span>
                         {% elif ch.type == "Update" %}
-                          <span style="display:inline-block;background-color:#5A5A5A;color:#ffffff;
+                          <span style="display:inline-block;background-color:#fef9c3;color:#713f12;
+                                       border:1px solid #fde047;
                                        font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                        font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                        padding:3px 7px;border-radius:2px;">Updated</span>
                         {% else %}
-                          <span style="display:inline-block;background-color:#3D7A5E;color:#ffffff;
+                          <span style="display:inline-block;background-color:#dbeafe;color:#1e40af;
+                                       border:1px solid #93c5fd;
                                        font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                        font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                        padding:3px 7px;border-radius:2px;">Added</span>
@@ -228,17 +231,20 @@
                 <!-- Badge -->
                 <td valign="top" style="padding-right:10px;white-space:nowrap;">
                   {% if ch.type == "New" %}
-                    <span style="display:inline-block;background-color:#B5651D;color:#ffffff;
+                    <span style="display:inline-block;background-color:#d1fae5;color:#065f46;
+                                 border:1px solid #6ee7b7;
                                  font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                  font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                  padding:3px 7px;border-radius:2px;">New</span>
                   {% elif ch.type == "Update" %}
-                    <span style="display:inline-block;background-color:#5A5A5A;color:#ffffff;
+                    <span style="display:inline-block;background-color:#fef9c3;color:#713f12;
+                                 border:1px solid #fde047;
                                  font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                  font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                  padding:3px 7px;border-radius:2px;">Updated</span>
                   {% else %}
-                    <span style="display:inline-block;background-color:#3D7A5E;color:#ffffff;
+                    <span style="display:inline-block;background-color:#dbeafe;color:#1e40af;
+                                 border:1px solid #93c5fd;
                                  font-family:Arial,Helvetica,sans-serif;font-size:8px;
                                  font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
                                  padding:3px 7px;border-radius:2px;">Added</span>
@@ -318,7 +324,7 @@
           <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
 
             <!-- Logo -->
-            <img src="https://aliwenincoming.com/wp-content/uploads/logo2.svg"
+            <img src="{{ logo_url }}"
                  alt="Aliwen" height="26"
                  style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
 
@@ -326,34 +332,32 @@
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"
                    style="margin:0 auto 14px;">
               <tr>
-                <td style="padding:0 4px;">
-                  <a href="https://www.instagram.com/aliwen_incoming/"
-                     style="display:inline-block;width:28px;height:28px;
-                            background-color:rgba(255,255,255,0.08);border-radius:14px;
-                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
-                            color:#999999;text-align:center;line-height:28px;
-                            text-decoration:none;">
-                    IG
+                <td style="padding:0 6px;">
+                  <a href="https://www.instagram.com/aliwen_incoming/">
+                    <img src="{{ icons_base_url }}Instagram.svg" alt="Instagram"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
                   </a>
                 </td>
-                <td style="padding:0 4px;">
-                  <a href="https://www.linkedin.com/company/argentinaaliwenincoming"
-                     style="display:inline-block;width:28px;height:28px;
-                            background-color:rgba(255,255,255,0.08);border-radius:14px;
-                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
-                            color:#999999;text-align:center;line-height:28px;
-                            text-decoration:none;">
-                    in
+                <td style="padding:0 6px;">
+                  <a href="https://www.linkedin.com/company/argentinaaliwenincoming">
+                    <img src="{{ icons_base_url }}LinkedIn.svg" alt="LinkedIn"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
                   </a>
                 </td>
-                <td style="padding:0 4px;">
-                  <a href="https://www.facebook.com/ArgentinaAliwenIncoming"
-                     style="display:inline-block;width:28px;height:28px;
-                            background-color:rgba(255,255,255,0.08);border-radius:14px;
-                            font-family:Arial,sans-serif;font-size:10px;font-weight:bold;
-                            color:#999999;text-align:center;line-height:28px;
-                            text-decoration:none;">
-                    FB
+                <td style="padding:0 6px;">
+                  <a href="https://www.facebook.com/ArgentinaAliwenIncoming">
+                    <img src="{{ icons_base_url }}Facebook.svg" alt="Facebook"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.youtube.com/@AliwenDMC-y6h">
+                    <img src="{{ icons_base_url }}YouTube.svg" alt="YouTube"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
                   </a>
                 </td>
               </tr>
@@ -394,7 +398,8 @@
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
                       color:#666666;line-height:1.6;margin:0;">
               &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
-              You are receiving this message because you are a registered Aliwen partner.
+              E.V.T. - Leg 11320<br />
+              You are receiving this message because you have access to our Tariff.
             </p>
 
           </td>

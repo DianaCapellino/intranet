@@ -13,6 +13,8 @@ MARGIN_ACC_OPTIONS = [
     ("High", "0.82"),
 ]
 
+MARGIN_VALUE_TO_INFO = {v: label for label, v in MARGIN_ACC_OPTIONS}
+
 @login_required
 def supplier(request):
 
@@ -71,6 +73,7 @@ def supplier(request):
             attractions=request.POST.getlist("attractions"),
             interests=request.POST.getlist("interests"),
             margin=margin,
+            margin_info=MARGIN_VALUE_TO_INFO.get(margin, "Regular"),
             note=request.POST.get("note"),
             prepayment=request.POST.get("prepayment"),
             pic1_url=request.POST.get("pic1_url"),

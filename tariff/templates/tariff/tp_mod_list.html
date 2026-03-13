@@ -111,6 +111,7 @@
                         <div style="width:80px;text-align:right">Costo</div>
                         <div style="width:100px;text-align:right">Sell TP</div>
                         <div style="width:110px;text-align:right">Sell AI</div>
+                        <div style="width:130px">Temporada (Add)</div>
                         <div style="width:130px"></div>
                     </div>
 
@@ -160,12 +161,13 @@
 const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
 const CSRF    = "{{ csrf_token }}";
 
-// State — each item gets _id, ignored, edited_sell (only sell_ai is editable by user)
+// State — each item gets _id, ignored, edited_sell, edited_season
 const state = CHANGES.map((item, idx) => ({
     ...item,
-    _id:         item._id !== undefined ? item._id : idx,   // preserve server-side id if re-opened
-    ignored:     false,
-    edited_sell: item.sell,   // user edits this; starts = sell_tourplan
+    _id:           item._id !== undefined ? item._id : idx,
+    ignored:       false,
+    edited_sell:   item.sell,
+    edited_season: item.season || "To be defined",
 }));
 
 // ---------------------------------------------------------------- render
@@ -244,6 +246,16 @@ function rowHTML(item) {
            </button>`
         : '';
 
+    const seasonCell = (!isUpdate && !isIgnored)
+        ? `<div style="width:130px">
+               <input type="text" class="form-control form-control-sm"
+                      style="font-size:.72rem"
+                      placeholder="Temporada"
+                      value="${item.edited_season}"
+                      oninput="setSeason(${item._id}, this.value)">
+           </div>`
+        : `<div style="width:130px"></div>`;
+
     return `
     <div class="card mb-2 ${isIgnored ? 'opacity-50' : ''}" id="row-${item._id}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
@@ -259,6 +271,7 @@ function rowHTML(item) {
             ${costCell}
             ${sellTPCell}
             ${sellAICell}
+            ${seasonCell}
             <div class="d-flex gap-1" style="min-width:130px;justify-content:flex-end">
                 ${editBtn}
                 <button class="btn btn-sm ${isIgnored ? 'btn-outline-success' : 'btn-outline-danger'}"
@@ -318,6 +331,10 @@ function setSell(id, val) {
     if (!isNaN(parsed)) state.find(i => i._id === id).edited_sell = parsed;
 }
 
+function setSeason(id, val) {
+    state.find(i => i._id === id).edited_season = val;
+}
+
 function ignoreAll(action) {
     state.filter(i => i.action === action).forEach(i => { i.ignored = true; i.isEditing = false; });
     renderAll();
@@ -350,6 +367,7 @@ function confirmChanges() {
         cost:           item.cost,
         sell_tourplan:  item.sell_tourplan,
         sell:           item.edited_sell,
+        season:         item.edited_season,
         price_code:     item.price_code,
         date_from:      item.date_from,
         date_to:        item.date_to,
@@ -393,27 +411,6 @@ function tryOpenModal() {
 document.addEventListener("DOMContentLoaded", tryOpenModal);
 </script>
 {% endif %}
-
-<br>
-<div class="row">
-    <div class="col-12">
-        <table id="tariff-table" class="table table-hover">
-            <thead>
-                <tr>
-                    <th>Destino</th>
-                    <th>Proveedor</th>
-                    <th>Producto</th>
-                    <th>Validez</th>
-                    <th>Base</th>
-                    <th>Sell TP</th>
-                    <th>Sell AI</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
-</div>
 
 {% endif %}{# /isAdmin #}
 {% endblock %}

@@ -932,13 +932,16 @@ def update_rate_block(request):
                 avg=Avg("sell")
             )["avg"] or 0
 
+            if old_avg == new_avg:
+                continue
+
             if old_avg == 0 and new_avg > 0:
 
                 previous = RateLine.objects.filter(
                     group=rl.group,
                     season=rl.season
                 ).exclude(id=rl.id).order_by("-date_from").first()
-                
+
                 if previous:
                     previous_avg = previous.line_rates.aggregate(
                         avg=Avg("sell")

@@ -47,18 +47,28 @@
                                 </select>
                             </div>
                             <div class="mb-3 col">
-                                <select class="form-control" aria-label="type" name="type">
+                                <select class="form-control new-user-type" aria-label="type" name="type">
                                     <option selected value="">Área</option>
                                     {% for option in user_types %}
                                     <option value="{{ option.0 }}">{{ option.1 }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="form-check-sm mb-3 col">
+                            <div class="form-check-sm mb-3 col new-user-admin-wrap">
                                 <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
                                 <label class="form-check-label" for="checkDefault">
                                 Administrador
                                 </label>
+                            </div>
+                        </div>
+                        <div class="row new-user-client-row d-none">
+                            <div class="mb-3 col">
+                                <select class="form-control" name="client_id">
+                                    <option value="">— Seleccionar cliente —</option>
+                                    {% for c in clients %}
+                                    <option value="{{ c.id }}">{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                         </div>
                         <input class="btn btn-dark" type="submit" value="GUARDAR">
@@ -161,7 +171,7 @@
                                                         </div>
                                                     </div>
                                                     <div class="row">
-                                                        <div class="form-check-sm mb-3 col">
+                                                        <div class="form-check-sm mb-3 col modify-admin-wrap-{{ user.id }}">
                                                             {% if user.isAdmin == True %}
                                                                 <input class="form-check-input" type="checkbox" id="modify_admin{{user.id}}" name="admin" checked>
                                                             {% else %}
@@ -195,7 +205,7 @@
                                                     <div class="row">
                                                         <div class="mb-3 col">
                                                             <label for="modify_type{{user.id}}" class="form-label">Área</label>
-                                                            <select class="form-control" aria-label="type" name="type" id="modify_type{{user.id}}">
+                                                            <select class="form-control modify-user-type" aria-label="type" name="type" id="modify_type{{user.id}}" data-uid="{{ user.id }}">
                                                                 {% for option in user_types %}
                                                                     {% if option.1 == user.userType %}
                                                                         <option selected value="{{ option.0 }}">{{ option.1 }}</option>
@@ -212,6 +222,17 @@
                                                         <div class="mb-3 p-2 col">
                                                             <br>
                                                             <button id="modify_password{{user.id}}" class="btn btn-dark" disabled>CAMBIAR CONTRASEÑA</button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row modify-client-row-{{ user.id }}{% if user.userType != 'Cliente' %} d-none{% endif %}">
+                                                        <div class="mb-3 col">
+                                                            <label class="form-label">Cliente vinculado</label>
+                                                            <select class="form-control" name="client_id">
+                                                                <option value="">— Ninguno —</option>
+                                                                {% for c in clients %}
+                                                                <option value="{{ c.id }}"{% if user.client_id == c.id %} selected{% endif %}>{{ c.name }}</option>
+                                                                {% endfor %}
+                                                            </select>
                                                         </div>
                                                     </div>
                                                     <input id="modify-user-{{ user.id }}" class="btn btn-dark btn-lg modify-users-btn" type="submit" value="MODIFICAR">
@@ -246,5 +267,41 @@
         </div>
     </div>
     <br>
+
+<script>
+// ---- New-user form ----
+(function () {
+    const typeSelect   = document.querySelector('.new-user-type');
+    const adminWrap    = document.querySelector('.new-user-admin-wrap');
+    const clientRow    = document.querySelector('.new-user-client-row');
+    if (!typeSelect) return;
+
+    function toggle() {
+        const isCliente = typeSelect.value === 'Cliente';
+        adminWrap.classList.toggle('d-none', isCliente);
+        clientRow.classList.toggle('d-none', !isCliente);
+        if (isCliente) adminWrap.querySelector('input[type=checkbox]').checked = false;
+    }
+    typeSelect.addEventListener('change', toggle);
+    toggle();
+})();
+
+// ---- Modify-user modals ----
+document.querySelectorAll('.modify-user-type').forEach(function (sel) {
+    const uid        = sel.dataset.uid;
+    const adminWrap  = document.querySelector('.modify-admin-wrap-' + uid);
+    const clientRow  = document.querySelector('.modify-client-row-' + uid);
+    if (!adminWrap || !clientRow) return;
+
+    function toggle() {
+        const isCliente = sel.value === 'Cliente';
+        adminWrap.classList.toggle('d-none', isCliente);
+        clientRow.classList.toggle('d-none', !isCliente);
+        if (isCliente) adminWrap.querySelector('input[type=checkbox]').checked = false;
+    }
+    sel.addEventListener('change', toggle);
+    toggle();
+});
+</script>
 {% endif %}
 {% endblock %}

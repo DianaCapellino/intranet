@@ -91,9 +91,11 @@ HOTEL_QUALITY_OPTIONS = [
     ("Estancia", "Estancia"),
     ("Boutique 4****", "Boutique 4****"),
     ("Boutique 5*****", "Boutique 5*****"),
-    ("Boutique 5***** Lux", "Boutique 5***** Lux"),
+    ("Boutique Luxury", "Boutique Luxury"),
     ("Glamping", "Glamping"),
-    ("Winery", "Winery")
+    ("Winery Standard", "Winery Standard"),
+    ("Winery Superior", "Winery Superior"),
+    ("Winery Luxury", "Winery Luxury"),
 ]
 
 STATUS = [
@@ -149,7 +151,7 @@ class Location(models.Model):
 
     def __str__(self):
         return f"{self.name}"
-    
+
 
 class SupplierGroup(models.Model):
     name = models.CharField(max_length=64)
@@ -173,7 +175,7 @@ class Supplier(models.Model):
     sustentability_ranking = models.PositiveSmallIntegerField(choices=SUSTENTABILITY_RANKING_OPTIONS)
     attractions = MultiSelectField(choices=ATTRACTIONS, max_length=64, blank=True, null=True)
     interests = MultiSelectField(choices=INTERESTS, max_length=64, blank=True, null=True)
-    
+
     # Notes to show in the tariff
     note = models.CharField(max_length=500, blank=True, default=None)
     child_note = models.CharField(max_length=150, blank=True, null=True)
@@ -185,11 +187,19 @@ class Supplier(models.Model):
     order = models.PositiveIntegerField()
     group = models.ForeignKey(SupplierGroup, on_delete=models.CASCADE, related_name="group_products")
     hotel_quality = models.CharField(choices=HOTEL_QUALITY_OPTIONS, max_length=64, blank=True, null=True)
+    
+    # Exact amount
     margin = models.FloatField()
+
+    # Margin option
+    margin_info = models.CharField(choices=MARGIN_OPTIONS, max_length=64)
+
+    # This allows to update or not from Tourplan system
+    update_tp = models.BooleanField(default=True)
 
     def __str__(self):
         return f"{self.name}"
-    
+
 
 class ProductGroup(models.Model):
     name = models.CharField(max_length=64)
@@ -216,10 +226,10 @@ class Product(models.Model):
     isActivated = models.BooleanField(default=True)
     type_service = models.CharField(choices=SRV, max_length=64)
     recommended = models.BooleanField(default=False)
-    
+
     # Supplier for the real costs
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="supplier_products")
-    
+
     # Important information
     note = models.CharField(max_length=150, blank=True, null=True)
     child_note = models.CharField(max_length=150, blank=True, null=True)
@@ -229,7 +239,7 @@ class Product(models.Model):
 
     # Per group or per person
     fcu = models.CharField(choices=FCU_OPTIONS, max_length=64)
-    
+
     # Per night is 1 or per package of x nights
     scu = models.PositiveSmallIntegerField()
 
@@ -246,7 +256,7 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.supplier} - {self.name} - {self.group}"
-    
+
     class Meta:
         ordering = ["order"]
 
@@ -258,7 +268,7 @@ class RateGroup(models.Model):
 
     def __str__(self):
         return f"{self.product} - {self.name}"
-    
+
 
 class RateLine(models.Model):
     date_from = models.DateField(verbose_name='from_date')
@@ -311,7 +321,7 @@ class FixedRateCost(models.Model):
     def __str__(self):
         return f"{self.location} - {self.name}"
 
-    
+
 class CsvFileTourplan (models.Model):
     file_name = models.FileField(upload_to="csvFiles")
     uploaded_time = models.DateTimeField(auto_now_add=True)
@@ -319,7 +329,7 @@ class CsvFileTourplan (models.Model):
 
     def __str__(self):
         return f"Csv File ID: {self.id} - Csv Name: {self.file_name}"
-    
+
 class CsvFormTourplan(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
@@ -356,7 +366,7 @@ class TourplanLine(models.Model):
 
     def __str__ (self):
         return f"Line: {self.order} - Supplier: {self.supplier_name} - Info: {self.option_description} - Date: {self.date_from}"
-    
+
 
 class Feedback(models.Model):
     creation_date = models.DateTimeField(default=django.utils.timezone.now, verbose_name='creation date')
@@ -378,7 +388,7 @@ class Change(models.Model):
     type = models.CharField(max_length=64, choices=TYPE_HISTORY)
     rate_line = models.ForeignKey(RateLine, on_delete=models.CASCADE, related_name="ratelines")
     amount = models.FloatField(default=0)
-    
+
     def __str__ (self):
         return f"{self.type.upper()} - Travel frame: {self.rate_line.date_from }/{self.rate_line.date_to} - Supplier: {self.rate_line.group.product.supplier.name} - Product: {self.rate_line.group.product.name}"
 

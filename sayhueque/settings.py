@@ -31,6 +31,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# Absolute base URL used to build image links in outgoing emails
+SITE_URL = "https://intranet.aliwenincoming.com.ar"
+
 
 # Application definition
 

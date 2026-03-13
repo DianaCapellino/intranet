@@ -29,6 +29,9 @@
                 {% if user.isAdmin %}
                     <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
                 {% endif %}
+                {% if user.department == "AI" and user.userType != "Cliente" %}
+                    <a href="{% url 'hotel_comparison' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Hotel Rate Comparison"><i class="fa-solid fa-dollar-sign"></i><i class="fa-solid fa-dollar-sign"></i></button></a>
+                {% endif %}
                     <a href="{% url 'history_of_changes' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="History of changes"><i class="fa-solid fa-history"></i></button></a>
                     <a href="{% url 'special_dates' %}"><button type="button" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Special Dates"><i class="fa-solid fa-calendar"></i></button></a>
                     <a id="export-excel" href="{% url 'export_services_excel' %}" class="btn btn-dark btn-lg m-2" data-toggle="tooltip" data-placement="down" title="Download Excel"><i class="fa-solid fa-file-excel"></i></a>

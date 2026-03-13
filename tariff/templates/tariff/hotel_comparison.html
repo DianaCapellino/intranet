@@ -1,0 +1,434 @@
+{% extends "intranet/layout.html" %}
+{% load static %}
+
+{% block body %}
+<div class="container-fluid py-4">
+
+    <div class="d-flex justify-content-between align-items-center">
+        <h1>Tariff - Hotel Comparison</h1>
+        <div class="text-center">
+            <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Return to tariff"><i class="fa-solid fa-rotate-left"></i></button></a>
+        </div>
+    </div>
+
+    <hr>
+
+    {# ── FILTER FORM ── #}
+    <form method="get" class="card shadow-sm border-0 mb-4 p-3">
+
+        {# ── First slot row (always visible, Django pre-fills values) ── #}
+        <div class="d-flex flex-wrap gap-2 align-items-end mb-2" id="first-slot">
+
+            <div>
+                <label class="form-label small fw-bold mb-1">Check-in</label>
+                <input type="date" name="date_in" class="form-control form-control-sm slot-date-in"
+                       style="width:145px;" value="{{ first_date_in }}" required>
+            </div>
+
+            <div class="d-flex align-items-end pb-1 text-muted">→</div>
+
+            <div>
+                <label class="form-label small fw-bold mb-1">Check-out</label>
+                <input type="date" name="date_out" class="form-control form-control-sm slot-date-out"
+                       style="width:145px;" value="{{ first_date_out }}" required>
+            </div>
+
+            <div>
+                <label class="form-label small fw-bold mb-1">Location</label>
+                <select name="location" class="form-select form-select-sm slot-location" style="width:150px;">
+                    <option value="">All</option>
+                    {% for loc in locations %}
+                        <option value="{{ loc.id }}"
+                            {% if first_location == loc.id %}selected{% endif %}>
+                            {{ loc.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# ── Hotel (supplier) — data-location enables JS filtering ── #}
+            <div style="min-width:200px; flex:1;">
+                <label class="form-label small fw-bold mb-1">Hotel</label>
+                <select name="supplier" class="form-select form-select-sm slot-supplier">
+                    <option value="">All hotels</option>
+                    {% for s in all_suppliers %}
+                        <option value="{{ s.id }}"
+                            data-location="{{ s.group.location_id }}"
+                            {% if first_supplier == s.id %}selected{% endif %}>
+                            {{ s.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# ── Product — data-supplier + data-location enables JS filtering ── #}
+            <div style="min-width:180px; flex:1;">
+                <label class="form-label small fw-bold mb-1">Product</label>
+                <select name="product" class="form-select form-select-sm slot-product">
+                    <option value="">All products</option>
+                    {% for p in all_products %}
+                        <option value="{{ p.id }}"
+                            data-supplier="{{ p.supplier_id }}"
+                            data-location="{{ p.group.location_id }}"
+                            {% if first_product == p.id %}selected{% endif %}>
+                            {{ p.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="form-label small fw-bold mb-1">Room</label>
+                <select name="room_type" class="form-select form-select-sm" style="width:190px;">
+                    <option value="DBL" {% if first_room_type == "DBL" %}selected{% endif %}>DBL – per person sharing</option>
+                    <option value="SGL" {% if first_room_type == "SGL" %}selected{% endif %}>SGL – single occupancy</option>
+                </select>
+            </div>
+
+            {% if is_internal %}
+            <div>
+                <label class="form-label small fw-bold mb-1">Client</label>
+                <select name="client" class="form-select form-select-sm" style="width:160px;">
+                    <option value="">Base price</option>
+                    {% for c in clients %}
+                        <option value="{{ c.id }}"
+                            {% if selected_client == c.id %}selected{% endif %}>
+                            {{ c.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+        </div>
+
+        {# ── Additional slot rows (JS-appended) ── #}
+        <div id="slots-container"></div>
+
+        <div class="d-flex gap-2 justify-content-end mt-2">
+            <button type="button" id="add-slot-btn" class="btn btn-outline-secondary btn-sm">+ Add hotel</button>
+            <button type="submit" class="btn btn-dark btn-sm">Search</button>
+        </div>
+
+        {# ── Slot template for additional rows ── #}
+        <template id="slot-tpl">
+            <div class="slot-row d-flex flex-wrap gap-2 align-items-center mb-2">
+                <input type="date" name="date_in"  class="form-control form-control-sm slot-date-in"  style="width:145px;" required>
+                <span class="text-muted">→</span>
+                <input type="date" name="date_out" class="form-control form-control-sm slot-date-out" style="width:145px;" required>
+
+                <select name="location" class="form-select form-select-sm slot-location" style="width:150px;">
+                    <option value="">All</option>
+                    {% for loc in locations %}
+                        <option value="{{ loc.id }}">{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+
+                <div style="min-width:200px; flex:1;">
+                    <select name="supplier" class="form-select form-select-sm slot-supplier">
+                        <option value="">All hotels</option>
+                        {% for s in all_suppliers %}
+                            <option value="{{ s.id }}"
+                                data-location="{{ s.group.location_id }}">
+                                {{ s.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div style="min-width:180px; flex:1;">
+                    <select name="product" class="form-select form-select-sm slot-product">
+                        <option value="">All products</option>
+                        {% for p in all_products %}
+                            <option value="{{ p.id }}"
+                                data-supplier="{{ p.supplier_id }}"
+                                data-location="{{ p.group.location_id }}">
+                                {{ p.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <select name="room_type" class="form-select form-select-sm" style="width:190px;">
+                    <option value="DBL">DBL – per person sharing</option>
+                    <option value="SGL">SGL – single occupancy</option>
+                </select>
+
+                <div style="width:160px;">
+                    <button type="button" class="btn btn-outline-danger btn-sm px-3 remove-slot">× Remove</button>
+                </div>
+            </div>
+        </template>
+
+    </form>
+
+    {# ── ERROR ── #}
+    {% if error %}
+        <div class="alert alert-warning">{{ error }}</div>
+    {% endif %}
+
+    {# ── RESULTS ── #}
+    {% if searched %}
+
+        {% if rows %}
+        <div style="overflow-x:auto;">
+        <table class="table table-sm table-bordered align-middle" style="min-width:900px;">
+            <thead class="table-dark text-center small">
+                <tr>
+                    <th class="text-start" style="min-width:160px;">Hotel</th>
+                    <th class="text-start" style="min-width:150px;">Room / Board</th>
+                    {% for night in all_nights %}
+                        <th style="min-width:75px;">{{ night|date:"d M" }}</th>
+                    {% endfor %}
+                    <th style="min-width:90px;">Total</th>
+                    <th style="min-width:80px;">vs cheapest</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+
+            {% for row in rows %}
+                <tr {% if row.diff == 0 %}class="table-success"{% elif row.has_provisional %}style="background-color:#FFFBEB;"{% endif %}>
+
+                    <td class="fw-bold text-nowrap">
+                        {{ row.supplier.name }}
+                        {% if row.supplier.hotel_quality %}
+                            <div class="fw-normal text-muted" style="font-size:0.7rem;">{{ row.supplier.hotel_quality }}</div>
+                        {% endif %}
+                    </td>
+
+                    <td class="text-nowrap">
+                        <div>
+                            {{ row.product.name }}
+                            <span class="badge bg-secondary ms-1" style="font-size:0.65rem;">{{ row.column }}</span>
+                            {% if row.has_provisional %}
+                                <span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:0.6rem;">Provisional</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-muted" style="font-size:0.75rem;">{{ row.rate_group.name }}</div>
+                    </td>
+
+                    {% for rate in row.rate_list %}
+                        {% if rate == "NA" %}
+                            <td class="text-center" style="background-color:#f1f3f5;">
+                                <span class="text-muted" style="font-size:0.75rem;">N/A</span>
+                            </td>
+                        {% elif rate is not None %}
+                            {% if rate.value == 0 %}
+                            <td class="text-center" style="background-color:#fff5f5;">
+                                <span class="text-danger" style="font-size:0.7rem; font-weight:600;">Closed /<br>Not available</span>
+                            </td>
+                            {% else %}
+                            <td class="text-center fw-bold" {% if rate.provisional %}style="background-color:#FEF3C7;"{% endif %}>
+                                {{ rate.value|floatformat:0 }}
+                            </td>
+                            {% endif %}
+                        {% else %}
+                            <td class="text-center text-muted">—</td>
+                        {% endif %}
+                    {% endfor %}
+
+                    <td class="text-center fw-bold">
+                        {% if row.total is not None %}
+                            USD {{ row.total|floatformat:0 }}
+                            <div class="text-muted fw-normal" style="font-size:0.7rem;">{{ row.n_nights }}n · avg {{ row.avg_night|floatformat:0 }}</div>
+                        {% else %}
+                            <span class="text-muted small">incomplete</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="text-center">
+                        {% if row.diff is not None %}
+                            {% if row.diff == 0 %}
+                                <span class="badge bg-success">cheapest</span>
+                            {% else %}
+                                <span class="text-danger fw-bold">+{{ row.diff|floatformat:0 }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+
+                </tr>
+            {% endfor %}
+
+            </tbody>
+        </table>
+        </div>
+
+        <div class="text-muted small mt-2">
+            All amounts in <strong>USD per person</strong>. DBL rates are divided by 2.
+            "vs cheapest" compares avg/night to normalise different stay lengths.
+            <span style="background-color:#f1f3f5; padding:1px 4px; border-radius:3px;">N/A</span> = night outside that hotel's date range.
+            Amber cells = <strong>Provisional</strong> rate.
+            <span class="text-danger fw-semibold">Closed/Not available</span> = rate of 0 (hotel closed or not available that night).
+            — = no rate found for that night.
+        </div>
+
+        {% else %}
+            <div class="text-center p-5 text-muted">
+                <i class="fa-solid fa-magnifying-glass fa-2x mb-3"></i>
+                <p>No rates found for the selected dates and filters.</p>
+            </div>
+        {% endif %}
+
+    {% else %}
+        <div class="text-center p-5 text-muted">
+            <i class="fa-solid fa-calendar-days fa-2x mb-3"></i>
+            <p>Enter check-in and check-out dates, then press Search.</p>
+        </div>
+    {% endif %}
+
+</div>
+
+<script>
+(function () {
+    const container = document.getElementById('slots-container');
+    const addBtn    = document.getElementById('add-slot-btn');
+    const MAX       = 3;  // including the hardcoded first slot
+
+    // ── Core filtering logic ─────────────────────────────────────────
+    // Reads the current location + supplier selection in a slot and
+    // hides/shows options in the supplier and product dropdowns.
+    function filterSlot(slotEl) {
+        const locId = slotEl.querySelector('.slot-location').value;
+        const supSelect  = slotEl.querySelector('.slot-supplier');
+        const prodSelect = slotEl.querySelector('.slot-product');
+
+        // 1. Filter suppliers by location
+        let supStillVisible = false;
+        Array.from(supSelect.options).forEach(opt => {
+            if (!opt.value) { return; }  // keep "All hotels"
+            const show = !locId || opt.dataset.location === locId;
+            opt.hidden   = !show;
+            opt.disabled = !show;
+            if (show && opt.value === supSelect.value) supStillVisible = true;
+        });
+        // If the currently selected supplier is no longer visible, reset it
+        if (supSelect.value && !supStillVisible) {
+            supSelect.value = '';
+        }
+
+        // 2. Filter products by location AND supplier (after possible reset above)
+        const supId = supSelect.value;
+        let prodStillVisible = false;
+        Array.from(prodSelect.options).forEach(opt => {
+            if (!opt.value) { return; }  // keep "All products"
+            const matchLoc = !locId || opt.dataset.location === locId;
+            const matchSup = !supId  || opt.dataset.supplier === supId;
+            const show = matchLoc && matchSup;
+            opt.hidden   = !show;
+            opt.disabled = !show;
+            if (show && opt.value === prodSelect.value) prodStillVisible = true;
+        });
+        if (prodSelect.value && !prodStillVisible) {
+            prodSelect.value = '';
+        }
+    }
+
+    // Attach change listeners. runFilter=true also does an initial filter pass.
+    function attachListeners(slotEl, runFilter = true) {
+        slotEl.querySelector('.slot-location')
+              .addEventListener('change', () => filterSlot(slotEl));
+        slotEl.querySelector('.slot-supplier')
+              .addEventListener('change', () => filterSlot(slotEl));
+
+        const removeBtn = slotEl.querySelector('.remove-slot');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                slotEl.remove();
+                updateUI();
+            });
+        }
+
+        if (runFilter) filterSlot(slotEl);
+    }
+
+    // ── Slot management ──────────────────────────────────────────────
+    function extraSlotCount() {
+        return container.querySelectorAll('.slot-row').length;
+    }
+
+    function updateUI() {
+        addBtn.disabled = (1 + extraSlotCount()) >= MAX;
+    }
+
+    function lastSlotValues() {
+        const rows = container.querySelectorAll('.slot-row');
+        const src  = rows.length ? rows[rows.length - 1] : document.getElementById('first-slot');
+        return [
+            src.querySelector('.slot-date-in').value,
+            src.querySelector('.slot-date-out').value,
+            src.querySelector('.slot-location').value,
+        ];
+    }
+
+    function addSlot(di, dateOut, locId, supplierId, productId, roomType) {
+        if ((1 + extraSlotCount()) >= MAX) return;
+        const tpl   = document.getElementById('slot-tpl');
+        const clone = tpl.content.cloneNode(true);
+
+        container.appendChild(clone);
+        // Reference the live DOM element (DocumentFragment is gone after append)
+        const row = container.lastElementChild;
+
+        // Step 1: set dates and room type (no filtering dependency)
+        if (di)       row.querySelector('.slot-date-in').value            = di;
+        if (dateOut)  row.querySelector('.slot-date-out').value           = dateOut;
+        if (roomType) row.querySelector('select[name="room_type"]').value = roomType;
+
+        // Step 2: set location and run filter so supplier options get narrowed
+        if (locId) {
+            row.querySelector('.slot-location').value = locId;
+            filterSlot(row);  // hides irrelevant suppliers/products
+        }
+
+        // Step 3: set supplier, then filter again so products get narrowed
+        if (supplierId) {
+            row.querySelector('.slot-supplier').value = supplierId;
+            filterSlot(row);  // hides irrelevant products
+        }
+
+        // Step 4: set product (options are already filtered correctly)
+        if (productId) {
+            row.querySelector('.slot-product').value = productId;
+        }
+
+        // Step 5: wire up listeners without re-running filter (already done above)
+        attachListeners(row, false);
+        updateUI();
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────
+    // Wire up the always-visible first slot
+    attachListeners(document.getElementById('first-slot'));
+
+    // Rebuild additional slots from URL params (index 1+)
+    const params    = new URLSearchParams(window.location.search);
+    const dateIns   = params.getAll('date_in');
+    const dateOuts  = params.getAll('date_out');
+    const locs      = params.getAll('location');
+    const suppliers = params.getAll('supplier');
+    const products  = params.getAll('product');
+    const roomTypes = params.getAll('room_type');
+
+    for (let i = 1; i < dateIns.length; i++) {
+        addSlot(
+            dateIns[i]   || '',
+            dateOuts[i]  || '',
+            locs[i]      || '',
+            suppliers[i] || '',
+            products[i]  || '',
+            roomTypes[i] || 'DBL'
+        );
+    }
+
+    addBtn.addEventListener('click', function () {
+        const [di, dateOut, locId] = lastSlotValues();
+        addSlot(di, dateOut, locId, '', '', 'DBL');
+    });
+
+    updateUI();
+})();
+</script>
+
+{% endblock body %}

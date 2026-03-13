@@ -118,6 +118,12 @@ class User(AbstractUser):
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
     tariff_news = models.BooleanField(default=True)
+    client = models.ForeignKey(
+        'Client',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='user_accounts',
+    )
 
     class Meta:
         ordering = ["username"]

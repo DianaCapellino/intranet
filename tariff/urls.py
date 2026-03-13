@@ -6,6 +6,7 @@ urlpatterns = [
     path("", tariff.index, name="tariff"),
     path("tp_mod_list", tariff.tp_mod_list, name="tp_mod_list"),
     path('search/', tariff.tariff_search, name='tariff_search'),
+    path('hotel-comparison/', tariff.hotel_comparison, name='hotel_comparison'),
     path('special_dates', tariff.special_dates, name='special_dates'),
     path('download_holidays_pdf/<int:year>', tariff.download_holidays_pdf, name='download_holidays_pdf'),
     path('history_of_changes', tariff.history_of_changes, name="history_of_changes"),

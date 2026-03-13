@@ -1,6 +1,13 @@
 {% load custom_filters %}
 {% load static %}
 
+<style>
+.provisional-row {
+    background-color: #FFFBEB !important;
+    border-left: 3px solid #F59E0B !important;
+}
+</style>
+
 {% if rate_lines %}
 
 {# ===================================================== #}
@@ -131,8 +138,9 @@
                                 {% for dtg in date_to_groups %}
 
                                     {% for line in dtg.list %}
+                                        {% if not is_client or line.rates_by_column %}
 
-                                        <tr class="border-bottom">
+                                        <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}">
                                             <td class="ps-3 py-2 border-0">
                                                 <div class="fw-bold text-secondary" style="font-size:0.85rem;">
                                                     {{ line.group.product.name }}
@@ -152,6 +160,9 @@
                                                     –
                                                     {{ line.date_to|date:"d M Y" }}
                                                 </span>
+                                                {% if not is_client and line.provisional_columns %}
+                                                    <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
+                                                {% endif %}
                                             </td>
 
                                             <td class="text-center fw-bold border-0">
@@ -166,6 +177,8 @@
                                                 {{ line.rates_by_column.TPL|default:"N/A" }}
                                             </td>
                                         </tr>
+
+                                        {% endif %}
 
                                         <div class="modal fade" id="windowProductNote{{ line.group.product.id }}" tabindex="-1" aria-labelledby="label{{ supplier.id }}">
                                             <div class="modal-dialog modal-lg"> <div class="modal-content text-dark"> <div class="modal-header">
@@ -432,7 +445,7 @@
         <tbody>
 
         {% for line in pg.list %}
-            <tr class="border-bottom">
+            <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
                         {% if line.group.product.tour_timing %}
@@ -496,6 +509,9 @@
                     {{ line.date_from|date:"d M Y" }}
                     –
                     {{ line.date_to|date:"d M Y" }}
+                    {% if not is_client and line.provisional_columns %}
+                        <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
+                    {% endif %}
                 </td>
 
                 <td class="text-center fw-bold">
