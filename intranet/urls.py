@@ -58,6 +58,9 @@ urlpatterns = [
     # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),
     path("tourplan_files", views.tourplan_files, name="tourplan_files"),
+    path("tourplan_files/create", views.tourplan_create_trips, name="tourplan_create_trips"),
+    path("tourplan_files/discard", views.tourplan_discard_trips, name="tourplan_discard_trips"),
+    path("tourplan_files/assign", views.tourplan_assign_tp, name="tourplan_assign_tp"),
     path("intranet_files", views.intranet_files, name="intranet_files"),
     path("advanced_search", views.advanced_search, name="advanced_search"),
     path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),

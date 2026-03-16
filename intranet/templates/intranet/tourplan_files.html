@@ -4,49 +4,285 @@
     {% if request.user.isAdmin %}
         <h2>Actualizar Bookings</h2>
         <div id="update_bookings_container" class="text-center">
-            <button type="button" id="new_trip_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Actualizar Files con Tourplan" data-bs-toggle="modal" data-bs-target="#windowTourplan"><i class="fa-solid fa-upload display-8"></i></button>
+            <button type="button" class="btn btn-dark btn-lg"
+                    title="Actualizar Files con Tourplan"
+                    data-bs-toggle="modal" data-bs-target="#windowTourplan">
+                <i class="fa-solid fa-upload display-8"></i>
+            </button>
         </div>
-        <div class="modal fade modal-lg creating-entry-from-trip" id="windowTourplan" tabindex="-1" aria-labelledby="labelUpdateFiles">
+
+        <!-- ── UPLOAD MODAL ─────────────────────────────────── -->
+        <div class="modal fade modal-lg" id="windowTourplan" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h1 class="modal-title fs-8" id="labelUpdateFiles">Subir planilla de Tourplan</h1>
-                        <button id="btn-close-create-entry" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                        <h1 class="modal-title fs-5">Subir planilla de Tourplan</h1>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
-                        <br>
-                        <form class="rw-3 text-center" action="{% url 'tourplan_files' %}" method="post" id="tp-files-form" enctype="multipart/form-data">
-                        {% csrf_token %}
-                        {{ form.file_name }}
-                        <br>
-                        <div class="container text-center">
-                            <a href=""><button id="upload_file" class="btn btn-dark btn-lg" type="submit">SUBIR</button></a>
-                            <a href="{% url 'tourplan_files' %}"><button id="close-tourplan-files" class="btn btn-dark btn-lg">CANCELAR</button></a>
-                        </div>
-                        <br>
+                        <p>Seleccione la planilla de Tourplan para actualizar información</p>
+                        <form action="{% url 'tourplan_files' %}" method="post"
+                              enctype="multipart/form-data">
+                            {% csrf_token %}
+                            {{ form.file_name }}
+                            <br><br>
+                            <div class="d-flex gap-2 justify-content-center">
+                                <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
+                                <a href="{% url 'tourplan_files' %}">
+                                    <button type="button" class="btn btn-outline-secondary btn-lg">CANCELAR</button>
+                                </a>
+                            </div>
                         </form>
                     </div>
                 </div>
             </div>
         </div>
-        <br>
-        <hr>
-        {% if tourplan_files %}
-            <h2>Viajes actualizados:</h2>
-            <br>
-            {% for trip in tourplan_files %}
-                <p>Nombre: {{trip.name}} - Monto: USD {{trip.amount}} - Guía: {{trip.guide}} - Operador: {{trip.operations_user.username}} - Rentabilidad: {{trip.rent_perc}}</p>
-            {% endfor %}
-        {% else %}
-            <p>Subir archivo primero.</p>
+
+        <!-- ── RESULTS MODAL ─────────────────────────────────── -->
+        {% if show_results_modal %}
+        <div class="modal fade" id="windowResults" tabindex="-1" data-bs-backdrop="static">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+
+                    <!-- Summary bar -->
+                    <div class="d-flex align-items-center gap-4 px-4 py-3 border-bottom bg-light flex-wrap">
+                        {% if updated_count is not None %}
+                        <div class="text-center">
+                            <div class="fw-bold fs-4">{{ updated_count }}</div>
+                            <div class="text-muted small">Actualizados</div>
+                        </div>
+                        <div class="vr"></div>
+                        {% endif %}
+                        <div class="text-center">
+                            <div class="fw-bold fs-4" id="count-no-tp">{{ no_tp_trips|length }}</div>
+                            <div class="text-muted small">Sin Nº TP en app</div>
+                        </div>
+                        <div class="vr"></div>
+                        <div class="text-center">
+                            <div class="fw-bold fs-4" id="count-pending">{{ csv_not_in_app|length }}</div>
+                            <div class="text-muted small">En CSV sin match</div>
+                        </div>
+                        <div class="ms-auto d-flex gap-2 flex-wrap">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="discardSelected()">Descartar seleccionados</button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="discardAll()">Descartar todos</button>
+                            <button class="btn btn-dark btn-sm" onclick="createSelected()">Crear seleccionados</button>
+                        </div>
+                    </div>
+
+                    <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+
+                        <!-- Section 1: Booking trips without tourplanId -->
+                        {% if no_tp_trips %}
+                        <h6 class="fw-bold mt-2 text-warning">
+                            Bookings sin número de TP asignado ({{ no_tp_trips|length }}):
+                        </h6>
+                        <table class="table table-sm table-bordered mb-4" id="tbl-no-tp">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th><input type="checkbox" id="chk-all-no-tp" onchange="toggleAllNoTp(this)"></th>
+                                    <th>Nombre</th>
+                                    <th>Ref. Cliente</th>
+                                    <th>TP actual</th>
+                                    <th>Fecha viaje</th>
+                                    <th>Vendedor</th>
+                                    <th>Cliente</th>
+                                    <th>Nº TP sugerido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in no_tp_trips %}
+                                <tr data-trip-id="{{ row.trip_id }}">
+                                    <td><input type="checkbox" class="chk-no-tp" value="{{ row.trip_id }}"></td>
+                                    <td>{{ row.name }}</td>
+                                    <td>{{ row.client_reference }}</td>
+                                    <td>{% if row.current_tp %}<span class="text-muted">{{ row.current_tp }}</span>{% else %}<span class="text-danger">—</span>{% endif %}</td>
+                                    <td>{{ row.travelling_date }}</td>
+                                    <td>{{ row.vendedor }}</td>
+                                    <td>{{ row.client }}</td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm tp-input"
+                                               data-trip-id="{{ row.trip_id }}"
+                                               value="{{ row.suggested_tp }}"
+                                               placeholder="Ingresar TP">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <div class="mb-3">
+                            <button class="btn btn-sm btn-outline-dark" onclick="assignSelected()">
+                                Asignar TP a seleccionados
+                            </button>
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-3">Todos los bookings tienen número de TP asignado.</p>
+                        {% endif %}
+
+                        <!-- Section 2: CSV rows not in app -->
+                        {% if csv_not_in_app %}
+                        <h6 class="fw-bold mt-2">
+                            TP del CSV que NO existen en la aplicación ({{ csv_not_in_app|length }}):
+                        </h6>
+                        <table class="table table-sm table-bordered mb-3" id="tbl-csv-not-in-app">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th><input type="checkbox" id="chk-all" onchange="toggleAll(this)"></th>
+                                    <th>TP ID</th>
+                                    <th>Nombre (Pax)</th>
+                                    <th>Vendedor</th>
+                                    <th>Cliente</th>
+                                    <th>Fecha viaje</th>
+                                    <th>Status</th>
+                                    <th>Pax</th>
+                                    <th style="background:#fff3cd">Col14</th>
+                                    <th style="background:#fff3cd">Col15</th>
+                                    <th style="background:#fff3cd">Prefijo usado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in csv_not_in_app %}
+                                <tr data-tp="{{ row.tp_id }}">
+                                    <td><input type="checkbox" class="chk-row" value="{{ row.tp_id }}"></td>
+                                    <td>{{ row.tp_id }}</td>
+                                    <td>{{ row.name }}</td>
+                                    <td>{{ row.vendedor }}</td>
+                                    <td>{{ row.client_name }}</td>
+                                    <td>{{ row.travelling_date }}</td>
+                                    <td>{{ row.status }}</td>
+                                    <td>{{ row.quantity_pax }}</td>
+                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_col14 }}</td>
+                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_col15 }}</td>
+                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_prefix }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted small mb-3">Todos los TP del CSV están registrados en la aplicación.</p>
+                        {% endif %}
+
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        const CSRF        = "{{ csrf_token }}";
+        const URL_CREATE  = "{% url 'tourplan_create_trips' %}";
+        const URL_DISCARD = "{% url 'tourplan_discard_trips' %}";
+        const URL_ASSIGN  = "{% url 'tourplan_assign_tp' %}";
+
+        // ── CSV-not-in-app helpers ─────────────────────────────
+        function getSelected() {
+            return [...document.querySelectorAll(".chk-row:checked")].map(c => c.value);
+        }
+        function toggleAll(master) {
+            document.querySelectorAll(".chk-row").forEach(c => c.checked = master.checked);
+        }
+        function removeRowsCsv(tp_ids) {
+            const s = new Set(tp_ids);
+            document.querySelectorAll("#tbl-csv-not-in-app tbody tr").forEach(tr => {
+                if (s.has(tr.dataset.tp)) tr.remove();
+            });
+            document.getElementById("count-pending").textContent =
+                document.querySelectorAll("#tbl-csv-not-in-app tbody tr").length;
+        }
+
+        function createSelected() {
+            const selected = getSelected();
+            if (!selected.length) { alert("Seleccione al menos un file."); return; }
+            fetch(URL_CREATE, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+                body: JSON.stringify({ selected }),
+            }).then(r => r.json()).then(data => {
+                alert(`Se crearon ${data.created} file(s).`);
+                removeRowsCsv(selected);
+            });
+        }
+        function discardSelected() {
+            const selected = getSelected();
+            if (!selected.length) { alert("Seleccione al menos un file."); return; }
+            fetch(URL_DISCARD, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+                body: JSON.stringify({ selected }),
+            }).then(() => removeRowsCsv(selected));
+        }
+        function discardAll() {
+            if (!confirm("¿Descartar todos los pendientes del CSV?")) return;
+            fetch(URL_DISCARD, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+                body: JSON.stringify({ selected: [] }),
+            }).then(() => {
+                document.querySelectorAll("#tbl-csv-not-in-app tbody tr").forEach(tr => tr.remove());
+                document.getElementById("count-pending").textContent = "0";
+            });
+        }
+
+        // ── No-TP-trips helpers ────────────────────────────────
+        function toggleAllNoTp(master) {
+            document.querySelectorAll(".chk-no-tp").forEach(c => c.checked = master.checked);
+        }
+        function assignSelected() {
+            const checked = [...document.querySelectorAll(".chk-no-tp:checked")];
+            if (!checked.length) { alert("Seleccione al menos un file."); return; }
+            const assignments = checked.map(c => ({
+                trip_id: parseInt(c.value),
+                tp_id:   document.querySelector(`.tp-input[data-trip-id="${c.value}"]`).value.trim(),
+            })).filter(a => a.tp_id);
+            if (!assignments.length) { alert("Ingrese un número de TP para los seleccionados."); return; }
+            fetch(URL_ASSIGN, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+                body: JSON.stringify({ assignments }),
+            }).then(r => r.json()).then(data => {
+                alert(`Se asignó TP a ${data.assigned} file(s).`);
+                const assigned_ids = new Set(assignments.map(a => String(a.trip_id)));
+                document.querySelectorAll("#tbl-no-tp tbody tr").forEach(tr => {
+                    if (assigned_ids.has(tr.dataset.tripId)) tr.remove();
+                });
+                document.getElementById("count-no-tp").textContent =
+                    document.querySelectorAll("#tbl-no-tp tbody tr").length;
+            });
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            new bootstrap.Modal(document.getElementById("windowResults")).show();
+        });
+        </script>
         {% endif %}
+
+        <br><hr>
+
+        {% if csv_not_in_app or no_tp_trips %}
+        <div class="alert alert-warning d-flex align-items-center justify-content-between mt-3">
+            <span>
+                <i class="fa-solid fa-triangle-exclamation me-2"></i>
+                Pendientes:
+                {% if no_tp_trips %}<strong>{{ no_tp_trips|length }}</strong> sin Nº TP{% endif %}
+                {% if csv_not_in_app and no_tp_trips %} · {% endif %}
+                {% if csv_not_in_app %}<strong>{{ csv_not_in_app|length }}</strong> del CSV sin match{% endif %}
+            </span>
+            <button class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#windowResults">
+                Ver pendientes
+            </button>
+        </div>
+        {% else %}
+        <p class="text-muted">Subir planilla de Tourplan para actualizar los files.</p>
+        {% endif %}
+
     {% else %}
         <p>Solo usuarios administradores pueden subir archivos:</p>
-        {% for user in users%}
-            {% if user.isAdmin%}
+        {% for user in users %}
+            {% if user.isAdmin %}
                 <p>- {{ user.username }}/{{ user.other_name }}</p>
             {% endif %}
-        {% endfor%}
+        {% endfor %}
     {% endif %}
 {% endblock %}

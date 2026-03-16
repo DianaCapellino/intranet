@@ -26,7 +26,10 @@
                                 <input autofocus class="form-control" type="text" name="name" id="name" placeholder="Nombre">
                             </div>
                             <div class="mb-3 col">
-                                <input class="form-control" type="text" name="username" id="username" minlength="2" maxlength="3" placeholder="Usuario">
+                                <input class="form-control" type="text" name="username" id="username" minlength="2" maxlength="3" placeholder="Usuario (igual a TP)">
+                            </div>
+                            <div class="mb-3 col">
+                                <input class="form-control" type="text" name="other_tp" id="other_tp" placeholder="TP VR/OP - 2 letras (dejar vacío para usar el usuario)">
                             </div>
                         </div>
                         <div class="row">
@@ -150,6 +153,10 @@
                                                         <div class="mb-3 col">
                                                             <label for="modify_username{{user.id}}" class="form-label">Usuario</label>
                                                             <input class="form-control" type="text" name="username" id="modify_username{{user.id}}" minlength="2" maxlength="3" value="{{ user.username }}">
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_other_tp{{user.id}}" class="form-label">TP VR/OP (2 letras)</label>
+                                                            <input class="form-control" type="text" name="other_tp" id="modify_other_tp{{user.id}}" value="{{ user.other_tp }}">
                                                         </div>
                                                     </div>
                                                     <div class="row">

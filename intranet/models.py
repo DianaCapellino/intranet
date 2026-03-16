@@ -112,6 +112,7 @@ TIMING_STATUS = [
 
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
+    other_tp = models.CharField(max_length=64, blank=True)
     isActivated = models.BooleanField(default=True)
     department = models.CharField(max_length=64, choices=DEPARTMENTS)
     isAdmin = models.BooleanField(default=False)
@@ -127,6 +128,11 @@ class User(AbstractUser):
 
     class Meta:
         ordering = ["username"]
+
+    def save(self, *args, **kwargs):
+        if not self.other_tp:  # Solo asigna si está vacío
+            self.other_tp = self.username
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.username}"
@@ -199,7 +205,7 @@ class Trip(models.Model):
     quantity_pax = models.IntegerField(default=2)
     rent_perc = models.FloatField(default=0, blank=True, null=True)
     guide = models.CharField(max_length=64, null=True, blank=True, default="")
-    dh = models.ForeignKey(User, on_delete=models.CASCADE, related_name="dh_user", null=True)
+    dh = models.CharField(max_length=64, null=True, blank=True)
     creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users")
 
     def __str__(self):

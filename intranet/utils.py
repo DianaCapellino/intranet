@@ -144,6 +144,7 @@ def send_templated_email(subject, to_emails, template_name, context):
     msg.attach_alternative(html_content, "text/html")
     msg.send()
 
+
 def build_margin_warning_context(user):
     """
     Build context for margin_warning.html for a single sales user.
@@ -232,24 +233,6 @@ def send_margin_warnings():
 
     print(f"\nEmails sent: {sent} | Skipped (no flagged trips): {skipped}")
 
-
-def test_email():
-
-    subject = "Advertencias Rentabilidad"
-    email = ["diana@aliwenincoming.com.ar"]
-    template = "emails/margin_warning.html"
-
-    trip_one = Trip.objects.get(tourplanId="ALFT109352")
-
-    context = {
-        "user_name": "Diana",
-        "bookings": {
-            "booking1": trip_one,
-            },
-        "note": "La nota es de prueba"
-        }
-
-    return subject, email, template, context
 
 def report_tariff_error_hotel(user, supplier_obj, note):
 

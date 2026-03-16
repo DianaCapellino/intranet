@@ -387,11 +387,12 @@ def create_user(request):
         # Attempt to create user
         name = request.POST["name"]
         username= request.POST["username"]
+        other_tp = request.POST.get("other_tp", "").strip()
         email = request.POST["email"]
         password = request.POST["password"]
         department = request.POST["department"]
         type = request.POST["type"]
-
+        
         try:
             isAdmin = request.POST['admin']
         except MultiValueDictKeyError:
@@ -433,7 +434,13 @@ def create_user(request):
                 userType=type,
                 client_id=client_id or None,
             )
+
+            if other_tp:
+                new_user.other_tp = other_tp
+
             new_user.save()
+
+
         except IntegrityError:
             return render(request, "intranet/users.html", {
                 "message_new": "El usuario ya existe",
@@ -469,6 +476,7 @@ def modify_user(request, user_id):
         # Attempt to modify user
         name = request.POST["name"]
         username = request.POST["username"]
+        other_tp = request.POST.get("other_tp", "").strip()
         email = request.POST["email"]
         department = request.POST["department"]
         type = request.POST["type"]
@@ -526,6 +534,7 @@ def modify_user(request, user_id):
         # Modifies the model of the user from the form information
         user.other_name = name
         user.username = username
+        user.other_tp = other_tp if other_tp else user.username
         user.email = email
         user.department = department
         user.isAdmin = isAdmin
@@ -1129,6 +1138,20 @@ def create_entry(request, trip_id):
             version_quote = trip.version_quote
             
             trip.version += 1
+
+        # If the status is Final Itinerary the user creator is the responsable user
+        elif status == "Final Itinerary":
+            version = 1
+            user_creator = trip.responsable_user
+            version_quote = trip.version_quote
+        
+        # If file is cancelled then the trip status change to "Cancelado"
+        elif status == "Cancelado":
+            version = 1
+            version_quote = trip.version_quote
+            user_creator = trip.responsable_user
+            trip.status = "Cancelado"
+            trip.save()
         else:
             version_quote = "@"
             version = 1
@@ -1269,7 +1292,27 @@ def modify_entry(request, entry_id):
                 "formated_starting_date": formated_starting_date,
                 "formated_closing_date": formated_closing_date,
             })
+
+        has_same_tp_ref = False    
+        try:
+            same_tp_trip = Trip.objects.get(tourplanId=tourplanId)
+            has_same_tp_ref = True
+        except Trip.DoesNotExist:
+            has_same_tp_ref = False
         
+        if has_same_tp_ref:
+            return render(request, "intranet/edit_entry.html", {
+                "message": "El número de Tourplan ya existe en un viaje",
+                "trips": entries_trips,
+                "status": STATUS_OPTIONS,
+                "importance_options": IMPORTANCE_OPTIONS,
+                "progress_options": PROGRESS_OPTIONS,
+                "users": User.objects.filter(department=request.user),
+                "entry": entry,
+                "formated_starting_date": formated_starting_date,
+                "formated_closing_date": formated_closing_date,
+            })
+
         # Get the user from the username in the form
         user_working = User.objects.get(id=user_working_form)
         user_creator = User.objects.get(id=user_creator_form)
@@ -3376,103 +3419,226 @@ def tourplan_files(request):
 
 def upload_data(csv_obj):
 
-    # List to be import
-    tourplan_list = []
+    # Pre-fetch lookups into dicts to avoid per-row DB queries
+    users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+    users_by_other_name = {u.other_name: u for u in User.objects.all() if u.other_name}
 
-    user_usernames = []
-    all_users = User.objects.all()
-    for user in all_users:
-        user_usernames.append(user.username)
-    
-    contact_names = []
-    all_contacts = ClientContact.objects.all()
-    for contact in all_contacts:
-        contact_names.append(contact.name)
+    trips_by_tourplan = {
+        t.tourplanId: t
+        for t in Trip.objects.select_related(
+            "responsable_user", "operations_user"
+        ).exclude(tourplanId="").exclude(tourplanId__isnull=True)
+    }
 
-    # All trips
-    trip_ids = []
-    all_trips = Trip.objects.all()
-    for item in all_trips:
-        if item.tourplanId == None or item.tourplanId == "":
-            pass
-        else:
-            trip_ids.append(item.tourplanId)
+    booking_tp_ids = set(
+        Trip.objects.filter(status="Booking")
+        .exclude(tourplanId="").exclude(tourplanId__isnull=True)
+        .values_list("tourplanId", flat=True)
+    )
 
-    # Open the csv and read all the data
+    # For extended matching: Entry tourplanIds and Trip client_references (raw, no splitting)
+    entry_tp_ids = set(
+        Entry.objects.exclude(tourplanId="").exclude(tourplanId__isnull=True)
+        .values_list("tourplanId", flat=True)
+    )
+    client_ref_set = set()
+    for ref in Trip.objects.exclude(client_reference="").exclude(client_reference__isnull=True).values_list("client_reference", flat=True):
+        if ref:
+            r = str(ref).strip()
+            client_ref_set.add(r)
+            if "/" in r:
+                client_ref_set.add(r.split("/")[0])
+
+    updated_count = 0
+    csv_not_in_app = []        # dicts with row data for TP IDs not found in app
+    csv_client_ref_to_tp = {}  # client_ref_prefix (col 15) → tp_id (col 3), for TP suggestions
+    matched_tp_ids = set()
+    trips_to_update = []
+
     with open(csv_obj.file_name.path, 'r') as f:
         reader = csv.reader(f, delimiter=';')
 
         for i, row in enumerate(reader):
-            if i >= 7:
-                col_number = 1
-                for col in row:
-                    if col_number == 3:
-                        # Read only the lines with tourplan id
-                        if col in trip_ids:
-                            trip = Trip.objects.get(tourplanId=col)
-                            tourplan_list.append(trip)
-                            col_number+=1
-                        else:
-                            break
-                    elif col_number == 4:
-                        date_obj = datetime.strptime(col, "%d/%m/%Y")
-                        formatted_date = date_obj.strftime("%Y-%m-%d")
-                        trip.travelling_date = formatted_date
-                        trip.save()
-                        col_number+=1
-                    elif col_number == 5:
-                        date_obj = datetime.strptime(col, "%d/%m/%Y")
-                        formatted_date = date_obj.strftime("%Y-%m-%d")
-                        trip.out_date = formatted_date
-                        trip.save()
-                        col_number+=1  
-                    elif col_number == 8:
-                        if col == "S" or col == "B" or col == "F":
-                            trip.dh_type = col
-                        trip.save()
-                        col_number+=1
-                    elif col_number == 10:
-                        if col in user_usernames:
-                            responsable_user = User.objects.get(username=col)
-                            trip.responsable_user = responsable_user
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 11:
-                        if col in user_usernames:
-                            operations_user = User.objects.get(username=col)
-                            trip.operations_user = operations_user
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 12:
-                        if col in user_usernames:
-                            dh = User.objects.get(other_name=col)
-                            trip.dh = dh
-                            trip.save()
-                        col_number+=1
-                    elif col_number == 17:
-                        trip.guide = col
-                        trip.save()
-                        col_number+=1
-                    elif col_number == 21:
-                        trip.rent_perc = col
-                        trip.save()
-                        col_number+=1
-                    elif col_number == 22:
-                        trip.amount = col
-                        trip.save()
-                        tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).first()
-                        if tp_entry:
-                            tp_entry.amount = col
-                            tp_entry.save()
-                        col_number+=1
-                    else:
-                        col_number+=1
+            if i < 7:
+                continue
+
+            # col 3 (index 2) — tourplanId
+            if len(row) < 3:
+                continue
+            tp_id = row[2].strip()
+            if not tp_id:
+                continue
+
+            # col 15 (index 14) — client reference from CSV (e.g. "2640190/1")
+            csv_client_ref = str(row[14]).strip() if len(row) > 14 else ""
+            client_ref_prefix = str(csv_client_ref.split("/")[0]).strip() if "/" in csv_client_ref else csv_client_ref
+
+            # Build prefix→tp_id map: Booking rows (OK/FI) take priority over any other
+            if client_ref_prefix:
+                raw_status_csv = row[5].strip() if len(row) > 5 else ""
+                is_booking_row = raw_status_csv in ("OK", "FI")
+                if is_booking_row or client_ref_prefix not in csv_client_ref_to_tp:
+                    csv_client_ref_to_tp[client_ref_prefix] = tp_id
+
+            if tp_id not in trips_by_tourplan:
+                # 2nd pass: check Entry.tourplanId
+                if tp_id in entry_tp_ids:
+                    continue
+                # 3rd pass: compare client_reference prefix (col 15) against stored client_reference values
+                if client_ref_prefix and client_ref_prefix in client_ref_set:
+                    continue
+
+                # Capture display fields for the "not in app" modal
+                vendedor_tp = row[9].strip() if len(row) > 9 else ""
+                vendedor_user = users_by_other_tp.get(vendedor_tp)
+                raw_status = row[5].strip() if len(row) > 5 else ""
+                if raw_status in ("OK", "FI"):
+                    trip_status = "Booking"
+                elif raw_status in ("RX", "XC", "XX"):
+                    trip_status = "Cancelado"
+                else:
+                    trip_status = "Quote"
+
+                raw_pax = row[19].strip() if len(row) > 19 else ""
+                try:
+                    quantity_pax = int(raw_pax)
+                except ValueError:
+                    quantity_pax = 1
+
+                csv_not_in_app.append({
+                    "tp_id":            tp_id,
+                    "name":             row[6].strip() if len(row) > 6 else "",
+                    "vendedor":         vendedor_user.username if vendedor_user else vendedor_tp,
+                    "client_name":      row[12].strip() if len(row) > 12 else "",
+                    "travelling_date":  row[3].strip() if len(row) > 3 else "",
+                    "out_date":         row[4].strip() if len(row) > 4 else "",
+                    "dh_type":          row[7].strip() if len(row) > 7 else "",
+                    "vendedor_tp":      vendedor_tp,
+                    "operations_tp":    row[10].strip() if len(row) > 10 else "",
+                    "dh_name":          row[11].strip()[3:].strip() if len(row) > 11 and row[11].strip().startswith("DH ") else (row[11].strip() if len(row) > 11 else ""),
+                    "guide":            row[16].strip() if len(row) > 16 else "",
+                    "status":           trip_status,
+                    "quantity_pax":     quantity_pax,
+                    # debug — remove once column mapping confirmed
+                    "dbg_col14":     row[14].strip() if len(row) > 14 else "(vacío)",
+                    "dbg_col15":     row[15].strip() if len(row) > 15 else "(vacío)",
+                    "dbg_prefix":    client_ref_prefix or "(vacío)",
+                })
+                continue
+
+            trip = trips_by_tourplan[tp_id]
+            matched_tp_ids.add(tp_id)
+            updated_count += 1
+
+            # col 4 (index 3) — travelling_date
+            if len(row) > 3 and row[3].strip():
+                try:
+                    trip.travelling_date = datetime.strptime(row[3].strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    pass
+
+            # col 5 (index 4) — out_date
+            if len(row) > 4 and row[4].strip():
+                try:
+                    trip.out_date = datetime.strptime(row[4].strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    pass
+
+            # col 8 (index 7) — dh_type
+            if len(row) > 7:
+                val = row[7].strip()
+                if val in ("S", "B", "F"):
+                    trip.dh_type = val
+
+            # col 10 (index 9) — responsable_user (lookup by other_tp)
+            if len(row) > 9:
+                val = row[9].strip()
+                if val in users_by_other_tp:
+                    trip.responsable_user = users_by_other_tp[val]
+
+            # col 11 (index 10) — operations_user (lookup by other_tp)
+            if len(row) > 10:
+                val = row[10].strip()
+                if val in users_by_other_tp:
+                    trip.operations_user = users_by_other_tp[val]
+
+            # col 12 (index 11) — dh: strip "DH " prefix, store name string
+            if len(row) > 11:
+                val = row[11].strip()
+                if val.startswith("DH "):
+                    val = val[3:].strip()
+                if val:
+                    trip.dh = val
+
+            # col 17 (index 16) — guide
+            if len(row) > 16:
+                trip.guide = row[16].strip()
+
+            # col 21 (index 20) — rent_perc: convert "10%" or "10" → 0.10
+            if len(row) > 20 and row[20].strip():
+                val = row[20].strip().replace("%", "").replace(",", ".").strip()
+                try:
+                    trip.rent_perc = float(val) / 100
+                except ValueError:
+                    pass
+
+            # col 22 (index 21) — amount
+            if len(row) > 21 and row[21].strip():
+                try:
+                    trip.amount = int(row[21].strip())
+                except ValueError:
+                    pass
+
+            trips_to_update.append(trip)
+
+    # Single bulk_update instead of per-column saves
+    if trips_to_update:
+        Trip.objects.bulk_update(trips_to_update, [
+            "travelling_date", "out_date", "dh_type",
+            "responsable_user", "operations_user", "dh",
+            "guide", "rent_perc", "amount",
+        ])
+        # Update matching Entry amounts
+        for trip in trips_to_update:
+            if trip.amount:
+                tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).first()
+                if tp_entry:
+                    tp_entry.amount = trip.amount
+                    tp_entry.save()
+
+    # Booking trips that have NO tourplanId, or whose current TP differs from
+    # the Booking TP suggested by this CSV for the same client reference
+    csv_booking_tp_ids = set(csv_client_ref_to_tp.values())
+    no_tp_trips = []
+    for t in (Trip.objects.filter(status="Booking")
+              .select_related("responsable_user", "client")
+              .order_by("travelling_date")):
+        client_ref = str(t.client_reference).strip() if t.client_reference else ""
+        cr_prefix = client_ref.split("/")[0] if "/" in client_ref else client_ref
+        suggested = csv_client_ref_to_tp.get(client_ref) or csv_client_ref_to_tp.get(cr_prefix, "")
+
+        has_no_tp   = not t.tourplanId or t.tourplanId.strip() == ""
+        has_wrong_tp = suggested and t.tourplanId and t.tourplanId.strip() != suggested
+
+        if not has_no_tp and not has_wrong_tp:
+            continue
+
+        no_tp_trips.append({
+            "trip_id":          t.id,
+            "name":             t.name,
+            "client_reference": client_ref,
+            "travelling_date":  t.travelling_date.strftime("%d/%m/%Y") if t.travelling_date else "",
+            "vendedor":         t.responsable_user.username if t.responsable_user else "",
+            "client":           t.client.name if t.client else "",
+            "suggested_tp":     suggested,
+            "current_tp":       t.tourplanId or "",
+        })
 
     csv_obj.read = True
     csv_obj.save()
     csv_obj.delete()
 
-    return tourplan_list
+    return updated_count, no_tp_trips, csv_not_in_app
 
 
 # Page to load the tourplan csv
@@ -3483,24 +3649,171 @@ def tourplan_files(request):
         form = CsvFormTourplanFiles(request.POST, request.FILES)
         if form.is_valid():
 
+            # Delete any stale unread files before saving the new one
+            CsvFileTourplanFiles.objects.filter(read=False).delete()
+
             form.save()
 
-            # Create data from tourplan csv
-            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
-            tourplan_files = upload_data(csv_obj)
+            csv_obj = CsvFileTourplanFiles.objects.filter(read=False).last()
+            updated_count, no_tp_trips, csv_not_in_app = upload_data(csv_obj)
+
+            request.session["tp_csv_not_in_app"] = csv_not_in_app
+            request.session["tp_no_tp_trips"]    = no_tp_trips
+            request.session.modified = True
 
             return render(request, "intranet/tourplan_files.html", {
-                "form":form,
-                "tourplan_files":tourplan_files,
+                "form":            form,
+                "updated_count":   updated_count,
+                "no_tp_trips":     no_tp_trips,
+                "csv_not_in_app":  csv_not_in_app,
+                "show_results_modal": True,
                 "users": User.objects.all,
             })
     else:
         form = CsvFormTourplanFiles()
 
+    pending_csv   = request.session.get("tp_csv_not_in_app", [])
+    pending_no_tp = request.session.get("tp_no_tp_trips", [])
     return render(request, "intranet/tourplan_files.html", {
-        "form":form,
+        "form":            form,
+        "csv_not_in_app":  pending_csv,
+        "no_tp_trips":     pending_no_tp,
+        "show_results_modal": bool(pending_csv or pending_no_tp),
         "users": User.objects.all,
     })
+
+
+@login_required
+@csrf_exempt
+def tourplan_create_trips(request):
+    """Create selected trips from the CSV-not-in-app list stored in session."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=400)
+
+    try:
+        body = json.loads(request.body)
+        selected_tp_ids = set(body.get("selected", []))
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    pending = request.session.get("tp_csv_not_in_app", [])
+
+    users_by_other_tp   = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+    clients_by_name     = {c.name: c for c in Client.objects.all()}
+    default_contact     = ClientContact.objects.filter(name="Sin Contacto").first()
+    default_user        = User.objects.filter(username="SD").first()
+
+    created = 0
+    remaining = []
+    for row in pending:
+        if row["tp_id"] not in selected_tp_ids:
+            remaining.append(row)
+            continue
+
+        # Resolve FKs
+        responsable = users_by_other_tp.get(row["vendedor_tp"]) or default_user
+        operations  = users_by_other_tp.get(row["operations_tp"]) or default_user
+        client      = clients_by_name.get(row["client_name"])
+        if not client:
+            client = Client.objects.filter(name="Sin Cliente").first()
+
+        try:
+            td = datetime.strptime(row["travelling_date"], "%d/%m/%Y").date() if row["travelling_date"] else date.today()
+            od = datetime.strptime(row["out_date"], "%d/%m/%Y").date() if row["out_date"] else td
+        except ValueError:
+            td = date.today()
+            od = td
+
+        Trip.objects.create(
+            name=row["name"] or row["tp_id"],
+            tourplanId=row["tp_id"],
+            status=row["status"],
+            client=client,
+            contact=default_contact,
+            travelling_date=td,
+            out_date=od,
+            starting_date=td,
+            dh_type=row["dh_type"] or "Sin definir",
+            dh=row["dh_name"],
+            guide=row["guide"],
+            responsable_user=responsable,
+            operations_user=operations,
+            creation_user=request.user,
+            department=request.user.department,
+            quantity_pax=row["quantity_pax"],
+            difficulty="1",
+        )
+        created += 1
+
+    # Update session — keep only unselected rows
+    if remaining:
+        request.session["tp_csv_not_in_app"] = remaining
+    else:
+        request.session.pop("tp_csv_not_in_app", None)
+    request.session.modified = True
+
+    return JsonResponse({"created": created, "remaining": len(remaining)})
+
+
+@login_required
+def tourplan_discard_trips(request):
+    """Discard all (or selected) pending CSV rows from the session."""
+    if request.method == "POST":
+        try:
+            body = json.loads(request.body)
+            selected_tp_ids = set(body.get("selected", []))
+        except (json.JSONDecodeError, KeyError):
+            selected_tp_ids = set()
+
+        if selected_tp_ids:
+            pending = request.session.get("tp_csv_not_in_app", [])
+            remaining = [r for r in pending if r["tp_id"] not in selected_tp_ids]
+            if remaining:
+                request.session["tp_csv_not_in_app"] = remaining
+            else:
+                request.session.pop("tp_csv_not_in_app", None)
+        else:
+            request.session.pop("tp_csv_not_in_app", None)
+        request.session.modified = True
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@csrf_exempt
+def tourplan_assign_tp(request):
+    """Assign a tourplanId to Booking trips that have none, based on user selection."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=400)
+
+    try:
+        body = json.loads(request.body)
+        assignments = body.get("assignments", [])  # [{trip_id, tp_id}, ...]
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    assigned_trip_ids = set()
+    for item in assignments:
+        tp_id = item.get("tp_id", "").strip()
+        if not tp_id:
+            continue
+        try:
+            trip = Trip.objects.get(id=item["trip_id"])
+            trip.tourplanId = tp_id
+            trip.save()
+            assigned_trip_ids.add(str(item["trip_id"]))
+        except Trip.DoesNotExist:
+            pass
+
+    # Remove assigned trips from session
+    pending = request.session.get("tp_no_tp_trips", [])
+    remaining = [r for r in pending if str(r["trip_id"]) not in assigned_trip_ids]
+    if remaining:
+        request.session["tp_no_tp_trips"] = remaining
+    else:
+        request.session.pop("tp_no_tp_trips", None)
+    request.session.modified = True
+
+    return JsonResponse({"assigned": len(assigned_trip_ids)})
 
 
 def compare_ref(ref1, ref2):
