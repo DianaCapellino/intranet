@@ -163,6 +163,8 @@ def build_margin_warning_context(user):
         responsable_user=user,
         status="Booking",
         travelling_date__range=(today, date_limit),
+        ignore_margin_warning=False,
+        margin_reviewed=False,
     ).filter(
         models.Q(rent_perc__gt=0.35) | models.Q(rent_perc__lt=0.15)
     ).order_by("travelling_date")
@@ -204,6 +206,7 @@ def build_margin_warning_context(user):
         "trips": trips,
         "logo_url": logo_url,
         "icons_base_url": icons_base_url,
+        "site_url": site_url,
     }
 
     return subject, to_emails, template, context
@@ -220,6 +223,8 @@ def send_margin_warnings():
     from .models import User as IntranetUser
     sales_users = IntranetUser.objects.filter(userType="Ventas").exclude(email="")
 
+    import time
+
     sent = 0
     skipped = 0
     for user in sales_users:
@@ -230,8 +235,105 @@ def send_margin_warnings():
         send_templated_email(subject, to_emails, template, context)
         print(f"  Sent to {user.email} — {len(context['trips'])} trip(s)")
         sent += 1
+        time.sleep(10)
 
     print(f"\nEmails sent: {sent} | Skipped (no flagged trips): {skipped}")
+
+
+
+def build_margin_warning_manager_context():
+    """
+    Build context for margin_warning_manager.html for the department head (Victoria, username "VA").
+
+    Includes all Aliwen-department trips travelling in the next 2 months
+    with status "Booking" and rent_perc > 0.35 or rent_perc < 0.15,
+    grouped by seller (responsable_user) and ordered by travelling_date within each group.
+
+    Returns (subject, to_emails, template, context) tuple.
+    """
+    from .models import User as IntranetUser
+
+    today = date.today()
+    date_limit = today + timedelta(days=60)
+
+    trips_qs = Trip.objects.select_related(
+        "client", "operations_user", "responsable_user"
+    ).filter(
+        department="AI",
+        status="Booking",
+        travelling_date__range=(today, date_limit),
+        ignore_margin_warning=False,
+        margin_reviewed=False,
+    ).filter(
+        models.Q(rent_perc__gt=0.35) | models.Q(rent_perc__lt=0.15)
+    ).order_by("responsable_user__username", "travelling_date")
+
+    def _first_name(u):
+        if not u:
+            return ""
+        full = getattr(u, "other_name", None) or u.get_full_name() or u.username
+        return full.split()[0] if full else ""
+
+    # Group trips by seller
+    from itertools import groupby
+    seller_groups = []
+    for seller, seller_trips in groupby(trips_qs, key=lambda t: t.responsable_user):
+        trips_list = [
+            {
+                "name": t.name,
+                "tourplanId": t.tourplanId,
+                "travelling_date": t.travelling_date,
+                "quantity_pax": t.quantity_pax,
+                "rent_perc_display": round(t.rent_perc * 100, 1),
+                "rent_perc_low": t.rent_perc < 0.15,
+                "operations_user_name": t.operations_user.username if t.operations_user else "",
+                "client_name": t.client.name if t.client else "",
+            }
+            for t in seller_trips
+        ]
+        seller_name = _first_name(seller) if seller else "Sin vendedor"
+        seller_groups.append({"seller_name": seller_name, "trips": trips_list})
+
+    _site_url = getattr(settings, "SITE_URL", "https://sayaliwen.pythonanywhere.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    manager_name = "Vic"
+
+    subject = "⚠️ Aliwen Intranet – Advertencias de Rentabilidad (Aliwen)"
+    to_emails = ["va@aliwenincoming.com.ar"]
+    template = "emails/margin_warning_manager.html"
+    context = {
+        "user_name": manager_name,
+        "today": today.strftime("%B %d, %Y"),
+        "seller_groups": seller_groups,
+        "logo_url": logo_url,
+        "icons_base_url": icons_base_url,
+        "site_url": site_url,
+    }
+
+    return subject, to_emails, template, context
+
+
+def send_margin_warning_manager():
+    """
+    Send the department-level margin warning email to Victoria (username "VA").
+
+    Usage from Django shell:
+        from intranet.utils import send_margin_warning_manager
+        send_margin_warning_manager()
+    """
+    subject, to_emails, template, context = build_margin_warning_manager_context()
+    total_trips = sum(len(g["trips"]) for g in context["seller_groups"])
+    if not total_trips:
+        print("No flagged trips in the next 2 months for Aliwen department. Email not sent.")
+        return
+    send_templated_email(subject, to_emails, template, context)
+    print(f"Sent to {to_emails[0]} — {len(context['seller_groups'])} seller(s), {total_trips} trip(s)")
 
 
 def report_tariff_error_hotel(user, supplier_obj, note):

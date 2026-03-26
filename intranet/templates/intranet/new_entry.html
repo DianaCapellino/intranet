@@ -59,7 +59,7 @@
                             <select class="form-select" aria-label="user_working" name="user_working" id="user_working_select">
                                 <option selected value="">Trabajado por</option>
                                 {% for user in users %}
-                                    {% if user.isActivated and user.department == request.user.department %}
+                                    {% if user.isActivated and user.department == request.user.department and user.userType == "Ventas" or user.isActivated and user.department == request.user.department and user.userType == "Operaciones" %}
                                         <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name}}</option>
                                     {% endif %}
                                 {% endfor %}

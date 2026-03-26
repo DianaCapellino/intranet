@@ -180,6 +180,36 @@ class ClientContact(models.Model):
         return f"{self.name}"
 
 
+class Guide(models.Model):
+    name = models.CharField(max_length=200)
+    location = models.ForeignKey('tariff.Location', on_delete=models.SET_NULL, null=True, blank=True, related_name='guides')
+    email = models.EmailField(blank=True, default='')
+    notes = models.CharField(max_length=300, blank=True, default='')
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Guía'
+        verbose_name_plural = 'Guías'
+
+
+class DestinationHost(models.Model):
+    name = models.CharField(max_length=200)
+    location = models.ForeignKey('tariff.Location', on_delete=models.SET_NULL, null=True, blank=True, related_name='destination_hosts')
+    email = models.EmailField(blank=True, default='')
+    notes = models.CharField(max_length=300, blank=True, default='')
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Destination Host'
+        verbose_name_plural = 'Destination Hosts'
+
+
 class Trip(models.Model):
     name = models.CharField(max_length=64)
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
@@ -206,7 +236,11 @@ class Trip(models.Model):
     rent_perc = models.FloatField(default=0, blank=True, null=True)
     guide = models.CharField(max_length=64, null=True, blank=True, default="")
     dh = models.CharField(max_length=64, null=True, blank=True)
+    guide_fk = models.ForeignKey(Guide, on_delete=models.SET_NULL, null=True, blank=True, related_name='trips', verbose_name='Guía (perfil)')
+    dh_fk = models.ForeignKey(DestinationHost, on_delete=models.SET_NULL, null=True, blank=True, related_name='trips', verbose_name='DH (perfil)')
     creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users")
+    ignore_margin_warning = models.BooleanField(default=False)
+    margin_reviewed = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.name}"

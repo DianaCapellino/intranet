@@ -1,0 +1,330 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container py-4">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0">{% if is_admin %}Revisión de Rentabilidad – Equipo{% else %}Gestión de Rentabilidad{% endif %}</h4>
+      <p class="text-muted small mb-0">
+        {% if is_admin %}
+          Files de todos los vendedores con rentabilidad fuera del rango normal (próximos 2 meses)
+        {% else %}
+          Files con rentabilidad fuera del rango normal (entre 15% y 35%) – próximos 12 meses
+        {% endif %}
+      </p>
+    </div>
+    <div id="progress-counter" class="text-end">
+      <span class="badge bg-success fs-6" id="badge-revisados">{{ reviewed_count }} revisado{{ reviewed_count|pluralize:",s" }}</span>
+      <span class="badge bg-secondary fs-6 ms-2" id="badge-pendientes">{{ total|add:"-"|add:reviewed_count }} pendiente{% if total != 1 %}s{% endif %}</span>
+    </div>
+  </div>
+
+  <!-- ── ADMIN VIEW ─────────────────────────────────────────────────────────── -->
+  {% if is_admin %}
+
+    {% if seller_groups %}
+      {% for group in seller_groups %}
+      <div class="mb-4">
+        <div class="d-flex align-items-center mb-2">
+          <div style="width:4px;height:20px;background:#D88775;border-radius:2px;margin-right:10px;"></div>
+          <strong class="text-uppercase small" style="letter-spacing:.08em;">{{ group.seller_name }}</strong>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:36px;"></th>
+                <th>File</th>
+                <th>Cliente</th>
+                <th>Operador</th>
+                <th>Fecha viaje</th>
+                <th class="text-center">Pax</th>
+                <th class="text-end">Rentabilidad</th>
+                <th style="width:110px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trip in group.trips %}
+              <tr id="row-{{ trip.id }}" data-trip-id="{{ trip.id }}" {% if trip.margin_reviewed %}class="reviewed-row"{% endif %}>
+                <td>
+                  <input class="form-check-input review-check" type="checkbox" id="chk-{{ trip.id }}"
+                         title="Marcar como revisado"
+                         {% if trip.margin_reviewed %}checked{% endif %}
+                         onchange="toggleReviewed({{ trip.id }}, this)">
+                </td>
+                <td>
+                  <strong>{{ trip.name }}</strong>
+                  {% if trip.tourplanId %}<br><small class="text-muted">{{ trip.tourplanId }}</small>{% endif %}
+                </td>
+                <td class="text-muted small">{{ trip.client_name }}</td>
+                <td class="text-muted small">{{ trip.operations_user_name }}</td>
+                <td class="text-muted small">{{ trip.travelling_date }}</td>
+                <td class="text-center text-muted small">{{ trip.quantity_pax }}</td>
+                <td class="text-end">
+                  {% if trip.rent_perc_low %}
+                  <span class="badge text-bg-danger">{{ trip.rent_perc_display }}%</span>
+                  {% else %}
+                  <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-secondary ignore-btn"
+                          onclick="openIgnoreModal({{ trip.id }}, '{{ trip.name|escapejs }}')"
+                          {% if trip.margin_reviewed %}disabled{% endif %}>
+                    Ignorar
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="alert alert-success">
+        <i class="fa-solid fa-circle-check me-2"></i>
+        No hay files con rentabilidad fuera del rango en los próximos 2 meses.
+      </div>
+    {% endif %}
+
+    <!-- Ignorados -->
+    {% if ignored_trips %}
+    <hr class="my-4">
+    <div class="mb-2 d-flex align-items-center">
+      <h6 class="mb-0 text-muted">
+        <i class="fa-solid fa-eye-slash me-2"></i>Files con advertencias ignoradas
+      </h6>
+      <span class="badge bg-light text-secondary border ms-2">{{ ignored_trips|length }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle text-muted">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Vendedor</th>
+            <th>Cliente</th>
+            <th>Fecha viaje</th>
+            <th class="text-end">Rentabilidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for trip in ignored_trips %}
+          <tr>
+            <td>
+              {{ trip.name }}
+              {% if trip.tourplanId %}<br><small>{{ trip.tourplanId }}</small>{% endif %}
+            </td>
+            <td>{{ trip.seller_name }}</td>
+            <td>{{ trip.client_name }}</td>
+            <td>{{ trip.travelling_date }}</td>
+            <td class="text-end">
+              {% if trip.rent_perc_low %}
+              <span class="badge text-bg-danger">{{ trip.rent_perc_display }}%</span>
+              {% else %}
+              <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+  <!-- ── SELLER VIEW ────────────────────────────────────────────────────────── -->
+  {% else %}
+
+    {% if trips %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle" id="margin-table">
+        <thead class="table-light">
+          <tr>
+            <th style="width:36px;"></th>
+            <th>File</th>
+            <th>Cliente</th>
+            <th>Operador</th>
+            <th>Fecha viaje</th>
+            <th class="text-center">Pax</th>
+            <th class="text-end">Rentabilidad</th>
+            <th style="width:110px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for trip in trips %}
+          <tr id="row-{{ trip.id }}" data-trip-id="{{ trip.id }}" {% if trip.margin_reviewed %}class="reviewed-row"{% endif %}>
+            <td>
+              <input class="form-check-input review-check" type="checkbox" id="chk-{{ trip.id }}"
+                     title="Marcar como revisado"
+                     {% if trip.margin_reviewed %}checked{% endif %}
+                     onchange="toggleReviewed({{ trip.id }}, this)">
+            </td>
+            <td>
+              <strong>{{ trip.name }}</strong>
+              {% if trip.tourplanId %}<br><small class="text-muted">{{ trip.tourplanId }}</small>{% endif %}
+            </td>
+            <td class="text-muted small">{{ trip.client_name }}</td>
+            <td class="text-muted small">{{ trip.operations_user_name }}</td>
+            <td class="text-muted small">{{ trip.travelling_date }}</td>
+            <td class="text-center text-muted small">{{ trip.quantity_pax }}</td>
+            <td class="text-end">
+              {% if trip.rent_perc_low %}
+              <span class="badge text-bg-danger">{{ trip.rent_perc_display }}%</span>
+              {% else %}
+              <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary ignore-btn"
+                      onclick="openIgnoreModal({{ trip.id }}, '{{ trip.name|escapejs }}')"
+                      {% if trip.margin_reviewed %}disabled{% endif %}>
+                Ignorar
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-success">
+      <i class="fa-solid fa-circle-check me-2"></i>
+      No tenés files con rentabilidad fuera del rango en los próximos 12 meses.
+    </div>
+    {% endif %}
+
+  {% endif %}
+
+</div>
+
+
+<!-- Modal: Confirmar ignorar -->
+<div class="modal fade" id="ignoreModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-warning">
+          <i class="fa-solid fa-triangle-exclamation me-2"></i>¿Ignorar advertencias?
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Estás por ignorar las advertencias de rentabilidad del file
+          <strong id="modal-trip-name"></strong>.
+        </p>
+        <p>
+          Esto significa que <strong>no aparecerá más en los reportes</strong> de rentabilidad
+          ni en los envíos semanales.
+        </p>
+        <p class="text-muted small mb-0">
+          <i class="fa-solid fa-info-circle me-1"></i>
+          Podés revertir esta configuración editando el viaje directamente en la aplicación
+          y desactivando la opción "Ignorar advertencia de rentabilidad".
+        </p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-warning" id="confirm-ignore-btn" onclick="confirmIgnore()">
+          Confirmar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<style>
+  tr.reviewed-row td { text-decoration: line-through; opacity: 0.5; }
+</style>
+
+<script>
+  let reviewedCount = {{ reviewed_count }};
+  let totalTrips    = {{ total }};
+  let pendingIgnore = null;
+  const csrfToken   = "{{ csrf_token }}";
+
+  // Apply visual state on load for already-reviewed rows
+  document.querySelectorAll("tr.reviewed-row").forEach(row => {
+    const btn = row.querySelector(".ignore-btn");
+    if (btn) btn.disabled = true;
+  });
+
+  function updateCounter() {
+    const pending = totalTrips - reviewedCount;
+    document.getElementById("badge-revisados").textContent  =
+      reviewedCount + " revisado" + (reviewedCount === 1 ? "" : "s");
+    document.getElementById("badge-pendientes").textContent =
+      pending + " pendiente" + (pending === 1 ? "" : "s");
+  }
+
+  function toggleReviewed(tripId, checkbox) {
+    const row = document.getElementById("row-" + tripId);
+    const reviewed = checkbox.checked;
+
+    fetch(`/margin_management/review/${tripId}`, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewed }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        if (reviewed) {
+          row.classList.add("reviewed-row");
+          row.querySelector(".ignore-btn").disabled = true;
+          reviewedCount++;
+        } else {
+          row.classList.remove("reviewed-row");
+          row.querySelector(".ignore-btn").disabled = false;
+          reviewedCount--;
+        }
+        updateCounter();
+      } else {
+        checkbox.checked = !reviewed; // revert
+      }
+    })
+    .catch(() => { checkbox.checked = !reviewed; });
+  }
+
+  function openIgnoreModal(tripId, tripName) {
+    pendingIgnore = tripId;
+    document.getElementById("modal-trip-name").textContent = tripName;
+    new bootstrap.Modal(document.getElementById("ignoreModal")).show();
+  }
+
+  function confirmIgnore() {
+    if (!pendingIgnore) return;
+    const btn = document.getElementById("confirm-ignore-btn");
+    btn.disabled = true;
+    btn.textContent = "Guardando…";
+
+    fetch(`/margin_management/ignore/${pendingIgnore}`, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        bootstrap.Modal.getInstance(document.getElementById("ignoreModal")).hide();
+        const row = document.getElementById("row-" + pendingIgnore);
+        const chk = document.getElementById("chk-" + pendingIgnore);
+        if (chk && chk.checked) reviewedCount--;
+        row.remove();
+        totalTrips--;
+        updateCounter();
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = "Confirmar";
+      pendingIgnore = null;
+    });
+  }
+
+  updateCounter();
+</script>
+{% endblock %}

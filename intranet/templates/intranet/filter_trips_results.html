@@ -1,0 +1,124 @@
+{% load custom_filters %}
+{% if trips %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle" id="filter-results-table">
+    <thead class="table-light">
+      <tr>
+        <th>Viaje</th>
+        <th>Cliente</th>
+        <th>Status</th>
+        <th>Fecha In</th>
+        <th class="text-center">Pax</th>
+        <th class="text-end">Rentabilidad</th>
+        <th style="width:44px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for trip in trips %}
+      <!-- Main row -->
+      <tr class="trip-main-row" style="cursor:pointer;" onclick="toggleDetail({{ trip.id }})">
+        <td>
+          <strong>{{ trip.name }}</strong>
+          {% if trip.tourplanId %}
+          <br><small class="text-muted">{{ trip.tourplanId }}</small>
+          {% endif %}
+        </td>
+        <td class="text-muted small">{{ trip.client }}</td>
+        <td>
+          {% if trip.status == "Booking" %}
+            <span class="badge text-bg-success">{{ trip.status }}</span>
+          {% elif trip.status == "Quote" %}
+            <span class="badge text-bg-warning text-dark">
+              {{ trip.status }}{% if trip.version_quote and trip.version_quote != "@" %} {{ trip.version_quote }}{% endif %}
+            </span>
+          {% elif trip.status == "Final Itinerary" %}
+            <span class="badge text-bg-info text-dark">{{ trip.status }}</span>
+          {% elif trip.status == "Cancelado" %}
+            <span class="badge text-bg-danger">{{ trip.status }}</span>
+          {% else %}
+            <span class="badge text-bg-secondary">{{ trip.status }}</span>
+          {% endif %}
+        </td>
+        <td class="text-muted small">{{ trip.travelling_date|date:"d/m/Y" }}</td>
+        <td class="text-center text-muted small">{{ trip.quantity_pax }}</td>
+        <td class="text-end">
+          {% if trip.rent_perc %}
+            {% if trip.rent_perc < 0.15 %}
+              <span class="badge text-bg-danger">{{ trip.rent_perc|multiply:100|floatformat:1 }}%</span>
+            {% elif trip.rent_perc > 0.35 %}
+              <span class="badge text-bg-warning text-dark">{{ trip.rent_perc|multiply:100|floatformat:1 }}%</span>
+            {% else %}
+              <span class="text-muted small">{{ trip.rent_perc|multiply:100|floatformat:1 }}%</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
+        <td class="text-center">
+          <i class="fa-regular fa-eye text-secondary" id="eye-{{ trip.id }}" style="cursor:pointer;"></i>
+        </td>
+      </tr>
+      <!-- Detail row (hidden) -->
+      <tr id="detail-{{ trip.id }}" class="d-none bg-light">
+        <td colspan="6" class="py-3 px-4">
+          <div class="row row-cols-2 row-cols-md-4 g-2 small">
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Fecha Out</span>
+              {% if trip.out_date %}{{ trip.out_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Monto</span>
+              {% if trip.amount %}USD {{ trip.amount|floatformat:0 }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Rentabilidad</span>
+              {% if trip.rent_perc %}{{ trip.rent_perc|floatformat:1 }}%{% else %}<span class="text-muted">—</span>{% endif %}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Ref. Cliente</span>
+              {{ trip.client_reference|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Contacto</span>
+              {{ trip.contact|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Vendedor</span>
+              {{ trip.responsable_user|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Operaciones</span>
+              {{ trip.operations_user|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Seguimiento</span>
+              {{ trip.dh_type|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">DH</span>
+              {{ trip.dh|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Guía</span>
+              {{ trip.guide|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Tipo</span>
+              {{ trip.trip_type|default:"—" }}
+            </div>
+            <div class="col">
+              <span class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;">Dificultad</span>
+              {{ trip.difficulty|default:"—" }}
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-secondary mt-3">
+  <i class="fa-solid fa-circle-info me-2"></i>No se encontraron viajes con esos criterios.
+</div>
+{% endif %}

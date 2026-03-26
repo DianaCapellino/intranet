@@ -5,31 +5,36 @@
     <div id="supplier_list" data-service-type="NA">
         <div class="container">
             <br>
-            <div class="d-flex align-items-center justify-content-between">
-                <h2>TARIFAS - {{ supplier.name }}</h2>
-                <div>
-                    <select class="form-select" aria-label="product_filter" name="product_filter" id="product_filter_select">
-                        <option value="all">Todos</option>
-                        
-                        {% for product in products %}
-                            <option value="{{ product.id }}">{{ product.name }}</option>
-                        {% endfor %}
-                    </select>
+            <div class="d-flex align-items-center gap-3">
+                <h2 class="mb-0">TARIFAS - {{ supplier.name }}</h2>
+
+                <select class="form-select form-select-sm" style="width:200px;"
+                        aria-label="product_filter" name="product_filter" id="product_filter_select">
+                    <option value="all">Todos</option>
+                    {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }}</option>
+                    {% endfor %}
+                </select>
+
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    {% if user.isAdmin %}
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-lg text-nowrap"
+                            data-bs-toggle="modal"
+                            data-bs-target="#manageFRCModal"
+                            title="Gestionar costos fijos">
+                        <i class="fa-solid fa-coins me-1"></i> Costos fijos
+                    </button>
+                    <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" title="Agregar nuevo bloque tarifario">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    {% endif %}
+                    <a href="{% url 'svs_supplier' %}">
+                        <button class="btn btn-dark btn-lg" title="Volver">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                    </a>
                 </div>
-                <div id="new_supplier_container">
-                        <div>
-                            {% if user.isAdmin %}
-                            <button type="button" id="new_block_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo bloque tarifario">
-                                <i class="fa-solid fa-plus"></i>
-                            </button>
-                            {% endif %}
-                            <a href="{% url 'svs_supplier' %}">
-                                <button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver">
-                                    <i class="fa-solid fa-rotate-left"></i>
-                                </button>
-                            </a>
-                        </div>  
-                    </div>
             </div>
             {% if message_modify %}
                 <div class="message text-center">{{ message_modify }}</div>
@@ -54,13 +59,13 @@
                                     <strong>
                                         Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}
                                     </strong>
-                                    
+
                                     <div class="d-flex align-items-center gap-2">
                                         <span class="season-display text-primary fw-bold" data-block="{{ forloop.counter }}">
                                             {{ block.season }}
                                         </span>
-                                        <input type="text" 
-                                            class="form-control form-control-sm season-input d-none" 
+                                        <input type="text"
+                                            class="form-control form-control-sm season-input d-none"
                                             data-block="{{ forloop.counter }}"
                                             value="{{ block.season }}"
                                             style="width: 150px;">
@@ -80,49 +85,48 @@
                                         <span class="margin-display text-primary fw-bold" data-block="{{ forloop.counter }}">
                                             {{ block.margin }}
                                         </span>
-                                        <input type="text" 
-                                            class="form-control form-control-sm margin-input d-none" 
+                                        <input type="text"
+                                            class="form-control form-control-sm margin-input d-none"
                                             data-block="{{ forloop.counter }}"
                                             value="{{ block.margin }}"
                                             style="width: 150px;">
                                     </div>
-                                        {# ✅ Nuevo botón expandir/colapsar todo el bloque #}
 
-                                        <div class="ms-auto d-flex gap-2">
-                                            <button class="btn btn-sm btn-outline-dark toggle-all-block"
-                                                    data-block="{{ forloop.counter }}"
-                                                    data-expanded="false"
-                                                    title="Expandir/Colapsar todo">
-                                                <i class="fa-solid fa-chevron-down"></i>
-                                            </button>
-                                            {% if user.isAdmin %}
-                                            <button class="btn btn-sm btn-dark edit-block"
-                                                    data-from="{{ block.date_from }}"
-                                                    data-to="{{ block.date_to }}"
-                                                    data-block="{{ forloop.counter }}"
-                                                    data-editing="false"
-                                                    title="Editar bloque">
-                                                <i class="fa-solid fa-pencil"></i>
-                                            </button>
+                                    <div class="ms-auto d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-dark toggle-all-block"
+                                                data-block="{{ forloop.counter }}"
+                                                data-expanded="false"
+                                                title="Expandir/Colapsar todo">
+                                            <i class="fa-solid fa-chevron-down"></i>
+                                        </button>
+                                        {% if user.isAdmin %}
+                                        <button class="btn btn-sm btn-dark edit-block"
+                                                data-from="{{ block.date_from }}"
+                                                data-to="{{ block.date_to }}"
+                                                data-block="{{ forloop.counter }}"
+                                                data-editing="false"
+                                                title="Editar bloque">
+                                            <i class="fa-solid fa-pencil"></i>
+                                        </button>
 
-                                            <button class="btn btn-sm btn-secondary cancel-block d-none"
-                                                    data-block="{{ forloop.counter }}"><i class="fa-solid fa-x"></i>
-                                            </button>
-                                            
-                                            <button class="btn btn-sm btn-danger delete-block"
-                                                    data-block="{{ forloop.counter }}"
-                                                    data-from="{{ block.date_from }}"
-                                                    data-to="{{ block.date_to }}"
-                                                    data-season="{{ block.season }}"
-                                                    title="Eliminar bloque">
-                                                <i class="fa-solid fa-trash"></i>
-                                            </button>
-                                            {% endif %}
-                                        </div>
+                                        <button class="btn btn-sm btn-secondary cancel-block d-none"
+                                                data-block="{{ forloop.counter }}"><i class="fa-solid fa-x"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-danger delete-block"
+                                                data-block="{{ forloop.counter }}"
+                                                data-from="{{ block.date_from }}"
+                                                data-to="{{ block.date_to }}"
+                                                data-season="{{ block.season }}"
+                                                title="Eliminar bloque">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </td>
                         </tr>
-                        
+
                         {# FILAS DE TARIFAS #}
                         {% for line in block.lines %}
                         <tr class="row-rateline"
@@ -152,11 +156,22 @@
                             <td></td>
 
                             <!-- ACCIONES -->
-                            <td>
+                            <td class="text-nowrap">
                                 {% if user.isAdmin %}
-                                    <i class="fa-solid fa-trash text-danger"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button class="btn btn-sm btn-success add-cost-btn"
+                                            title="Agregar costo"
+                                            data-line-id="{{ line.id }}"
+                                            data-rate-map='{{ line.rate_map_json }}'
+                                            data-location-id="{{ location.id }}"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#costModal">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                    <i class="fa-solid fa-trash text-danger" style="cursor:pointer;"
+                                       data-bs-toggle="modal"
+                                       data-bs-target="#windowRateLineTrash{{ line.id }}"></i>
+                                </div>
                                 {% endif %}
                             </td>
 
@@ -170,57 +185,179 @@
                                         <table class="table table-sm align-middle mb-0">
                                             <thead class="small text-muted">
                                                 <tr>
-                                                    <th style="width:80px;">Base</th>
-                                                    <th>Costo</th>
+                                                    <th style="width:60px;">Base</th>
+                                                    <th>Detalle</th>
+                                                    <th style="width:90px;">Costo</th>
                                                     <th>Venta TP</th>
                                                     <th>Venta AI</th>
                                                     <th>Rent</th>
+                                                    <th style="width:100px;" class="text-success">Sug. Venta</th>
                                                 </tr>
                                             </thead>
 
                                             <tbody>
                                                 {% for base in line.bases %}
-                                                <tr>
-
+                                                {# ── Base row ── #}
+                                                <tr class="base-rate-row"
+                                                    data-rate-id="{% if base.rate %}{{ base.rate.id }}{% endif %}"
+                                                    data-margin-ai="{% if base.rate %}{{ base.rate.margin_ai|default:0 }}{% endif %}"
+                                                    data-sell="{% if base.rate %}{{ base.rate.sell|default:0 }}{% endif %}">
                                                     <td>
-                                                        <span class="badge bg-dark fs-6">
-                                                            {{ base.pax }}
-                                                        </span>
+                                                        <span class="badge bg-dark fs-6">{{ base.pax }}</span>
                                                     </td>
-
                                                     {% if base.rate %}
-                                                        <td class="rate-cell"
+                                                        <td><small class="text-muted fw-semibold">Total</small></td>
+                                                        {% if base.has_items %}
+                                                        <td class="fw-bold text-primary base-total-cell">
+                                                            {{ base.total_cost }}
+                                                        </td>
+                                                        {% else %}
+                                                        <td class="rate-cell fw-bold"
                                                             data-rate="{{ base.rate.id }}"
                                                             data-field="cost"
                                                             data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
                                                             {{ base.rate.cost|default:"N/A" }}
                                                         </td>
-
+                                                        {% endif %}
                                                         <td>
                                                             <strong>{{ base.rate.sell_tourplan|default:"N/A" }}</strong>
-                                                            <small class="text-muted">
-                                                                ({{ base.rate.margin_tp|floatformat:1 }}%)
-                                                            </small>
+                                                            <small class="text-muted">({{ base.rate.margin_tp|floatformat:1 }}%)</small>
                                                         </td>
-
                                                         <td class="rate-cell"
                                                             data-rate="{{ base.rate.id }}"
                                                             data-field="sell"
                                                             data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
                                                             {{ base.rate.sell|default:"N/A" }}
                                                         </td>
-
                                                         <td class="margin-cell" data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
                                                             {{ base.rate.margin_ai|floatformat:1 }}%
                                                         </td>
-
-                                                    {% else %}
-                                                        <td colspan="4" class="text-muted">
-                                                            Sin tarifa
+                                                        <td class="suggested-sell-cell text-success fw-semibold">
+                                                            {% if base.suggested_sell %}{{ base.suggested_sell }}{% endif %}
                                                         </td>
+                                                    {% else %}
+                                                        <td colspan="6" class="text-muted">Sin tarifa</td>
                                                     {% endif %}
-
                                                 </tr>
+
+                                                {# ── Cost items for this base ── #}
+                                                {% if base.rate %}
+                                                    {% for ci in base.cost_items %}
+                                                    {# view row #}
+                                                    <tr class="table-warning ci-cost-row" style="font-size:0.82em;"
+                                                        data-ci-id="{{ ci.id }}"
+                                                        data-rate-id="{{ base.rate.id }}"
+                                                        data-value="{{ ci.value }}"
+                                                        data-fcu="{{ ci.fcu }}"
+                                                        data-tax="{{ ci.tax }}"
+                                                        data-rate-increase="{{ base.rate.increase|default:0 }}"
+                                                        data-usd="{{ ci.usd|yesno:'true,false' }}"
+                                                        data-exchange="{{ ci.exchange }}"
+                                                        data-pax="{{ base.pax }}">
+                                                        <td class="text-end text-muted pe-1">↳</td>
+                                                        <td>
+                                                            <i class="fa-solid fa-tag me-1 text-warning"></i>
+                                                            <strong>{{ ci.name }}</strong>
+                                                            <span class="text-muted ms-1">
+                                                                ({{ ci.fcu|lower }}{% if ci.tax != "0" %}, IVA {{ ci.tax }}%{% endif %}{% if not ci.usd %}, ARS/<span class="ci-exchange-lbl">{{ ci.exchange }}</span>{% endif %})
+                                                            </span>
+                                                        </td>
+                                                        <td><span class="cost-per-pax-val text-success fw-bold">${{ ci.cost_per_pax }}/pax</span></td>
+                                                        <td>
+                                                            {% if user.isAdmin %}
+                                                            <button class="btn btn-sm p-0 text-primary edit-ci-btn"
+                                                                    data-ci-id="{{ ci.id }}" title="Editar">
+                                                                <i class="fa-solid fa-pencil"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                        </td>
+                                                        <td>
+                                                            {% if user.isAdmin %}
+                                                            <button class="btn btn-sm p-0 text-danger delete-cost-item-btn"
+                                                                    data-id="{{ ci.id }}" title="Eliminar">
+                                                                <i class="fa-solid fa-trash"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                        </td>
+                                                        <td></td>
+                                                        <td></td>
+                                                    </tr>
+                                                    {# edit row #}
+                                                    <tr class="table-warning ci-edit-row d-none" data-ci-edit="{{ ci.id }}">
+                                                        <td></td>
+                                                        <td colspan="6">
+                                                            <div class="d-flex gap-2 align-items-center flex-wrap py-1">
+                                                                <input type="text" id="ci_edit_name_{{ ci.id }}"
+                                                                       class="form-control form-control-sm" style="width:140px;"
+                                                                       value="{{ ci.name }}" placeholder="Nombre">
+                                                                <input type="number" id="ci_edit_value_{{ ci.id }}"
+                                                                       class="form-control form-control-sm" style="width:80px;"
+                                                                       value="{{ ci.value }}" step="0.01" placeholder="Valor">
+                                                                <select id="ci_edit_fcu_{{ ci.id }}" class="form-select form-select-sm" style="width:100px;">
+                                                                    <option value="Person" {% if ci.fcu == "Person" %}selected{% endif %}>Persona</option>
+                                                                    <option value="Group"  {% if ci.fcu == "Group"  %}selected{% endif %}>Grupo</option>
+                                                                </select>
+                                                                <select id="ci_edit_tax_{{ ci.id }}" class="form-select form-select-sm" style="width:140px;">
+                                                                    {% for tval, tlabel in TAXES %}
+                                                                    <option value="{{ tval }}" {% if ci.tax == tval|stringformat:"s" %}selected{% endif %}>{{ tlabel }}</option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                                <div class="form-check mb-0">
+                                                                    <input type="checkbox" id="ci_edit_usd_{{ ci.id }}"
+                                                                           class="form-check-input ci-edit-usd"
+                                                                           data-ci-id="{{ ci.id }}"
+                                                                           {% if ci.usd %}checked{% endif %}>
+                                                                    <label class="form-check-label" for="ci_edit_usd_{{ ci.id }}">USD</label>
+                                                                </div>
+                                                                <div id="ci_edit_tc_wrap_{{ ci.id }}" {% if ci.usd %}style="display:none"{% endif %}>
+                                                                    <input type="number" id="ci_edit_exchange_{{ ci.id }}"
+                                                                           class="form-control form-control-sm" style="width:75px;"
+                                                                           value="{{ ci.exchange }}">
+                                                                </div>
+                                                                <button class="btn btn-sm btn-success save-ci-btn"
+                                                                        data-ci-id="{{ ci.id }}"
+                                                                        data-pax="{{ base.pax }}"
+                                                                        data-rate-increase="{{ base.rate.increase|default:0 }}">
+                                                                    <i class="fa-solid fa-check"></i>
+                                                                </button>
+                                                                <button class="btn btn-sm btn-secondary cancel-ci-btn"
+                                                                        data-ci-id="{{ ci.id }}">
+                                                                    <i class="fa-solid fa-xmark"></i>
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                    {% endfor %}
+
+                                                    {% for frc in base.fixed_costs %}
+                                                    <tr class="table-info frc-cost-row" style="font-size:0.82em;"
+                                                        data-frc-id="{{ frc.id }}"
+                                                        data-rate-id="{{ base.rate.id }}"
+                                                        data-pax="{{ base.pax }}">
+                                                        <td class="text-end text-muted pe-1">↳</td>
+                                                        <td>
+                                                            <i class="fa-solid fa-bookmark me-1 text-info"></i>
+                                                            <strong>{{ frc.name }}</strong>
+                                                            <span class="text-muted ms-1">(fijo, {{ frc.fcu|lower }}{% if not frc.usd %}, ARS/{{ frc.exchange }}{% endif %})</span>
+                                                        </td>
+                                                        <td><span class="cost-per-pax-val text-info fw-bold">${{ frc.cost_per_pax }}/pax</span></td>
+                                                        <td></td>
+                                                        <td>
+                                                            {% if user.isAdmin %}
+                                                            <button class="btn btn-sm p-0 text-danger remove-fixed-link-btn"
+                                                                    data-frc-id="{{ frc.id }}"
+                                                                    data-rate-id="{{ base.rate.id }}"
+                                                                    title="Desvincular">
+                                                                <i class="fa-solid fa-trash"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                        </td>
+                                                        <td></td>
+                                                        <td></td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                {% endif %}
+
                                                 {% endfor %}
                                             </tbody>
                                         </table>
@@ -255,5 +392,771 @@
         </div>
     </div>
     <br>
+
+    {# ─── MODAL: Agregar costo ─────────────────────────────────────────────── #}
+    <div class="modal fade" id="costModal" tabindex="-1" aria-labelledby="costModalLabel">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="costModalLabel">Agregar costo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    {# Tipo de costo #}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Tipo de costo</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="costType" id="typeCostItem" value="CostItem" checked>
+                                <label class="form-check-label" for="typeCostItem">Costo particular (CostItem)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="costType" id="typeFixedRate" value="FixedRateCost">
+                                <label class="form-check-label" for="typeFixedRate">Costo fijo (FixedRateCost)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Selección de bases #}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Aplicar a bases</label>
+                        <div class="d-flex gap-3 flex-wrap" id="baseCheckboxes">
+                            {% for i in "123456" %}
+                            <div class="form-check">
+                                <input class="form-check-input base-check" type="checkbox"
+                                       id="base{{ i }}" value="{{ i }}" checked>
+                                <label class="form-check-label" for="base{{ i }}">Base {{ i }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    {# ── PANEL CostItem ─────────────────────────────────────── #}
+                    <div id="panelCostItem">
+                        <div class="row g-2">
+                            <div class="col-md-5">
+                                <label class="form-label">Nombre</label>
+                                <input type="text" class="form-control" id="ci_name">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Valor</label>
+                                <input type="number" step="0.01" class="form-control" id="ci_value">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">IVA</label>
+                                <select class="form-select" id="ci_tax">
+                                    {% for val, label in TAXES %}
+                                    <option value="{{ val }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Por</label>
+                                <select class="form-select" id="ci_fcu">
+                                    <option value="Person">Persona</option>
+                                    <option value="Group">Grupo</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end pb-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ci_usd" checked>
+                                    <label class="form-check-label" for="ci_usd">USD</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3" id="ci_exchange_wrap" style="display:none;">
+                                <label class="form-label">Tipo de cambio</label>
+                                <input type="number" class="form-control" id="ci_exchange" value="1">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Código (opcional)</label>
+                                <input type="text" class="form-control" id="ci_code">
+                            </div>
+                        </div>
+                    </div>
+
+                    {# ── PANEL FixedRateCost ─────────────────────────────────── #}
+                    <div id="panelFixedRate" style="display:none;">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Seleccionar existente o crear nuevo</label>
+                            <div class="d-flex gap-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="frcMode" id="frcModeExisting" value="existing" checked>
+                                    <label class="form-check-label" for="frcModeExisting">Seleccionar existente</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="frcMode" id="frcModeNew" value="new">
+                                    <label class="form-check-label" for="frcModeNew">Crear nuevo</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="frcExistingPanel">
+                            <label class="form-label">Costo fijo disponible</label>
+                            <select class="form-select" id="frc_select">
+                                <option value="">— Seleccionar —</option>
+                            </select>
+                        </div>
+
+                        <div id="frcNewPanel" style="display:none;">
+                            <div class="row g-2">
+                                <div class="col-md-5">
+                                    <label class="form-label">Nombre</label>
+                                    <input type="text" class="form-control" id="frc_name">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Valor</label>
+                                    <input type="number" step="0.01" class="form-control" id="frc_value">
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end pb-1">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="frc_usd" checked>
+                                        <label class="form-check-label" for="frc_usd">USD</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-2" id="frc_exchange_wrap" style="display:none;">
+                                    <label class="form-label">T/C</label>
+                                    <input type="number" class="form-control" id="frc_exchange" value="1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Vigencia desde</label>
+                                    <input type="date" class="form-control" id="frc_date_from">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Vigencia hasta</label>
+                                    <input type="date" class="form-control" id="frc_date_to">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Aumento %</label>
+                                    <input type="number" step="0.1" class="form-control" id="frc_increase" value="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" id="saveCostBtn">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ─── MODAL: Gestionar costos fijos ───────────────────────────────────── #}
+    <div class="modal fade" id="manageFRCModal" tabindex="-1" aria-labelledby="manageFRCLabel">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manageFRCLabel">
+                        <i class="fa-solid fa-coins me-2"></i>Costos fijos — {{ supplier.name }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    {# Tipo de cambio por defecto #}
+                    <div class="d-flex align-items-center gap-3 mb-4 p-3 bg-light rounded">
+                        <label class="fw-bold mb-0 text-nowrap">
+                            <i class="fa-solid fa-dollar-sign me-1"></i>
+                            Tipo de cambio por defecto ({{ supplier.name }}):
+                        </label>
+                        <input type="number" id="mgr_default_exchange" class="form-control form-control-sm" style="width:100px;" value="{{ default_exchange }}" min="1">
+                        <button class="btn btn-sm btn-primary" id="saveExchangeBtn">Guardar</button>
+                        <button class="btn btn-sm btn-success text-nowrap" id="bulkUpdateExchangeBtn" title="Actualizar tipo de cambio en todos los costos ARS de este proveedor">
+                            <i class="fa-solid fa-arrows-rotate me-1"></i>Actualizar todos
+                        </button>
+                        <small class="text-muted">Se pre-llenará al agregar costos en este proveedor.</small>
+                    </div>
+
+                    <hr>
+
+                    {# Tabla de FixedRateCosts #}
+                    <table class="table table-sm table-hover align-middle" id="frcTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Valor</th>
+                                <th>Por</th>
+                                <th>USD</th>
+                                <th>T/C</th>
+                                <th>Vigencia desde</th>
+                                <th>Vigencia hasta</th>
+                                <th>Aumento %</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="frcTableBody">
+                            {# populated by JS #}
+                        </tbody>
+                    </table>
+
+                    {# Formulario agregar nuevo #}
+                    <div id="frcAddPanel" style="display:none;" class="border rounded p-3 bg-light mt-3">
+                        <h6 class="mb-3">Nuevo costo fijo</h6>
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">Nombre</label>
+                                <input type="text" class="form-control form-control-sm" id="new_frc_name">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Valor</label>
+                                <input type="number" step="0.01" class="form-control form-control-sm" id="new_frc_value">
+                            </div>
+                            <div class="col-md-1 d-flex align-items-end pb-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="new_frc_usd" checked>
+                                    <label class="form-check-label" for="new_frc_usd">USD</label>
+                                </div>
+                            </div>
+                            <div class="col-md-1" id="new_frc_exchange_wrap" style="display:none;">
+                                <label class="form-label">T/C</label>
+                                <input type="number" class="form-control form-control-sm" id="new_frc_exchange" value="{{ default_exchange }}">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Por</label>
+                                <select class="form-select form-select-sm" id="new_frc_fcu">
+                                    <option value="Person">Persona</option>
+                                    <option value="Group">Grupo</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Desde</label>
+                                <input type="date" class="form-control form-control-sm" id="new_frc_date_from">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Hasta</label>
+                                <input type="date" class="form-control form-control-sm" id="new_frc_date_to">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label">Aum. %</label>
+                                <input type="number" step="0.1" class="form-control form-control-sm" id="new_frc_increase" value="0">
+                            </div>
+                        </div>
+                        <div class="mt-2 d-flex gap-2">
+                            <button class="btn btn-sm btn-success" id="confirmAddFrcBtn">
+                                <i class="fa-solid fa-check"></i> Agregar
+                            </button>
+                            <button class="btn btn-sm btn-secondary" id="cancelAddFrcBtn">Cancelar</button>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-sm btn-success mt-3" id="showAddFrcBtn">
+                        <i class="fa-solid fa-plus me-1"></i> Agregar costo fijo
+                    </button>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 {% endif %}
+
+<script>
+const CSRF_TOKEN       = '{{ csrf_token }}';
+const SUPPLIER_ID      = {{ supplier.id }};
+const DEFAULT_EXCHANGE = {{ default_exchange }};
+let ALL_FIXED_RATE_COSTS = {{ fixed_rate_costs_json|safe }};
+
+// ─── current line state ──────────────────────────────────────────────────────
+let currentRateMap = {};   // { "1": rateId, "2": rateId, ... }
+
+// ─── Open cost modal ─────────────────────────────────────────────────────────
+document.querySelectorAll('.add-cost-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        currentRateMap = JSON.parse(btn.dataset.rateMap);
+
+        // Disable base checkboxes for bases without a rate
+        document.querySelectorAll('.base-check').forEach(cb => {
+            const rateId = currentRateMap[cb.value];
+            cb.disabled = !rateId;
+            cb.checked  = !!rateId;
+        });
+
+        // Pre-fill default exchange
+        document.getElementById('ci_exchange').value  = DEFAULT_EXCHANGE;
+        document.getElementById('frc_exchange').value = DEFAULT_EXCHANGE;
+
+        // Populate existing FixedRateCosts dropdown
+        const sel = document.getElementById('frc_select');
+        sel.innerHTML = '<option value="">— Seleccionar —</option>';
+        ALL_FIXED_RATE_COSTS.forEach(frc => {
+            const opt = document.createElement('option');
+            opt.value       = frc.id;
+            opt.textContent = `${frc.name}  ($${frc.value}${frc.usd ? ' USD' : ' ARS'})`;
+            sel.appendChild(opt);
+        });
+    });
+});
+
+// ─── Toggle panels based on type selection ────────────────────────────────────
+document.querySelectorAll('input[name="costType"]').forEach(r => {
+    r.addEventListener('change', () => {
+        const isFRC = document.getElementById('typeFixedRate').checked;
+        document.getElementById('panelCostItem').style.display  = isFRC ? 'none' : '';
+        document.getElementById('panelFixedRate').style.display = isFRC ? '' : 'none';
+    });
+});
+
+document.querySelectorAll('input[name="frcMode"]').forEach(r => {
+    r.addEventListener('change', () => {
+        const isNew = document.getElementById('frcModeNew').checked;
+        document.getElementById('frcExistingPanel').style.display = isNew ? 'none' : '';
+        document.getElementById('frcNewPanel').style.display       = isNew ? '' : 'none';
+    });
+});
+
+// Toggle exchange field visibility
+['ci', 'frc'].forEach(prefix => {
+    document.getElementById(`${prefix}_usd`).addEventListener('change', function () {
+        document.getElementById(`${prefix}_exchange_wrap`).style.display = this.checked ? 'none' : '';
+    });
+});
+
+// ─── Save button ─────────────────────────────────────────────────────────────
+document.getElementById('saveCostBtn').addEventListener('click', async () => {
+    const isFRC = document.getElementById('typeFixedRate').checked;
+
+    // Collect selected rate IDs
+    const rateIds = [];
+    document.querySelectorAll('.base-check:checked:not(:disabled)').forEach(cb => {
+        const rid = currentRateMap[cb.value];
+        if (rid) rateIds.push(rid);
+    });
+    if (!rateIds.length) { alert('Seleccioná al menos una base.'); return; }
+
+    try {
+        if (!isFRC) {
+            // ── CostItem ────────────────────────────────────────────────────
+            const body = {
+                rate_ids : rateIds,
+                name     : document.getElementById('ci_name').value.trim(),
+                value    : parseFloat(document.getElementById('ci_value').value),
+                tax      : document.getElementById('ci_tax').value,
+                fcu      : document.getElementById('ci_fcu').value,
+                usd      : document.getElementById('ci_usd').checked,
+                exchange : parseInt(document.getElementById('ci_exchange').value) || 1,
+                code     : document.getElementById('ci_code').value.trim(),
+            };
+            if (!body.name || isNaN(body.value)) { alert('Completá nombre y valor.'); return; }
+            await postJSON('{% url "add_cost_item" %}', body);
+
+        } else {
+            const isNew = document.getElementById('frcModeNew').checked;
+            if (isNew) {
+                // ── Create new FixedRateCost ────────────────────────────────
+                const body = {
+                    supplier_id : SUPPLIER_ID,
+                    rate_ids    : rateIds,
+                    name        : document.getElementById('frc_name').value.trim(),
+                    value       : parseFloat(document.getElementById('frc_value').value),
+                    usd         : document.getElementById('frc_usd').checked,
+                    exchange    : parseInt(document.getElementById('frc_exchange').value) || 1,
+                    date_from   : document.getElementById('frc_date_from').value,
+                    date_to     : document.getElementById('frc_date_to').value,
+                    increase    : parseFloat(document.getElementById('frc_increase').value) || 0,
+                };
+                if (!body.name || isNaN(body.value) || !body.date_from || !body.date_to) {
+                    alert('Completá todos los campos del costo fijo.'); return;
+                }
+                await postJSON('{% url "create_fixed_rate_cost" %}', body);
+            } else {
+                // ── Link existing FixedRateCost ────────────────────────────
+                const frcId = document.getElementById('frc_select').value;
+                if (!frcId) { alert('Seleccioná un costo fijo.'); return; }
+                await postJSON('{% url "add_fixed_rate_link" %}', { fixed_rate_id: frcId, rate_ids: rateIds });
+            }
+        }
+
+        // Close modal and reload
+        bootstrap.Modal.getInstance(document.getElementById('costModal')).hide();
+        location.reload();
+
+    } catch (e) {
+        alert('Error al guardar: ' + e.message);
+    }
+});
+
+// ─── Delete CostItem ──────────────────────────────────────────────────────────
+document.querySelectorAll('.delete-cost-item-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este costo?')) return;
+        await postJSON(`/tariff/modify/cost-item/${btn.dataset.id}/delete/`, {});
+        location.reload();
+    });
+});
+
+// ─── Remove FixedRateCost link ────────────────────────────────────────────────
+document.querySelectorAll('.remove-fixed-link-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('¿Desvincular este costo fijo?')) return;
+        await postJSON('{% url "remove_fixed_rate_link" %}', {
+            fixed_rate_id : btn.dataset.frcId,
+            rate_id       : btn.dataset.rateId,
+        });
+        location.reload();
+    });
+});
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Cost recalculation helpers ──────────────────────────────────────────────
+
+function calcCostPerPax(value, fcu, tax, increase, usd, exchange, pax) {
+    let v = parseFloat(value) || 0;
+    if (fcu === 'Group' && pax > 0) v /= pax;
+    v *= (1 + parseFloat(tax  || 0) / 100);
+    v *= (1 + parseFloat(increase || 0) / 100);
+    if (!usd && parseFloat(exchange) > 0) v /= parseFloat(exchange);
+    return Math.round(v * 100) / 100;
+}
+
+async function refreshBaseCostTotal(rateId) {
+    if (!rateId) return;
+    const baseRow = document.querySelector(`.base-rate-row[data-rate-id="${rateId}"]`);
+    if (!baseRow) return;
+    const totalCell = baseRow.querySelector('.base-total-cell');
+    if (!totalCell) return;  // cell is editable (no items), nothing to update
+    let total = 0;
+    document.querySelectorAll(`.ci-cost-row[data-rate-id="${rateId}"], .frc-cost-row[data-rate-id="${rateId}"]`).forEach(row => {
+        const txt = row.querySelector('.cost-per-pax-val')?.textContent || '';
+        total += parseFloat(txt.replace('$', '').replace('/pax', '')) || 0;
+    });
+    total = Math.round(total * 100) / 100;
+    totalCell.textContent = total;
+
+    // Suggested sell: keep same margin_ai with new cost
+    const marginAi = parseFloat(baseRow.dataset.marginAi) || 0;
+    const sugCell  = baseRow.querySelector('.suggested-sell-cell');
+    if (sugCell && marginAi > 0 && marginAi < 100) {
+        sugCell.textContent = Math.round(total / (1 - marginAi / 100));
+    }
+
+    // Update actual Rent% cell: (sell - new_cost) / sell
+    const sell = parseFloat(baseRow.dataset.sell) || 0;
+    if (sell > 0) {
+        const actualMargin = ((sell - total) / sell * 100).toFixed(1);
+        const marginCell = baseRow.querySelector('.margin-cell');
+        if (marginCell) marginCell.textContent = actualMargin + '%';
+    }
+
+    // Persist new cost to DB (fire-and-forget)
+    try {
+        await postJSON('{% url "update_rate_cost" %}', { rate_id: parseInt(rateId), cost: total });
+    } catch(e) {
+        console.error('Error saving rate cost:', e);
+    }
+}
+
+function refreshFrcRows(frcId) {
+    const frc = ALL_FIXED_RATE_COSTS.find(f => String(f.id) === String(frcId));
+    const affectedRateIds = new Set();
+    if (!frc) {
+        // FRC was deleted — remove its rows from the DOM
+        document.querySelectorAll(`.frc-cost-row[data-frc-id="${frcId}"]`).forEach(r => {
+            affectedRateIds.add(r.dataset.rateId);
+            r.remove();
+        });
+    } else {
+        document.querySelectorAll(`.frc-cost-row[data-frc-id="${frcId}"]`).forEach(row => {
+            affectedRateIds.add(row.dataset.rateId);
+            const pax = parseInt(row.dataset.pax);
+            const v   = calcCostPerPax(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, pax);
+            row.querySelector('.cost-per-pax-val').textContent = `$${v}/pax`;
+        });
+    }
+    affectedRateIds.forEach(rid => refreshBaseCostTotal(rid));
+}
+
+function refreshAllFrcRows() {
+    ALL_FIXED_RATE_COSTS.forEach(frc => refreshFrcRows(frc.id));
+}
+
+function refreshAllCiRows(newExchange) {
+    const affectedRateIds = new Set();
+    document.querySelectorAll('.ci-cost-row[data-usd="false"]').forEach(row => {
+        affectedRateIds.add(row.dataset.rateId);
+        row.dataset.exchange = newExchange;
+        const lbl = row.querySelector('.ci-exchange-lbl');
+        if (lbl) lbl.textContent = newExchange;
+        const v = calcCostPerPax(
+            row.dataset.value, row.dataset.fcu, row.dataset.tax,
+            row.dataset.rateIncrease, false, newExchange, parseInt(row.dataset.pax)
+        );
+        row.querySelector('.cost-per-pax-val').textContent = `$${v}/pax`;
+    });
+    affectedRateIds.forEach(rid => refreshBaseCostTotal(rid));
+}
+
+// ─── Manage FRC Modal ────────────────────────────────────────────────────────
+
+function renderFrcTable() {
+    const tbody = document.getElementById('frcTableBody');
+    if (!tbody) return;
+    if (!ALL_FIXED_RATE_COSTS.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-center">Sin costos fijos para este proveedor.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = ALL_FIXED_RATE_COSTS.map(frc => `
+        <tr data-frc-id="${frc.id}" class="frc-view-row">
+            <td>${frc.name}</td>
+            <td>${frc.value}</td>
+            <td><span class="badge ${frc.fcu === 'Person' ? 'bg-secondary' : 'bg-primary'}">${frc.fcu === 'Person' ? 'Persona' : 'Grupo'}</span></td>
+            <td>${frc.usd ? '<i class="fa-solid fa-check text-success"></i>' : '<i class="fa-solid fa-xmark text-danger"></i>'}</td>
+            <td>${frc.usd ? '—' : frc.exchange}</td>
+            <td>${frc.date_from}</td>
+            <td>${frc.date_to}</td>
+            <td>${frc.increase != null ? frc.increase + '%' : '0%'}</td>
+            <td class="text-nowrap">
+                <button class="btn btn-sm btn-outline-primary me-1 edit-frc-btn" data-id="${frc.id}" title="Editar">
+                    <i class="fa-solid fa-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger delete-frc-btn" data-id="${frc.id}" title="Eliminar">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+        <tr data-frc-edit="${frc.id}" style="display:none;" class="table-warning">
+            <td><input type="text"   class="form-control form-control-sm" id="edit_name_${frc.id}"  value="${frc.name}"></td>
+            <td><input type="number" class="form-control form-control-sm" id="edit_value_${frc.id}" value="${frc.value}" step="0.01"></td>
+            <td>
+                <select class="form-select form-select-sm" id="edit_fcu_${frc.id}">
+                    <option value="Person" ${frc.fcu === 'Person' ? 'selected' : ''}>Persona</option>
+                    <option value="Group"  ${frc.fcu === 'Group'  ? 'selected' : ''}>Grupo</option>
+                </select>
+            </td>
+            <td>
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="edit_usd_${frc.id}" ${frc.usd ? 'checked' : ''}
+                           onchange="document.getElementById('edit_tc_wrap_${frc.id}').style.display=this.checked?'none':''">
+                </div>
+            </td>
+            <td>
+                <div id="edit_tc_wrap_${frc.id}" style="display:${frc.usd ? 'none' : ''}">
+                    <input type="number" class="form-control form-control-sm" id="edit_exchange_${frc.id}" value="${frc.exchange}" style="width:70px;">
+                </div>
+            </td>
+            <td><input type="date"   class="form-control form-control-sm" id="edit_from_${frc.id}"     value="${frc.date_from}"></td>
+            <td><input type="date"   class="form-control form-control-sm" id="edit_to_${frc.id}"       value="${frc.date_to}"></td>
+            <td><input type="number" class="form-control form-control-sm" id="edit_increase_${frc.id}" value="${frc.increase ?? 0}" step="0.1" style="width:70px;"></td>
+            <td class="text-nowrap">
+                <button class="btn btn-sm btn-success me-1 save-frc-btn" data-id="${frc.id}">
+                    <i class="fa-solid fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary cancel-frc-btn" data-id="${frc.id}">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    // Bind edit/delete/save/cancel
+    tbody.querySelectorAll('.edit-frc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            document.querySelector(`tr[data-frc-id="${id}"]`).style.display    = 'none';
+            document.querySelector(`tr[data-frc-edit="${id}"]`).style.display  = '';
+        });
+    });
+    tbody.querySelectorAll('.cancel-frc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            document.querySelector(`tr[data-frc-id="${id}"]`).style.display   = '';
+            document.querySelector(`tr[data-frc-edit="${id}"]`).style.display = 'none';
+        });
+    });
+    tbody.querySelectorAll('.save-frc-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id  = btn.dataset.id;
+            const usd = document.getElementById(`edit_usd_${id}`).checked;
+            const body = {
+                id       : parseInt(id),
+                name     : document.getElementById(`edit_name_${id}`).value.trim(),
+                value    : parseFloat(document.getElementById(`edit_value_${id}`).value),
+                fcu      : document.getElementById(`edit_fcu_${id}`).value,
+                usd      : usd,
+                exchange : parseInt(document.getElementById(`edit_exchange_${id}`)?.value) || 1,
+                date_from: document.getElementById(`edit_from_${id}`).value,
+                date_to  : document.getElementById(`edit_to_${id}`).value,
+                increase : parseFloat(document.getElementById(`edit_increase_${id}`).value) || 0,
+            };
+            await postJSON('{% url "update_fixed_rate_cost" %}', body);
+            const frc = ALL_FIXED_RATE_COSTS.find(f => f.id == id);
+            Object.assign(frc, body);
+            renderFrcTable();
+            refreshFrcRows(id);
+        });
+    });
+    tbody.querySelectorAll('.delete-frc-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('¿Eliminar este costo fijo? Se desvinculará de todas las tarifas.')) return;
+            const id = btn.dataset.id;
+            await postJSON(`/tariff/modify/fixed-rate-cost/${id}/delete/`, {});
+            ALL_FIXED_RATE_COSTS = ALL_FIXED_RATE_COSTS.filter(f => f.id != id);
+            renderFrcTable();
+            refreshFrcRows(id);  // removes DOM rows for deleted FRC
+        });
+    });
+}
+
+// Render table when modal opens
+document.getElementById('manageFRCModal').addEventListener('show.bs.modal', renderFrcTable);
+
+// Save default exchange
+document.getElementById('saveExchangeBtn').addEventListener('click', async () => {
+    const val = parseInt(document.getElementById('mgr_default_exchange').value);
+    await postJSON(`/tariff/modify/supplier/${SUPPLIER_ID}/set-exchange/`, { exchange: val });
+    // Update global so costModal pre-fills correctly
+    window.DEFAULT_EXCHANGE = val;
+    document.getElementById('ci_exchange').value  = val;
+    document.getElementById('frc_exchange').value = val;
+    document.getElementById('saveExchangeBtn').textContent = '✓ Guardado';
+    setTimeout(() => document.getElementById('saveExchangeBtn').textContent = 'Guardar', 1500);
+});
+
+// Bulk update exchange on all ARS costs for this supplier
+document.getElementById('bulkUpdateExchangeBtn').addEventListener('click', async () => {
+    const val = parseInt(document.getElementById('mgr_default_exchange').value);
+    if (!confirm(`¿Actualizar el tipo de cambio a ${val} en todos los costos ARS de este proveedor?`)) return;
+    const btn = document.getElementById('bulkUpdateExchangeBtn');
+    btn.disabled = true;
+    const res = await postJSON(`/tariff/modify/supplier/${SUPPLIER_ID}/bulk-update-exchange/`, { exchange: val });
+    btn.disabled = false;
+    // Update JS state and recalculate DOM costs without reload
+    ALL_FIXED_RATE_COSTS.filter(f => !f.usd).forEach(f => { f.exchange = val; });
+    refreshAllFrcRows();
+    refreshAllCiRows(val);
+    btn.innerHTML = `<i class="fa-solid fa-check me-1"></i>Actualizado (${res.cost_items + res.fixed_rate_costs} costos)`;
+    setTimeout(() => {
+        btn.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1"></i>Actualizar todos';
+    }, 2500);
+});
+
+// Show/hide add form
+document.getElementById('showAddFrcBtn').addEventListener('click', () => {
+    document.getElementById('frcAddPanel').style.display  = '';
+    document.getElementById('showAddFrcBtn').style.display = 'none';
+});
+document.getElementById('cancelAddFrcBtn').addEventListener('click', () => {
+    document.getElementById('frcAddPanel').style.display  = 'none';
+    document.getElementById('showAddFrcBtn').style.display = '';
+});
+
+// Toggle exchange on new FRC USD checkbox
+document.getElementById('new_frc_usd').addEventListener('change', function () {
+    document.getElementById('new_frc_exchange_wrap').style.display = this.checked ? 'none' : '';
+});
+
+// Confirm add new FRC
+document.getElementById('confirmAddFrcBtn').addEventListener('click', async () => {
+    const usd = document.getElementById('new_frc_usd').checked;
+    const body = {
+        supplier_id: SUPPLIER_ID,
+        rate_ids   : [],   // no rates linked yet — just creating the FRC
+        name       : document.getElementById('new_frc_name').value.trim(),
+        value      : parseFloat(document.getElementById('new_frc_value').value),
+        fcu        : document.getElementById('new_frc_fcu').value,
+        usd        : usd,
+        exchange   : parseInt(document.getElementById('new_frc_exchange').value) || 1,
+        date_from  : document.getElementById('new_frc_date_from').value,
+        date_to    : document.getElementById('new_frc_date_to').value,
+        increase   : parseFloat(document.getElementById('new_frc_increase').value) || 0,
+    };
+    if (!body.name || isNaN(body.value) || !body.date_from || !body.date_to) {
+        alert('Completá todos los campos.'); return;
+    }
+    const res = await postJSON('{% url "create_fixed_rate_cost" %}', body);
+    ALL_FIXED_RATE_COSTS.push({ id: res.id, ...body, name: res.name });
+    // Reset form
+    ['new_frc_name','new_frc_value','new_frc_date_from','new_frc_date_to'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('new_frc_increase').value = '0';
+    document.getElementById('frcAddPanel').style.display   = 'none';
+    document.getElementById('showAddFrcBtn').style.display = '';
+    renderFrcTable();
+});
+
+// ─── Inline edit CostItems ───────────────────────────────────────────────────
+
+document.querySelectorAll('.edit-ci-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const id = btn.dataset.ciId;
+        document.querySelector(`.ci-cost-row[data-ci-id="${id}"]`).classList.add('d-none');
+        document.querySelector(`.ci-edit-row[data-ci-edit="${id}"]`).classList.remove('d-none');
+    });
+});
+
+document.querySelectorAll('.cancel-ci-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const id = btn.dataset.ciId;
+        document.querySelector(`.ci-cost-row[data-ci-id="${id}"]`).classList.remove('d-none');
+        document.querySelector(`.ci-edit-row[data-ci-edit="${id}"]`).classList.add('d-none');
+    });
+});
+
+// Toggle exchange field inside edit rows
+document.querySelectorAll('.ci-edit-usd').forEach(cb => {
+    cb.addEventListener('change', function () {
+        document.getElementById(`ci_edit_tc_wrap_${this.dataset.ciId}`).style.display = this.checked ? 'none' : '';
+    });
+});
+
+document.querySelectorAll('.save-ci-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const id          = btn.dataset.ciId;
+        const pax         = parseInt(btn.dataset.pax);
+        const rateIncrease = parseFloat(btn.dataset.rateIncrease) || 0;
+        const usd         = document.getElementById(`ci_edit_usd_${id}`).checked;
+        const body = {
+            id      : parseInt(id),
+            name    : document.getElementById(`ci_edit_name_${id}`).value.trim(),
+            value   : parseFloat(document.getElementById(`ci_edit_value_${id}`).value),
+            fcu     : document.getElementById(`ci_edit_fcu_${id}`).value,
+            tax     : document.getElementById(`ci_edit_tax_${id}`).value,
+            usd     : usd,
+            exchange: parseInt(document.getElementById(`ci_edit_exchange_${id}`)?.value) || 1,
+        };
+        await postJSON('{% url "update_cost_item" %}', body);
+
+        // Update data-attributes on view row
+        const viewRow = document.querySelector(`.ci-cost-row[data-ci-id="${id}"]`);
+        Object.assign(viewRow.dataset, {
+            value: body.value, fcu: body.fcu, tax: body.tax,
+            usd: usd ? 'true' : 'false', exchange: body.exchange,
+        });
+
+        // Recalculate and update cost display
+        const v = calcCostPerPax(body.value, body.fcu, body.tax, rateIncrease, usd, body.exchange, pax);
+        viewRow.querySelector('.cost-per-pax-val').textContent = `$${v}/pax`;
+
+        // Update label text
+        const exchangeLbl = viewRow.querySelector('.ci-exchange-lbl');
+        if (exchangeLbl) exchangeLbl.textContent = body.exchange;
+
+        // Swap back to view row
+        document.querySelector(`.ci-edit-row[data-ci-edit="${id}"]`).classList.add('d-none');
+        viewRow.classList.remove('d-none');
+
+        // Refresh the base total if items control the cost cell
+        refreshBaseCostTotal(viewRow.dataset.rateId);
+    });
+});
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+async function postJSON(url, body) {
+    const res = await fetch(url, {
+        method  : 'POST',
+        headers : { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body    : JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+</script>
+
 {% endblock %}

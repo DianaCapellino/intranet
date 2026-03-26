@@ -3,77 +3,185 @@
 {% block body %}
 {% if user.isAdmin %}
 
-<h2>Actualizar Alojamiento</h2>
-<div id="update_tariff_container" class="text-center">
-    <button type="button" class="btn btn-dark btn-lg"
-            data-bs-toggle="modal" data-bs-target="#windowTourplan"
-            title="Actualizar Tarifario con Tourplan">
-        <i class="fa-solid fa-upload display-8"></i>
-    </button>
-</div>
+<div class="container mt-3">
 
-{# ------------------------------------------------------------------ Django messages #}
-{% if messages %}
-<div class="mt-3">
-    {% for message in messages %}
-    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
-        {{ message|safe }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    <h2 class="mb-3">Actualizar Tarifario</h2>
+
+    {# ─── Tabs ────────────────────────────────────────────────────────────── #}
+    <ul class="nav nav-pills mb-4">
+        <li class="nav-item">
+            <button class="nav-link active" id="tab-AC" onclick="switchType('AC')">
+                <i class="fa-solid fa-hotel me-1"></i> Alojamientos
+            </button>
+        </li>
+        <li class="nav-item ms-2">
+            <button class="nav-link" id="tab-NA" onclick="switchType('NA')">
+                <i class="fa-solid fa-compass me-1"></i> Servicios
+            </button>
+        </li>
+    </ul>
+
+    {# ─── Upload button ───────────────────────────────────────────────────── #}
+    <div class="d-flex justify-content-center mb-3">
+        <button id="upload-btn-AC" type="button" class="btn btn-dark btn-lg"
+                data-bs-toggle="modal" data-bs-target="#windowTourplanAC"
+                title="Actualizar Alojamiento desde Tourplan">
+            <i class="fa-solid fa-upload me-2"></i> Subir Tourplan (Alojamiento)
+        </button>
+        <button id="upload-btn-NA" type="button" class="btn btn-dark btn-lg d-none"
+                data-bs-toggle="modal" data-bs-target="#windowTourplanNA"
+                title="Actualizar Servicios desde Tourplan">
+            <i class="fa-solid fa-upload me-2"></i> Subir Tourplan (Servicios)
+        </button>
     </div>
-    {% endfor %}
-</div>
-{% endif %}
 
-{# Banner cuando hay cambios pendientes #}
-{% if has_pending %}
-<div class="alert alert-warning d-flex align-items-center justify-content-between mt-3" id="pending-banner">
-    <span><i class="fa-solid fa-clock me-2"></i>Hay tarifas pendientes de revisión.</span>
-    <div class="d-flex gap-2">
-        <button class="btn btn-warning btn-sm" id="btn-open-review">Ver cambios</button>
-        <button class="btn btn-outline-secondary btn-sm" id="btn-discard-all-banner">Descartar todo</button>
+    {# ─── Messages ────────────────────────────────────────────────────────── #}
+    {% if messages %}
+    <div class="mt-2">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+            {{ message|safe }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        </div>
+        {% endfor %}
     </div>
-</div>
-{% endif %}
+    {% endif %}
 
-{# ------------------------------------------------------------------ Modal: subir CSV #}
-<div class="modal fade modal-lg" id="windowTourplan" tabindex="-1">
+    {# ─── Pending banner (accommodation only) ────────────────────────────── #}
+    {% if has_pending %}
+    <div class="alert alert-warning d-flex align-items-center justify-content-between mt-2" id="pending-banner">
+        <span><i class="fa-solid fa-clock me-2"></i>Hay tarifas pendientes de revisión.</span>
+        <div class="d-flex gap-2">
+            <button class="btn btn-warning btn-sm" id="btn-open-review">Ver cambios</button>
+            <button class="btn btn-outline-secondary btn-sm" id="btn-discard-all-banner">Descartar todo</button>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ─── Dual listbox ────────────────────────────────────────────────────── #}
+    <div class="row mt-4 align-items-start">
+
+        {# Left: Actualizando #}
+        <div class="col-md-5">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="mb-0 text-success fw-semibold">
+                    <i class="fa-solid fa-circle-check me-1"></i>
+                    Actualizando desde Tourplan
+                    <span class="badge bg-success ms-1" id="count-updating">0</span>
+                </h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="selectAll('updating')" title="Seleccionar todos">
+                    <i class="fa-solid fa-check-double"></i>
+                </button>
+            </div>
+            <select multiple id="list-updating" class="form-select" style="height:280px; font-size:0.88rem;"></select>
+        </div>
+
+        {# Arrows #}
+        <div class="col-md-2 d-flex flex-column justify-content-center align-items-center gap-3 pt-4">
+            <button class="btn btn-outline-secondary" onclick="moveSelected('updating','ignoring')"
+                    title="Mover a Ignorando">
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+            <button class="btn btn-outline-secondary" onclick="moveSelected('ignoring','updating')"
+                    title="Mover a Actualizando">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+        </div>
+
+        {# Right: Ignorando #}
+        <div class="col-md-5">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="mb-0 text-secondary fw-semibold">
+                    <i class="fa-solid fa-circle-pause me-1"></i>
+                    Ignorando (no se actualiza)
+                    <span class="badge bg-secondary ms-1" id="count-ignoring">0</span>
+                </h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="selectAll('ignoring')" title="Seleccionar todos">
+                    <i class="fa-solid fa-check-double"></i>
+                </button>
+            </div>
+            <select multiple id="list-ignoring" class="form-select" style="height:280px; font-size:0.88rem;"></select>
+        </div>
+
+    </div>{# /row #}
+
+</div>{# /container #}
+
+{# ═══════════════════════════════════ MODAL: Upload AC ══════════════════════════════════ #}
+<div class="modal fade modal-lg" id="windowTourplanAC" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-8">Subir planilla de Tourplan</h1>
+                <h1 class="modal-title fs-8">Subir planilla Tourplan — Alojamiento</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
                 <h3>Seleccione la planilla de Tourplan para actualizar información</h3>
                 <br>
-                <form class="text-center" action="{% url 'tp_mod_list' %}" method="post" enctype="multipart/form-data">
-                    {% csrf_token %}
-                    {{ form.file_name }}
-                    <br><br>
-                    <div class="container text-center">
-                        <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
-                        <button type="button" class="btn btn-dark btn-lg" data-bs-dismiss="modal">CANCELAR</button>
-                    </div>
-                    <br>
-                </form>
+                <div id="ac-upload-form-content">
+                    <form id="ac-upload-form" class="text-center" action="{% url 'tp_mod_list' %}" method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        {{ form.file_name }}
+                        <br><br>
+                        <div class="container text-center">
+                            <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
+                            <button type="button" class="btn btn-dark btn-lg" data-bs-dismiss="modal">CANCELAR</button>
+                        </div>
+                        <br>
+                    </form>
+                </div>
+                <div id="ac-upload-spinner" class="text-center py-5 d-none">
+                    <div class="spinner-border text-primary" style="width:3rem;height:3rem;" role="status"></div>
+                    <p class="mt-3 text-muted">Procesando planilla, por favor espere…</p>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-{# ------------------------------------------------------------------ Modal: revisar cambios #}
+{# ═══════════════════════════════════ MODAL: Upload NA ══════════════════════════════════ #}
+<div class="modal fade modal-lg" id="windowTourplanNA" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-8">Subir planilla Tourplan — Servicios</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <h3>Seleccione la planilla de Tourplan para actualizar servicios</h3>
+                <br>
+                <div id="na-upload-form-content">
+                    <form id="na-upload-form" class="text-center" action="{% url 'tp_mod_list_services' %}" method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        {{ form.file_name }}
+                        <br><br>
+                        <div class="container text-center">
+                            <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
+                            <button type="button" class="btn btn-dark btn-lg" data-bs-dismiss="modal">CANCELAR</button>
+                        </div>
+                        <br>
+                    </form>
+                </div>
+                <div id="na-upload-spinner" class="text-center py-5 d-none">
+                    <div class="spinner-border text-primary" style="width:3rem;height:3rem;" role="status"></div>
+                    <p class="mt-3 text-muted">Procesando planilla, por favor espere…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ═══════════════════════════════════ MODAL: Review changes ═════════════════════════════ #}
 {% if has_pending %}
 <div class="modal fade modal-xl" id="windowReview" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-dialog-scrollable" style="max-width:900px">
         <div class="modal-content">
             <div class="modal-header">
                 <h1 class="modal-title fs-5">Revisión de tarifas Tourplan</h1>
-                {# X cierra el modal pero NO descarta los datos — quedan en sesión #}
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
 
             <div class="modal-body p-0">
-                {# Barra resumen #}
                 <div class="d-flex align-items-center gap-4 px-4 py-3 border-bottom bg-light flex-wrap">
                     <div class="text-center">
                         <div class="fw-bold fs-4" id="count-update">0</div>
@@ -103,8 +211,6 @@
                 </div>
 
                 <div class="px-4 py-3">
-
-                    {# Cabecera de columnas (Update/Add) #}
                     <div class="d-flex gap-2 px-2 pb-1 mb-1 border-bottom text-muted" style="font-size:.72rem;letter-spacing:.06em;text-transform:uppercase">
                         <div style="min-width:90px"></div>
                         <div class="flex-grow-1"></div>
@@ -115,7 +221,6 @@
                         <div style="width:130px"></div>
                     </div>
 
-                    {# Sección UPDATE #}
                     <div id="section-update">
                         <div class="d-flex align-items-center justify-content-between mb-2 mt-3">
                             <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">⟳ Actualizar</span>
@@ -127,7 +232,6 @@
                         <div id="rows-update"></div>
                     </div>
 
-                    {# Sección ADD #}
                     <div id="section-add">
                         <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
                             <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">+ Agregar</span>
@@ -139,7 +243,6 @@
                         <div id="rows-add"></div>
                     </div>
 
-                    {# Sección DELETE #}
                     <div id="section-delete">
                         <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
                             <span class="text-danger small text-uppercase fw-semibold" style="letter-spacing:.08em">✕ Eliminar RateLines sin coincidencia</span>
@@ -150,19 +253,114 @@
                         </div>
                         <div id="rows-delete"></div>
                     </div>
-
                 </div>
-            </div>{# /modal-body #}
+            </div>
         </div>
     </div>
 </div>
+{% endif %}
+
+{% endif %}{# /isAdmin #}
 
 <script>
-const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
-const CSRF    = "{{ csrf_token }}";
+// ─── Supplier data from server ────────────────────────────────────────────────
+const CSRF_TOKEN    = '{{ csrf_token }}';
+const SUPPLIERS     = {{ suppliers_json|safe }};
 
-// State — each item gets _id, ignored, edited_sell, edited_season
-const state = CHANGES.map((item, idx) => ({
+// Per-type state: arrays of {id, name} for each column
+const state = {
+    AC: { updating: [], ignoring: [] },
+    NA: { updating: [], ignoring: [] },
+};
+
+// Initialise state from server data
+['AC', 'NA'].forEach(type => {
+    SUPPLIERS[type].forEach(s => {
+        state[type][s.update_tp ? 'updating' : 'ignoring'].push({ id: s.id, name: s.name });
+    });
+    state[type].updating.sort((a, b) => a.name.localeCompare(b.name));
+    state[type].ignoring.sort((a, b) => a.name.localeCompare(b.name));
+});
+
+let currentType = 'AC';
+
+// ─── Render listboxes ─────────────────────────────────────────────────────────
+function renderLists() {
+    const s = state[currentType];
+    const updEl = document.getElementById('list-updating');
+    const ignEl = document.getElementById('list-ignoring');
+
+    updEl.innerHTML = s.updating.map(x =>
+        `<option value="${x.id}">${x.name}</option>`
+    ).join('');
+    ignEl.innerHTML = s.ignoring.map(x =>
+        `<option value="${x.id}">${x.name}</option>`
+    ).join('');
+
+    document.getElementById('count-updating').textContent = s.updating.length;
+    document.getElementById('count-ignoring').textContent = s.ignoring.length;
+}
+
+// ─── Tab switch ───────────────────────────────────────────────────────────────
+function switchType(type) {
+    currentType = type;
+
+    document.getElementById('tab-AC').classList.toggle('active', type === 'AC');
+    document.getElementById('tab-NA').classList.toggle('active', type === 'NA');
+    document.getElementById('upload-btn-AC').classList.toggle('d-none', type !== 'AC');
+    document.getElementById('upload-btn-NA').classList.toggle('d-none', type === 'AC');
+
+    renderLists();
+}
+
+// ─── Move selected items between lists ────────────────────────────────────────
+function moveSelected(fromKey, toKey) {
+    const s = state[currentType];
+    const fromEl = document.getElementById(`list-${fromKey}`);
+    const selected = Array.from(fromEl.selectedOptions).map(o => parseInt(o.value));
+    if (!selected.length) return;
+
+    const moving = s[fromKey].filter(x => selected.includes(x.id));
+    s[fromKey] = s[fromKey].filter(x => !selected.includes(x.id));
+    s[toKey]   = [...s[toKey], ...moving].sort((a, b) => a.name.localeCompare(b.name));
+
+    renderLists();
+
+    // Persist to server
+    const newUpdateTp = (toKey === 'updating');
+    fetch('{% url "toggle_supplier_update_tp" %}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body: JSON.stringify({ supplier_ids: selected, update_tp: newUpdateTp }),
+    }).catch(e => console.error('Error guardando update_tp:', e));
+}
+
+// ─── Select all in a list ─────────────────────────────────────────────────────
+function selectAll(key) {
+    const el = document.getElementById(`list-${key}`);
+    Array.from(el.options).forEach(o => o.selected = true);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+renderLists();
+
+// ─── Upload form spinners ─────────────────────────────────────────────────────
+document.getElementById('ac-upload-form').addEventListener('submit', function () {
+    document.getElementById('ac-upload-form-content').classList.add('d-none');
+    document.getElementById('ac-upload-spinner').classList.remove('d-none');
+});
+document.getElementById('na-upload-form').addEventListener('submit', function () {
+    document.getElementById('na-upload-form-content').classList.add('d-none');
+    document.getElementById('na-upload-spinner').classList.remove('d-none');
+});
+</script>
+
+{% if has_pending %}
+<script>
+// ─── Pending changes review ───────────────────────────────────────────────────
+const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
+
+const reviewState = CHANGES.map((item, idx) => ({
     ...item,
     _id:           item._id !== undefined ? item._id : idx,
     ignored:       false,
@@ -170,7 +368,6 @@ const state = CHANGES.map((item, idx) => ({
     edited_season: item.season || "To be defined",
 }));
 
-// ---------------------------------------------------------------- render
 function renderAll() {
     renderSection("Update",  "rows-update");
     renderSection("Add",     "rows-add");
@@ -180,7 +377,7 @@ function renderAll() {
 
 function renderSection(action, containerId) {
     const container = document.getElementById(containerId);
-    const items = state.filter(i => i.action === action);
+    const items = reviewState.filter(i => i.action === action);
     const renderer = action === "Delete" ? rowHTMLDelete : rowHTML;
     container.innerHTML = items.length
         ? items.map(renderer).join("")
@@ -200,8 +397,9 @@ function rowHTML(item) {
         ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle"
         : "bg-success-subtle text-success-emphasis border border-success-subtle";
 
-    // Sell TP column: show old → new for Update
-    const sellTPCell = isUpdate
+    const sellTPCell = item.has_items
+        ? `<div style="width:100px;text-align:right" class="text-muted fst-italic" style="font-size:.75rem">—</div>`
+        : isUpdate
         ? `<div style="width:100px;text-align:right">
                <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell_tourplan)}</span>
                <span class="fw-semibold text-warning-emphasis">${fmt(item.sell_tourplan)}</span>
@@ -210,7 +408,6 @@ function rowHTML(item) {
                <span class="fw-semibold text-success-emphasis">${fmt(item.sell_tourplan)}</span>
            </div>`;
 
-    // Cost column: show old → new for Update
     const costCell = isUpdate
         ? `<div style="width:80px;text-align:right">
                <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_cost)}</span>
@@ -220,11 +417,10 @@ function rowHTML(item) {
                <span class="fw-semibold">${fmt(item.cost)}</span>
            </div>`;
 
-    // Sell AI: show current_sell struck-through (Update only), then suggested = sell_tourplan, editable
     const sellAIPrev = isUpdate && item.current_sell != null
         ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>`
         : '';
-    const sellAICell = isIgnored
+    const sellAICell = (isIgnored || item.has_items)
         ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
         : `<div style="width:110px;text-align:right">
                <div id="sell-ai-display-${item._id}" class="${item.isEditing ? 'd-none' : ''}">
@@ -240,7 +436,7 @@ function rowHTML(item) {
                </div>
            </div>`;
 
-    const editBtn = !isIgnored
+    const editBtn = (!isIgnored && !item.has_items)
         ? `<button class="btn btn-sm btn-outline-secondary" onclick="toggleEdit(${item._id})" title="${item.isEditing ? 'Cerrar' : 'Editar sell AI'}">
                ${item.isEditing ? '✓' : '✎'}
            </button>`
@@ -264,7 +460,10 @@ function rowHTML(item) {
                 <div class="text-muted mt-1" style="font-size:.68rem">${item.column_options} · ${item.fcu}</div>
             </div>
             <div class="flex-grow-1">
-                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}</div>
+                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}
+                    ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Solo se actualiza el costo — venta no se modifica">ítems de costo</span>' : ""}
+                </div>
+                ${item.has_items && item.ci_name ? `<div class="text-info-emphasis" style="font-size:.70rem">↳ ${item.ci_name}</div>` : ""}
                 <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
                 ${item.rate_group_name ? `<div class="text-muted" style="font-size:.68rem;font-style:italic">${item.rate_group_name}</div>` : ""}
             </div>
@@ -283,7 +482,6 @@ function rowHTML(item) {
     </div>`;
 }
 
-// ---------------------------------------------------------------- Delete row renderer
 function rowHTMLDelete(item) {
     const isIgnored = item.ignored;
     const ratesSummary = (item.rates_summary || [])
@@ -312,58 +510,56 @@ function rowHTMLDelete(item) {
     </div>`;
 }
 
-// ---------------------------------------------------------------- actions
 function toggleIgnore(id) {
-    const item = state.find(i => i._id === id);
-    item.ignored  = !item.ignored;
+    const item = reviewState.find(i => i._id === id);
+    item.ignored   = !item.ignored;
     item.isEditing = false;
     renderAll();
 }
 
 function toggleEdit(id) {
-    const item = state.find(i => i._id === id);
+    const item = reviewState.find(i => i._id === id);
     item.isEditing = !item.isEditing;
     renderAll();
 }
 
 function setSell(id, val) {
     const parsed = parseFloat(val);
-    if (!isNaN(parsed)) state.find(i => i._id === id).edited_sell = parsed;
+    if (!isNaN(parsed)) reviewState.find(i => i._id === id).edited_sell = parsed;
 }
 
 function setSeason(id, val) {
-    state.find(i => i._id === id).edited_season = val;
+    reviewState.find(i => i._id === id).edited_season = val;
 }
 
 function ignoreAll(action) {
-    state.filter(i => i.action === action).forEach(i => { i.ignored = true; i.isEditing = false; });
+    reviewState.filter(i => i.action === action).forEach(i => { i.ignored = true; i.isEditing = false; });
     renderAll();
 }
 
 function restoreAll(action) {
-    state.filter(i => i.action === action).forEach(i => i.ignored = false);
+    reviewState.filter(i => i.action === action).forEach(i => i.ignored = false);
     renderAll();
 }
 
 function updateCounts() {
-    const active = state.filter(i => !i.ignored);
+    const active = reviewState.filter(i => !i.ignored);
     document.getElementById("count-update").textContent  = active.filter(i => i.action === "Update").length;
     document.getElementById("count-add").textContent     = active.filter(i => i.action === "Add").length;
     document.getElementById("count-delete").textContent  = active.filter(i => i.action === "Delete").length;
-    document.getElementById("count-ignored").textContent = state.filter(i => i.ignored).length;
+    document.getElementById("count-ignored").textContent = reviewState.filter(i => i.ignored).length;
     const n = active.length;
     document.getElementById("btn-confirm-all").textContent = `Confirmar ${n} cambio${n !== 1 ? "s" : ""}`;
     document.getElementById("btn-confirm-all").disabled = n === 0;
 }
 
-// ---------------------------------------------------------------- confirm / discard
 function confirmChanges() {
-    const confirmed   = state.filter(i => !i.ignored).map(item => ({
+    const confirmed  = reviewState.filter(i => !i.ignored).map(item => ({
         _id:            item._id,
         action:         item.action,
         rate_id:        item.rate_id,
         rate_group_id:  item.rate_group_id,
-        rate_line_id:   item.rate_line_id,   // for Delete
+        rate_line_id:   item.rate_line_id,
         cost:           item.cost,
         sell_tourplan:  item.sell_tourplan,
         sell:           item.edited_sell,
@@ -373,12 +569,20 @@ function confirmChanges() {
         date_to:        item.date_to,
         column_options: item.column_options,
         fcu:            item.fcu,
+        // CostItem fields (for has_items rates)
+        has_items:      item.has_items,
+        ci_id:          item.ci_id,
+        ci_value:       item.ci_value,
+        ci_fcu:         item.ci_fcu,
+        base:           item.base,
+        margin:         item.margin,
+        margin_info:    item.margin_info,
     }));
-    const ignored_ids = state.filter(i => i.ignored).map(i => i._id);
+    const ignored_ids = reviewState.filter(i => i.ignored).map(i => i._id);
 
     fetch("{% url 'apply_changes' %}", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
         body: JSON.stringify({ confirmed, ignored_ids }),
     }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
 }
@@ -386,11 +590,10 @@ function confirmChanges() {
 function discardAll() {
     fetch("{% url 'discard_changes' %}", {
         method: "POST",
-        headers: { "X-CSRFToken": CSRF },
+        headers: { "X-CSRFToken": CSRF_TOKEN },
     }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
 }
 
-// ---------------------------------------------------------------- init
 function openReviewModal() {
     renderAll();
     const modalEl = document.getElementById("windowReview");
@@ -412,5 +615,4 @@ document.addEventListener("DOMContentLoaded", tryOpenModal);
 </script>
 {% endif %}
 
-{% endif %}{# /isAdmin #}
 {% endblock %}

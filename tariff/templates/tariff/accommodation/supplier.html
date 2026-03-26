@@ -28,7 +28,7 @@
                             <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" required>
                         </div>
                         <div class="col-6">
-                            <input class="form-control" name="name" placeholder="Nombre del proveedor" required>
+                            <input class="form-control" id="supplier-name-input" name="name" placeholder="Nombre del proveedor" required>
                         </div>
                         <div class="col-3">
                             <select name="margin" class="form-select" required>
@@ -41,6 +41,12 @@
                                 {% endfor %}
                             </select>
                         </div>
+                    </div>
+
+                    <div id="provisional-alert" class="alert alert-warning mt-2 d-none text-start">
+                        <strong><i class="fa-solid fa-triangle-exclamation"></i> Proveedores provisionales similares:</strong>
+                        <ul id="provisional-list" class="mb-1 mt-1"></ul>
+                        <small>Al guardar, los feedbacks de estos proveedores serán transferidos al nuevo proveedor automáticamente.</small>
                     </div>
 
                     <div class="mb-3">
@@ -533,4 +539,33 @@ High – 0.82 - Tarifas especiales negociadas
         </div>
     </div>
     <br>
+
+<script>
+(function() {
+    const nameInput = document.getElementById('supplier-name-input');
+    if (!nameInput) return;
+    const provisionalAlert = document.getElementById('provisional-alert');
+    const provisionalList = document.getElementById('provisional-list');
+    let timer;
+    nameInput.addEventListener('input', function() {
+        clearTimeout(timer);
+        const q = this.value.trim();
+        if (q.length < 3) { provisionalAlert.classList.add('d-none'); return; }
+        timer = setTimeout(() => {
+            fetch('/calidad/search/suppliers?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(data => {
+                    const provisionals = (data.results || []).filter(s => s.provisional);
+                    if (provisionals.length > 0) {
+                        provisionalList.innerHTML = provisionals.map(s => `<li>${s.name}</li>`).join('');
+                        provisionalAlert.classList.remove('d-none');
+                    } else {
+                        provisionalAlert.classList.add('d-none');
+                    }
+                });
+        }, 400);
+    });
+})();
+</script>
+
 {% endblock %}

@@ -51,7 +51,22 @@ urlpatterns = [
     path('modify/copy-rate-block/', modify.copy_rate_block, name='copy_rate_block'),
     path('modify/delete-rate-block/', modify.delete_rate_block, name='delete_rate_block'),
     path('modify/create-rate-block/', modify.create_rate_block, name='create_rate_block'),
+    # Cost item / fixed rate cost management
+    path('modify/cost-item/add/', modify.add_cost_item, name='add_cost_item'),
+    path('modify/cost-item/update/', modify.update_cost_item, name='update_cost_item'),
+    path('modify/cost-item/<int:item_id>/delete/', modify.delete_cost_item, name='delete_cost_item'),
+    path('modify/fixed-rate-link/add/', modify.add_fixed_rate_link, name='add_fixed_rate_link'),
+    path('modify/fixed-rate-cost/create/', modify.create_fixed_rate_cost, name='create_fixed_rate_cost'),
+    path('modify/fixed-rate-link/remove/', modify.remove_fixed_rate_link, name='remove_fixed_rate_link'),
+    path('modify/fixed-rate-cost/update/', modify.update_fixed_rate_cost, name='update_fixed_rate_cost'),
+    path('modify/fixed-rate-cost/<int:frc_id>/delete/', modify.delete_fixed_rate_cost, name='delete_fixed_rate_cost'),
+    path('modify/supplier/<int:supplier_id>/set-exchange/', modify.update_supplier_exchange, name='update_supplier_exchange'),
+    path('modify/supplier/<int:supplier_id>/bulk-update-exchange/', modify.bulk_update_exchange, name='bulk_update_exchange'),
+    path('modify/rate/update-cost/', modify.update_rate_cost, name='update_rate_cost'),
+
     path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
     path("tp/apply-changes/",  tariff.apply_changes,   name="apply_changes"),
     path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),
+    path("tp/toggle-update-tp/", tariff.toggle_supplier_update_tp, name="toggle_supplier_update_tp"),
+    path("tp/upload-services/",  tariff.tp_mod_list_services,      name="tp_mod_list_services"),
 ]

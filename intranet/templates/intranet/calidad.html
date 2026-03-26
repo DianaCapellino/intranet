@@ -1,0 +1,1346 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container py-4" style="max-width:1100px;">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0">Calidad</h4>
+      <p class="text-muted small mb-0">Gestión de feedbacks y bandeja de emails de calidad</p>
+    </div>
+    <div>
+      <input type="file" id="itinerario-input" accept=".csv" class="d-none">
+      <button class="btn btn-outline-secondary btn-sm me-1" onclick="document.getElementById('itinerario-input').click()">
+        <i class="fa-solid fa-file-csv me-1"></i>Actualizar itinerarios
+      </button>
+      <button class="btn btn-outline-primary btn-sm" id="fetch-inbox-btn" onclick="fetchInbox(this)">
+        <i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja
+      </button>
+      <div class="text-muted small mt-1 text-end" id="itinerario-status">
+        {% if itinerario_exists %}
+          <i class="fa-solid fa-circle-check text-success me-1"></i>Actualizado: {{ itinerario_date }}
+        {% else %}
+          <i class="fa-solid fa-circle-xmark text-danger me-1"></i>Sin archivo cargado
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-bandeja">
+        Bandeja{% if inbox_items %}<span class="badge bg-warning text-dark ms-1">{{ inbox_items|length }}</span>{% endif %}
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-feedbacks">
+        Feedbacks<span class="badge bg-secondary ms-1">{{ feedbacks|length }}</span>
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-catalogos">
+        Gestión y Resumen
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ── BANDEJA ── -->
+    <div class="tab-pane fade show active" id="tab-bandeja">
+      {% if not inbox_items %}
+        <div class="alert alert-success"><i class="fa-solid fa-circle-check me-2"></i>No hay emails pendientes.</div>
+      {% endif %}
+
+      {% for item in inbox_items %}
+      <div class="card mb-4 shadow-sm" id="inbox-{{ item.id }}">
+        <div class="card-header d-flex justify-content-between align-items-start py-2">
+          <div class="d-flex flex-wrap gap-1 align-items-center">
+            {% if item.ai_analysis %}
+              {% for t in item.ai_analysis.targets %}
+                {% if t.sentiment == "positivo" %}<span class="badge text-bg-success">Positivo</span>
+                {% elif t.sentiment == "negativo" %}<span class="badge text-bg-danger">Negativo</span>
+                {% else %}<span class="badge text-bg-secondary">Neutral</span>{% endif %}
+              {% endfor %}
+            {% else %}
+              <span class="badge bg-warning text-dark">Sin analizar</span>
+            {% endif %}
+            <strong class="small ms-1">{{ item.email_subject|default:"(sin asunto)" }}</strong>
+          </div>
+          <small class="text-muted text-nowrap ms-3">{{ item.received_at|date:"d/m/Y H:i" }}</small>
+        </div>
+
+        <div class="card-body">
+          <p class="small text-muted mb-2"><i class="fa-solid fa-envelope me-1"></i>{{ item.email_sender }}</p>
+
+          <details class="mb-3">
+            <summary class="small text-muted" style="cursor:pointer;">Ver email original</summary>
+            <pre class="small mt-2 p-2 bg-light rounded" style="white-space:pre-wrap;max-height:200px;overflow:auto;">{{ item.email_body|truncatechars:1500 }}</pre>
+          </details>
+
+          {% if item.ai_analysis %}
+          <div class="border rounded p-3" style="background:#f8f9ff;">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <span class="small fw-semibold text-primary"><i class="fa-solid fa-robot me-1"></i>Análisis IA — confirmá o editá antes de guardar</span>
+              {% if item.ai_analysis.trip_file_id %}
+                <span class="badge bg-light text-dark border">File: {{ item.ai_analysis.trip_file_id }}</span>
+              {% endif %}
+            </div>
+
+            {% if item.ai_analysis.verbatim %}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1">Texto original del pasajero</label>
+              <textarea class="form-control form-control-sm" id="verbatim-{{ item.id }}" rows="4" style="font-size:0.78rem;">{{ item.ai_analysis.verbatim }}</textarea>
+            </div>
+            {% else %}
+              <input type="hidden" id="verbatim-{{ item.id }}" value="">
+            {% endif %}
+
+            <div class="row g-2 mb-3">
+              <div class="col-md-4">
+                <label class="form-label small mb-1">File / Viaje</label>
+                <input type="text" class="form-control form-control-sm" id="trip-{{ item.id }}"
+                       value="{{ item.ai_analysis.trip_file_id|default:'' }}" placeholder="ALAL100052">
+              </div>
+            </div>
+
+            <!-- Targets -->
+            <div id="targets-{{ item.id }}">
+              {% for t in item.ai_analysis.targets %}
+              <div class="border rounded p-2 mb-2 bg-white target-card">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <select class="form-select form-select-sm t-type w-auto" onchange="onTargetTypeChange(this)">
+                    <option value="supplier"    {% if t.target_type == "supplier"    %}selected{% endif %}>🏢 Proveedor</option>
+                    <option value="user"        {% if t.target_type == "user"        %}selected{% endif %}>👤 Usuario Aliwen</option>
+                    <option value="guide"       {% if t.target_type == "guide"       %}selected{% endif %}>🧭 Guía</option>
+                    <option value="dh"          {% if t.target_type == "dh"          %}selected{% endif %}>🌍 DH</option>
+                    <option value="aliwen_team" {% if t.target_type == "aliwen_team" %}selected{% endif %}>🏠 Equipo Aliwen</option>
+                    <option value="entity"      {% if t.target_type == "entity"      %}selected{% endif %}>📋 Otros</option>
+                  </select>
+                  <button type="button" class="btn-close" onclick="this.closest('.target-card').remove()"></button>
+                </div>
+
+                <!-- Target selector (hidden/shown by type) -->
+                <div class="mb-2 position-relative">
+
+                  <!-- Supplier -->
+                  <div class="target-selector" data-for="supplier" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "supplier" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar proveedor..." data-type="supplier"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-supplier-id" value="{{ t.supplier_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.supplier_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                  <!-- User -->
+                  <div class="target-selector" data-for="user" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "user" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar usuario Aliwen..." data-type="user"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-user-id" value="{{ t.user_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.user_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                  <!-- Guide -->
+                  <div class="target-selector" data-for="guide" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "guide" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar guía..." data-type="guide"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-guide-id" value="{{ t.guide_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.guide_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                  <!-- DH -->
+                  <div class="target-selector" data-for="dh" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "dh" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar DH..." data-type="dh"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-dh-id" value="{{ t.dh_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.dh_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                  <!-- Aliwen team -->
+                  <div class="target-selector" data-for="aliwen_team"
+                       {% if t.target_type != "aliwen_team" %}style="display:none"{% endif %}>
+                    <p class="small text-muted mb-0 py-1"><i class="fa-solid fa-info-circle me-1"></i>Se creará un feedback para el vendedor y el operador del file automáticamente.</p>
+                  </div>
+
+                  <!-- Entity / Otros -->
+                  <div class="target-selector" data-for="entity" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "entity" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar entidad..." data-type="entity"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-entity-id" value="{{ t.entity_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.entity_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                </div>
+
+                <div class="row g-2">
+                  <div class="col-md-3">
+                    <label class="form-label small mb-1">Sentiment</label>
+                    <select class="form-select form-select-sm t-sentiment" onchange="onSentimentChange(this)">
+                      <option value="positivo" {% if t.sentiment == "positivo" %}selected{% endif %}>Positivo</option>
+                      <option value="neutral"  {% if t.sentiment == "neutral"  %}selected{% endif %}>Neutral</option>
+                      <option value="negativo" {% if t.sentiment == "negativo" %}selected{% endif %}>Negativo</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label small mb-1">Tipo</label>
+                    <select class="form-select form-select-sm t-fbtype">
+                      {% for val, label in type_quality_choices %}
+                      <option value="{{ val }}" {% if t.type == val %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small mb-1">Resumen breve</label>
+                    <input type="text" class="form-control form-control-sm t-brief" value="{{ t.brief_summary }}" maxlength="200">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small mb-1">Contenido detallado</label>
+                    <textarea class="form-control form-control-sm t-content" rows="2">{{ t.content }}</textarea>
+                  </div>
+                  <div class="col-12 t-negative-fields" {% if t.sentiment != "negativo" %}style="display:none"{% endif %}>
+                    <div class="row g-2 mt-0">
+                      <div class="col-md-9">
+                        <label class="form-label small mb-1 text-danger"><i class="fa-solid fa-wrench me-1"></i>Solución</label>
+                        <textarea class="form-control form-control-sm t-solution" rows="2" placeholder="Cómo se resolvió el problema (puede completarse después)">{{ t.solution|default:'' }}</textarea>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label small mb-1 text-danger">Costo USD</label>
+                        <input type="number" class="form-control form-control-sm t-cost" value="{{ t.cost|default:0 }}" min="0" step="0.01">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+
+            {% if item.ai_analysis.needs_more_info %}
+            <div class="alert alert-warning small py-1 px-2 mt-2 mb-0">
+              <i class="fa-solid fa-triangle-exclamation me-1"></i>Faltan datos: {{ item.ai_analysis.missing_fields|join:", " }}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="card-footer bg-transparent d-flex gap-2 py-2">
+          {% if not item.ai_analysis %}
+            <button class="btn btn-sm btn-outline-primary" onclick="processAI({{ item.id }}, this)">
+              <i class="fa-solid fa-robot me-1"></i>Analizar con IA
+            </button>
+          {% else %}
+            <button class="btn btn-sm btn-success" onclick="confirmInbox({{ item.id }}, this)">
+              <i class="fa-solid fa-check me-1"></i>Confirmar y guardar
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="processAI({{ item.id }}, this)">
+              <i class="fa-solid fa-rotate me-1"></i>Re-analizar
+            </button>
+          {% endif %}
+          <button class="btn btn-sm btn-outline-danger ms-auto" onclick="discardInbox({{ item.id }})">
+            <i class="fa-solid fa-trash me-1"></i>Descartar
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- ── FEEDBACKS ── -->
+    <div class="tab-pane fade" id="tab-feedbacks">
+      {% if feedbacks %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle" style="cursor:pointer;">
+          <thead class="table-light">
+            <tr><th>Sentiment</th><th>Destinatario</th><th>Tipo</th><th>Viaje</th><th>Resumen</th><th>Estado</th><th>Fecha</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for fb in feedbacks %}
+            <tr class="fb-row" data-fb-id="{{ fb.id }}"
+                data-fb-summary="{{ fb.brief_summary|escapejs }}"
+                data-fb-content="{{ fb.content|escapejs }}"
+                data-fb-solution="{{ fb.solution|default:''|escapejs }}"
+                data-fb-cost="{{ fb.cost|default:0 }}"
+                data-fb-status="{{ fb.status }}"
+                data-fb-sentiment="{{ fb.sentiment }}"
+                data-fb-supplier-id="{{ fb.supplier_id|default:'' }}"
+                data-fb-supplier-name="{{ fb.supplier.name|default:''|escapejs }}"
+                data-fb-guide-id="{{ fb.target_guide_id|default:'' }}"
+                data-fb-guide-name="{{ fb.target_guide.name|default:''|escapejs }}"
+                data-fb-trip-file="{{ fb.trip.tourplanId|default:''|escapejs }}">
+              <td>
+                {% if fb.sentiment == "positivo" %}<span class="badge text-bg-success">Positivo</span>
+                {% elif fb.sentiment == "negativo" %}<span class="badge text-bg-danger">Negativo</span>
+                {% else %}<span class="badge text-bg-secondary">Neutral</span>{% endif %}
+              </td>
+              <td class="small">
+                {% if fb.supplier %}<i class="fa-solid fa-building me-1 text-primary"></i>{{ fb.supplier.name }}
+                {% elif fb.target_user %}<i class="fa-solid fa-user me-1 text-success"></i>{{ fb.target_user.get_full_name|default:fb.target_user.username }}
+                {% elif fb.target_guide %}<i class="fa-solid fa-compass me-1 text-warning"></i>{{ fb.target_guide.name }}
+                {% elif fb.target_dh %}<i class="fa-solid fa-earth-americas me-1 text-info"></i>{{ fb.target_dh.name }}
+                {% elif fb.target_entity %}<i class="fa-solid fa-layer-group me-1 text-muted"></i>{{ fb.target_entity.name }}
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="small text-muted">{{ fb.type }}</td>
+              <td class="small text-muted">{% if fb.trip %}{{ fb.trip.name }}{% else %}—{% endif %}</td>
+              <td class="small">{{ fb.brief_summary|default:fb.content|truncatechars:60 }}</td>
+              <td>
+                {% if fb.status == "cerrado" %}<span class="badge text-bg-success">Cerrado</span>
+                {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
+                {% else %}<span class="badge text-bg-secondary">Abierto</span>{% endif %}
+              </td>
+              <td class="small text-muted text-nowrap">{{ fb.creation_date|date:"d/m/Y" }}</td>
+              <td class="text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="width:28px;height:28px;"
+                  onclick="event.stopPropagation(); openFeedbackEditFromRow({{ fb.id }})"
+                  title="Editar">
+                  <i class="fa-solid fa-pencil" style="font-size:0.7rem;"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center ms-1" style="width:28px;height:28px;"
+                  onclick="event.stopPropagation(); deleteFeedback({{ fb.id }}, this)"
+                  title="Eliminar">
+                  <i class="fa-solid fa-trash" style="font-size:0.7rem;"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# Hidden detail panels — one per feedback, cloned into the detail modal on click #}
+      {% for fb in feedbacks %}
+      <div id="fb-detail-{{ fb.id }}" class="d-none">
+        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+          {% if fb.sentiment == "positivo" %}<span class="badge text-bg-success fs-6">Positivo</span>
+          {% elif fb.sentiment == "negativo" %}<span class="badge text-bg-danger fs-6">Negativo</span>
+          {% else %}<span class="badge text-bg-secondary fs-6">Neutral</span>{% endif %}
+          {% if fb.status == "cerrado" %}<span class="badge text-bg-success">Cerrado</span>
+          {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
+          {% else %}<span class="badge bg-secondary">Abierto</span>{% endif %}
+          <span class="text-muted small ms-auto">{{ fb.creation_date|date:"d/m/Y" }}</span>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6">
+            <div class="small text-muted fw-semibold mb-1">Destinatario</div>
+            <div>
+              {% if fb.supplier %}<i class="fa-solid fa-building me-1 text-primary"></i><strong>{{ fb.supplier.name }}</strong>
+              {% elif fb.target_user %}<i class="fa-solid fa-user me-1 text-success"></i><strong>{{ fb.target_user.get_full_name|default:fb.target_user.username }}</strong>
+              {% elif fb.target_guide %}<i class="fa-solid fa-compass me-1 text-warning"></i><strong>{{ fb.target_guide.name }}</strong>
+              {% elif fb.target_dh %}<i class="fa-solid fa-earth-americas me-1 text-info"></i><strong>{{ fb.target_dh.name }}</strong>
+              {% elif fb.target_entity %}<i class="fa-solid fa-layer-group me-1 text-muted"></i><strong>{{ fb.target_entity.name }}</strong>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="small text-muted fw-semibold mb-1">Tipo</div>
+            <div class="small">{{ fb.type }}</div>
+          </div>
+          <div class="col-sm-3">
+            <div class="small text-muted fw-semibold mb-1">Viaje</div>
+            <div class="small">{% if fb.trip %}{{ fb.trip.name }}{% else %}—{% endif %}</div>
+          </div>
+        </div>
+
+        {% if fb.brief_summary %}
+        <div class="mb-3">
+          <div class="small text-muted fw-semibold mb-1">Resumen</div>
+          <div class="small">{{ fb.brief_summary }}</div>
+        </div>
+        {% endif %}
+
+        {% if fb.content %}
+        <div class="mb-3">
+          <div class="small text-muted fw-semibold mb-1">Contenido</div>
+          <div class="small border rounded p-2 bg-light" style="white-space:pre-wrap;">{{ fb.content }}</div>
+        </div>
+        {% endif %}
+
+        {% if fb.verbatim %}
+        <div class="mb-3">
+          <div class="small text-muted fw-semibold mb-1">Texto original del pasajero</div>
+          <div class="small border rounded p-2 bg-light fst-italic" style="white-space:pre-wrap;">{{ fb.verbatim }}</div>
+        </div>
+        {% endif %}
+
+        {% if fb.solution or fb.cost %}
+        <div class="mb-3 p-2 border rounded border-warning bg-warning bg-opacity-10">
+          <div class="small text-muted fw-semibold mb-1">Solución</div>
+          {% if fb.solution %}<div class="small mb-1" style="white-space:pre-wrap;">{{ fb.solution }}</div>{% endif %}
+          {% if fb.cost %}<div class="small"><strong>Costo:</strong> ${{ fb.cost }}</div>{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="row g-2 text-muted small mt-1">
+          {% if fb.email_sender %}<div class="col-auto"><i class="fa-solid fa-envelope me-1"></i>{{ fb.email_sender }}</div>{% endif %}
+          <div class="col-auto"><i class="fa-solid fa-user-pen me-1"></i>{{ fb.user.get_full_name|default:fb.user.username }}</div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% else %}
+        <div class="alert alert-info"><i class="fa-solid fa-info-circle me-2"></i>No hay feedbacks aún.</div>
+      {% endif %}
+    </div>
+
+    <!-- Feedback detail modal -->
+    <div class="modal fade" id="feedbackDetailModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Feedback</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="feedbackDetailBody"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-danger btn-sm me-auto" id="detail-delete-btn"><i class="fa-solid fa-trash me-1"></i>Eliminar</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="detail-edit-btn"><i class="fa-solid fa-pencil me-1"></i>Editar</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback edit modal -->
+    <div class="modal fade" id="feedbackEditModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar feedback</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="fb-edit-id">
+            <div class="row g-2 mb-3">
+              <div class="col-sm-4">
+                <label class="form-label small fw-semibold">Sentimiento</label>
+                <select class="form-select form-select-sm" id="fb-edit-sentiment" onchange="onFbEditSentimentChange(this)">
+                  <option value="positivo">Positivo</option>
+                  <option value="neutral">Neutral</option>
+                  <option value="negativo">Negativo</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label small fw-semibold">Estado</label>
+                <select class="form-select form-select-sm" id="fb-edit-status">
+                  <option value="abierto">Abierto</option>
+                  <option value="en_seguimiento">En seguimiento</option>
+                  <option value="cerrado">Cerrado</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label small fw-semibold">File / Viaje</label>
+                <input type="text" class="form-control form-control-sm" id="fb-edit-trip-file" placeholder="ALAL100052">
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-sm-6 position-relative">
+                <label class="form-label small fw-semibold">Proveedor</label>
+                <input type="text" class="form-control form-control-sm" id="fb-edit-supplier-name"
+                       placeholder="Buscar proveedor..." oninput="searchFbEditSupplier(this)">
+                <input type="hidden" id="fb-edit-supplier-id">
+                <div id="fb-edit-supplier-results" class="list-group mt-1"
+                     style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+              </div>
+              <div class="col-sm-6 position-relative">
+                <label class="form-label small fw-semibold">Guía</label>
+                <input type="text" class="form-control form-control-sm" id="fb-edit-guide-name"
+                       placeholder="Buscar guía..." oninput="searchFbEditGuide(this)">
+                <input type="hidden" id="fb-edit-guide-id">
+                <div id="fb-edit-guide-results" class="list-group mt-1"
+                     style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Resumen breve</label>
+              <input type="text" class="form-control form-control-sm" id="fb-edit-summary" maxlength="200">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Contenido</label>
+              <textarea class="form-control form-control-sm" id="fb-edit-content" rows="3"></textarea>
+            </div>
+            <div id="fb-edit-negative-fields">
+              <div class="mb-3">
+                <label class="form-label small fw-semibold text-danger"><i class="fa-solid fa-wrench me-1"></i>Solución</label>
+                <textarea class="form-control form-control-sm" id="fb-edit-solution" rows="2" placeholder="¿Cómo se resolvió?"></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold text-danger">Costo de resolución (USD)</label>
+                <input type="number" class="form-control form-control-sm" id="fb-edit-cost" step="0.01" min="0" placeholder="0">
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="saveFeedbackEdit()">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CATÁLOGOS ── -->
+    <div class="tab-pane fade" id="tab-catalogos">
+      <ul class="nav nav-pills mb-3">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cat-guides">🧭 Guías <span class="badge bg-secondary ms-1">{{ guides|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-dhs">🌍 DHs <span class="badge bg-secondary ms-1">{{ dhs|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-entities">📋 Otros <span class="badge bg-secondary ms-1">{{ entities|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-suppliers">🏢 Proveedores <span class="badge bg-secondary ms-1">{{ suppliers_fb|length }}</span></button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-users">👤 Usuarios <span class="badge bg-secondary ms-1">{{ users_fb|length }}</span></button></li>
+      </ul>
+
+      <div class="tab-content">
+
+        <!-- Guías -->
+        <div class="tab-pane fade show active" id="cat-guides">
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="new-guide-name" placeholder="Nombre del guía"></div>
+                <div class="col-md-3">
+                  <select class="form-select form-select-sm" id="new-guide-location">
+                    <option value="">— Destino (opcional) —</option>
+                    {% for loc in locations %}<option value="{{ loc.id }}">{{ loc.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="new-guide-notes" placeholder="Notas (opcional)"></div>
+                <div class="col-md-3"><button class="btn btn-sm btn-primary w-100" onclick="createCatalogItem('guide')"><i class="fa-solid fa-plus me-1"></i>Agregar guía</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" id="guides-table">
+              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
+              <tbody>
+                {% for g in guides %}
+                <tr id="guide-row-{{ g.id }}">
+                  <td class="small fw-semibold">{{ g.name }}</td>
+                  <td class="small text-muted">{{ g.location.name|default:"—" }}</td>
+                  <td class="small text-muted">{{ g.notes|default:"—" }}</td>
+                  <td class="text-center">{% if g.pos_count %}<span class="badge text-bg-success">{{ g.pos_count }}</span> {% endif %}{% if g.neu_count %}<span class="badge text-bg-secondary">{{ g.neu_count }}</span> {% endif %}{% if g.neg_count %}<span class="badge text-bg-danger">{{ g.neg_count }}</span>{% endif %}{% if not g.pos_count and not g.neu_count and not g.neg_count %}—{% endif %}</td>
+                  <td class="text-center small">{{ g.trip_count }}</td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if not g.pos_count and not g.neu_count and not g.neg_count and g.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                  </td>
+                </tr>
+                <tr id="guide-edit-row-{{ g.id }}" class="d-none table-warning">
+                  <td><input type="text" class="form-control form-control-sm" id="edit-guide-name-{{ g.id }}" value="{{ g.name }}"></td>
+                  <td>
+                    <select class="form-select form-select-sm" id="edit-guide-location-{{ g.id }}">
+                      <option value="">— Sin destino —</option>
+                      {% for loc in locations %}<option value="{{ loc.id }}" {% if g.location_id == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="text" class="form-control form-control-sm" id="edit-guide-notes-{{ g.id }}" value="{{ g.notes|default:'' }}"></td>
+                  <td colspan="2"></td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-success p-1 me-1" onclick="saveCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-check"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-xmark"></i></button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- DHs -->
+        <div class="tab-pane fade" id="cat-dhs">
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="new-dh-name" placeholder="Nombre del DH"></div>
+                <div class="col-md-3">
+                  <select class="form-select form-select-sm" id="new-dh-location">
+                    <option value="">— Destino (opcional) —</option>
+                    {% for loc in locations %}<option value="{{ loc.id }}">{{ loc.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="new-dh-notes" placeholder="Notas (opcional)"></div>
+                <div class="col-md-3"><button class="btn btn-sm btn-primary w-100" onclick="createCatalogItem('dh')"><i class="fa-solid fa-plus me-1"></i>Agregar DH</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" id="dhs-table">
+              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
+              <tbody>
+                {% for d in dhs %}
+                <tr id="dh-row-{{ d.id }}">
+                  <td class="small fw-semibold">{{ d.name }}</td>
+                  <td class="small text-muted">{{ d.location.name|default:"—" }}</td>
+                  <td class="small text-muted">{{ d.notes|default:"—" }}</td>
+                  <td class="text-center">{% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}{% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}{% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}{% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}</td>
+                  <td class="text-center small">{{ d.trip_count }}</td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count and d.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                  </td>
+                </tr>
+                <tr id="dh-edit-row-{{ d.id }}" class="d-none table-warning">
+                  <td><input type="text" class="form-control form-control-sm" id="edit-dh-name-{{ d.id }}" value="{{ d.name }}"></td>
+                  <td>
+                    <select class="form-select form-select-sm" id="edit-dh-location-{{ d.id }}">
+                      <option value="">— Sin destino —</option>
+                      {% for loc in locations %}<option value="{{ loc.id }}" {% if d.location_id == loc.id %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="text" class="form-control form-control-sm" id="edit-dh-notes-{{ d.id }}" value="{{ d.notes|default:'' }}"></td>
+                  <td colspan="2"></td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-success p-1 me-1" onclick="saveCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-check"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-xmark"></i></button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Otros (FeedbackEntity) -->
+        <div class="tab-pane fade" id="cat-entities">
+          <p class="text-muted small mb-3">Para categorías que no son Proveedor, Usuario, Guía ni DH. Ej: "Aliwen - Empresa", aerolínea genérica, etc.</p>
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-4"><input type="text" class="form-control form-control-sm" id="new-entity-name" placeholder="Nombre"></div>
+                <div class="col-md-5"><input type="text" class="form-control form-control-sm" id="new-entity-desc" placeholder="Descripción (opcional)"></div>
+                <div class="col-md-3"><button class="btn btn-sm btn-primary w-100" onclick="createEntity()"><i class="fa-solid fa-plus me-1"></i>Agregar</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" id="entities-table">
+              <thead class="table-light"><tr><th>Nombre</th><th>Descripción</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
+              <tbody>
+                {% for e in entities %}
+                <tr id="entity-row-{{ e.id }}">
+                  <td class="small fw-semibold">{{ e.name }}</td>
+                  <td class="small text-muted">{{ e.description|default:"—" }}</td>
+                  <td class="text-center">{% if e.pos_count %}<span class="badge text-bg-success">{{ e.pos_count }}</span> {% endif %}{% if e.neu_count %}<span class="badge text-bg-secondary">{{ e.neu_count }}</span> {% endif %}{% if e.neg_count %}<span class="badge text-bg-danger">{{ e.neg_count }}</span>{% endif %}{% if not e.pos_count and not e.neu_count and not e.neg_count %}—{% endif %}</td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editEntity({{ e.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if e.feedback_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteEntity({{ e.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                  </td>
+                </tr>
+                <tr id="entity-edit-row-{{ e.id }}" class="d-none table-warning">
+                  <td><input type="text" class="form-control form-control-sm" id="edit-entity-name-{{ e.id }}" value="{{ e.name }}"></td>
+                  <td><input type="text" class="form-control form-control-sm" id="edit-entity-desc-{{ e.id }}" value="{{ e.description|default:'' }}" placeholder="Descripción (opcional)"></td>
+                  <td></td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-success p-1 me-1" onclick="saveEntity({{ e.id }})"><i class="fa-solid fa-check"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditEntity({{ e.id }})"><i class="fa-solid fa-xmark"></i></button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Proveedores -->
+        <div class="tab-pane fade" id="cat-suppliers">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light"><tr><th>Proveedor</th><th class="text-center">Feedbacks</th></tr></thead>
+              <tbody>
+                {% for s in suppliers_fb %}
+                <tr>
+                  <td class="small fw-semibold">
+                    {{ s.name }}
+                    {% if s.is_provisional %}<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:0.65rem;">provisional</span>{% endif %}
+                  </td>
+                  <td class="text-center">{% if s.pos_count %}<span class="badge text-bg-success">{{ s.pos_count }}</span> {% endif %}{% if s.neu_count %}<span class="badge text-bg-secondary">{{ s.neu_count }}</span> {% endif %}{% if s.neg_count %}<span class="badge text-bg-danger">{{ s.neg_count }}</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                  <tr><td colspan="2" class="text-muted small">No hay feedbacks de proveedores aún.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Usuarios -->
+        <div class="tab-pane fade" id="cat-users">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light"><tr><th>Usuario</th><th class="text-center">Feedbacks</th></tr></thead>
+              <tbody>
+                {% for u in users_fb %}
+                <tr>
+                  <td class="small fw-semibold">{{ u.other_name|default:u.username }}</td>
+                  <td class="text-center">{% if u.pos_count %}<span class="badge text-bg-success">{{ u.pos_count }}</span> {% endif %}{% if u.neu_count %}<span class="badge text-bg-secondary">{{ u.neu_count }}</span> {% endif %}{% if u.neg_count %}<span class="badge text-bg-danger">{{ u.neg_count }}</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                  <tr><td colspan="2" class="text-muted small">No hay feedbacks de usuarios aún.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const csrfToken = "{{ csrf_token }}";
+let searchTimer = null;
+
+const searchUrls = {
+  supplier: "{% url 'calidad_search_suppliers' %}",
+  user:     "{% url 'calidad_search_users' %}",
+  guide:    "{% url 'calidad_search_guides' %}",
+  dh:       "{% url 'calidad_search_dhs' %}",
+  entity:   "{% url 'calidad_search_entities' %}",
+};
+const createUrls = {
+  supplier: "{% url 'calidad_create_supplier' %}",
+  guide:    "{% url 'calidad_create_guide' %}",
+  dh:       "{% url 'calidad_create_dh' %}",
+  entity:   "{% url 'calidad_entities' %}",
+};
+const hiddenFieldMap = {
+  supplier: '.t-supplier-id',
+  user:     '.t-user-id',
+  guide:    '.t-guide-id',
+  dh:       '.t-dh-id',
+  entity:   '.t-entity-id',
+};
+
+// ── Itinerario upload ──────────────────────────────────────────────────────
+document.getElementById('itinerario-input').addEventListener('change', function () {
+  const fd = new FormData();
+  fd.append('itinerario', this.files[0]);
+  const el = document.getElementById('itinerario-status');
+  el.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Subiendo…';
+  fetch("{% url 'calidad_upload_itinerario' %}", { method:'POST', headers:{'X-CSRFToken':csrfToken}, body:fd })
+    .then(r=>r.json()).then(d=>{
+      el.innerHTML = d.ok
+        ? `<i class="fa-solid fa-circle-check text-success me-1"></i>Actualizado: ${d.date}`
+        : `<i class="fa-solid fa-circle-xmark text-danger me-1"></i>${d.error||'Error'}`;
+    });
+  this.value='';
+});
+
+// ── Sentiment change: show/hide solution fields ────────────────────────────
+function onSentimentChange(select) {
+  const card = select.closest('.target-card');
+  const negFields = card.querySelector('.t-negative-fields');
+  if (negFields) negFields.style.display = select.value === 'negativo' ? '' : 'none';
+}
+
+// ── Target type change ─────────────────────────────────────────────────────
+function onTargetTypeChange(select) {
+  const card = select.closest('.target-card');
+  const type = select.value;
+  card.querySelectorAll('.target-selector').forEach(s => {
+    s.style.display = s.dataset.for === type ? '' : 'none';
+  });
+  // Auto-search with the suggested name in the newly shown selector
+  const selector = card.querySelector(`.target-selector[data-for="${type}"]`);
+  if (selector) {
+    const input = selector.querySelector('.search-input');
+    if (input && input.value.trim()) autoResolveOne(input, type, selector);
+  }
+}
+
+// ── Link status helpers ────────────────────────────────────────────────────
+function setLinked(statusEl, name) {
+  statusEl.innerHTML = `<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: ${name}</span>`;
+}
+function setUnlinked(statusEl, suggestedName, type) {
+  const labels = {supplier:'proveedor provisional', guide:'guía', dh:'DH', entity:'entidad'};
+  const canCreate = ['supplier','guide','dh','entity'].includes(type);
+  let html = `<span class="badge bg-warning text-dark"><i class="fa-solid fa-triangle-exclamation me-1"></i>No encontrado en el sistema</span>`;
+  if (canCreate && suggestedName) {
+    const label = labels[type] || type;
+    html += ` <button type="button" class="btn btn-outline-primary btn-sm ms-1 py-0 px-1" style="font-size:0.7rem;"
+      onclick="quickCreate('${type}', '${suggestedName.replace(/'/g,"\\'")}', this)">
+      <i class="fa-solid fa-plus me-1"></i>Crear ${label}: "${suggestedName}"
+    </button>`;
+  }
+  statusEl.innerHTML = html;
+}
+function setSearching(statusEl) {
+  statusEl.innerHTML = '<span class="text-muted small"><i class="fa-solid fa-spinner fa-spin me-1"></i>Buscando…</span>';
+}
+
+// ── Autocomplete ───────────────────────────────────────────────────────────
+function selectTarget(input, result, type) {
+  const selector = input.closest('.target-selector');
+  input.value = result.name;
+  selector.querySelector('.search-results').style.display = 'none';
+  const hidden = selector.querySelector(hiddenFieldMap[type]);
+  if (hidden) hidden.value = result.id;
+  setLinked(selector.querySelector('.t-link-status'), result.name);
+}
+
+function searchTarget(input) {
+  clearTimeout(searchTimer);
+  const type = input.dataset.type;
+  const selector = input.closest('.target-selector');
+  const resultsEl = selector.querySelector('.search-results');
+
+  // Clear linked ID on any typing
+  const hidden = selector.querySelector(hiddenFieldMap[type]);
+  if (hidden) hidden.value = '';
+  selector.querySelector('.t-link-status').innerHTML = '';
+
+  const q = input.value.trim();
+  if (q.length < 1) { resultsEl.style.display = 'none'; return; }
+
+  searchTimer = setTimeout(() => {
+    fetch(`${searchUrls[type]}?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(d => {
+        resultsEl.innerHTML = '';
+        if (!d.results || !d.results.length) {
+          // Show "not found" with optional create button — use what the user typed
+          setUnlinked(selector.querySelector('.t-link-status'), q, type);
+          resultsEl.style.display = 'none';
+        } else {
+          d.results.forEach(r => {
+            const a = document.createElement('button');
+            a.type = 'button';
+            a.className = 'list-group-item list-group-item-action small py-1';
+            const extra = r.notes || r.location || r.description || '';
+            const provBadge = r.provisional ? ' <span class="badge bg-warning text-dark ms-1">provisional</span>' : '';
+            a.innerHTML = r.name + (extra ? ` — ${extra}` : '') + provBadge;
+            a.onclick = () => selectTarget(input, r, type);
+            resultsEl.appendChild(a);
+          });
+          resultsEl.style.display = '';
+        }
+      });
+  }, 250);
+}
+
+// Close dropdowns on click outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.target-selector')) {
+    document.querySelectorAll('.search-results').forEach(el => el.style.display = 'none');
+  }
+});
+
+// ── Quick create ───────────────────────────────────────────────────────────
+async function quickCreate(type, name, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+  // entity endpoint uses {name, description} instead of {name}
+  const body = type === 'entity' ? {name, description: ''} : {name};
+  try {
+    const resp = await fetch(createUrls[type], {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await resp.json();
+    if (d.ok) {
+      const selector = btn.closest('.target-selector');
+      if (selector) {
+        const input = selector.querySelector('.search-input');
+        const displayName = d.provisional ? `⚠ ${d.name} (provisional)` : d.name;
+        if (input) {
+          input.value = d.name;
+          selectTarget(input, {id: d.id, name: d.name}, type);
+          if (d.provisional) {
+            // Override status to show provisional warning
+            const statusEl = selector.querySelector('.t-link-status');
+            if (statusEl) statusEl.innerHTML = `<span class="badge bg-warning text-dark"><i class="fa-solid fa-link me-1"></i>Vinculado (provisional): ${d.name} — completar en Tarifa</span>`;
+          }
+        }
+      }
+    } else {
+      alert(d.error || 'Error al crear');
+      btn.disabled = false;
+    }
+  } catch(e) {
+    btn.disabled = false;
+  }
+}
+
+// ── Auto-resolve AI names on load ─────────────────────────────────────────
+async function autoResolveOne(input, type, selector) {
+  if (type === 'aliwen_team') return;
+  const q = input.value.trim();
+  if (!q) return;
+  const statusEl = selector.querySelector('.t-link-status');
+  setSearching(statusEl);
+  try {
+    const resp = await fetch(`${searchUrls[type]}?q=${encodeURIComponent(q)}`);
+    const data = await resp.json();
+    if (!data.results || !data.results.length) {
+      setUnlinked(statusEl, q, type);
+      return;
+    }
+    const exact = data.results.find(r => r.name.toLowerCase() === q.toLowerCase());
+    const match = exact || (data.results.length === 1 ? data.results[0] : null);
+    if (match) {
+      selectTarget(input, match, type);
+    } else {
+      setUnlinked(statusEl, q, type);
+      // Show dropdown with partial matches
+      const resultsEl = selector.querySelector('.search-results');
+      resultsEl.innerHTML = '';
+      data.results.forEach(r => {
+        const a = document.createElement('button');
+        a.type = 'button';
+        a.className = 'list-group-item list-group-item-action small py-1';
+        const extra = r.notes || r.location || r.description || '';
+        a.textContent = r.name + (extra ? ` — ${extra}` : '');
+        a.onclick = () => selectTarget(input, r, type);
+        resultsEl.appendChild(a);
+      });
+      resultsEl.style.display = '';
+    }
+  } catch(e) {
+    statusEl.innerHTML = '';
+  }
+}
+
+async function autoResolveTargets() {
+  for (const card of document.querySelectorAll('.target-card')) {
+    const type = card.querySelector('.t-type').value;
+    if (type === 'aliwen_team') continue;
+    const selector = card.querySelector(`.target-selector[data-for="${type}"]`);
+    if (!selector) continue;
+    const input = selector.querySelector('.search-input');
+    if (!input) continue;
+    // Skip if already pre-linked from server-side resolution
+    const hidden = selector.querySelector(hiddenFieldMap[type]);
+    if (hidden && hidden.value) continue;
+    // Only resolve if name is present and status is empty
+    if (!input.value.trim()) continue;
+    await autoResolveOne(input, type, selector);
+  }
+}
+
+// Script is at bottom of body — DOM is ready, call directly
+autoResolveTargets();
+
+// ── Analizar con IA ────────────────────────────────────────────────────────
+function processAI(id, btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Analizando…';
+  fetch(`/calidad/inbox/${id}/process`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r=>r.json()).then(d=>{
+      if (d.ok) location.reload();
+      else { alert('Error: '+(d.error||'desconocido')); btn.disabled=false; btn.innerHTML=orig; }
+    }).catch(()=>{ btn.disabled=false; btn.innerHTML=orig; });
+}
+
+// ── Confirmar inbox ────────────────────────────────────────────────────────
+function confirmInbox(id, btn) {
+  const card = document.getElementById('inbox-'+id);
+  const targets = [];
+
+  card.querySelectorAll('.target-card').forEach(tc => {
+    const type = tc.querySelector('.t-type').value;
+    const sentiment = tc.querySelector('.t-sentiment').value;
+    const t = {
+      target_type:   type,
+      sentiment,
+      type:          tc.querySelector('.t-fbtype').value,
+      brief_summary: tc.querySelector('.t-brief').value,
+      content:       tc.querySelector('.t-content').value,
+      solution:      tc.querySelector('.t-solution')?.value || '',
+      cost:          parseFloat(tc.querySelector('.t-cost')?.value || 0) || 0,
+    };
+    if (type === 'supplier') t.supplier_id = tc.querySelector('.t-supplier-id')?.value || null;
+    else if (type === 'user')  t.user_id    = tc.querySelector('.t-user-id')?.value    || null;
+    else if (type === 'guide') t.guide_id   = tc.querySelector('.t-guide-id')?.value   || null;
+    else if (type === 'dh')    t.dh_id      = tc.querySelector('.t-dh-id')?.value      || null;
+    else if (type === 'entity') t.entity_id = tc.querySelector('.t-entity-id')?.value  || null;
+    targets.push(t);
+  });
+
+  if (!targets.length) { alert('No hay targets para guardar.'); return; }
+
+  const needsId = ['supplier','user','guide','dh','entity'];
+  const missing = targets.filter(t => {
+    if (!needsId.includes(t.target_type)) return false;
+    const idKey = t.target_type === 'supplier' ? 'supplier_id'
+                : t.target_type === 'user'     ? 'user_id'
+                : t.target_type === 'guide'    ? 'guide_id'
+                : t.target_type === 'dh'       ? 'dh_id'
+                : 'entity_id';
+    return !t[idKey];
+  });
+  if (missing.length && !confirm(`${missing.length} target(s) no están vinculados al sistema. ¿Confirmar igual? (quedarán sin destinatario asignado)`)) return;
+
+  const payload = {
+    targets,
+    trip_file_id: document.getElementById(`trip-${id}`)?.value || '',
+    verbatim:     document.getElementById(`verbatim-${id}`)?.value || '',
+  };
+
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Guardando…';
+  fetch(`/calidad/inbox/${id}/confirm`, {
+    method:'POST', headers:{'X-CSRFToken':csrfToken,'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r=>r.json()).then(d=>{
+    if (d.ok) { card.remove(); }
+    else { alert('Error: '+(d.error||'desconocido')); btn.disabled=false; btn.innerHTML=orig; }
+  }).catch(()=>{ btn.disabled=false; btn.innerHTML=orig; });
+}
+
+// ── Descartar ──────────────────────────────────────────────────────────────
+function discardInbox(id) {
+  if (!confirm('¿Descartás este email?')) return;
+  fetch(`/calidad/inbox/${id}/discard`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r=>r.json()).then(d=>{ if(d.ok) document.getElementById('inbox-'+id)?.remove(); });
+}
+
+// ── Catálogos: crear guía / DH ────────────────────────────────────────────
+function createCatalogItem(type) {
+  const name = document.getElementById(`new-${type}-name`).value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  const locationEl = document.getElementById(`new-${type}-location`);
+  const location_id = locationEl ? (locationEl.value || null) : null;
+  const location_name = locationEl ? locationEl.options[locationEl.selectedIndex]?.text : '';
+  const notes = (document.getElementById(`new-${type}-notes`)?.value || '').trim();
+  fetch(createUrls[type], {
+    method:'POST', headers:{'X-CSRFToken':csrfToken,'Content-Type':'application/json'},
+    body: JSON.stringify({name, location_id, notes}),
+  })
+  .then(r=>r.json()).then(d=>{
+    if (!d.ok) { alert(d.error||'Error'); return; }
+    if (!d.created) { alert('Ya existe uno con ese nombre'); return; }
+    const tbody = document.querySelector(`#${type}s-table tbody`);
+    const tr = document.createElement('tr');
+    tr.id = `${type}-row-${d.id}`;
+    const locDisplay = d.location_name || '—';
+    const notesDisplay = notes || '—';
+    tr.innerHTML = `<td class="small fw-semibold">${d.name}</td><td class="small text-muted">${locDisplay}</td><td class="small text-muted">${notesDisplay}</td>
+      <td class="text-center small">0</td><td class="text-center small">0</td>
+      <td class="text-nowrap">
+        <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('${type}',${d.id})"><i class="fa-solid fa-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('${type}',${d.id})"><i class="fa-solid fa-trash"></i></button>
+      </td>`;
+    tbody.appendChild(tr);
+    document.getElementById(`new-${type}-name`).value = '';
+    if (locationEl) locationEl.value = '';
+    if (document.getElementById(`new-${type}-notes`)) document.getElementById(`new-${type}-notes`).value = '';
+  });
+}
+
+function deleteCatalogItem(type, id) {
+  const label = type === 'guide' ? 'guía' : 'DH';
+  if (!confirm(`¿Eliminás este ${label}?`)) return;
+  fetch(`/calidad/${type}s/${id}/delete`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r=>r.json()).then(d=>{
+      if (d.ok) {
+        document.getElementById(`${type}-row-${id}`)?.remove();
+        document.getElementById(`${type}-edit-row-${id}`)?.remove();
+      } else alert(d.error || 'Error');
+    });
+}
+
+function editCatalogItem(type, id) {
+  document.getElementById(`${type}-row-${id}`).classList.add('d-none');
+  document.getElementById(`${type}-edit-row-${id}`).classList.remove('d-none');
+}
+
+function cancelEditCatalogItem(type, id) {
+  document.getElementById(`${type}-edit-row-${id}`).classList.add('d-none');
+  document.getElementById(`${type}-row-${id}`).classList.remove('d-none');
+}
+
+function saveCatalogItem(type, id) {
+  const name = document.getElementById(`edit-${type}-name-${id}`).value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  const locationEl = document.getElementById(`edit-${type}-location-${id}`);
+  const location_id = locationEl ? (locationEl.value || null) : null;
+  const location_name = locationEl ? locationEl.options[locationEl.selectedIndex]?.text : '';
+  const notes = (document.getElementById(`edit-${type}-notes-${id}`)?.value || '').trim();
+  fetch(`/calidad/${type}s/${id}/edit`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: JSON.stringify({name, location_id, notes}),
+  })
+  .then(r=>r.json()).then(d=>{
+    if (!d.ok) { alert(d.error||'Error'); return; }
+    const row = document.getElementById(`${type}-row-${id}`);
+    const cells = row.querySelectorAll('td');
+    cells[0].textContent = d.name;
+    cells[1].textContent = d.location_name || '—';
+    cells[2].textContent = notes || '—';
+    cancelEditCatalogItem(type, id);
+  });
+}
+
+// ── FeedbackEntity ─────────────────────────────────────────────────────────
+function editEntity(id) {
+  document.getElementById(`entity-row-${id}`).classList.add('d-none');
+  document.getElementById(`entity-edit-row-${id}`).classList.remove('d-none');
+}
+
+function cancelEditEntity(id) {
+  document.getElementById(`entity-edit-row-${id}`).classList.add('d-none');
+  document.getElementById(`entity-row-${id}`).classList.remove('d-none');
+}
+
+function saveEntity(id) {
+  const name = document.getElementById(`edit-entity-name-${id}`).value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  const description = document.getElementById(`edit-entity-desc-${id}`).value.trim();
+  fetch(`/calidad/entities/${id}/edit`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: JSON.stringify({name, description}),
+  })
+  .then(r => r.json()).then(d => {
+    if (!d.ok) { alert(d.error || 'Error'); return; }
+    const cells = document.getElementById(`entity-row-${id}`).querySelectorAll('td');
+    cells[0].textContent = d.name;
+    cells[1].textContent = d.description || '—';
+    cancelEditEntity(id);
+  });
+}
+
+function createEntity() {
+  const name = document.getElementById('new-entity-name').value.trim();
+  const desc = document.getElementById('new-entity-desc').value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  fetch("{% url 'calidad_entities' %}", {
+    method:'POST', headers:{'X-CSRFToken':csrfToken,'Content-Type':'application/json'},
+    body: JSON.stringify({name, description: desc}),
+  })
+  .then(r=>r.json()).then(d=>{
+    if (d.ok) {
+      if (!d.created) { alert('Ya existe una entidad con ese nombre'); return; }
+      const tbody = document.querySelector('#entities-table tbody');
+      const tr = document.createElement('tr');
+      tr.id = `entity-row-${d.id}`;
+      tr.innerHTML = `<td class="small fw-semibold">${d.name}</td><td class="small text-muted">${desc||'—'}</td>
+        <td class="text-center small">0</td>
+        <td><button class="btn btn-sm btn-outline-danger p-1" onclick="deleteEntity(${d.id})"><i class="fa-solid fa-trash"></i></button></td>`;
+      tbody.appendChild(tr);
+      document.getElementById('new-entity-name').value = '';
+      document.getElementById('new-entity-desc').value = '';
+    } else { alert(d.error || 'Error'); }
+  });
+}
+
+function deleteEntity(id) {
+  if (!confirm('¿Eliminás esta entidad?')) return;
+  fetch(`/calidad/entities/${id}/delete`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r=>r.json()).then(d=>{
+      if (d.ok) document.getElementById(`entity-row-${id}`)?.remove();
+      else alert(d.error || 'Error');
+    });
+}
+
+// ── Leer bandeja ───────────────────────────────────────────────────────────
+function fetchInbox(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Leyendo y analizando…';
+  fetch("{% url 'calidad_fetch_inbox' %}", { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) { alert(d.error || 'Error'); btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja'; return; }
+      if (d.imported > 0) {
+        const aiMsg = d.ai_err > 0 ? ` (IA: ${d.ai_ok} ok, ${d.ai_err} errores)` : ` — IA procesó ${d.ai_ok}`;
+        alert(`✓ ${d.imported} email(s) nuevo(s) importado(s)${aiMsg}. Recargando…`);
+        location.reload();
+      } else {
+        btn.innerHTML = '<i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja';
+        btn.disabled = false;
+        alert(`Sin emails nuevos (${d.skipped} ya importados).`);
+      }
+    })
+    .catch(() => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja'; });
+}
+
+// ── Feedback detail (row click) ─────────────────────────────────────────────
+let _currentFbId = null;
+
+document.addEventListener('click', function(e) {
+  if (e.target.closest('button')) return;  // don't open detail when clicking action buttons
+  const row = e.target.closest('.fb-row');
+  if (!row) return;
+  _currentFbId = row.dataset.fbId;
+  const src = document.getElementById('fb-detail-' + _currentFbId);
+  if (!src) return;
+  document.getElementById('feedbackDetailBody').innerHTML = src.innerHTML;
+  new bootstrap.Modal(document.getElementById('feedbackDetailModal')).show();
+});
+
+document.getElementById('detail-edit-btn').addEventListener('click', function() {
+  if (!_currentFbId) return;
+  bootstrap.Modal.getInstance(document.getElementById('feedbackDetailModal'))?.hide();
+  openFeedbackEditFromRow(_currentFbId);
+});
+
+document.getElementById('detail-delete-btn').addEventListener('click', function() {
+  if (!_currentFbId) return;
+  bootstrap.Modal.getInstance(document.getElementById('feedbackDetailModal'))?.hide();
+  deleteFeedback(_currentFbId, null);
+});
+
+// ── Feedback edit ───────────────────────────────────────────────────────────
+function openFeedbackEditFromRow(id) {
+  const row = document.querySelector(`.fb-row[data-fb-id="${id}"]`);
+  if (!row) return;
+  const d = row.dataset;
+  document.getElementById('fb-edit-id').value            = id;
+  document.getElementById('fb-edit-summary').value       = d.fbSummary || '';
+  document.getElementById('fb-edit-content').value       = d.fbContent || '';
+  document.getElementById('fb-edit-solution').value      = d.fbSolution || '';
+  document.getElementById('fb-edit-cost').value          = d.fbCost || '';
+  document.getElementById('fb-edit-status').value        = d.fbStatus || '';
+  document.getElementById('fb-edit-sentiment').value     = d.fbSentiment || 'neutral';
+  document.getElementById('fb-edit-supplier-id').value   = d.fbSupplierId || '';
+  document.getElementById('fb-edit-supplier-name').value = d.fbSupplierName || '';
+  document.getElementById('fb-edit-guide-id').value      = d.fbGuideId || '';
+  document.getElementById('fb-edit-guide-name').value    = d.fbGuideName || '';
+  document.getElementById('fb-edit-trip-file').value     = d.fbTripFile || '';
+  document.getElementById('fb-edit-supplier-results').style.display = 'none';
+  document.getElementById('fb-edit-guide-results').style.display = 'none';
+  // Show/hide solution+cost based on sentiment
+  const neg = d.fbSentiment === 'negativo';
+  document.getElementById('fb-edit-negative-fields').style.display = neg ? '' : 'none';
+  new bootstrap.Modal(document.getElementById('feedbackEditModal')).show();
+}
+
+function onFbEditSentimentChange(sel) {
+  document.getElementById('fb-edit-negative-fields').style.display =
+    sel.value === 'negativo' ? '' : 'none';
+}
+
+let _fbEditSupplierTimer;
+function searchFbEditSupplier(input) {
+  clearTimeout(_fbEditSupplierTimer);
+  document.getElementById('fb-edit-supplier-id').value = '';
+  const q = input.value.trim();
+  const results = document.getElementById('fb-edit-supplier-results');
+  if (q.length < 1) { results.style.display = 'none'; return; }
+  _fbEditSupplierTimer = setTimeout(() => {
+    fetch(`${searchUrls.supplier}?q=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(d => {
+        results.innerHTML = '';
+        if (!d.results?.length) { results.style.display = 'none'; return; }
+        d.results.forEach(r => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'list-group-item list-group-item-action small py-1';
+          btn.textContent = r.name + (r.provisional ? ' (provisional)' : '');
+          btn.onclick = () => {
+            document.getElementById('fb-edit-supplier-name').value = r.name;
+            document.getElementById('fb-edit-supplier-id').value   = r.id;
+            results.style.display = 'none';
+          };
+          results.appendChild(btn);
+        });
+        results.style.display = '';
+      });
+  }, 250);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#fb-edit-supplier-name') && !e.target.closest('#fb-edit-supplier-results'))
+    document.getElementById('fb-edit-supplier-results').style.display = 'none';
+  if (!e.target.closest('#fb-edit-guide-name') && !e.target.closest('#fb-edit-guide-results'))
+    document.getElementById('fb-edit-guide-results').style.display = 'none';
+});
+
+let _fbEditGuideTimer;
+function searchFbEditGuide(input) {
+  clearTimeout(_fbEditGuideTimer);
+  document.getElementById('fb-edit-guide-id').value = '';
+  const q = input.value.trim();
+  const results = document.getElementById('fb-edit-guide-results');
+  if (q.length < 1) { results.style.display = 'none'; return; }
+  _fbEditGuideTimer = setTimeout(() => {
+    fetch(`${searchUrls.guide}?q=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(d => {
+        results.innerHTML = '';
+        if (!d.results?.length) { results.style.display = 'none'; return; }
+        d.results.forEach(r => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'list-group-item list-group-item-action small py-1';
+          btn.textContent = r.name + (r.location ? ` (${r.location})` : '');
+          btn.onclick = () => {
+            document.getElementById('fb-edit-guide-name').value = r.name;
+            document.getElementById('fb-edit-guide-id').value   = r.id;
+            results.style.display = 'none';
+          };
+          results.appendChild(btn);
+        });
+        results.style.display = '';
+      });
+  }, 250);
+}
+
+function saveFeedbackEdit() {
+  const id = document.getElementById('fb-edit-id').value;
+  const payload = {
+    brief_summary: document.getElementById('fb-edit-summary').value,
+    content:       document.getElementById('fb-edit-content').value,
+    solution:      document.getElementById('fb-edit-solution').value,
+    cost:          document.getElementById('fb-edit-cost').value,
+    status:        document.getElementById('fb-edit-status').value,
+    sentiment:     document.getElementById('fb-edit-sentiment').value,
+    supplier_id:   document.getElementById('fb-edit-supplier-id').value || null,
+    guide_id:      document.getElementById('fb-edit-guide-id').value || null,
+    trip_file:     document.getElementById('fb-edit-trip-file').value.trim(),
+  };
+  fetch(`/calidad/feedbacks/${id}/edit`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json()).then(d => {
+    if (!d.ok) { alert(d.error || 'Error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('feedbackEditModal'))?.hide();
+    location.reload();
+  });
+}
+
+// ── Feedback delete ─────────────────────────────────────────────────────────
+function deleteFeedback(id, btn) {
+  if (!confirm('¿Eliminar este feedback? Esta acción no se puede deshacer.')) return;
+  if (btn) btn.disabled = true;
+  fetch(`/calidad/feedbacks/${id}/delete`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': csrfToken},
+  })
+  .then(r => r.json()).then(d => {
+    if (d.ok) {
+      document.querySelector(`.fb-row[data-fb-id="${id}"]`)?.remove();
+      document.getElementById('fb-detail-' + id)?.remove();
+    } else {
+      alert(d.error || 'Error al eliminar');
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+</script>
+{% endblock %}

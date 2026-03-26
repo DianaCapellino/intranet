@@ -65,5 +65,53 @@ urlpatterns = [
     path("advanced_search", views.advanced_search, name="advanced_search"),
     path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),
     path("stats/trips/", views.stats_trips_report, name="stats_trips_report"),
-    
+
+    # Email processor
+    path("email_processor", views.email_processor, name="email_processor"),
+    path("email_processor/create", views.email_processor_create, name="email_processor_create"),
+    path("email_processor/archive", views.email_processor_archive, name="email_processor_archive"),
+    path("email_processor/search_trips", views.email_processor_search_trips, name="email_processor_search_trips"),
+
+    # Trip filter
+    path("filter_trips", views.trip_filter, name="trip_filter"),
+    path("filter_trips/clients", views.trip_filter_clients, name="trip_filter_clients"),
+    path("filter_trips/results", views.trip_filter_results, name="trip_filter_results"),
+
+    # Margin management
+    path("margin_management", views.margin_management, name="margin_management"),
+    path("margin_management/review/<int:trip_id>", views.margin_review_trip, name="margin_review_trip"),
+    path("margin_management/ignore/<int:trip_id>", views.margin_ignore_trip, name="margin_ignore_trip"),
+
+    # Calidad
+    path("calidad", views.calidad, name="calidad"),
+    path("calidad/fetch_inbox", views.calidad_fetch_inbox, name="calidad_fetch_inbox"),
+    path("calidad/upload_itinerario", views.calidad_upload_itinerario, name="calidad_upload_itinerario"),
+    path("calidad/inbox/<int:item_id>/discard", views.calidad_discard_inbox, name="calidad_discard_inbox"),
+    path("calidad/inbox/<int:item_id>/process", views.calidad_process_ai, name="calidad_process_ai"),
+    path("calidad/inbox/<int:item_id>/confirm", views.calidad_confirm_inbox, name="calidad_confirm_inbox"),
+    # Provisional supplier
+    path("calidad/suppliers/create", views.calidad_create_supplier, name="calidad_create_supplier"),
+    path("calidad/suppliers/resolve", views.calidad_resolve_provisional, name="calidad_resolve_provisional"),
+    # Search endpoints for target selection
+    path("calidad/search/suppliers", views.calidad_search_suppliers, name="calidad_search_suppliers"),
+    path("calidad/search/users", views.calidad_search_users, name="calidad_search_users"),
+    path("calidad/search/guides", views.calidad_search_guides, name="calidad_search_guides"),
+    path("calidad/search/dhs", views.calidad_search_dhs, name="calidad_search_dhs"),
+    path("calidad/search/entities", views.calidad_search_entities, name="calidad_search_entities"),
+    # Guide / DH create & delete
+    path("calidad/guides/create", views.calidad_create_guide, name="calidad_create_guide"),
+    path("calidad/guides/<int:guide_id>/delete", views.calidad_delete_guide, name="calidad_delete_guide"),
+    path("calidad/guides/<int:guide_id>/edit", views.calidad_edit_guide, name="calidad_edit_guide"),
+    path("calidad/dhs/create", views.calidad_create_dh, name="calidad_create_dh"),
+    path("calidad/dhs/<int:dh_id>/delete", views.calidad_delete_dh, name="calidad_delete_dh"),
+    path("calidad/dhs/<int:dh_id>/edit", views.calidad_edit_dh, name="calidad_edit_dh"),
+    # FeedbackEntity CRUD
+    path("calidad/entities", views.calidad_entities, name="calidad_entities"),
+    path("calidad/entities/<int:entity_id>/edit",   views.calidad_edit_entity,   name="calidad_edit_entity"),
+    path("calidad/entities/<int:entity_id>/delete", views.calidad_entity_delete, name="calidad_entity_delete"),
+
+    # Feedback edit / delete
+    path("calidad/feedbacks/<int:feedback_id>/edit",   views.calidad_edit_feedback,   name="calidad_edit_feedback"),
+    path("calidad/feedbacks/<int:feedback_id>/delete", views.calidad_delete_feedback, name="calidad_delete_feedback"),
+
 ]

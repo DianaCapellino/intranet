@@ -1,0 +1,357 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container py-4" style="max-width:900px;">
+
+  <h4 class="mb-4">Filtrar Viajes</h4>
+
+  <!-- Breadcrumb -->
+  <nav id="breadcrumb" class="mb-4 d-none" aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0 small">
+      <li class="breadcrumb-item"><a href="#" onclick="goToStep(1);return false;">Temporada</a></li>
+      <li class="breadcrumb-item d-none" id="bc-status"><a href="#" onclick="goToStep(2);return false;" id="bc-status-label">—</a></li>
+      <li class="breadcrumb-item d-none" id="bc-filter"><a href="#" onclick="goToStep(3);return false;" id="bc-filter-label">—</a></li>
+      <li class="breadcrumb-item active d-none" id="bc-values" aria-current="page" id="bc-values-label">—</li>
+    </ol>
+  </nav>
+
+
+  <!-- ── STEP 1: Temporada ──────────────────────────────────────────────── -->
+  <div id="step-1">
+    <p class="text-muted small mb-3">Seleccioná la temporada</p>
+    <div class="d-flex flex-wrap gap-3">
+      {% for s in seasons %}
+      <button class="btn {% if s.current %}btn-dark{% else %}btn-outline-dark{% endif %} btn-lg season-btn"
+              data-start="{{ s.start }}" data-end="{{ s.end }}" data-label="{{ s.label }}">
+        {{ s.label }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+
+  <!-- ── STEP 2: Tipo de viaje ─────────────────────────────────────────── -->
+  <div id="step-2" class="d-none mt-4">
+    <p class="text-muted small mb-3">¿Qué querés ver?</p>
+    <div class="d-flex flex-wrap gap-3">
+      <button class="btn btn-outline-dark btn-lg status-btn"
+              data-status="quote" data-label="Cotizaciones">
+        COTIZACIONES
+      </button>
+      <button class="btn btn-outline-dark btn-lg status-btn"
+              data-status="booking" data-label="Reservas">
+        RESERVAS
+      </button>
+      <button class="btn btn-outline-dark btn-lg status-btn"
+              data-status="all" data-label="Todo">
+        TODO
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ── STEP 3: Filtro (fecha o cliente) ─────────────────────────────── -->
+  <div id="step-3" class="d-none mt-4">
+    <p class="text-muted small mb-3">Filtrar por</p>
+    <div class="d-flex flex-wrap gap-3">
+      <button class="btn btn-outline-dark btn-lg" id="btn-by-date">
+        POR FECHA
+      </button>
+      <button class="btn btn-outline-dark btn-lg" id="btn-by-client">
+        POR CLIENTE
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ── STEP 4a: Meses ────────────────────────────────────────────────── -->
+  <div id="step-months" class="d-none mt-4">
+    <p class="text-muted small mb-3">Seleccioná uno o más meses</p>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% for num, name in months %}
+      <button class="btn btn-outline-secondary month-btn" data-month="{{ num }}">
+        {{ name }}
+      </button>
+      {% endfor %}
+    </div>
+    <button class="btn btn-dark mt-2" id="btn-month-search" disabled>
+      Ver resultados
+    </button>
+  </div>
+
+
+  <!-- ── STEP 4b: Clientes ─────────────────────────────────────────────── -->
+  <div id="step-clients" class="d-none mt-4">
+    <p class="text-muted small mb-2">Seleccioná uno o más clientes</p>
+    <div id="client-loading" class="text-muted small d-none">
+      <div class="spinner-border spinner-border-sm me-2" role="status"></div>Cargando clientes…
+    </div>
+    <div id="client-list" class="d-flex flex-wrap gap-2 mb-3"></div>
+    <button class="btn btn-dark mt-2 d-none" id="btn-client-search" disabled>
+      Ver resultados
+    </button>
+  </div>
+
+
+  <!-- ── Resultados ────────────────────────────────────────────────────── -->
+  <div id="results-section" class="d-none mt-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="mb-0" id="results-title">Resultados</h6>
+      <span class="badge bg-secondary" id="results-count"></span>
+    </div>
+    <div id="results-loading" class="text-muted small d-none">
+      <div class="spinner-border spinner-border-sm me-2" role="status"></div>Buscando…
+    </div>
+    <div id="results-content"></div>
+  </div>
+
+</div>
+
+
+<script>
+  const csrfToken = "{{ csrf_token }}";
+
+  // ── State ──────────────────────────────────────────────────────────────
+  let state = { season: null, statusList: [], filterType: null };
+  let openDetailId = null;
+
+  // ── Season buttons ─────────────────────────────────────────────────────
+  document.querySelectorAll(".season-btn").forEach(btn => {
+    btn.addEventListener("click", function() {
+      document.querySelectorAll(".season-btn").forEach(b => b.classList.remove("btn-dark", "btn-outline-dark"));
+      this.classList.add("btn-dark");
+      state.season = { start: this.dataset.start, end: this.dataset.end, label: this.dataset.label };
+      showStep(2);
+      updateBreadcrumb();
+    });
+  });
+
+  // ── Status buttons ─────────────────────────────────────────────────────
+  document.querySelectorAll(".status-btn").forEach(btn => {
+    btn.addEventListener("click", function() {
+      document.querySelectorAll(".status-btn").forEach(b => b.classList.remove("btn-dark", "btn-outline-dark"));
+      this.classList.add("btn-dark");
+      const s = this.dataset.status;
+      state.statusLabel = this.dataset.label;
+
+      if (s === "quote") {
+        state.statusList = ["Quote", "Final Itinerary"];
+      } else if (s === "booking") {
+        state.statusList = ["Booking"];
+      } else {
+        state.statusList = [];
+      }
+
+      showStep(3);
+      updateBreadcrumb();
+    });
+  });
+
+  // ── Filter type buttons ────────────────────────────────────────────────
+  document.getElementById("btn-by-date").addEventListener("click", function() {
+    state.filterType = "month";
+    hideStep("clients");
+    showStep("months");
+    // Reset month selection
+    document.querySelectorAll(".month-btn").forEach(b => {
+      b.classList.remove("btn-dark");
+      b.classList.add("btn-outline-secondary");
+    });
+    document.getElementById("btn-month-search").disabled = true;
+    updateBreadcrumb();
+  });
+
+  document.getElementById("btn-by-client").addEventListener("click", function() {
+    state.filterType = "client";
+    hideStep("months");
+    showStep("clients");
+    loadClients();
+    updateBreadcrumb();
+  });
+
+  // ── Month buttons ──────────────────────────────────────────────────────
+  document.querySelectorAll(".month-btn").forEach(btn => {
+    btn.addEventListener("click", function() {
+      this.classList.toggle("btn-dark");
+      this.classList.toggle("btn-outline-secondary");
+      const anySelected = document.querySelectorAll(".month-btn.btn-dark").length > 0;
+      document.getElementById("btn-month-search").disabled = !anySelected;
+    });
+  });
+
+  document.getElementById("btn-month-search").addEventListener("click", function() {
+    showResultsSection();
+    loadResults();
+  });
+
+  // ── Load clients via AJAX ──────────────────────────────────────────────
+  function loadClients() {
+    const loadingEl  = document.getElementById("client-loading");
+    const listEl     = document.getElementById("client-list");
+    const searchBtn  = document.getElementById("btn-client-search");
+
+    listEl.innerHTML = "";
+    searchBtn.classList.add("d-none");
+    loadingEl.classList.remove("d-none");
+
+    fetch("/filter_trips/clients", {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        season_start: state.season.start,
+        season_end:   state.season.end,
+        status_list:  state.statusList,
+      }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      loadingEl.classList.add("d-none");
+      if (!data.clients.length) {
+        listEl.innerHTML = '<span class="text-muted small">No se encontraron clientes.</span>';
+        return;
+      }
+      data.clients.forEach(c => {
+        const btn = document.createElement("button");
+        btn.className = "btn btn-outline-secondary btn-sm client-btn";
+        btn.dataset.clientId = c.id;
+        btn.textContent = c.name;
+        btn.addEventListener("click", function() {
+          this.classList.toggle("btn-dark");
+          this.classList.toggle("btn-outline-secondary");
+          const anySelected = document.querySelectorAll(".client-btn.btn-dark").length > 0;
+          searchBtn.disabled = !anySelected;
+        });
+        listEl.appendChild(btn);
+      });
+      searchBtn.classList.remove("d-none");
+      searchBtn.disabled = true;
+    })
+    .catch(() => { loadingEl.classList.add("d-none"); });
+  }
+
+  document.getElementById("btn-client-search").addEventListener("click", function() {
+    showResultsSection();
+    loadResults();
+  });
+
+  // ── Load results via AJAX ──────────────────────────────────────────────
+  function loadResults() {
+    const loadingEl = document.getElementById("results-loading");
+    const contentEl = document.getElementById("results-content");
+    const countEl   = document.getElementById("results-count");
+
+    contentEl.innerHTML = "";
+    loadingEl.classList.remove("d-none");
+    openDetailId = null;
+
+    let values = [];
+    if (state.filterType === "month") {
+      document.querySelectorAll(".month-btn.btn-dark").forEach(b => values.push(b.dataset.month));
+    } else if (state.filterType === "client") {
+      document.querySelectorAll(".client-btn.btn-dark").forEach(b => values.push(b.dataset.clientId));
+    }
+
+    fetch("/filter_trips/results", {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        season_start: state.season.start,
+        season_end:   state.season.end,
+        status_list:  state.statusList,
+        filter_type:  state.filterType,
+        values:       values,
+      }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      loadingEl.classList.add("d-none");
+      contentEl.innerHTML = data.html;
+      countEl.textContent = data.count + " viaje" + (data.count !== 1 ? "s" : "");
+    })
+    .catch(() => { loadingEl.classList.add("d-none"); });
+  }
+
+  // ── Eye accordion ──────────────────────────────────────────────────────
+  window.toggleDetail = function(tripId) {
+    const detail  = document.getElementById("detail-" + tripId);
+    const eye     = document.getElementById("eye-" + tripId);
+    const isOpen  = !detail.classList.contains("d-none");
+
+    // Close previously open
+    if (openDetailId && openDetailId !== tripId) {
+      document.getElementById("detail-" + openDetailId).classList.add("d-none");
+      const prevEye = document.getElementById("eye-" + openDetailId);
+      prevEye.classList.remove("fa-eye-slash");
+      prevEye.classList.add("fa-eye");
+    }
+
+    if (isOpen) {
+      detail.classList.add("d-none");
+      eye.classList.remove("fa-eye-slash"); eye.classList.add("fa-eye");
+      openDetailId = null;
+    } else {
+      detail.classList.remove("d-none");
+      eye.classList.remove("fa-eye"); eye.classList.add("fa-eye-slash");
+      openDetailId = tripId;
+    }
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function showStep(n) {
+    const el = typeof n === "number"
+      ? document.getElementById("step-" + n)
+      : document.getElementById("step-" + n);
+    if (el) el.classList.remove("d-none");
+  }
+
+  function hideStep(n) {
+    const el = typeof n === "number"
+      ? document.getElementById("step-" + n)
+      : document.getElementById("step-" + n);
+    if (el) el.classList.add("d-none");
+  }
+
+  function showResultsSection() {
+    document.getElementById("results-section").classList.remove("d-none");
+    const label = buildResultsLabel();
+    document.getElementById("results-title").textContent = label;
+  }
+
+  function buildResultsLabel() {
+    let parts = [state.season ? state.season.label : ""];
+    if (state.statusLabel) parts.push(state.statusLabel);
+    return parts.filter(Boolean).join(" · ");
+  }
+
+  function goToStep(n) {
+    if (n <= 1) {
+      hideStep(2); hideStep(3); hideStep("months"); hideStep("clients");
+      document.getElementById("results-section").classList.add("d-none");
+    } else if (n <= 2) {
+      hideStep(3); hideStep("months"); hideStep("clients");
+      document.getElementById("results-section").classList.add("d-none");
+    } else if (n <= 3) {
+      hideStep("months"); hideStep("clients");
+      document.getElementById("results-section").classList.add("d-none");
+    }
+    updateBreadcrumb();
+  }
+
+  function updateBreadcrumb() {
+    const bc = document.getElementById("breadcrumb");
+    const bcStatus = document.getElementById("bc-status");
+    const bcFilter = document.getElementById("bc-filter");
+
+    bc.classList.remove("d-none");
+
+    if (state.season) {
+      document.getElementById("bc-status-label").textContent = state.season.label;
+      bcStatus.classList.remove("d-none");
+    }
+    if (state.statusLabel) {
+      document.getElementById("bc-filter-label").textContent = state.statusLabel;
+      bcFilter.classList.remove("d-none");
+    }
+  }
+</script>
+{% endblock %}

@@ -1,7 +1,7 @@
 from django.shortcuts import render, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
-from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, Change, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING, TYPE_HISTORY
+from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, Change, CostItem, FixedRateCost, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING, TYPE_HISTORY, TAXES
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -558,6 +558,18 @@ def json_supplier(request, supplier_id):
         }, status=400)
 
 
+def _cost_per_pax(value, fcu, tax, increase, usd, exchange, pax):
+    """Calculate cost per passenger applying tax, increase and exchange."""
+    v = float(value)
+    if fcu == 'Group' and pax:
+        v = v / pax
+    v *= (1 + float(tax or 0) / 100)
+    v *= (1 + float(increase or 0) / 100)
+    if not usd and exchange:
+        v /= float(exchange)
+    return round(v, 2)
+
+
 def calculate_margins(rate):
     if not rate:
         return
@@ -600,7 +612,7 @@ def modify_supplier_rates(request, supplier_id):
         RateLine.objects
         .filter(group__product__supplier=supplier)
         .select_related("group__product")
-        .prefetch_related("line_rates")
+        .prefetch_related("line_rates", "line_rates__cost_items", "line_rates__rates_with_fixed")
         .order_by("date_from", "group__product__order")
     )
 
@@ -634,10 +646,50 @@ def modify_supplier_rates(request, supplier_id):
                 rate = bases_map[str(i)]
                 calculate_margins(rate)
 
+                cost_items_list = []
+                fixed_costs_list = []
+                if rate:
+                    for ci in rate.cost_items.all():
+                        ci.cost_per_pax = _cost_per_pax(
+                            ci.value, ci.fcu, ci.tax, rate.increase, ci.usd, ci.exchange, i
+                        )
+                        cost_items_list.append(ci)
+                    for frc in rate.rates_with_fixed.all():
+                        frc.cost_per_pax = _cost_per_pax(
+                            frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, i
+                        )
+                        fixed_costs_list.append(frc)
+
+                has_items  = bool(cost_items_list or fixed_costs_list)
+                total_cost = round(
+                    sum(ci.cost_per_pax for ci in cost_items_list) +
+                    sum(frc.cost_per_pax for frc in fixed_costs_list), 2
+                ) if has_items else None
+
+                effective_cost = total_cost if has_items else (float(rate.cost) if rate and rate.cost else None)
+                margin_ai      = getattr(rate, 'margin_ai', 0) if rate else 0
+                suggested_sell = None
+                if has_items and total_cost and supplier.margin:
+                    import math as _math
+                    suggested_sell = _math.ceil(total_cost / supplier.margin)
+                elif effective_cost and margin_ai and 0 < margin_ai < 100:
+                    suggested_sell = round(effective_cost / (1 - margin_ai / 100))
+
                 line.bases.append({
                     "pax": i,
-                    "rate": rate
+                    "rate": rate,
+                    "cost_items": cost_items_list,
+                    "fixed_costs": fixed_costs_list,
+                    "has_items": has_items,
+                    "total_cost": total_cost,
+                    "suggested_sell": suggested_sell,
                 })
+
+            import json as _json
+            line.rate_map_json = _json.dumps({
+                str(b['pax']): b['rate'].id if b['rate'] else None
+                for b in line.bases
+            })
 
     blocks = defaultdict(list)
 
@@ -673,6 +725,11 @@ def modify_supplier_rates(request, supplier_id):
             "rate_blocks": rate_blocks,
         })
     else:
+        fixed_rate_costs = list(
+            FixedRateCost.objects.filter(supplier=supplier)
+            .values('id', 'name', 'date_from', 'date_to', 'value', 'usd', 'exchange', 'increase', 'fcu')
+        )
+        import json as _json
         return render(request, "tariff/service/supplier_rates.html", {
             "supplier": supplier,
             "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
@@ -684,6 +741,9 @@ def modify_supplier_rates(request, supplier_id):
             "product_groups": product_groups,
             "rate_lines": rate_lines,
             "rate_blocks": rate_blocks,
+            "TAXES": TAXES,
+            "fixed_rate_costs_json": _json.dumps(fixed_rate_costs, default=str),
+            "default_exchange": supplier.default_exchange,
         })
 
 
@@ -1057,8 +1117,16 @@ def copy_rate_block(request):
                     sell_tourplan=original_rate.sell_tourplan,
                     column_options=original_rate.column_options,
                     has_rate=original_rate.has_rate,
+                    has_items=original_rate.has_items,
                     text_value=original_rate.text_value
                 )
+                # Copy CostItems from original rate
+                for ci in original_rate.cost_items.all():
+                    CostItem.objects.create(
+                        name=ci.name, value=ci.value, tax=ci.tax,
+                        usd=ci.usd, exchange=ci.exchange, fcu=ci.fcu,
+                        code=ci.code, rate=new_rate,
+                    )
                 created_rates += 1
                 print(f"Rate creado: {new_rate.id} - {new_rate.column_options}")  # 👈 Debug
         
@@ -1211,22 +1279,40 @@ def create_rate_block(request):
                 else:
                     columns = ["1", "2", "3", "4", "5", "6"]
 
-                # Crear Rates para SGL, DBL, TPL
+                # Crear Rates para cada columna
                 for column_type in columns:
-                    cost = 0
-                    
-                    Rate.objects.create(
+                    # Check if existing rates for this product+column have CostItems
+                    template_rate = (
+                        Rate.objects
+                        .filter(
+                            rate_line__group__product=product,
+                            column_options=column_type,
+                            has_items=True,
+                        )
+                        .prefetch_related('cost_items')
+                        .first()
+                    )
+                    new_rate = Rate.objects.create(
                         rate_line=new_rateline,
                         status=status,
                         increase=increase,
-                        cost=cost,
+                        cost=0,
                         margin=margin,
                         sell=0,
                         sell_tourplan=0,
                         column_options=column_type,
                         has_rate=True,
+                        has_items=bool(template_rate),
                         text_value=None
                     )
+                    # Replicate CostItem structure with value=0
+                    if template_rate:
+                        for ci in template_rate.cost_items.all():
+                            CostItem.objects.create(
+                                name=ci.name, value=0, tax=ci.tax,
+                                usd=ci.usd, exchange=ci.exchange, fcu=ci.fcu,
+                                code=ci.code, rate=new_rate,
+                            )
                     created_rates += 1
 
                 # Check if it is the first rate_line in the product
@@ -1323,3 +1409,211 @@ def json_changes(request, change_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
+
+# ─── Cost Items & Fixed Rate Costs CRUD ───────────────────────────────────────
+
+@login_required
+def add_cost_item(request):
+    """Create a CostItem linked to one or more Rate IDs."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    rate_ids  = data.get('rate_ids', [])
+    name      = data.get('name', '')
+    value     = float(data.get('value', 0))
+    tax       = data.get('tax', '0')
+    usd       = data.get('usd', True)
+    exchange  = int(data.get('exchange', 1))
+    fcu       = data.get('fcu', 'Person')
+    code      = data.get('code', '')
+
+    created = []
+    for rate_id in rate_ids:
+        try:
+            rate = Rate.objects.get(pk=rate_id)
+            ci = CostItem.objects.create(
+                name=name, value=value, tax=tax, usd=usd,
+                exchange=exchange, fcu=fcu, rate=rate, code=code,
+            )
+            if not rate.has_items:
+                rate.has_items = True
+                rate.save(update_fields=['has_items'])
+            created.append({'id': ci.id, 'rate_id': rate_id})
+        except Rate.DoesNotExist:
+            pass
+    return JsonResponse({'created': created})
+
+
+@login_required
+def delete_cost_item(request, item_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        ci = CostItem.objects.select_related('rate').get(pk=item_id)
+        rate = ci.rate
+        ci.delete()
+        if rate.has_items and not rate.cost_items.exists():
+            rate.has_items = False
+            rate.save(update_fields=['has_items'])
+        return JsonResponse({'deleted': True})
+    except CostItem.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def add_fixed_rate_link(request):
+    """Link an existing FixedRateCost to one or more Rate IDs."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data     = json.loads(request.body)
+    frc_id   = data.get('fixed_rate_id')
+    rate_ids = data.get('rate_ids', [])
+    try:
+        frc = FixedRateCost.objects.get(pk=frc_id)
+        for rate_id in rate_ids:
+            frc.rate.add(rate_id)
+        return JsonResponse({'linked': True})
+    except FixedRateCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def create_fixed_rate_cost(request):
+    """Create a new FixedRateCost and link it to one or more Rate IDs."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    try:
+        supplier = Supplier.objects.get(pk=data['supplier_id'])
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Supplier not found'}, status=404)
+    frc = FixedRateCost.objects.create(
+        name      = data['name'],
+        date_from = data['date_from'],
+        date_to   = data['date_to'],
+        supplier  = supplier,
+        value     = float(data['value']),
+        usd       = data.get('usd', True),
+        exchange  = int(data.get('exchange', 1)),
+        increase  = float(data['increase']) if data.get('increase') else None,
+        fcu       = data.get('fcu', 'Person'),
+    )
+    for rate_id in data.get('rate_ids', []):
+        frc.rate.add(rate_id)
+    return JsonResponse({'id': frc.id, 'name': frc.name})
+
+
+@login_required
+def remove_fixed_rate_link(request):
+    """Remove a FixedRateCost from a specific Rate."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data   = json.loads(request.body)
+    frc_id = data.get('fixed_rate_id')
+    rate_id = data.get('rate_id')
+    try:
+        frc = FixedRateCost.objects.get(pk=frc_id)
+        frc.rate.remove(rate_id)
+        return JsonResponse({'removed': True})
+    except FixedRateCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def update_fixed_rate_cost(request):
+    """Update an existing FixedRateCost."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    try:
+        frc = FixedRateCost.objects.get(pk=data['id'])
+    except FixedRateCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    frc.name      = data.get('name', frc.name)
+    frc.value     = float(data.get('value', frc.value))
+    frc.usd       = data.get('usd', frc.usd)
+    frc.exchange  = int(data.get('exchange', frc.exchange))
+    frc.date_from = data.get('date_from', str(frc.date_from))
+    frc.date_to   = data.get('date_to',   str(frc.date_to))
+    frc.increase  = float(data['increase']) if data.get('increase') not in (None, '') else None
+    frc.fcu       = data.get('fcu', frc.fcu)
+    frc.save()
+    return JsonResponse({'updated': True})
+
+
+@login_required
+def delete_fixed_rate_cost(request, frc_id):
+    """Permanently delete a FixedRateCost."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        FixedRateCost.objects.get(pk=frc_id).delete()
+        return JsonResponse({'deleted': True})
+    except FixedRateCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def update_supplier_exchange(request, supplier_id):
+    """Set the default_exchange on a Supplier."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    try:
+        s = Supplier.objects.get(pk=supplier_id)
+        s.default_exchange = int(data.get('exchange', 1))
+        s.save(update_fields=['default_exchange'])
+        return JsonResponse({'updated': True})
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def bulk_update_exchange(request, supplier_id):
+    """Update exchange on all ARS CostItems and FixedRateCosts for this supplier."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data     = json.loads(request.body)
+    exchange = int(data.get('exchange', 1))
+
+    # All rates belonging to this supplier
+    rate_ids = Rate.objects.filter(
+        rate_line__group__product__supplier_id=supplier_id
+    ).values_list('id', flat=True)
+
+    ci_updated  = CostItem.objects.filter(rate_id__in=rate_ids, usd=False).update(exchange=exchange)
+    frc_updated = FixedRateCost.objects.filter(supplier_id=supplier_id, usd=False).update(exchange=exchange)
+
+    return JsonResponse({'cost_items': ci_updated, 'fixed_rate_costs': frc_updated})
+
+
+@login_required
+def update_cost_item(request):
+    """Update an existing CostItem."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    try:
+        ci = CostItem.objects.get(pk=data['id'])
+    except CostItem.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    ci.name     = data.get('name', ci.name)
+    ci.value    = float(data.get('value', ci.value))
+    ci.fcu      = data.get('fcu', ci.fcu)
+    ci.tax      = data.get('tax', ci.tax)
+    ci.usd      = data.get('usd', ci.usd)
+    ci.exchange = int(data.get('exchange', ci.exchange))
+    ci.save()
+    return JsonResponse({'updated': True})
+
+
+@login_required
+def update_rate_cost(request):
+    """Update Rate.cost when cost items total changes."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data    = json.loads(request.body)
+    rate_id = data['rate_id']
+    cost    = float(data['cost'])
+    Rate.objects.filter(pk=rate_id).update(cost=cost)
+    return JsonResponse({'ok': True})

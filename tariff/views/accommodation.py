@@ -60,7 +60,7 @@ def supplier(request):
         order = (last_group.order + 5) if last_group else 1
 
         # Creates the model of the supplier from the form information
-        Supplier.objects.create(
+        new_supplier = Supplier.objects.create(
             name=name,
             code=code,
             description=request.POST["description"],
@@ -80,6 +80,12 @@ def supplier(request):
             pic2_url=request.POST.get("pic2_url"),
             pic3_url=request.POST.get("pic3_url"),
         )
+        # Auto-resolve any provisional suppliers with a similar name
+        from tariff.models import Feedback
+        for prov in Supplier.objects.filter(is_provisional=True):
+            if name.lower() in prov.name.lower() or prov.name.lower() in name.lower():
+                Feedback.objects.filter(supplier=prov).update(supplier=new_supplier)
+                prov.delete()
 
         return HttpResponseRedirect(reverse("acc_supplier"), {
             "suppliers": suppliers,

@@ -1,0 +1,484 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container-fluid py-4" style="max-width:1100px;">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0">Procesar Emails</h4>
+      <p class="text-muted small mb-0">{{ email_cards|length }} email{{ email_cards|length|pluralize:",s" }} en la bandeja de entrada</p>
+    </div>
+    <a href="{% url 'email_processor' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="fa-solid fa-rotate me-1"></i>Actualizar
+    </a>
+  </div>
+
+  {% if not email_cards %}
+  <div class="alert alert-success">
+    <i class="fa-solid fa-circle-check me-2"></i>No hay emails pendientes de procesar.
+  </div>
+  {% endif %}
+
+  {% for card in email_cards %}
+  <div class="card mb-4 shadow-sm" id="card-{{ forloop.counter }}">
+    <div class="card-header d-flex align-items-start justify-content-between gap-3 py-3">
+      <div class="flex-grow-1">
+        <!-- Status badge -->
+        {% if card.status == "Quote" %}
+          <span class="badge text-bg-warning text-dark me-2">Quote</span>
+        {% elif card.status == "Booking" %}
+          <span class="badge text-bg-success me-2">Booking</span>
+        {% elif card.status == "Final Itinerary" %}
+          <span class="badge text-bg-info text-dark me-2">Final Itinerary</span>
+        {% elif card.status == "Bloqueo" %}
+          <span class="badge text-bg-secondary me-2">Bloqueo</span>
+        {% elif card.status == "Programa" %}
+          <span class="badge text-bg-primary me-2">Programa</span>
+        {% else %}
+          <span class="badge text-bg-light text-dark border me-2">Otro</span>
+        {% endif %}
+        {% if card.has_csv %}<span class="badge bg-light text-secondary border me-1"><i class="fa-solid fa-file-csv me-1"></i>CSV</span>{% endif %}
+        {% if card.has_pdf %}<span class="badge bg-light text-secondary border me-1"><i class="fa-solid fa-file-pdf me-1"></i>PDF</span>{% endif %}
+        <strong class="ms-1">{{ card.subject }}</strong>
+      </div>
+      <div class="text-muted small text-nowrap">{{ card.date|date:"d/m/Y H:i" }}</div>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-4">
+
+        <!-- Left: extracted info -->
+        <div class="col-md-4">
+          <p class="text-muted small mb-2"><i class="fa-solid fa-user me-1"></i>{{ card.from_ }}</p>
+          <table class="table table-sm table-borderless small mb-0">
+            <tbody>
+              <tr><td class="text-muted pe-3" style="width:40%">Referencia</td>
+                  <td><strong>{{ card.ref_full|default:"—" }}</strong></td></tr>
+              <tr><td class="text-muted pe-3">Pasajero</td>
+                  <td>{{ card.passenger_name|default:"—" }}</td></tr>
+              <tr><td class="text-muted pe-3">Llegada</td>
+                  <td>{% if card.first_date %}{{ card.first_date|date:"d/m/Y" }}{% else %}—{% endif %}</td></tr>
+              <tr><td class="text-muted pe-3">Pax</td>
+                  <td>{{ card.pax }}</td></tr>
+            </tbody>
+          </table>
+          {% if card.text %}
+          <p class="text-muted small mt-2 mb-0" style="font-size:.75rem;line-height:1.5;">
+            {{ card.text|truncatechars:200 }}
+          </p>
+          {% endif %}
+        </div>
+
+        <!-- Right: trip match + form -->
+        <div class="col-md-8">
+
+          <!-- Trip selector -->
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Viaje</label>
+
+            <!-- Always-present hidden inputs -->
+            <input type="hidden" id="tripid-{{ forloop.counter }}"
+                   value="{{ card.matched_trip.id|default:'' }}">
+            <input type="hidden" id="createnew-{{ forloop.counter }}"
+                   value="{% if card.matched_trip %}false{% else %}true{% endif %}">
+
+            <!-- Matched / auto-suggested trip -->
+            <div id="matched-{{ forloop.counter }}"
+                 class="{% if not card.matched_trip %}d-none{% endif %}"
+                 data-tripid="{{ card.matched_trip.id|default:'' }}">
+              {% if card.matched_trip %}
+              <div class="d-flex align-items-center gap-2 p-2 border rounded bg-light">
+                <i class="fa-solid fa-circle-check text-success"></i>
+                <div class="flex-grow-1">
+                  <strong>{{ card.matched_trip.name }}</strong>
+                  <span class="text-muted small ms-2">{{ card.matched_trip.client }}</span>
+                  <span class="badge text-bg-light border text-muted ms-1">{{ card.matched_trip.status }}</span>
+                  <br>
+                  <small class="text-muted">
+                    {{ card.matched_trip.travelling_date|date:"d/m/Y" }}
+                    · match por <em>{{ card.match_type }}</em>
+                    · ref: {{ card.matched_trip.client_reference|default:"—" }}
+                  </small>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="toggleNewTrip({{ forloop.counter }}, true)">
+                  Cambiar
+                </button>
+              </div>
+              {% endif %}
+            </div>
+
+            <!-- New trip / search form -->
+            <div id="newtrip-{{ forloop.counter }}" class="{% if card.matched_trip %}d-none{% endif %}">
+
+              <!-- Header bar -->
+              <div class="alert alert-warning small py-2 px-3 d-flex align-items-center gap-2 mb-2">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                No se encontró un viaje coincidente.
+                {% if card.matched_trip %}
+                <button type="button" class="btn btn-sm btn-link p-0 ms-auto"
+                        onclick="toggleNewTrip({{ forloop.counter }}, false)">← Usar sugerido</button>
+                {% endif %}
+              </div>
+
+              <!-- Search existing trip -->
+              <div class="mb-3">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                  <input type="text" class="form-control"
+                         id="search-{{ forloop.counter }}"
+                         placeholder="Buscar viaje existente por nombre o referencia…"
+                         oninput="debouncedSearch({{ forloop.counter }})">
+                </div>
+                <div id="search-results-{{ forloop.counter }}" class="mt-1 list-group list-group-flush small border rounded"></div>
+              </div>
+
+              <!-- Selected-from-search trip display -->
+              <div id="selected-trip-{{ forloop.counter }}" class="d-none d-flex align-items-center gap-2 p-2 border rounded bg-light mb-2">
+                <i class="fa-solid fa-circle-check text-success"></i>
+                <div class="flex-grow-1" id="selected-trip-info-{{ forloop.counter }}"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        onclick="clearSelectedTrip({{ forloop.counter }})">Cambiar</button>
+              </div>
+
+              <!-- New trip form fields -->
+              <div id="newtrip-fields-{{ forloop.counter }}">
+                <p class="small text-muted mb-2">O completá para crear un viaje nuevo:</p>
+                <div class="row g-2">
+                  <div class="col-12">
+                    <label class="form-label small">Nombre del viaje</label>
+                    <input type="text" class="form-control form-control-sm trip-name-input"
+                           id="tripname-{{ forloop.counter }}"
+                           value="{{ card.passenger_name }}">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small">Cliente</label>
+                    <select class="form-select form-select-sm client-select"
+                            id="client-{{ forloop.counter }}"
+                            onchange="loadContacts({{ forloop.counter }}, this.value)">
+                      <option value="">— Seleccionar —</option>
+                      {% for client in clients %}
+                      <option value="{{ client.id }}"
+                        {% if client.id == card.sender_client_id %}selected{% endif %}>
+                        {{ client.name }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small">Contacto</label>
+                    <select class="form-select form-select-sm contact-select"
+                            id="contact-{{ forloop.counter }}"
+                            data-preselect="{{ card.sender_contact_id|default:'' }}">
+                      <option value="">— Seleccionar cliente —</option>
+                    </select>
+                  </div>
+                  <div class="col-4">
+                    <label class="form-label small">Fecha viaje</label>
+                    <input type="date" class="form-control form-control-sm travelling-date-input"
+                           id="tdate-{{ forloop.counter }}"
+                           value="{% if card.first_date %}{{ card.first_date|date:'Y-m-d' }}{% endif %}">
+                  </div>
+                  <div class="col-3">
+                    <label class="form-label small">Pax</label>
+                    <input type="number" class="form-control form-control-sm pax-input"
+                           id="pax-{{ forloop.counter }}" value="{{ card.pax }}" min="1">
+                  </div>
+                  <div class="col-5">
+                    <label class="form-label small">Ref. cliente</label>
+                    <input type="text" class="form-control form-control-sm ref-input"
+                           id="ref-{{ forloop.counter }}" value="{{ card.ref_full }}">
+                  </div>
+                </div>
+              </div><!-- /newtrip-fields -->
+
+            </div><!-- /newtrip -->
+          </div><!-- /trip selector -->
+
+          <!-- Entry fields -->
+          <div class="row g-2 mt-1">
+            <div class="col-5">
+              <label class="form-label small fw-semibold">Trabajado por</label>
+              <select class="form-select form-select-sm user-working-select"
+                      id="uw-{{ forloop.counter }}">
+                <option value="">— Seleccionar —</option>
+                {% for u in users %}
+                  {% if card.status == "Quote" or card.status == "Booking" %}
+                    {% if u.userType == "Ventas" %}
+                    <option value="{{ u.id }}" {% if u.id == card.suggested_user_id %}selected{% endif %}>
+                      {{ u.other_name|default:u.username }}
+                    </option>
+                    {% endif %}
+                  {% elif card.status == "Final Itinerary" %}
+                    {% if u.userType == "Operaciones" %}
+                    <option value="{{ u.id }}" {% if u.id == card.suggested_user_id %}selected{% endif %}>
+                      {{ u.other_name|default:u.username }}
+                    </option>
+                    {% endif %}
+                  {% else %}
+                    <option value="{{ u.id }}" {% if u.id == card.suggested_user_id %}selected{% endif %}>
+                      {{ u.other_name|default:u.username }}
+                    </option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold">Importancia</label>
+              <select class="form-select form-select-sm importance-select"
+                      id="imp-{{ forloop.counter }}">
+                {% for val, label in importance_options %}
+                <option value="{{ val }}" {% if val == "7 - ALTA - standard" %}selected{% endif %}>
+                  {{ label }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Nota</label>
+              <input type="text" class="form-control form-control-sm note-input"
+                     id="note-{{ forloop.counter }}" value="{{ card.suggested_note }}">
+            </div>
+          </div>
+
+          <!-- Action button -->
+          <div class="mt-3 d-flex align-items-center gap-3">
+            <button class="btn btn-dark btn-sm create-btn"
+                    id="btn-{{ forloop.counter }}"
+                    onclick="createEntry({{ forloop.counter }}, '{{ card.status }}')">
+              <i class="fa-solid fa-plus me-1"></i>
+              {% if card.matched_trip %}Crear Entrada{% else %}Crear Viaje + Entrada{% endif %}
+            </button>
+            <button class="btn btn-outline-secondary btn-sm"
+                    onclick="ignoreCard({{ forloop.counter }})">
+              <i class="fa-solid fa-eye-slash me-1"></i>Ignorar
+            </button>
+            <span class="text-success small d-none" id="ok-{{ forloop.counter }}">
+              <i class="fa-solid fa-circle-check me-1"></i>Creado correctamente
+            </span>
+            <span class="text-danger small d-none" id="err-{{ forloop.counter }}"></span>
+          </div>
+
+        </div><!-- /col right -->
+      </div><!-- /row -->
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+  {% endfor %}
+
+</div>
+
+
+<script>
+  const csrfToken   = "{{ csrf_token }}";
+  const contactsMap = {{ contacts_map|safe }};
+  const emailUids   = { {% for card in email_cards %}{{ forloop.counter }}: "{{ card.uid }}"{% if not forloop.last %},{% endif %}{% endfor %} };
+
+  // Auto-load contacts for pre-selected clients
+  document.querySelectorAll(".client-select").forEach(sel => {
+    if (sel.value) {
+      const idx = sel.id.split('-')[1];
+      loadContacts(idx, sel.value);
+    }
+  });
+
+  function loadContacts(idx, clientId) {
+    const sel = document.getElementById('contact-' + idx);
+    const preselect = sel.dataset.preselect;
+    sel.innerHTML = '<option value="">— Seleccionar —</option>';
+    const contacts = contactsMap[String(clientId)] || [];
+    contacts.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id; opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    // Auto-select: prefer preselect (sender email match), then sole contact
+    if (preselect && contacts.some(c => String(c.id) === preselect)) {
+      sel.value = preselect;
+    } else if (contacts.length === 1) {
+      sel.value = contacts[0].id;
+    }
+    updateBtnLabel(idx);
+  }
+
+  function toggleNewTrip(idx, showNew) {
+    document.getElementById('matched-' + idx).classList.toggle('d-none', showNew);
+    document.getElementById('newtrip-' + idx).classList.toggle('d-none', !showNew);
+    if (showNew) {
+      // Entering "new trip" mode — reset any previous search selection
+      clearSelectedTrip(idx, /*restoreFields=*/true);
+      document.getElementById('createnew-' + idx).value = 'true';
+    } else {
+      // Back to auto-matched trip
+      const matchedTripId = document.getElementById('matched-' + idx).dataset.tripid;
+      document.getElementById('tripid-' + idx).value = matchedTripId;
+      document.getElementById('createnew-' + idx).value = 'false';
+    }
+    updateBtnLabel(idx);
+  }
+
+  const _searchTimers = {};
+  function debouncedSearch(idx) {
+    clearTimeout(_searchTimers[idx]);
+    _searchTimers[idx] = setTimeout(() => searchTrips(idx), 300);
+  }
+
+  function searchTrips(idx) {
+    const q = document.getElementById('search-' + idx).value.trim();
+    const resultsEl = document.getElementById('search-results-' + idx);
+    if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+    fetch('/email_processor/search_trips?q=' + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(data => {
+        if (!data.trips || !data.trips.length) {
+          resultsEl.innerHTML = '<p class="text-muted small mb-0 px-2 py-1">Sin resultados.</p>';
+          return;
+        }
+        resultsEl.innerHTML = data.trips.map(t => `
+          <button type="button" class="list-group-item list-group-item-action py-1 px-2 ep-trip-result"
+                  data-idx="${idx}"
+                  data-id="${t.id}"
+                  data-name="${t.name.replace(/"/g,'&quot;')}"
+                  data-client="${t.client.replace(/"/g,'&quot;')}"
+                  data-date="${t.date}"
+                  data-ref="${t.ref.replace(/"/g,'&quot;')}"
+                  data-status="${t.status}">
+            <strong>${t.name}</strong>
+            <span class="text-muted ms-1 small">${t.client}</span>
+            <span class="badge text-bg-light border text-muted ms-1 small">${t.status}</span>
+            <br><small class="text-muted">${t.date} · Ref: ${t.ref}</small>
+          </button>`).join('');
+        resultsEl.querySelectorAll('.ep-trip-result').forEach(btn => {
+          btn.addEventListener('click', () => {
+            selectTrip(btn.dataset.idx, btn.dataset.id, btn.dataset.name,
+                       btn.dataset.client, btn.dataset.date, btn.dataset.ref, btn.dataset.status);
+          });
+        });
+      })
+      .catch(() => {});
+  }
+
+  function selectTrip(idx, tripId, tripName, tripClient, tripDate, tripRef, tripStatus) {
+    document.getElementById('tripid-' + idx).value = tripId;
+    document.getElementById('createnew-' + idx).value = 'false';
+    document.getElementById('search-' + idx).value = '';
+    document.getElementById('search-results-' + idx).innerHTML = '';
+    document.getElementById('selected-trip-info-' + idx).innerHTML =
+      `<strong>${tripName}</strong> <span class="text-muted small ms-1">${tripClient}</span>
+       <span class="badge text-bg-light border text-muted ms-1">${tripStatus}</span>
+       <br><small class="text-muted">${tripDate} · Ref: ${tripRef}</small>`;
+    document.getElementById('selected-trip-' + idx).classList.remove('d-none');
+    document.getElementById('newtrip-fields-' + idx).classList.add('d-none');
+    updateBtnLabel(idx);
+  }
+
+  function clearSelectedTrip(idx, restoreFields = false) {
+    const sel = document.getElementById('selected-trip-' + idx);
+    if (sel) sel.classList.add('d-none');
+    const fields = document.getElementById('newtrip-fields-' + idx);
+    if (fields) fields.classList.remove('d-none');
+    if (!restoreFields) {
+      // User clicked "Cambiar" within search-selected trip → back to create-new
+      document.getElementById('tripid-' + idx).value = '';
+      document.getElementById('createnew-' + idx).value = 'true';
+      updateBtnLabel(idx);
+    }
+  }
+
+  function updateBtnLabel(idx) {
+    const isNew = document.getElementById('createnew-' + idx).value === 'true';
+    const btn = document.getElementById('btn-' + idx);
+    btn.innerHTML = isNew
+      ? '<i class="fa-solid fa-plus me-1"></i>Crear Viaje + Entrada'
+      : '<i class="fa-solid fa-plus me-1"></i>Crear Entrada';
+  }
+
+  function archiveEmail(idx) {
+    const uid = emailUids[idx];
+    if (!uid) return Promise.resolve();
+    return fetch('/email_processor/archive', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid }),
+    }).catch(() => {});
+  }
+
+  function createEntry(idx, status) {
+    const btn    = document.getElementById('btn-' + idx);
+    const okEl   = document.getElementById('ok-' + idx);
+    const errEl  = document.getElementById('err-' + idx);
+
+    const createNew     = document.getElementById('createnew-' + idx).value === 'true';
+    const userWorkingId = document.getElementById('uw-' + idx).value;
+    const importance    = document.getElementById('imp-' + idx).value;
+    const note          = document.getElementById('note-' + idx).value;
+
+    if (!userWorkingId) { showError(idx, 'Seleccioná un usuario.'); return; }
+
+    const payload = { status, user_working_id: userWorkingId, importance, note, create_new_trip: createNew };
+
+    if (createNew) {
+      payload.trip_name        = document.getElementById('tripname-' + idx).value;
+      payload.client_id        = document.getElementById('client-' + idx).value;
+      payload.contact_id       = document.getElementById('contact-' + idx).value;
+      payload.travelling_date  = document.getElementById('tdate-' + idx).value;
+      payload.pax              = document.getElementById('pax-' + idx).value;
+      payload.client_reference = document.getElementById('ref-' + idx).value;
+      if (!payload.client_id || !payload.contact_id || !payload.trip_name) {
+        showError(idx, 'Completá cliente, contacto y nombre del viaje.'); return;
+      }
+    } else {
+      payload.trip_id = document.getElementById('tripid-' + idx).value;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando…';
+    okEl.classList.add('d-none');
+    errEl.classList.add('d-none');
+
+    fetch('/email_processor/create', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        archiveEmail(idx);
+        btn.classList.replace('btn-dark', 'btn-success');
+        btn.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i>Creado';
+        btn.disabled = true;
+        okEl.classList.remove('d-none');
+        setTimeout(() => {
+          const card = document.getElementById('card-' + idx);
+          card.style.transition = 'opacity .4s';
+          card.style.opacity = '0';
+          setTimeout(() => card.remove(), 400);
+        }, 1500);
+      } else {
+        btn.disabled = false;
+        updateBtnLabel(idx);
+        showError(idx, data.error || 'Error desconocido.');
+      }
+    })
+    .catch(e => {
+      btn.disabled = false;
+      updateBtnLabel(idx);
+      showError(idx, 'Error de red.');
+    });
+  }
+
+  function ignoreCard(idx) {
+    archiveEmail(idx);
+    const card = document.getElementById('card-' + idx);
+    card.style.transition = 'opacity .3s';
+    card.style.opacity = '0';
+    setTimeout(() => card.remove(), 300);
+  }
+
+  function showError(idx, msg) {
+    const el = document.getElementById('err-' + idx);
+    el.textContent = msg;
+    el.classList.remove('d-none');
+  }
+</script>
+{% endblock %}

@@ -20,19 +20,25 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <p>Seleccione la planilla de Tourplan para actualizar información</p>
-                        <form action="{% url 'tourplan_files' %}" method="post"
-                              enctype="multipart/form-data">
-                            {% csrf_token %}
-                            {{ form.file_name }}
-                            <br><br>
-                            <div class="d-flex gap-2 justify-content-center">
-                                <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
-                                <a href="{% url 'tourplan_files' %}">
-                                    <button type="button" class="btn btn-outline-secondary btn-lg">CANCELAR</button>
-                                </a>
-                            </div>
-                        </form>
+                        <div id="upload-form-content">
+                            <p>Seleccione la planilla de Tourplan para actualizar información</p>
+                            <form id="tourplan-upload-form" action="{% url 'tourplan_files' %}" method="post"
+                                  enctype="multipart/form-data">
+                                {% csrf_token %}
+                                {{ form.file_name }}
+                                <br><br>
+                                <div class="d-flex gap-2 justify-content-center">
+                                    <button class="btn btn-dark btn-lg" type="submit">SUBIR</button>
+                                    <a href="{% url 'tourplan_files' %}">
+                                        <button type="button" class="btn btn-outline-secondary btn-lg">CANCELAR</button>
+                                    </a>
+                                </div>
+                            </form>
+                        </div>
+                        <div id="upload-spinner" class="text-center py-5 d-none">
+                            <div class="spinner-border text-primary" style="width:3rem;height:3rem;" role="status"></div>
+                            <p class="mt-3 text-muted">Procesando planilla, por favor espere…</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -54,8 +60,18 @@
                         <div class="vr"></div>
                         {% endif %}
                         <div class="text-center">
-                            <div class="fw-bold fs-4" id="count-no-tp">{{ no_tp_trips|length }}</div>
-                            <div class="text-muted small">Sin Nº TP en app</div>
+                            <div class="fw-bold fs-4" id="count-g1">{{ no_tp_group1|length }}</div>
+                            <div class="text-muted small">Sin Nº TP</div>
+                        </div>
+                        <div class="vr"></div>
+                        <div class="text-center">
+                            <div class="fw-bold fs-4" id="count-g2">{{ no_tp_group2|length }}</div>
+                            <div class="text-muted small">TP de Quote</div>
+                        </div>
+                        <div class="vr"></div>
+                        <div class="text-center">
+                            <div class="fw-bold fs-4" id="count-g3">{{ no_tp_group3|length }}</div>
+                            <div class="text-muted small">TP incorrecto</div>
                         </div>
                         <div class="vr"></div>
                         <div class="text-center">
@@ -71,18 +87,17 @@
 
                     <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
 
-                        <!-- Section 1: Booking trips without tourplanId -->
-                        {% if no_tp_trips %}
-                        <h6 class="fw-bold mt-2 text-warning">
-                            Bookings sin número de TP asignado ({{ no_tp_trips|length }}):
+                        <!-- Group 1: Booking trips without any tourplanId -->
+                        {% if no_tp_group1 %}
+                        <h6 class="fw-bold mt-2 text-danger">
+                            Grupo 1 — Bookings sin código de TP ({{ no_tp_group1|length }}):
                         </h6>
-                        <table class="table table-sm table-bordered mb-4" id="tbl-no-tp">
+                        <table class="table table-sm table-bordered mb-4" id="tbl-g1">
                             <thead class="table-dark">
                                 <tr>
-                                    <th><input type="checkbox" id="chk-all-no-tp" onchange="toggleAllNoTp(this)"></th>
+                                    <th><input type="checkbox" id="chk-all-g1" onchange="toggleGroup('chk-g1', this)"></th>
                                     <th>Nombre</th>
                                     <th>Ref. Cliente</th>
-                                    <th>TP actual</th>
                                     <th>Fecha viaje</th>
                                     <th>Vendedor</th>
                                     <th>Cliente</th>
@@ -90,12 +105,11 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for row in no_tp_trips %}
+                                {% for row in no_tp_group1 %}
                                 <tr data-trip-id="{{ row.trip_id }}">
-                                    <td><input type="checkbox" class="chk-no-tp" value="{{ row.trip_id }}"></td>
+                                    <td><input type="checkbox" class="chk-g1 chk-no-tp" value="{{ row.trip_id }}"></td>
                                     <td>{{ row.name }}</td>
                                     <td>{{ row.client_reference }}</td>
-                                    <td>{% if row.current_tp %}<span class="text-muted">{{ row.current_tp }}</span>{% else %}<span class="text-danger">—</span>{% endif %}</td>
                                     <td>{{ row.travelling_date }}</td>
                                     <td>{{ row.vendedor }}</td>
                                     <td>{{ row.client }}</td>
@@ -110,15 +124,107 @@
                             </tbody>
                         </table>
                         <div class="mb-3">
-                            <button class="btn btn-sm btn-outline-dark" onclick="assignSelected()">
+                            <button class="btn btn-sm btn-outline-dark" onclick="assignSelected('chk-g1', 'tbl-g1', 'count-g1')">
                                 Asignar TP a seleccionados
                             </button>
                         </div>
-                        {% else %}
-                        <p class="text-muted small mb-3">Todos los bookings tienen número de TP asignado.</p>
                         {% endif %}
 
-                        <!-- Section 2: CSV rows not in app -->
+                        <!-- Group 2: Booking trips whose tourplanId is a Quote in the CSV -->
+                        {% if no_tp_group2 %}
+                        <h6 class="fw-bold mt-2 text-warning">
+                            Grupo 2 — Bookings con TP de Quote ({{ no_tp_group2|length }}):
+                        </h6>
+                        <table class="table table-sm table-bordered mb-4" id="tbl-g2">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th><input type="checkbox" id="chk-all-g2" onchange="toggleGroup('chk-g2', this)"></th>
+                                    <th>Nombre</th>
+                                    <th>Ref. Cliente</th>
+                                    <th>TP actual (Quote)</th>
+                                    <th>Fecha viaje</th>
+                                    <th>Vendedor</th>
+                                    <th>Cliente</th>
+                                    <th>Nº TP sugerido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in no_tp_group2 %}
+                                <tr data-trip-id="{{ row.trip_id }}">
+                                    <td><input type="checkbox" class="chk-g2 chk-no-tp" value="{{ row.trip_id }}"></td>
+                                    <td>{{ row.name }}</td>
+                                    <td>{{ row.client_reference }}</td>
+                                    <td><span class="text-warning">{{ row.current_tp }}</span></td>
+                                    <td>{{ row.travelling_date }}</td>
+                                    <td>{{ row.vendedor }}</td>
+                                    <td>{{ row.client }}</td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm tp-input"
+                                               data-trip-id="{{ row.trip_id }}"
+                                               value="{{ row.suggested_tp }}"
+                                               placeholder="Ingresar TP">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <div class="mb-3">
+                            <button class="btn btn-sm btn-outline-dark" onclick="assignSelected('chk-g2', 'tbl-g2', 'count-g2')">
+                                Asignar TP a seleccionados
+                            </button>
+                        </div>
+                        {% endif %}
+
+                        <!-- Group 3: Booking trips with a TP that doesn't match CSV suggestion -->
+                        {% if no_tp_group3 %}
+                        <h6 class="fw-bold mt-2 text-info">
+                            Grupo 3 — Bookings con TP incorrecto ({{ no_tp_group3|length }}):
+                        </h6>
+                        <table class="table table-sm table-bordered mb-4" id="tbl-g3">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th><input type="checkbox" id="chk-all-g3" onchange="toggleGroup('chk-g3', this)"></th>
+                                    <th>Nombre</th>
+                                    <th>Ref. Cliente</th>
+                                    <th>TP actual</th>
+                                    <th>Fecha viaje</th>
+                                    <th>Vendedor</th>
+                                    <th>Cliente</th>
+                                    <th>Nº TP sugerido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in no_tp_group3 %}
+                                <tr data-trip-id="{{ row.trip_id }}">
+                                    <td><input type="checkbox" class="chk-g3 chk-no-tp" value="{{ row.trip_id }}"></td>
+                                    <td>{{ row.name }}</td>
+                                    <td>{{ row.client_reference }}</td>
+                                    <td><span class="text-muted">{{ row.current_tp }}</span></td>
+                                    <td>{{ row.travelling_date }}</td>
+                                    <td>{{ row.vendedor }}</td>
+                                    <td>{{ row.client }}</td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm tp-input"
+                                               data-trip-id="{{ row.trip_id }}"
+                                               value="{{ row.suggested_tp }}"
+                                               placeholder="Ingresar TP">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <div class="mb-3">
+                            <button class="btn btn-sm btn-outline-dark" onclick="assignSelected('chk-g3', 'tbl-g3', 'count-g3')">
+                                Asignar TP a seleccionados
+                            </button>
+                        </div>
+                        {% endif %}
+
+                        {% if not no_tp_group1 and not no_tp_group2 and not no_tp_group3 %}
+                        <p class="text-muted small mb-3">Todos los bookings tienen número de TP asignado y correcto.</p>
+                        {% endif %}
+
+                        <!-- Section: CSV rows not in app -->
                         {% if csv_not_in_app %}
                         <h6 class="fw-bold mt-2">
                             TP del CSV que NO existen en la aplicación ({{ csv_not_in_app|length }}):
@@ -134,9 +240,6 @@
                                     <th>Fecha viaje</th>
                                     <th>Status</th>
                                     <th>Pax</th>
-                                    <th style="background:#fff3cd">Col14</th>
-                                    <th style="background:#fff3cd">Col15</th>
-                                    <th style="background:#fff3cd">Prefijo usado</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -150,9 +253,6 @@
                                     <td>{{ row.travelling_date }}</td>
                                     <td>{{ row.status }}</td>
                                     <td>{{ row.quantity_pax }}</td>
-                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_col14 }}</td>
-                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_col15 }}</td>
-                                    <td style="background:#fff3cd;font-size:11px">{{ row.dbg_prefix }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -200,7 +300,16 @@
                 headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
                 body: JSON.stringify({ selected }),
             }).then(r => r.json()).then(data => {
-                alert(`Se crearon ${data.created} file(s).`);
+                let msg = `Se crearon ${data.created} file(s).`;
+                if (data.unmatched_clients && data.unmatched_clients.length) {
+                    msg += "\n\nClientes NO encontrados (completar manualmente):\n";
+                    data.unmatched_clients.forEach(u => { msg += `  • ${u.tp_id}: "${u.csv_name}"\n`; });
+                }
+                if (data.unmatched_contacts && data.unmatched_contacts.length) {
+                    msg += "\n\nContactos NO encontrados (completar manualmente):\n";
+                    data.unmatched_contacts.forEach(u => { msg += `  • ${u.tp_id}: "${u.csv_name}"\n`; });
+                }
+                alert(msg);
                 removeRowsCsv(selected);
             });
         }
@@ -226,11 +335,12 @@
         }
 
         // ── No-TP-trips helpers ────────────────────────────────
-        function toggleAllNoTp(master) {
-            document.querySelectorAll(".chk-no-tp").forEach(c => c.checked = master.checked);
+        function toggleGroup(cls, master) {
+            document.querySelectorAll("." + cls).forEach(c => c.checked = master.checked);
         }
-        function assignSelected() {
-            const checked = [...document.querySelectorAll(".chk-no-tp:checked")];
+
+        function assignSelected(cls, tblId, countId) {
+            const checked = [...document.querySelectorAll("." + cls + ":checked")];
             if (!checked.length) { alert("Seleccione al menos un file."); return; }
             const assignments = checked.map(c => ({
                 trip_id: parseInt(c.value),
@@ -244,11 +354,11 @@
             }).then(r => r.json()).then(data => {
                 alert(`Se asignó TP a ${data.assigned} file(s).`);
                 const assigned_ids = new Set(assignments.map(a => String(a.trip_id)));
-                document.querySelectorAll("#tbl-no-tp tbody tr").forEach(tr => {
+                document.querySelectorAll("#" + tblId + " tbody tr").forEach(tr => {
                     if (assigned_ids.has(tr.dataset.tripId)) tr.remove();
                 });
-                document.getElementById("count-no-tp").textContent =
-                    document.querySelectorAll("#tbl-no-tp tbody tr").length;
+                document.getElementById(countId).textContent =
+                    document.querySelectorAll("#" + tblId + " tbody tr").length;
             });
         }
 
@@ -258,16 +368,24 @@
         </script>
         {% endif %}
 
+        <script>
+        document.getElementById("tourplan-upload-form").addEventListener("submit", function () {
+            document.getElementById("upload-form-content").classList.add("d-none");
+            document.getElementById("upload-spinner").classList.remove("d-none");
+        });
+        </script>
+
         <br><hr>
 
-        {% if csv_not_in_app or no_tp_trips %}
+        {% if csv_not_in_app or no_tp_group1 or no_tp_group2 or no_tp_group3 %}
         <div class="alert alert-warning d-flex align-items-center justify-content-between mt-3">
             <span>
                 <i class="fa-solid fa-triangle-exclamation me-2"></i>
                 Pendientes:
-                {% if no_tp_trips %}<strong>{{ no_tp_trips|length }}</strong> sin Nº TP{% endif %}
-                {% if csv_not_in_app and no_tp_trips %} · {% endif %}
-                {% if csv_not_in_app %}<strong>{{ csv_not_in_app|length }}</strong> del CSV sin match{% endif %}
+                {% if no_tp_group1 %}<strong>{{ no_tp_group1|length }}</strong> sin Nº TP{% endif %}
+                {% if no_tp_group2 %}{% if no_tp_group1 %} · {% endif %}<strong>{{ no_tp_group2|length }}</strong> con TP de Quote{% endif %}
+                {% if no_tp_group3 %}{% if no_tp_group1 or no_tp_group2 %} · {% endif %}<strong>{{ no_tp_group3|length }}</strong> con TP incorrecto{% endif %}
+                {% if csv_not_in_app %}{% if no_tp_group1 or no_tp_group2 or no_tp_group3 %} · {% endif %}<strong>{{ csv_not_in_app|length }}</strong> del CSV sin match{% endif %}
             </span>
             <button class="btn btn-dark btn-sm" data-bs-toggle="modal" data-bs-target="#windowResults">
                 Ver pendientes

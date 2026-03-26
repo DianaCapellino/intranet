@@ -1,0 +1,314 @@
+{% load i18n %}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting"/>
+  <title>Aliwen – Advertencias de Rentabilidad (Departamento)</title>
+  <style type="text/css">
+    body { margin: 0 !important; padding: 0 !important; background-color: #EDEAE5 !important; }
+    table { border-collapse: collapse !important; }
+    img   { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    a     { text-decoration: none; }
+
+    @media screen and (max-width: 600px) {
+      .email-wrapper  { width: 100% !important; }
+      .pad-sides      { padding-left: 24px !important; padding-right: 24px !important; }
+      .greeting       { font-size: 18px !important; }
+    }
+
+    u + #body a { color: inherit !important; text-decoration: none !important; }
+  </style>
+</head>
+<body id="body" style="margin:0;padding:0;background-color:#EDEAE5;">
+
+<!-- ░░ OUTER WRAPPER ░░ -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#EDEAE5;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <!-- ░░ EMAIL CARD ░░ -->
+      <table role="presentation" class="email-wrapper" width="640" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:640px;background-color:#ffffff;">
+
+
+        <!-- ══ HEADER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:36px 48px 28px;text-align:center;" class="pad-sides">
+
+            <img src="{{ logo_url }}"
+                 alt="Aliwen Incoming" height="40"
+                 style="display:inline-block;height:40px;margin:0 auto 18px;" />
+
+            <table role="presentation" width="48" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 18px;">
+              <tr>
+                <td height="2" style="background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+              </tr>
+            </table>
+
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:10px;
+                      letter-spacing:0.2em;text-transform:uppercase;color:#d7998b;">
+              Destination Management Company &nbsp;&middot;&nbsp; Argentina
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══ EYEBROW BANNER ════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#D88775;padding:11px 48px;text-align:center;" class="pad-sides">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">
+              Advertencias de Rentabilidad &nbsp;&middot;&nbsp; {{ today }}
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══ INTRO ══════════════════════════════════════════ -->
+        <tr>
+          <td style="padding:44px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+
+            <h1 class="greeting"
+                style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                       font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
+              Hola <span style="color:#D88775;">{{ user_name }}</span>!
+            </h1>
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0;">
+              Los siguientes files del departamento <strong style="color:#1C1C1C;">Aliwen</strong>
+              con salida en los próximos 2 meses tienen una rentabilidad
+              fuera del rango normal
+              (<strong style="color:#D88775;">entre 15% y 35%</strong>).
+            </p>
+
+          </td>
+        </tr>
+
+
+        <!-- ══ TRIPS BY SELLER ════════════════════════════════ -->
+        {% for group in seller_groups %}
+        <tr>
+          <td style="padding:28px 48px 0;" class="pad-sides">
+
+            <!-- Seller header -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:12px;">
+              <tr>
+                <td style="border-left:3px solid #D88775;padding-left:10px;">
+                  <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                             font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                             color:#1C1C1C;">
+                    {{ group.seller_name }}
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Trips table for this seller -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:24px;">
+              <!-- Header row -->
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;">
+                  File
+                </td>
+                <td width="110" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;
+                           padding-left:12px;">
+                  Cliente
+                </td>
+                <td width="70" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;
+                           padding-left:12px;">
+                  Operador
+                </td>
+                <td width="85" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;white-space:nowrap;
+                           padding-left:12px;">
+                  Fecha viaje
+                </td>
+                <td width="30" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;text-align:center;
+                           padding-left:12px;">
+                  Pax
+                </td>
+                <td width="80" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;text-align:right;
+                           padding-left:12px;">
+                  Rentabilidad
+                </td>
+              </tr>
+              {% for trip in group.trips %}
+              <tr>
+                <!-- Name + ID -->
+                <td valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                           color:#1C1C1C;line-height:1.4;padding:10px 0;
+                           border-bottom:1px dashed #D9CFC6;">
+                  <strong>{{ trip.name }}</strong>
+                  {% if trip.tourplanId %}
+                  <br><span style="font-size:11px;color:#999999;">{{ trip.tourplanId }}</span>
+                  {% endif %}
+                </td>
+                <!-- Client -->
+                <td width="110" valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.client_name }}
+                </td>
+                <!-- Operations user -->
+                <td width="70" valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.operations_user_name }}
+                </td>
+                <!-- Date -->
+                <td width="85" valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;white-space:nowrap;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.travelling_date|date:"d/m/Y" }}
+                </td>
+                <!-- Pax -->
+                <td width="30" valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;text-align:center;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.quantity_pax }}
+                </td>
+                <!-- Margin badge -->
+                <td width="80" valign="middle"
+                    style="text-align:right;padding:10px 0 10px 12px;white-space:nowrap;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {% if trip.rent_perc_low %}
+                    <span style="display:inline-block;background-color:#fee2e2;color:#991b1b;
+                                 border:1px solid #fca5a5;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                                 font-weight:700;padding:3px 8px;border-radius:2px;">
+                      {{ trip.rent_perc_display }}%
+                    </span>
+                  {% else %}
+                    <span style="display:inline-block;background-color:#fef9c3;color:#713f12;
+                                 border:1px solid #fde047;
+                                 font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                                 font-weight:700;padding:3px 8px;border-radius:2px;">
+                      {{ trip.rent_perc_display }}%
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td style="padding:32px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#5A5A5A;margin:0;">
+              No hay files con rentabilidad fuera del rango en los próximos 2 meses.
+            </p>
+          </td>
+        </tr>
+        {% endfor %}
+
+        <!-- ══ CTA REVISAR ════════════════════════════════════ -->
+        {% if seller_groups %}
+        <tr>
+          <td style="padding:32px 48px;text-align:center;" class="pad-sides">
+            <a href="https://sayaliwen.pythonanywhere.com/margin_management"
+               style="display:inline-block;background-color:#1C1C1C;
+                      font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;
+                      letter-spacing:0.08em;text-transform:uppercase;
+                      padding:14px 36px;text-decoration:none;">
+              <span style="color:#ffffff !important;">Revisar</span>
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 48px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td height="1" style="background-color:#D9CFC6;font-size:0;line-height:0;">&nbsp;</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+
+        <!-- ══ FOOTER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
+
+            <img src="{{ logo_url }}"
+                 alt="Aliwen" height="26"
+                 style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
+
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 14px;">
+              <tr>
+                <td style="padding:0 6px;">
+                  <a href="https://www.instagram.com/aliwen_incoming/">
+                    <img src="{{ icons_base_url }}Instagram.svg" alt="Instagram"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.linkedin.com/company/argentinaaliwenincoming">
+                    <img src="{{ icons_base_url }}LinkedIn.svg" alt="LinkedIn"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.facebook.com/ArgentinaAliwenIncoming">
+                    <img src="{{ icons_base_url }}Facebook.svg" alt="Facebook"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.youtube.com/@AliwenDMC-y6h">
+                    <img src="{{ icons_base_url }}YouTube.svg" alt="YouTube"
+                         width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      color:#666666;line-height:1.6;margin:0;">
+              &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
+              E.V.T. - Leg 11320
+            </p>
+
+          </td>
+        </tr>
+
+      </table>
+      <!-- /EMAIL CARD -->
+
+    </td>
+  </tr>
+</table>
+<!-- /OUTER WRAPPER -->
+
+</body>
+</html>

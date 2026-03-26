@@ -278,7 +278,7 @@
                                                         <h5><b>Fecha Conversión:</b> {{ trip.conversion_date }}</h5>
                                                     </div>
                                                 </div>
-                                                {% if trip.status == "Booking" %}
+                                                {% if trip.status == "Booking" or trip.status == "Cancelado" %}
                                                     <div class="row">
                                                         <div class="col-4">
                                                             <h5><b>Vendedor Responsable:</b> {{ trip.responsable_user }}</h5>
@@ -476,7 +476,7 @@
                                                                 <input autofocus class="form-control" type="text" name="tourplanId" id="modify_tourplanId{{trip.id}}" value="{{ trip.tourplanId }}">
                                                             </div>
                                                         </div>
-                                                        {% if trip.status == "Booking" %}
+                                                        {% if trip.status == "Booking" or trip.status == "Cancelado" %}
                                                             <div class="row">
                                                                 <div class="mb-3 col">
                                                                     <label for="modify_itId{{trip.id}}" class="form-label">IT #</label>
@@ -526,23 +526,35 @@
                                                                 </div>
                                                                 <div class="mb-3 col">
                                                                     <label for="modify_dh{{trip.id}}" class="form-label">Nombre DH</label>
-                                                                    <select class="form-select" aria-label="dh" name="dh">
-                                                                        {% for user in users %}
-                                                                            {% if user.userType == "DH" or user.id == 19 %}
-                                                                                {% if user == trip.dh %}    
-                                                                                    <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
-                                                                                {% else %}
-                                                                                    <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
-                                                                                {% endif %}
-                                                                            {% endif %}
-                                                                        {% endfor %}
-                                                                    </select>
+                                                                    {% if trip.dh == "None" or not trip.dh  %}
+                                                                        <input class="form-control" type="text" name="dh" id="modify_dh{{trip.id}}" value="Sin Asignar">
+                                                                    {% else %}
+                                                                        <input class="form-control" type="text" name="dh" id="modify_dh{{trip.id}}" value="{{ trip.dh }}">
+                                                                    {% endif %}
                                                                 </div>
                                                                 <div class="mb-3 col">
                                                                     <label for="modify_guide{{trip.id}}" class="form-label">Guía</label>
                                                                     <input autofocus class="form-control" type="text" name="guide" id="modify_guide{{trip.id}}" value="{{ trip.guide }}">
                                                                 </div>
                                                             </div>
+                                                        {% endif %}
+                                                        {% if trip.ignore_margin_warning %}
+                                                        <div class="mb-3 p-3 border rounded bg-light">
+                                                            <div class="form-check">
+                                                                <input class="form-check-input" type="checkbox"
+                                                                       name="reactivate_margin_warning"
+                                                                       id="reactivate_margin_{{ trip.id }}"
+                                                                       value="1">
+                                                                <label class="form-check-label" for="reactivate_margin_{{ trip.id }}">
+                                                                    <i class="fa-solid fa-bell me-1 text-warning"></i>
+                                                                    Reactivar advertencias de rentabilidad
+                                                                </label>
+                                                                <div class="form-text text-muted">
+                                                                    Las advertencias de rentabilidad están desactivadas para este file.
+                                                                    Tildá para volver a recibirlas.
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                         {% endif %}
                                                         <div class="text-center">
                                                             <input class="btn btn-dark" type="submit" value="GUARDAR">
@@ -580,4 +592,15 @@
 </div>
 <br>
 {% endif %}
+
+<script>
+  if (new URLSearchParams(window.location.search).get("new") === "1") {
+    const newDiv  = document.getElementById("new_trip");
+    const listDiv = document.getElementById("trip_list");
+    const btn     = document.getElementById("new_trip_btn");
+    if (newDiv)  newDiv.className  = "d-block";
+    if (listDiv) listDiv.className = "d-none";
+    if (btn)     btn.className     = "d-none";
+  }
+</script>
 {% endblock %}

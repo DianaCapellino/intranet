@@ -41,8 +41,15 @@
             {% if user.is_authenticated %}
               <ul class="navbar-nav mb-3 mb-lg-0">
                 {% if user.userType != "Cliente" %}
-                  <li class="nav-item">
-                      <a class="nav-link text-light" href="{% url 'trips' %}">Viajes</a>
+                  <li class="nav-item dropdown">
+                    <a class="nav-link text-light dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      Viajes
+                    </a>
+                    <ul class="dropdown-menu">
+                      <li><a class="dropdown-item" href="{% url 'trip_filter' %}">Filtrar viajes</a></li>
+                      <li><a class="dropdown-item" href="{% url 'trips' %}">Resultado búsqueda</a></li>
+                      <li><a class="dropdown-item" href="{% url 'margin_management' %}">Revisión de rentabilidad</a></li>
+                    </ul>
                   </li>
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'entries' %}" id="pendings">Pendientes</a>
@@ -53,6 +60,9 @@
                   {% if user.isAdmin %}
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'stats' %}">Estadísticas</a>
+                  </li>
+                  <li class="nav-item">
+                      <a class="nav-link text-light" href="{% url 'calidad' %}">Calidad</a>
                   </li>
                   <li class="nav-item dropdown">
                     <a class="nav-link text-light dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -66,6 +76,8 @@
                         <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
                         <li><a class="dropdown-item" href="{% url 'holidays' %}">Feriados</a></li>
                         <li><a class="dropdown-item" href="{% url 'modify_tariff' %}">Tarifario</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'email_processor' %}"><i class="fa-solid fa-envelope-open-text me-2"></i>Procesar Emails</a></li>
                       </div>
                     </ul>
                   </li>
@@ -78,7 +90,8 @@
               </ul>
               <ul class="nav navbar-nav">
                 {% if user.userType != "Cliente" %}
-                  <li class="nav-item"><a class="nav-link" href="{% url 'advanced_search' %}"><i class="fa-solid fa-magnifying-glass"></i></li></a>
+                  <li class="nav-item"><a class="nav-link" href="{% url 'trips' %}?new=1"><i class="fa-solid fa-plus"></i></a></li>
+                  <li class="nav-item"><a class="nav-link" href="{% url 'advanced_search' %}"><i class="fa-solid fa-magnifying-glass"></i></a></li>
                 {% endif %}
                 <li class="nav-item d-none d-lg-block dropdown">
                   <a class="nav-link text-light" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">

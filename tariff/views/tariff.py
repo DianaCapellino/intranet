@@ -22,6 +22,7 @@ import json
 from collections import defaultdict
 from django.contrib import messages
 import math
+import re
 
 @login_required
 def index(request):
@@ -360,10 +361,20 @@ def tp_mod_list(request):
 
     pending_changes = request.session.get("pending_changes", None)
 
+    suppliers_ac = list(
+        Supplier.objects.filter(group__type_service='AC')
+        .order_by('name').values('id', 'name', 'update_tp')
+    )
+    suppliers_na = list(
+        Supplier.objects.filter(group__type_service='NA')
+        .order_by('name').values('id', 'name', 'update_tp')
+    )
+
     return render(request, "tariff/tp_mod_list.html", {
         "form": form,
         "pending_changes_json": json.dumps(pending_changes) if pending_changes else None,
         "has_pending": bool(pending_changes),
+        "suppliers_json": json.dumps({"AC": suppliers_ac, "NA": suppliers_na}),
     })
 
 
@@ -406,6 +417,56 @@ def discard_changes(request):
     """Descarta todos los cambios pendientes."""
     request.session.pop("pending_changes", None)
     messages.warning(request, "Se descartaron todos los cambios pendientes.")
+    return HttpResponseRedirect(reverse("tp_mod_list"))
+
+
+@login_required
+def toggle_supplier_update_tp(request):
+    """Toggle update_tp for one or more suppliers."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    supplier_ids = data.get('supplier_ids', [])
+    update_tp    = bool(data.get('update_tp'))
+    Supplier.objects.filter(pk__in=supplier_ids).update(update_tp=update_tp)
+    return JsonResponse({'ok': True, 'updated': len(supplier_ids)})
+
+
+@login_required
+def tp_mod_list_services(request):
+    """Upload services tariff file (Tourplan format for NA products)."""
+    if request.method == 'POST':
+        form = CsvFormTourplan(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            csv_obj = CsvFileTourplan.objects.filter(read=False).last()
+            changes, stats = upload_data_services(csv_obj)
+
+            if stats["rows_read"] == 0:
+                messages.warning(
+                    request,
+                    "No se leyó ninguna tarifa del archivo. "
+                    "Verificá que el formato del CSV sea correcto y que los códigos de proveedor y producto existan en el sistema."
+                )
+            else:
+                parts = [f"Se procesaron <strong>{stats['rows_read']}</strong> tarifas de servicios."]
+                if stats["up_to_date"]:
+                    parts.append(f"<strong>{stats['up_to_date']}</strong> ya coinciden ✓")
+                if stats["to_update"]:
+                    parts.append(f"<strong>{stats['to_update']}</strong> para actualizar")
+                if stats["to_add"]:
+                    parts.append(f"<strong>{stats['to_add']}</strong> para agregar")
+                if stats["to_delete"]:
+                    parts.append(f"<strong>{stats['to_delete']}</strong> líneas sin coincidencia")
+
+                if changes:
+                    request.session["pending_changes"] = changes
+                    messages.info(request, " · ".join(parts))
+                else:
+                    messages.success(request, " · ".join(parts) + " — Todo está al día.")
+        else:
+            messages.error(request, "Error al procesar el archivo.")
+
     return HttpResponseRedirect(reverse("tp_mod_list"))
 
 
@@ -834,6 +895,521 @@ def upload_data(csv_obj):
     return result, stats
 
 
+_PXB_RE = re.compile(r'(\d+)\.PXB\s*\((\d+)-(\d+)\)', re.IGNORECASE)
+
+
+def _cost_per_pax_sv(value, fcu, tax, increase, usd, exchange, pax):
+    """Server-side mirror of calcCostPerPax in supplier_rates.html."""
+    v = float(value or 0)
+    if fcu == 'Group' and pax > 0:
+        v /= pax
+    v *= (1 + float(tax or 0) / 100)
+    v *= (1 + float(increase or 0) / 100)
+    if not usd and float(exchange or 1) > 0:
+        v /= float(exchange or 1)
+    return round(v * 100) / 100
+
+
+def upload_data_services(csv_obj):
+    """Parse a services (NA) Tourplan CSV and return (changes, stats).
+
+    Same Rate-level comparison as upload_data (AC), with an extra branch
+    for rates that have has_items=True: instead of comparing sell_tourplan,
+    we find the matching CostItem (code == product.code), update its value,
+    recalculate Rate.cost from all CostItems, and only update Rate.cost
+    (sell prices are left untouched for services).
+    """
+    today = date.today()
+    result = []
+    stats = {
+        "rows_read":    0,
+        "rows_skipped": 0,
+        "up_to_date":   0,
+        "to_update":    0,
+        "to_add":       0,
+        "to_delete":    0,
+    }
+
+    supplier_codes = set(
+        Supplier.objects.filter(update_tp=True, group__type_service='NA')
+        .values_list("code", flat=True)
+    )
+    product_map = {
+        (p.supplier.code, p.code): p
+        for p in Product.objects.select_related("supplier", "group")
+        .filter(supplier__update_tp=True, type_service='NA')
+    }
+
+    csv_product_dates = set()
+    csv_products_seen = set()
+
+    ctx_supplier     = None
+    ctx_supplier_obj = None
+    ctx_product      = None
+    ctx_fcu          = None
+    ctx_date_from    = None
+    ctx_date_to      = None
+    ctx_date_from_db = None
+    ctx_date_to_db   = None
+    ctx_service_desc = None  # service name from col 16 rows without PXB band
+
+    result_index = {}
+
+    with open(csv_obj.file_name.path, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.reader(f, delimiter=";")
+
+        for i, row in enumerate(reader):
+            if i < 5:
+                continue
+
+            cols = row + [""] * max(0, 21 - len(row))
+
+            c3  = cols[2].strip()   # supplier code
+            c5  = cols[4].strip()   # product code
+            c8  = cols[7].strip()   # FCU: Person / Group
+            c13 = cols[12].strip()  # date_from
+            c14 = cols[13].strip()  # date_to
+            c16 = cols[15].strip()  # PXB band
+            c20 = cols[19].strip()  # cost value
+
+            # ---- inherit: supplier
+            if c3:
+                if c3 not in supplier_codes:
+                    ctx_supplier = ctx_supplier_obj = None
+                    ctx_product = ctx_fcu = None
+                    ctx_date_from = ctx_date_to = None
+                    continue
+                ctx_supplier     = c3
+                ctx_supplier_obj = Supplier.objects.get(code=c3)
+
+            # ---- inherit: product
+            if c5:
+                ctx_product = product_map.get((ctx_supplier, c5))
+
+            # ---- inherit: FCU
+            if c8 in ("Person", "Group"):
+                ctx_fcu = c8
+
+            # ---- inherit: dates
+            if c13:
+                try:
+                    ctx_date_from_db = datetime.strptime(c13, "%d/%m/%Y").date()
+                    ctx_date_from    = c13
+                except ValueError:
+                    ctx_date_from = ctx_date_from_db = None
+
+            if c14:
+                try:
+                    ctx_date_to_db = datetime.strptime(c14, "%d/%m/%Y").date()
+                    ctx_date_to    = c14
+                except ValueError:
+                    ctx_date_to = ctx_date_to_db = None
+
+            # ---- validate context
+            if not ctx_product or not ctx_supplier_obj:
+                continue
+            if not ctx_date_from_db or not ctx_date_to_db:
+                continue
+            if ctx_date_from_db <= today:
+                continue
+            if not ctx_fcu:
+                continue
+
+            # ---- col 16: either a CostItem service name or a PXB band
+            if not c16:
+                continue
+            m = _PXB_RE.search(c16)
+
+            if not m:
+                # ── Service name row → update matching CostItems across all bases ──
+                ctx_service_desc = c16
+                raw_svc = c20.replace("\xa0", "").replace(" ", "")
+                if not raw_svc or set(raw_svc) <= {"-"}:
+                    continue
+                try:
+                    svc_cost = round(float(raw_svc.replace(",", ".")), 2)
+                except ValueError:
+                    continue
+
+                svc_margin = ctx_supplier_obj.margin
+                svc_margin_info = ctx_supplier_obj.margin_info
+                if not svc_margin or svc_margin == 0:
+                    continue
+
+                csv_products_seen.add(ctx_product.pk)
+                csv_product_dates.add((ctx_product.pk, ctx_date_from_db, ctx_date_to_db))
+
+                for rate_group in RateGroup.objects.filter(product=ctx_product).order_by("order"):
+                    rate_line = RateLine.objects.filter(
+                        group=rate_group,
+                        date_from=ctx_date_from_db,
+                        date_to=ctx_date_to_db,
+                    ).first()
+                    if not rate_line:
+                        continue
+
+                    for rate in Rate.objects.prefetch_related("cost_items").filter(
+                        rate_line=rate_line, has_items=True
+                    ):
+                        try:
+                            base = int(rate.column_options)
+                        except (ValueError, TypeError):
+                            continue
+
+                        matching_ci = next(
+                            (ci for ci in rate.cost_items.all()
+                             if ci.name.strip() == c16.strip()),
+                            None,
+                        )
+                        if not matching_ci:
+                            continue
+
+                        # Store raw svc_cost in CostItem (no base division here).
+                        # sell_tourplan divides by base for Group fcu.
+                        new_ci_value = svc_cost
+
+                        dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db,
+                                     rate.column_options, rate_group.pk)
+
+                        if round(new_ci_value, 2) == round(matching_ci.value, 2):
+                            stats["up_to_date"] += 1
+                            continue
+
+                        new_rate_cost = round(sum(
+                            new_ci_value if ci.pk == matching_ci.pk else ci.value
+                            for ci in rate.cost_items.all()
+                        ), 2)
+                        # Divide by base for Group fcu when computing sell price
+                        per_base_cost = (
+                            round(new_rate_cost / base, 2)
+                            if matching_ci.fcu == "Group" else new_rate_cost
+                        )
+                        new_sell_tp = math.ceil(per_base_cost / svc_margin)
+
+                        entry = {
+                            "action":                "Update",
+                            "has_items":             True,
+                            "ci_id":                 matching_ci.pk,
+                            "ci_name":               matching_ci.name,
+                            "ci_value":              new_ci_value,
+                            "ci_fcu":                matching_ci.fcu,
+                            "base":                  base,
+                            "new_rate_cost":         new_rate_cost,
+                            "current_cost":          round(matching_ci.value, 2),
+                            "current_sell_tourplan": rate.sell_tourplan,
+                            "current_sell":          rate.sell,
+                            "rate_id":               rate.pk,
+                            "rate_group_id":         None,
+                            "sell_tourplan":         new_sell_tp,
+                            "sell":                  rate.sell,
+                            "cost":                  new_rate_cost,
+                            "product_code":          ctx_product.code,
+                            "product_name":          str(ctx_product),
+                            "product_id":            ctx_product.pk,
+                            "price_code":            None,
+                            "date_from":             ctx_date_from,
+                            "date_to":               ctx_date_to,
+                            "column_options":        rate.column_options,
+                            "fcu":                   ctx_fcu,
+                            "status":                "Confirmed",
+                            "margin":                svc_margin,
+                            "margin_info":           svc_margin_info,
+                            "rate_group_name":       rate_group.name,
+                            "season":                rate_line.season,
+                        }
+                        if dedup_key in result_index:
+                            idx = result_index[dedup_key]
+                            entry["_id"] = result[idx]["_id"]
+                            result[idx] = entry
+                        else:
+                            entry["_id"] = stats["rows_read"]
+                            stats["rows_read"] += 1
+                            stats["to_update"] += 1
+                            result_index[dedup_key] = len(result)
+                            result.append(entry)
+                continue  # done with this service name row
+
+            # ── PXB band row → update non-has_items rates (sell_tourplan) ──────
+            band_min = int(m.group(2))
+            band_max = int(m.group(3))
+            if band_min > 6:
+                continue
+
+            # ---- parse cost (raw band value)
+            raw_cost = c20.replace("\xa0", "").replace(" ", "")
+            if not raw_cost or set(raw_cost) <= {"-"}:
+                continue
+            try:
+                band_cost = round(float(raw_cost.replace(",", ".")), 2)
+            except ValueError:
+                continue
+
+            margin      = ctx_supplier_obj.margin
+            margin_info = ctx_supplier_obj.margin_info
+            if not margin or margin == 0:
+                continue
+
+            csv_products_seen.add(ctx_product.pk)
+            csv_product_dates.add((ctx_product.pk, ctx_date_from_db, ctx_date_to_db))
+
+            all_rate_groups = list(RateGroup.objects.filter(product=ctx_product).order_by("order"))
+
+            # ---- one entry per base covered by this band
+            for base in range(band_min, min(band_max, 6) + 1):
+                column_options = str(base)
+                direct_cost   = round(band_cost / base, 2) if ctx_fcu == "Group" else band_cost
+                sell_tourplan = math.ceil(direct_cost / margin)
+
+                if not all_rate_groups:
+                    dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db, column_options, None)
+                    if dedup_key not in result_index:
+                        entry = {
+                            "action":                "Add",
+                            "has_items":             False,
+                            "current_sell_tourplan": None,
+                            "current_sell":          None,
+                            "current_cost":          None,
+                            "rate_id":               None,
+                            "rate_group_id":         None,
+                            "product_code":          ctx_product.code,
+                            "product_name":          str(ctx_product),
+                            "product_id":            ctx_product.pk,
+                            "rate_group_name":       "Standard",
+                            "price_code":            None,
+                            "date_from":             ctx_date_from,
+                            "date_to":               ctx_date_to,
+                            "column_options":        column_options,
+                            "fcu":                   ctx_fcu,
+                            "cost":                  direct_cost,
+                            "status":                "Confirmed",
+                            "sell_tourplan":         sell_tourplan,
+                            "sell":                  sell_tourplan,
+                            "margin":                margin,
+                            "margin_info":           margin_info,
+                            "season":                "To be defined",
+                            "_id":                   stats["rows_read"],
+                        }
+                        stats["rows_read"] += 1
+                        stats["to_add"]    += 1
+                        result_index[dedup_key] = len(result)
+                        result.append(entry)
+                    continue
+
+                for rate_group in all_rate_groups:
+                    dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db, column_options, rate_group.pk)
+
+                    matching_rate_line = (
+                        RateLine.objects.filter(
+                            group=rate_group,
+                            date_from=ctx_date_from_db,
+                            date_to=ctx_date_to_db,
+                        )
+                        .select_related("group")
+                        .first()
+                    )
+
+                    if matching_rate_line:
+                        existing_rate = (
+                            Rate.objects
+                            .filter(rate_line=matching_rate_line, column_options=column_options)
+                            .first()
+                        )
+
+                        if existing_rate:
+                            if existing_rate.has_items:
+                                # Find the parent CostItem (code == product code)
+                                parent_ci = next(
+                                    (ci for ci in existing_rate.cost_items.all()
+                                     if ci.code.strip() == ctx_product.code.strip()),
+                                    None,
+                                )
+                                if parent_ci and round(band_cost, 2) != round(parent_ci.value, 2):
+                                    ci_dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db,
+                                                    column_options, rate_group.pk, parent_ci.pk)
+                                    per_base = (
+                                        round(band_cost / base, 2)
+                                        if parent_ci.fcu == "Group" else band_cost
+                                    )
+                                    new_sell_tp = math.ceil(per_base / margin)
+                                    ci_entry = {
+                                        "action":                "Update",
+                                        "has_items":             True,
+                                        "ci_id":                 parent_ci.pk,
+                                        "ci_name":               parent_ci.name or ctx_product.code,
+                                        "ci_value":              band_cost,
+                                        "ci_fcu":                parent_ci.fcu,
+                                        "base":                  base,
+                                        "new_rate_cost":         None,  # recalculated from DB on apply
+                                        "current_cost":          round(parent_ci.value, 2),
+                                        "current_sell_tourplan": existing_rate.sell_tourplan,
+                                        "current_sell":          existing_rate.sell,
+                                        "rate_id":               existing_rate.pk,
+                                        "rate_group_id":         None,
+                                        "sell_tourplan":         new_sell_tp,
+                                        "sell":                  existing_rate.sell,
+                                        "cost":                  band_cost,
+                                        "product_code":          ctx_product.code,
+                                        "product_name":          str(ctx_product),
+                                        "product_id":            ctx_product.pk,
+                                        "price_code":            None,
+                                        "date_from":             ctx_date_from,
+                                        "date_to":               ctx_date_to,
+                                        "column_options":        column_options,
+                                        "fcu":                   ctx_fcu,
+                                        "status":                "Confirmed",
+                                        "margin":                margin,
+                                        "margin_info":           margin_info,
+                                        "rate_group_name":       rate_group.name,
+                                        "season":                matching_rate_line.season,
+                                    }
+                                    if ci_dedup_key in result_index:
+                                        idx = result_index[ci_dedup_key]
+                                        ci_entry["_id"] = result[idx]["_id"]
+                                        result[idx] = ci_entry
+                                    else:
+                                        ci_entry["_id"] = stats["rows_read"]
+                                        stats["rows_read"] += 1
+                                        stats["to_update"] += 1
+                                        result_index[ci_dedup_key] = len(result)
+                                        result.append(ci_entry)
+                                continue
+
+                            # Normal sell_tourplan comparison
+                            if existing_rate.sell_tourplan != sell_tourplan:
+                                entry = {
+                                    "action":                "Update",
+                                    "has_items":             False,
+                                    "current_sell_tourplan": existing_rate.sell_tourplan,
+                                    "current_sell":          existing_rate.sell,
+                                    "current_cost":          existing_rate.cost,
+                                    "rate_id":               existing_rate.pk,
+                                    "rate_group_id":         None,
+                                    "sell_tourplan":         sell_tourplan,
+                                    "sell":                  sell_tourplan,
+                                    "cost":                  direct_cost,
+                                }
+                            else:
+                                if dedup_key in result_index:
+                                    idx = result_index.pop(dedup_key)
+                                    result.pop(idx)
+                                    result_index = {
+                                        k: (v - 1 if v > idx else v)
+                                        for k, v in result_index.items()
+                                    }
+                                    stats["to_update"] -= 1
+                                stats["up_to_date"] += 1
+                                continue
+                        else:
+                            entry = {
+                                "action":                "Add",
+                                "has_items":             False,
+                                "current_sell_tourplan": None,
+                                "current_sell":          None,
+                                "current_cost":          None,
+                                "rate_id":               None,
+                                "rate_group_id":         matching_rate_line.group.pk,
+                                "sell_tourplan":         sell_tourplan,
+                                "sell":                  sell_tourplan,
+                                "cost":                  direct_cost,
+                            }
+                    else:
+                        entry = {
+                            "action":                "Add",
+                            "has_items":             False,
+                            "current_sell_tourplan": None,
+                            "current_sell":          None,
+                            "current_cost":          None,
+                            "rate_id":               None,
+                            "rate_group_id":         rate_group.pk,
+                            "sell_tourplan":         sell_tourplan,
+                            "sell":                  sell_tourplan,
+                            "cost":                  direct_cost,
+                        }
+
+                    entry.update({
+                        "product_code":    ctx_product.code,
+                        "product_name":    str(ctx_product),
+                        "product_id":      ctx_product.pk,
+                        "price_code":      None,
+                        "date_from":       ctx_date_from,
+                        "date_to":         ctx_date_to,
+                        "column_options":  column_options,
+                        "fcu":             ctx_fcu,
+                        "status":          "Confirmed",
+                        "margin":          margin,
+                        "margin_info":     margin_info,
+                        "rate_group_name": rate_group.name,
+                        "season":          "To be defined",
+                    })
+
+                    if dedup_key in result_index:
+                        idx = result_index[dedup_key]
+                        entry["_id"] = result[idx]["_id"]
+                        result[idx]  = entry
+                    else:
+                        entry["_id"] = stats["rows_read"]
+                        stats["rows_read"] += 1
+                        if entry["action"] == "Update":
+                            stats["to_update"] += 1
+                        else:
+                            stats["to_add"] += 1
+                        result_index[dedup_key] = len(result)
+                        result.append(entry)
+
+    # ---- Delete detection
+    if csv_products_seen:
+        orphan_lines = (
+            RateLine.objects.filter(
+                group__product__in=csv_products_seen,
+                date_from__gt=today,
+            )
+            .select_related("group__product__supplier")
+            .prefetch_related("line_rates")
+        )
+
+        next_id = stats["rows_read"]
+        for rl in orphan_lines:
+            product = rl.group.product
+            combo   = (product.pk, rl.date_from, rl.date_to)
+            if combo in csv_product_dates:
+                continue
+
+            rates_summary = [
+                {
+                    "column_options": r.column_options,
+                    "sell_tourplan":  r.sell_tourplan,
+                    "sell":           r.sell,
+                    "cost":           r.cost,
+                }
+                for r in rl.line_rates.all()
+            ]
+
+            stats["to_delete"] += 1
+            result.append({
+                "_id":            next_id,
+                "action":         "Delete",
+                "has_items":      False,
+                "product_code":   product.code,
+                "product_name":   str(product),
+                "date_from":      rl.date_from.strftime("%d/%m/%Y"),
+                "date_to":        rl.date_to.strftime("%d/%m/%Y"),
+                "season":         rl.season,
+                "rate_line_id":   rl.pk,
+                "rates_summary":  rates_summary,
+                "price_code": None, "column_options": None, "fcu": None,
+                "cost": None, "sell_tourplan": None, "sell": None, "margin": None,
+                "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                "rate_id": None, "rate_group_id": None,
+            })
+            next_id += 1
+
+    csv_obj.read = True
+    csv_obj.save()
+    csv_obj.delete()
+
+    return result, stats
+
+
 def apply_confirmed_changes(confirmed_items):
 
     # ── Paso 1: recolectar old_avg por rate_line ANTES de aplicar cambios ──
@@ -889,15 +1465,43 @@ def apply_confirmed_changes(confirmed_items):
         margin_info = item.get("margin_info") or ""
 
         if action == "Update":
-            update_fields = {
-                "cost":          cost,
-                "sell_tourplan": sell_tourplan,
-                "sell":          sell,
-                "status":        status,
-            }
-            if margin_info:
-                update_fields["margin"] = margin_info
-            Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
+            if item.get("has_items"):
+                # Update the CI value, then recalculate Rate.cost and
+                # sell_tourplan from the real DB sum of all CostItems.
+                ci_id    = item.get("ci_id")
+                ci_value = item.get("ci_value")
+                if ci_id and ci_value is not None:
+                    CostItem.objects.filter(pk=ci_id).update(value=ci_value)
+                rate_obj = (
+                    Rate.objects.prefetch_related("cost_items")
+                    .get(pk=item["rate_id"])
+                )
+                recalc_cost = round(
+                    sum(ci.value for ci in rate_obj.cost_items.all()), 2
+                )
+                item_margin = item.get("margin") or 1
+                item_base   = item.get("base") or 1
+                item_ci_fcu = item.get("ci_fcu") or ""
+                per_base = (
+                    recalc_cost / item_base
+                    if item_ci_fcu == "Group" and item_base > 0
+                    else recalc_cost
+                )
+                recalc_sell_tp = math.ceil(per_base / item_margin)
+                Rate.objects.filter(pk=item["rate_id"]).update(
+                    cost=recalc_cost,
+                    sell_tourplan=recalc_sell_tp,
+                )
+            else:
+                update_fields = {
+                    "cost":          cost,
+                    "sell_tourplan": sell_tourplan,
+                    "sell":          sell,
+                    "status":        status,
+                }
+                if margin_info:
+                    update_fields["margin"] = margin_info
+                Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
 
         elif action == "Add":
             rate_group_id = item.get("rate_group_id")

@@ -1,4 +1,5 @@
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.contrib.auth import authenticate, login, logout
 from django.http import HttpResponseRedirect, JsonResponse, HttpResponse
 from django.urls import reverse
@@ -7,10 +8,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
+from difflib import SequenceMatcher
 from datetime import datetime, date, timedelta
 from django.utils.timezone import localtime
 from imap_tools import MailBox
@@ -853,7 +855,7 @@ def create_trip(request):
             # Set the default undefined users SD for the new trip booking options
             responsable_user = User.objects.get(pk=19)
             operations_user = User.objects.get(pk=19)
-            dh = User.objects.get(pk=19)
+            dh = None
 
             # Creates the model of the trip from the form information
             new_trip = Trip.objects.create(
@@ -930,20 +932,20 @@ def modify_trip(request, trip_id):
             dh_type = request.POST["dh_type"]
             responsable_user_form = request.POST["responsable_user"]
             operations_user_form = request.POST["operations_user"]
-            dh_form = request.POST["dh"]
+            dh_form = request.POST.get("dh", "")
             guide = request.POST["guide"]
         else:
             itId = ""
             dh_type = "Sin definir"
             responsable_user_form = User.objects.get(username="SD").id
             operations_user_form = User.objects.get(username="SD").id
-            dh_form = User.objects.get(username="SD").id
+            dh_form = ""
             guide = ""
 
 
         if not name or not starting_date_form or not client_form or not contact_form or not status or not quantity_pax or not difficulty:
             return render(request, "intranet/trips.html", get_return_page("trips", "error", request.user))
-        
+
 
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
@@ -957,7 +959,7 @@ def modify_trip(request, trip_id):
         # Get the user from the user ID of the form
         responsable_user = User.objects.get(id=responsable_user_form)
         operations_user = User.objects.get(id=operations_user_form)
-        dh = User.objects.get(id=dh_form)
+        dh = dh_form
 
         # Return the correct date to the model from the form
         starting_date = datetime.fromisoformat(starting_date_form)
@@ -984,7 +986,10 @@ def modify_trip(request, trip_id):
         trip.out_date=out_date
         trip.dh=dh
         trip.guide=guide
-        
+
+        if request.POST.get("reactivate_margin_warning"):
+            trip.ignore_margin_warning = False
+
         trip.save()
 
         return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
@@ -1283,26 +1288,6 @@ def modify_entry(request, entry_id):
         elif (status == "Quote" or status == "Booking" or status == "Cancelado") and isClosed and empty_amount == True:
             return render(request, "intranet/edit_entry.html", {
                 "message": "El monto es obligatorio para status Quote y Booking",
-                "trips": entries_trips,
-                "status": STATUS_OPTIONS,
-                "importance_options": IMPORTANCE_OPTIONS,
-                "progress_options": PROGRESS_OPTIONS,
-                "users": User.objects.filter(department=request.user),
-                "entry": entry,
-                "formated_starting_date": formated_starting_date,
-                "formated_closing_date": formated_closing_date,
-            })
-
-        has_same_tp_ref = False    
-        try:
-            same_tp_trip = Trip.objects.get(tourplanId=tourplanId)
-            has_same_tp_ref = True
-        except Trip.DoesNotExist:
-            has_same_tp_ref = False
-        
-        if has_same_tp_ref:
-            return render(request, "intranet/edit_entry.html", {
-                "message": "El número de Tourplan ya existe en un viaje",
                 "trips": entries_trips,
                 "status": STATUS_OPTIONS,
                 "importance_options": IMPORTANCE_OPTIONS,
@@ -3370,8 +3355,8 @@ def stats_presentation_trips(request):
 
 
 def read_emails(request):
-    load_dotenv()
-    
+    load_dotenv(override=True)
+
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_SERVER = os.environ.get("MAIL_SERVER")
@@ -3452,6 +3437,7 @@ def upload_data(csv_obj):
     updated_count = 0
     csv_not_in_app = []        # dicts with row data for TP IDs not found in app
     csv_client_ref_to_tp = {}  # client_ref_prefix (col 15) → tp_id (col 3), for TP suggestions
+    csv_quote_tp_ids = set()   # TP IDs that appear in the CSV with Quote status
     matched_tp_ids = set()
     trips_to_update = []
 
@@ -3472,20 +3458,28 @@ def upload_data(csv_obj):
             # col 15 (index 14) — client reference from CSV (e.g. "2640190/1")
             csv_client_ref = str(row[14]).strip() if len(row) > 14 else ""
             client_ref_prefix = str(csv_client_ref.split("/")[0]).strip() if "/" in csv_client_ref else csv_client_ref
+            csv_client_name = row[12].strip() if len(row) > 12 else ""
+            is_consumidor_final = csv_client_name.lower().startswith("consumidor final")
 
-            # Build prefix→tp_id map: Booking rows (OK/FI) take priority over any other
-            if client_ref_prefix:
-                raw_status_csv = row[5].strip() if len(row) > 5 else ""
-                is_booking_row = raw_status_csv in ("OK", "FI")
-                if is_booking_row or client_ref_prefix not in csv_client_ref_to_tp:
-                    csv_client_ref_to_tp[client_ref_prefix] = tp_id
+            # Build prefix→{tp_id, name} map: ONLY Booking rows (OK/FI), never Quote
+            # Exclude "Consumidor Final" rows — they are extensions, not the main trip
+            raw_status_csv = row[5].strip() if len(row) > 5 else ""
+            is_booking_row = raw_status_csv in ("OK", "FI")
+            is_cancelled_row = raw_status_csv in ("RX", "XC", "XX")
+            if not is_booking_row and not is_cancelled_row:
+                csv_quote_tp_ids.add(tp_id)
+            if client_ref_prefix and not is_consumidor_final and is_booking_row:
+                csv_pax_name = row[6].strip() if len(row) > 6 else ""
+                if client_ref_prefix not in csv_client_ref_to_tp:
+                    csv_client_ref_to_tp[client_ref_prefix] = {"tp_id": tp_id, "name": csv_pax_name}
 
             if tp_id not in trips_by_tourplan:
                 # 2nd pass: check Entry.tourplanId
                 if tp_id in entry_tp_ids:
                     continue
                 # 3rd pass: compare client_reference prefix (col 15) against stored client_reference values
-                if client_ref_prefix and client_ref_prefix in client_ref_set:
+                # Skip this check for "Consumidor Final" rows — they should go to csv_not_in_app
+                if not is_consumidor_final and client_ref_prefix and client_ref_prefix in client_ref_set:
                     continue
 
                 # Capture display fields for the "not in app" modal
@@ -3503,27 +3497,29 @@ def upload_data(csv_obj):
                 try:
                     quantity_pax = int(raw_pax)
                 except ValueError:
-                    quantity_pax = 1
-
-                csv_not_in_app.append({
-                    "tp_id":            tp_id,
-                    "name":             row[6].strip() if len(row) > 6 else "",
-                    "vendedor":         vendedor_user.username if vendedor_user else vendedor_tp,
-                    "client_name":      row[12].strip() if len(row) > 12 else "",
-                    "travelling_date":  row[3].strip() if len(row) > 3 else "",
-                    "out_date":         row[4].strip() if len(row) > 4 else "",
-                    "dh_type":          row[7].strip() if len(row) > 7 else "",
-                    "vendedor_tp":      vendedor_tp,
-                    "operations_tp":    row[10].strip() if len(row) > 10 else "",
-                    "dh_name":          row[11].strip()[3:].strip() if len(row) > 11 and row[11].strip().startswith("DH ") else (row[11].strip() if len(row) > 11 else ""),
-                    "guide":            row[16].strip() if len(row) > 16 else "",
-                    "status":           trip_status,
-                    "quantity_pax":     quantity_pax,
-                    # debug — remove once column mapping confirmed
-                    "dbg_col14":     row[14].strip() if len(row) > 14 else "(vacío)",
-                    "dbg_col15":     row[15].strip() if len(row) > 15 else "(vacío)",
-                    "dbg_prefix":    client_ref_prefix or "(vacío)",
-                })
+                    quantity_pax = 2
+                if trip_status in ("Booking", "Cancelado"):
+                    raw_rent = row[20].strip() if len(row) > 20 else ""
+                    raw_amount = row[21].strip() if len(row) > 21 else ""
+                    csv_not_in_app.append({
+                        "tp_id":            tp_id,
+                        "name":             row[6].strip() if len(row) > 6 else "",
+                        "vendedor":         vendedor_user.username if vendedor_user else vendedor_tp,
+                        "client_name":      row[12].strip() if len(row) > 12 else "",
+                        "contact_name":     row[13].strip() if len(row) > 13 else "",
+                        "client_reference": row[14].strip() if len(row) > 14 else "",
+                        "travelling_date":  row[3].strip() if len(row) > 3 else "",
+                        "out_date":         row[4].strip() if len(row) > 4 else "",
+                        "dh_type":          row[7].strip() if len(row) > 7 else "",
+                        "vendedor_tp":      vendedor_tp,
+                        "operations_tp":    row[10].strip() if len(row) > 10 else "",
+                        "dh_name":          row[11].strip()[3:].strip() if len(row) > 11 and row[11].strip().startswith("DH ") else (row[11].strip() if len(row) > 11 else ""),
+                        "guide":            row[16].strip() if len(row) > 16 else "",
+                        "status":           trip_status,
+                        "quantity_pax":     quantity_pax,
+                        "rent_perc_raw":    raw_rent,
+                        "amount_raw":       raw_amount,
+                    })
                 continue
 
             trip = trips_by_tourplan[tp_id]
@@ -3585,7 +3581,7 @@ def upload_data(csv_obj):
             # col 22 (index 21) — amount
             if len(row) > 21 and row[21].strip():
                 try:
-                    trip.amount = int(row[21].strip())
+                    trip.amount = int(float(row[21].strip().replace(".", "").replace(",", ".")))
                 except ValueError:
                     pass
 
@@ -3606,24 +3602,34 @@ def upload_data(csv_obj):
                     tp_entry.amount = trip.amount
                     tp_entry.save()
 
-    # Booking trips that have NO tourplanId, or whose current TP differs from
-    # the Booking TP suggested by this CSV for the same client reference
-    csv_booking_tp_ids = set(csv_client_ref_to_tp.values())
-    no_tp_trips = []
+    # Booking trips split into 3 groups based on their tourplanId vs. CSV data:
+    #   group1 – no TP assigned at all
+    #   group2 – has a TP that is a Quote in the CSV (should be a Booking TP)
+    #   group3 – has a TP but CSV suggests a different Booking TP for same client ref
+    no_tp_group1 = []
+    no_tp_group2 = []
+    no_tp_group3 = []
     for t in (Trip.objects.filter(status="Booking")
               .select_related("responsable_user", "client")
               .order_by("travelling_date")):
         client_ref = str(t.client_reference).strip() if t.client_reference else ""
         cr_prefix = client_ref.split("/")[0] if "/" in client_ref else client_ref
-        suggested = csv_client_ref_to_tp.get(client_ref) or csv_client_ref_to_tp.get(cr_prefix, "")
-
-        has_no_tp   = not t.tourplanId or t.tourplanId.strip() == ""
-        has_wrong_tp = suggested and t.tourplanId and t.tourplanId.strip() != suggested
-
-        if not has_no_tp and not has_wrong_tp:
+        # Skip references that are not real (n/a, -, or fewer than 6 digits)
+        if sum(c.isdigit() for c in cr_prefix) < 6:
             continue
+        match = csv_client_ref_to_tp.get(client_ref) or csv_client_ref_to_tp.get(cr_prefix)
+        suggested = ""
+        if match:
+            ratio = SequenceMatcher(None, t.name.lower(), match["name"].lower()).ratio()
+            if ratio >= 0.35:
+                suggested = match["tp_id"]
 
-        no_tp_trips.append({
+        current_tp = t.tourplanId.strip() if t.tourplanId else ""
+        has_no_tp    = not current_tp
+        is_quote_tp  = bool(current_tp) and current_tp in csv_quote_tp_ids
+        has_wrong_tp = bool(suggested) and bool(current_tp) and current_tp != suggested
+
+        row_data = {
             "trip_id":          t.id,
             "name":             t.name,
             "client_reference": client_ref,
@@ -3631,14 +3637,21 @@ def upload_data(csv_obj):
             "vendedor":         t.responsable_user.username if t.responsable_user else "",
             "client":           t.client.name if t.client else "",
             "suggested_tp":     suggested,
-            "current_tp":       t.tourplanId or "",
-        })
+            "current_tp":       current_tp,
+        }
+
+        if has_no_tp:
+            no_tp_group1.append(row_data)
+        elif is_quote_tp:
+            no_tp_group2.append(row_data)
+        elif has_wrong_tp:
+            no_tp_group3.append(row_data)
 
     csv_obj.read = True
     csv_obj.save()
     csv_obj.delete()
 
-    return updated_count, no_tp_trips, csv_not_in_app
+    return updated_count, no_tp_group1, no_tp_group2, no_tp_group3, csv_not_in_app
 
 
 # Page to load the tourplan csv
@@ -3655,16 +3668,20 @@ def tourplan_files(request):
             form.save()
 
             csv_obj = CsvFileTourplanFiles.objects.filter(read=False).last()
-            updated_count, no_tp_trips, csv_not_in_app = upload_data(csv_obj)
+            updated_count, no_tp_group1, no_tp_group2, no_tp_group3, csv_not_in_app = upload_data(csv_obj)
 
             request.session["tp_csv_not_in_app"] = csv_not_in_app
-            request.session["tp_no_tp_trips"]    = no_tp_trips
+            request.session["tp_no_tp_group1"]   = no_tp_group1
+            request.session["tp_no_tp_group2"]   = no_tp_group2
+            request.session["tp_no_tp_group3"]   = no_tp_group3
             request.session.modified = True
 
             return render(request, "intranet/tourplan_files.html", {
                 "form":            form,
                 "updated_count":   updated_count,
-                "no_tp_trips":     no_tp_trips,
+                "no_tp_group1":    no_tp_group1,
+                "no_tp_group2":    no_tp_group2,
+                "no_tp_group3":    no_tp_group3,
                 "csv_not_in_app":  csv_not_in_app,
                 "show_results_modal": True,
                 "users": User.objects.all,
@@ -3672,13 +3689,17 @@ def tourplan_files(request):
     else:
         form = CsvFormTourplanFiles()
 
-    pending_csv   = request.session.get("tp_csv_not_in_app", [])
-    pending_no_tp = request.session.get("tp_no_tp_trips", [])
+    pending_csv    = request.session.get("tp_csv_not_in_app", [])
+    pending_group1 = request.session.get("tp_no_tp_group1", [])
+    pending_group2 = request.session.get("tp_no_tp_group2", [])
+    pending_group3 = request.session.get("tp_no_tp_group3", [])
     return render(request, "intranet/tourplan_files.html", {
         "form":            form,
         "csv_not_in_app":  pending_csv,
-        "no_tp_trips":     pending_no_tp,
-        "show_results_modal": bool(pending_csv or pending_no_tp),
+        "no_tp_group1":    pending_group1,
+        "no_tp_group2":    pending_group2,
+        "no_tp_group3":    pending_group3,
+        "show_results_modal": bool(pending_csv or pending_group1 or pending_group2 or pending_group3),
         "users": User.objects.all,
     })
 
@@ -3698,25 +3719,61 @@ def tourplan_create_trips(request):
 
     pending = request.session.get("tp_csv_not_in_app", [])
 
-    users_by_other_tp   = {u.other_tp: u for u in User.objects.all() if u.other_tp}
-    clients_by_name     = {c.name: c for c in Client.objects.all()}
-    default_contact     = ClientContact.objects.filter(name="Sin Contacto").first()
-    default_user        = User.objects.filter(username="SD").first()
+    users_by_other_tp  = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+    clients_by_name    = {c.name.strip().lower(): c for c in Client.objects.all()}
+    contacts_by_name   = {c.name.strip().lower(): c for c in ClientContact.objects.all()}
+    default_contact    = ClientContact.objects.filter(name="Sin Contacto").first()
+    default_client     = Client.objects.filter(name="Sin Cliente").first()
+    default_user       = User.objects.filter(username="SD").first()
 
     created = 0
     remaining = []
+    unmatched_clients  = []  # {tp_id, csv_name} where no client found
+    unmatched_contacts = []  # {tp_id, csv_name} where no contact found
+
     for row in pending:
         if row["tp_id"] not in selected_tp_ids:
             remaining.append(row)
             continue
 
-        # Resolve FKs
+        # ── Client matching ──────────────────────────────────────────────
+        csv_client_name = row.get("client_name", "").strip()
+        csv_client_lower = csv_client_name.lower()
+        if csv_client_lower.startswith("consumidor final"):
+            client = clients_by_name.get("consumidor final") or default_client
+        else:
+            client = clients_by_name.get(csv_client_lower)
+            if not client:
+                # Partial: check if any stored name contains the CSV name or vice-versa
+                client = next(
+                    (c for name, c in clients_by_name.items()
+                     if csv_client_lower and (csv_client_lower in name or name in csv_client_lower)),
+                    None
+                )
+            if not client:
+                unmatched_clients.append({"tp_id": row["tp_id"], "csv_name": csv_client_name})
+                client = default_client
+
+        # ── Contact matching ─────────────────────────────────────────────
+        csv_contact_name = row.get("contact_name", "").strip()
+        csv_contact_lower = csv_contact_name.lower()
+        contact = contacts_by_name.get(csv_contact_lower)
+        if not contact and csv_contact_lower:
+            contact = next(
+                (c for name, c in contacts_by_name.items()
+                 if csv_contact_lower in name or name in csv_contact_lower),
+                None
+            )
+        if not contact:
+            if csv_contact_name:
+                unmatched_contacts.append({"tp_id": row["tp_id"], "csv_name": csv_contact_name})
+            contact = default_contact
+
+        # ── Users ────────────────────────────────────────────────────────
         responsable = users_by_other_tp.get(row["vendedor_tp"]) or default_user
         operations  = users_by_other_tp.get(row["operations_tp"]) or default_user
-        client      = clients_by_name.get(row["client_name"])
-        if not client:
-            client = Client.objects.filter(name="Sin Cliente").first()
 
+        # ── Dates ────────────────────────────────────────────────────────
         try:
             td = datetime.strptime(row["travelling_date"], "%d/%m/%Y").date() if row["travelling_date"] else date.today()
             od = datetime.strptime(row["out_date"], "%d/%m/%Y").date() if row["out_date"] else td
@@ -3724,12 +3781,30 @@ def tourplan_create_trips(request):
             td = date.today()
             od = td
 
+        # ── Financials ───────────────────────────────────────────────────
+        rent_perc = None
+        raw_rent = row.get("rent_perc_raw", "")
+        if raw_rent:
+            try:
+                rent_perc = float(raw_rent.replace("%", "").replace(",", ".").strip()) / 100
+            except ValueError:
+                pass
+
+        amount = None
+        raw_amount = row.get("amount_raw", "").strip()
+        if raw_amount:
+            try:
+                amount = int(float(raw_amount.replace(".", "").replace(",", ".")))
+            except ValueError:
+                pass
+
         Trip.objects.create(
             name=row["name"] or row["tp_id"],
             tourplanId=row["tp_id"],
             status=row["status"],
             client=client,
-            contact=default_contact,
+            contact=contact,
+            client_reference=row.get("client_reference", ""),
             travelling_date=td,
             out_date=od,
             starting_date=td,
@@ -3742,6 +3817,8 @@ def tourplan_create_trips(request):
             department=request.user.department,
             quantity_pax=row["quantity_pax"],
             difficulty="1",
+            rent_perc=rent_perc,
+            amount=amount or 0,
         )
         created += 1
 
@@ -3752,7 +3829,12 @@ def tourplan_create_trips(request):
         request.session.pop("tp_csv_not_in_app", None)
     request.session.modified = True
 
-    return JsonResponse({"created": created, "remaining": len(remaining)})
+    return JsonResponse({
+        "created":            created,
+        "remaining":          len(remaining),
+        "unmatched_clients":  unmatched_clients,
+        "unmatched_contacts": unmatched_contacts,
+    })
 
 
 @login_required
@@ -3804,13 +3886,14 @@ def tourplan_assign_tp(request):
         except Trip.DoesNotExist:
             pass
 
-    # Remove assigned trips from session
-    pending = request.session.get("tp_no_tp_trips", [])
-    remaining = [r for r in pending if str(r["trip_id"]) not in assigned_trip_ids]
-    if remaining:
-        request.session["tp_no_tp_trips"] = remaining
-    else:
-        request.session.pop("tp_no_tp_trips", None)
+    # Remove assigned trips from all 3 session groups
+    for key in ("tp_no_tp_group1", "tp_no_tp_group2", "tp_no_tp_group3"):
+        pending = request.session.get(key, [])
+        remaining = [r for r in pending if str(r["trip_id"]) not in assigned_trip_ids]
+        if remaining:
+            request.session[key] = remaining
+        else:
+            request.session.pop(key, None)
     request.session.modified = True
 
     return JsonResponse({"assigned": len(assigned_trip_ids)})
@@ -3931,7 +4014,7 @@ def upload_csv_intranet(csv_obj):
                         department="SH",
                         responsable_user=User.objects.get(username="SD"),
                         operations_user=User.objects.get(username="SD"),
-                        dh=User.objects.get(username="SD"),
+                        dh=None,
                         creation_user=User.objects.get(username="KoalaDiana"),
                         trip_type=temp_obj["trip_type"],
                         travelling_date=temp_obj["travelling_date"],
@@ -4117,3 +4200,1227 @@ def intranet_files(request):
         "form":form,
         "users": User.objects.all,
     })
+
+# ── Margin Management ──────────────────────────────────────────────────────────
+
+def _trip_to_dict(t):
+    return {
+        "id": t.id,
+        "name": t.name,
+        "tourplanId": t.tourplanId or "",
+        "travelling_date": t.travelling_date.strftime("%d/%m/%Y"),
+        "quantity_pax": t.quantity_pax,
+        "rent_perc_display": round((t.rent_perc or 0) * 100, 1),
+        "rent_perc_low": (t.rent_perc or 0) < 0.15,
+        "operations_user_name": t.operations_user.username if t.operations_user else "",
+        "client_name": t.client.name if t.client else "",
+        "margin_reviewed": t.margin_reviewed,
+        "seller_name": t.responsable_user.username if t.responsable_user else "",
+    }
+
+
+@login_required
+def margin_management(request):
+    from itertools import groupby
+    today = date.today()
+
+    if request.user.userType == "Internal":
+        # Admin view: all Booking trips next 2 months, grouped by seller
+        date_limit = today + timedelta(days=60)
+        trips_qs = Trip.objects.select_related(
+            "client", "operations_user", "responsable_user"
+        ).filter(
+            status="Booking",
+            travelling_date__range=(today, date_limit),
+            ignore_margin_warning=False,
+        ).filter(
+            Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).order_by("responsable_user__username", "travelling_date")
+
+        seller_groups = []
+        for seller, seller_trips in groupby(trips_qs, key=lambda t: t.responsable_user):
+            trips_list = [_trip_to_dict(t) for t in seller_trips]
+            seller_name = (seller.get_full_name() or seller.username) if seller else "Sin vendedor"
+            seller_groups.append({"seller_name": seller_name, "trips": trips_list})
+
+        # Ignored trips (any seller, next 2 months)
+        ignored_qs = Trip.objects.select_related(
+            "client", "responsable_user"
+        ).filter(
+            status="Booking",
+            ignore_margin_warning=True,
+        ).filter(
+            Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).order_by("responsable_user__username", "travelling_date")
+        ignored_trips = [_trip_to_dict(t) for t in ignored_qs]
+
+        total = sum(len(g["trips"]) for g in seller_groups)
+        reviewed = sum(1 for g in seller_groups for t in g["trips"] if t["margin_reviewed"])
+
+        return render(request, "intranet/margin_management.html", {
+            "is_admin": True,
+            "seller_groups": seller_groups,
+            "ignored_trips": ignored_trips,
+            "total": total,
+            "reviewed_count": reviewed,
+        })
+
+    else:
+        # Seller view: own trips, next 12 months
+        date_limit = today + timedelta(days=365)
+        trips_qs = Trip.objects.select_related(
+            "client", "operations_user", "responsable_user"
+        ).filter(
+            responsable_user=request.user,
+            status="Booking",
+            travelling_date__range=(today, date_limit),
+            ignore_margin_warning=False,
+        ).filter(
+            Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).order_by("travelling_date")
+
+        trips = [_trip_to_dict(t) for t in trips_qs]
+        reviewed = sum(1 for t in trips if t["margin_reviewed"])
+
+        return render(request, "intranet/margin_management.html", {
+            "is_admin": False,
+            "trips": trips,
+            "total": len(trips),
+            "reviewed_count": reviewed,
+        })
+
+
+@login_required
+def margin_review_trip(request, trip_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    try:
+        data = json.loads(request.body)
+        reviewed = bool(data.get("reviewed", True))
+        if request.user.userType == "Internal":
+            trip = Trip.objects.get(id=trip_id)
+        else:
+            trip = Trip.objects.get(id=trip_id, responsable_user=request.user)
+        trip.margin_reviewed = reviewed
+        trip.save(update_fields=["margin_reviewed"])
+        return JsonResponse({"ok": True, "reviewed": reviewed})
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+
+@login_required
+def margin_ignore_trip(request, trip_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    try:
+        if request.user.userType == "Internal":
+            trip = Trip.objects.get(id=trip_id)
+        else:
+            trip = Trip.objects.get(id=trip_id, responsable_user=request.user)
+        trip.ignore_margin_warning = True
+        trip.save(update_fields=["ignore_margin_warning"])
+        return JsonResponse({"ok": True})
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+
+
+# ── Trip Filter ────────────────────────────────────────────────────────────────
+
+SEASON_MONTHS = [
+    (5, "Mayo"), (6, "Junio"), (7, "Julio"), (8, "Agosto"),
+    (9, "Septiembre"), (10, "Octubre"), (11, "Noviembre"), (12, "Diciembre"),
+    (1, "Enero"), (2, "Febrero"), (3, "Marzo"), (4, "Abril"),
+]
+
+
+@login_required
+def trip_filter(request):
+    today = date.today()
+    season_start_year = today.year if today.month >= 5 else today.year - 1
+    seasons = []
+    for i in range(3):
+        y = season_start_year + i
+        seasons.append({
+            "label": f"{y}/{y+1}",
+            "start": f"{y}-05-01",
+            "end": f"{y+1}-04-30",
+            "current": i == 0,
+        })
+    return render(request, "intranet/filter_trips.html", {
+        "seasons": seasons,
+        "months": SEASON_MONTHS,
+    })
+
+
+@login_required
+def trip_filter_clients(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    data = json.loads(request.body)
+    season_start = data.get("season_start")
+    season_end   = data.get("season_end")
+    status_list  = data.get("status_list", [])
+
+    qs = Trip.objects.select_related("client").filter(
+        department=request.user.department,
+        travelling_date__range=(season_start, season_end),
+    )
+    if request.user.userType == "Ventas":
+        qs = qs.filter(responsable_user=request.user)
+    elif request.user.userType == "Operaciones":
+        qs = qs.filter(operations_user=request.user)
+    if status_list:
+        qs = qs.filter(status__in=status_list)
+
+    clients = (
+        qs.values("client__id", "client__name")
+        .distinct()
+        .order_by("client__name")
+    )
+    return JsonResponse({
+        "clients": [{"id": c["client__id"], "name": c["client__name"]} for c in clients]
+    })
+
+
+@login_required
+def trip_filter_results(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    data = json.loads(request.body)
+    season_start = data.get("season_start")
+    season_end   = data.get("season_end")
+    status_list  = data.get("status_list", [])
+    filter_type  = data.get("filter_type")   # "month" | "client" | None
+    values       = data.get("values", [])
+
+    qs = Trip.objects.select_related(
+        "client", "contact", "responsable_user", "operations_user"
+    ).filter(
+        department=request.user.department,
+        travelling_date__range=(season_start, season_end),
+    )
+    if request.user.userType == "Ventas":
+        qs = qs.filter(responsable_user=request.user)
+    elif request.user.userType == "Operaciones":
+        qs = qs.filter(operations_user=request.user)
+    if status_list:
+        qs = qs.filter(status__in=status_list)
+    if filter_type == "month" and values:
+        qs = qs.filter(travelling_date__month__in=[int(m) for m in values])
+    elif filter_type == "client" and values:
+        qs = qs.filter(client__id__in=[int(c) for c in values])
+    qs = qs.order_by("travelling_date")
+
+    trips = list(qs)
+    html = render_to_string(
+        "intranet/filter_trips_results.html",
+        {"trips": trips},
+        request=request,
+    )
+    return JsonResponse({"html": html, "count": len(trips)})
+
+
+# ── Email Processor ────────────────────────────────────────────────────────────
+
+import re
+import io as _io
+
+
+def _parse_email_subject(subject):
+    """Return (entry_status, ref_full, ref_prefix) from email subject."""
+    su = subject.upper()
+    if 'RECONFIRMATION' in su:
+        status = 'Final Itinerary'
+    elif 'BOOKING' in su:
+        status = 'Booking'
+    elif 'QUOTE' in su:
+        status = 'Quote'
+    elif 'BLOQUEO' in su or 'BLOCK' in su:
+        status = 'Bloqueo'
+    elif 'PROGRAMA' in su or 'PROGRAM' in su:
+        status = 'Programa'
+    else:
+        status = 'Otro'
+
+    # Audley pattern: "Audley 2778624/1"
+    m = re.search(r'[Aa]udley\s+(\d{6,8}/\d+)', subject)
+    if m:
+        ref_full   = m.group(1)
+        ref_prefix = ref_full.split('/')[0]
+    else:
+        ref_full = ref_prefix = ''
+
+    return status, ref_full, ref_prefix
+
+
+def _parse_audley_csv(content_bytes):
+    """Parse Audley CSV. Extracts owner (travel agent) and first real service date.
+    Audley CSVs have a metadata header section followed by a data table starting
+    with a 'Date,Place,Service,...' header row. Only dates from the data table are
+    considered, and Package_Item rows (the overall trip wrapper) are skipped.
+    """
+    text = content_bytes.decode('utf-8-sig', errors='replace')
+    reader = csv.reader(_io.StringIO(text))
+    rows = list(reader)
+
+    meta = {'owner': '', 'first_date': None}
+    _DATE_FMTS = ['%a %d %b %Y', '%d/%m/%Y', '%Y-%m-%d', '%d %b %Y', '%d-%b-%Y']
+
+    in_data_section = False
+
+    for row in rows:
+        if not row:
+            continue
+        cells = [c.strip() for c in row]
+        labels = [c.lower() for c in cells]
+
+        # Owner detection — only in metadata section (before data table)
+        if not in_data_section:
+            if not meta['owner']:
+                for i, lbl in enumerate(labels):
+                    if 'owner' in lbl and 'business' not in lbl:
+                        val = next((cells[j] for j in range(i + 1, len(cells)) if cells[j]), '')
+                        if val:
+                            meta['owner'] = val
+                            break
+
+            # Detect start of data table: any row that has 'date' in the first 3 cells
+            if any(lbl == 'date' for lbl in labels[:3]) and len(cells) > 2:
+                in_data_section = True
+            continue
+
+        # --- Inside the data table ---
+        # Skip Package_Item rows (the overall trip container — not a real service)
+        if any('package' in c.lower() for c in cells):
+            continue
+
+        # First parseable date in col[0] is our answer
+        if not meta['first_date']:
+            raw_tc = cells[0].title()
+            for fmt in _DATE_FMTS:
+                try:
+                    meta['first_date'] = datetime.strptime(raw_tc, fmt).date()
+                    break
+                except ValueError:
+                    pass
+
+        if meta['owner'] and meta['first_date']:
+            break
+
+    return meta
+
+
+def _find_matching_trip(ref_full, ref_prefix, passenger_name, first_date, department, is_audley=False):
+    """Return (trip_or_None, match_type_str).
+    If is_audley=True, only match by reference (Audley always has one; fuzzy on other clients = noise).
+    """
+    # Pass 1: client reference
+    if ref_prefix:
+        qs = Trip.objects.select_related(
+            'client', 'contact', 'responsable_user', 'operations_user'
+        ).filter(department=department).filter(
+            Q(client_reference__contains=ref_prefix)
+        )
+        if qs.exists():
+            return qs.first(), 'reference'
+
+    # If Audley and reference not found, skip fuzzy — create new
+    if is_audley:
+        return None, None
+
+    # Pass 2: fuzzy passenger name + date proximity (non-Audley only)
+    if passenger_name and passenger_name.upper() not in ('TBD TRAVELLER 1', ''):
+        date_min = (first_date - timedelta(days=45)) if first_date else date.today()
+        date_max = (first_date + timedelta(days=45)) if first_date else (date.today() + timedelta(days=730))
+        candidates = Trip.objects.select_related(
+            'client', 'contact', 'responsable_user', 'operations_user'
+        ).filter(department=department, travelling_date__range=(date_min, date_max))
+
+        best_trip, best_ratio = None, 0.40
+        for t in candidates:
+            ratio = SequenceMatcher(None, passenger_name.lower(), t.name.lower()).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_trip = ratio, t
+        if best_trip:
+            return best_trip, 'nombre'
+
+    return None, None
+
+
+@login_required
+def email_processor(request):
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    load_dotenv(override=True)
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_SERVER   = os.environ.get('MAIL_SERVER')
+
+    email_cards = []
+    clients = Client.objects.filter(department=request.user.department, isActivated=True).order_by('name')
+
+    with MailBox(MAIL_SERVER).login(MAIL_USERNAME, MAIL_PASSWORD, 'Inbox') as mb:
+        for msg in mb.fetch(limit=30, reverse=True, mark_seen=False):
+            status, ref_full, ref_prefix = _parse_email_subject(msg.subject)
+
+            csv_meta = None
+            has_pdf  = False
+            for att in msg.attachments:
+                fname = (att.filename or '').lower()
+                if fname.endswith('.pdf'):
+                    has_pdf = True
+                elif fname.endswith('.csv') and 'passenger' not in fname:
+                    csv_meta = _parse_audley_csv(att.payload)
+
+            # Use CSV ref if subject has none
+            if csv_meta and not ref_full:
+                ref_full   = csv_meta.get('ref', '')
+                ref_prefix = ref_full.split('/')[0] if '/' in ref_full else ref_full
+
+            # Extract sender email address
+            from_raw = msg.from_ or ''
+            m_addr = re.search(r'<([^>]+)>', from_raw)
+            sender_email = m_addr.group(1).lower() if m_addr else from_raw.lower().strip()
+
+            passenger_name = ''
+            first_date     = None
+            pax            = 2
+            suggested_note = ''
+
+            # Build searchable text: plain text + HTML stripped of tags (structured content is often HTML-only)
+            email_text = msg.text or ''
+            if msg.html:
+                _html_stripped = re.sub(r'<[^>]+>', ' ', msg.html)
+                _html_stripped = re.sub(r'&nbsp;', ' ', _html_stripped)
+                _html_stripped = re.sub(r'\s{2,}', ' ', _html_stripped)
+                email_text = email_text + '\n' + _html_stripped
+
+            # Date: 1) from CSV
+            if csv_meta:
+                first_date = csv_meta.get('first_date')
+
+            # Surname from subject (used for trip matching)
+            match_surname = ''
+            _ref_surname = re.search(r'[Aa]udley\s+[\d/]+\s+([A-Z][a-zA-Z\-\']+)', msg.subject)
+            if _ref_surname:
+                match_surname = _ref_surname.group(1).strip()
+
+            # Full passenger name from body "Primary Traveller"
+            # HTML bold tags become * in stripped text: "*Primary Traveller * Laura Jane Nicholls"
+            _pt = re.search(r'\*?Primary Traveller\s*\*?\s*([^\n\*<]+)', email_text, re.IGNORECASE)
+            passenger_name = _pt.group(1).strip() if _pt else match_surname
+
+            # Pax from "Group Size"
+            _gs = re.search(r'\*?Group Size\s*\*?\s*(\d+)', email_text, re.IGNORECASE)
+            if _gs:
+                pax = int(_gs.group(1))
+
+            # Occasion Comment
+            _oc = re.search(r'\*?Occasion Comment\s*\*?\s*(.+?)(?=\n\*|\Z)', email_text, re.IGNORECASE | re.DOTALL)
+            if _oc:
+                suggested_note = ' '.join(_oc.group(1).strip().split())
+
+            # Auto-detect contact + client:
+            # 1) Match CSV owner name against ClientContact (most reliable for Audley)
+            # 2) Fallback: match sender email against ClientContact
+            sender_client_id  = None
+            sender_contact_id = None
+            _owner_name = (csv_meta.get('owner', '') if csv_meta else '').strip()
+
+            if _owner_name:
+                # Try exact name, then first name, then last name
+                _parts = _owner_name.split()
+                _cc = (
+                    ClientContact.objects.filter(name__iexact=_owner_name, isActivated=True).first()
+                    or (ClientContact.objects.filter(name__icontains=_parts[-1], isActivated=True).first() if _parts else None)
+                    or (ClientContact.objects.filter(name__icontains=_parts[0], isActivated=True).first() if _parts else None)
+                )
+                if _cc:
+                    sender_contact_id = _cc.id
+                    sender_client_id  = _cc.client_id
+
+            if not sender_contact_id and sender_email:
+                _cc = ClientContact.objects.filter(email__iexact=sender_email, isActivated=True).first()
+                if _cc:
+                    sender_contact_id = _cc.id
+                    sender_client_id  = _cc.client_id
+
+            matched_trip, match_type = _find_matching_trip(
+                ref_full, ref_prefix, match_surname or passenger_name, first_date,
+                request.user.department, is_audley=bool(ref_prefix),
+            )
+
+            # Suggest default user_working based on status and matched trip
+            suggested_user_id = None
+            if matched_trip:
+                if status in ('Quote', 'Booking'):
+                    first_entry = Entry.objects.filter(trip=matched_trip).order_by('starting_date').first()
+                    if first_entry:
+                        suggested_user_id = first_entry.user_working_id
+                elif status == 'Final Itinerary':
+                    suggested_user_id = matched_trip.operations_user_id
+
+            email_cards.append({
+                'uid':               msg.uid,
+                'subject':           msg.subject,
+                'date':              msg.date,
+                'from_':             msg.from_,
+                'sender_email':      sender_email,
+                'sender_client_id':  sender_client_id,
+                'sender_contact_id': sender_contact_id,
+                'text':              (msg.text or '')[:400],
+                'status':            status,
+                'ref_full':          ref_full,
+                'ref_prefix':        ref_prefix,
+                'passenger_name':    passenger_name,
+                'first_date':        first_date,
+                'pax':               pax,
+                'has_csv':           csv_meta is not None,
+                'has_pdf':           has_pdf,
+                'matched_trip':      matched_trip,
+                'match_type':        match_type,
+                'suggested_user_id': suggested_user_id,
+                'suggested_note':    suggested_note,
+            })
+
+    users = User.objects.filter(
+        department=request.user.department, isActivated=True
+    ).filter(Q(userType='Ventas') | Q(userType='Operaciones'))
+
+    contacts_map = {}
+    for c in ClientContact.objects.filter(isActivated=True).select_related('client'):
+        cid = str(c.client_id)
+        contacts_map.setdefault(cid, []).append({'id': c.id, 'name': c.name})
+
+    return render(request, 'intranet/email_processor.html', {
+        'email_cards':    email_cards,
+        'users':          users,
+        'clients':        clients,
+        'contacts_map':   json.dumps(contacts_map),
+        'importance_options': IMPORTANCE_OPTIONS,
+    })
+
+
+@login_required
+def email_processor_create(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    data = json.loads(request.body)
+
+    trip_id          = data.get('trip_id')
+    create_new_trip  = data.get('create_new_trip', False)
+    status           = data.get('status', 'Quote')
+    user_working_id  = data.get('user_working_id')
+    importance       = data.get('importance', '2 - BAJA - standard')
+    note             = data.get('note', '')
+    client_id        = data.get('client_id')
+    contact_id       = data.get('contact_id')
+    trip_name        = data.get('trip_name', '')
+    client_reference = data.get('client_reference', '')
+    travelling_date_s = data.get('travelling_date', '')
+    responsable_id   = data.get('responsable_user_id')
+    pax              = int(data.get('pax', 2))
+
+    try:
+        user_working = User.objects.get(id=user_working_id)
+
+        if create_new_trip:
+            client    = Client.objects.get(id=client_id)
+            contact   = ClientContact.objects.get(id=contact_id)
+            responsable = User.objects.get(id=responsable_id) if responsable_id else user_working
+            t_date    = datetime.strptime(travelling_date_s, '%Y-%m-%d').date() if travelling_date_s else date.today()
+
+            trip = Trip.objects.create(
+                name=trip_name,
+                status='Quote',
+                difficulty='1',
+                amount=None,
+                client=client,
+                client_reference=client_reference,
+                starting_date=date.today(),
+                travelling_date=t_date,
+                out_date=t_date,
+                contact=contact,
+                department=request.user.department,
+                tourplanId='',
+                trip_type="FIT's",
+                responsable_user=responsable,
+                operations_user=user_working,
+                quantity_pax=pax,
+                rent_perc=0,
+                creation_user=request.user,
+            )
+        else:
+            trip = Trip.objects.get(id=trip_id)
+
+        # Replicate create_entry version logic
+        first_entry  = Entry.objects.filter(trip=trip).last()
+        now          = datetime.now()
+
+        if status == 'Quote':
+            version_quote = chr(ord(trip.version_quote) + 1)
+            version       = trip.version
+            user_creator  = user_working
+            trip.version_quote = version_quote
+        elif status == 'Booking':
+            if trip.version == 0:
+                trip.conversion_date = now
+                trip.status = 'Booking'
+            user_creator  = first_entry.user_working if first_entry else user_working
+            if first_entry:
+                trip.user_creator = user_creator
+            version       = int(trip.version) + 1
+            version_quote = trip.version_quote
+            trip.version += 1
+        elif status == 'Final Itinerary':
+            version       = 1
+            user_creator  = trip.responsable_user
+            version_quote = trip.version_quote
+        else:
+            version_quote = '@'
+            version       = 1
+            user_creator  = user_working
+
+        trip.save()
+
+        new_entry = Entry.objects.create(
+            trip=trip,
+            starting_date=now,
+            status=status,
+            importance=importance,
+            user_working=user_working,
+            user_creator=user_creator,
+            version_quote=version_quote,
+            version=version,
+            progress=PROGRESS_OPTIONS[0][0],
+            amount=0,
+            creation_user=request.user,
+            note=note,
+        )
+
+        return JsonResponse({'ok': True, 'entry_id': new_entry.id, 'trip_id': trip.id})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def email_processor_search_trips(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'trips': []})
+    trips = Trip.objects.filter(department=request.user.department).filter(
+        Q(name__icontains=q) | Q(client_reference__icontains=q)
+    ).select_related('client').exclude(
+        status__in=['Cancelado', 'Void']
+    ).order_by('-travelling_date')[:15]
+    return JsonResponse({'trips': [
+        {
+            'id':     t.id,
+            'name':   t.name,
+            'client': str(t.client),
+            'date':   t.travelling_date.strftime('%d/%m/%Y') if t.travelling_date else '—',
+            'ref':    t.client_reference or '—',
+            'status': t.status,
+        }
+        for t in trips
+    ]})
+
+
+@login_required
+def email_processor_archive(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    data = json.loads(request.body)
+    uid  = data.get('uid')
+    if not uid:
+        return JsonResponse({'ok': True})
+
+    load_dotenv(override=True)
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_SERVER   = os.environ.get('MAIL_SERVER')
+
+    try:
+        with MailBox(MAIL_SERVER).login(MAIL_USERNAME, MAIL_PASSWORD, 'Inbox') as mb:
+            if 'gmail' in (MAIL_SERVER or '').lower():
+                mb.move([uid], '[Gmail]/All Mail')
+            else:
+                try:
+                    mb.move([uid], 'Archive')
+                except Exception:
+                    mb.flag([uid], ['\\Seen'], True)
+    except Exception:
+        pass  # archiving is non-fatal
+
+    return JsonResponse({'ok': True})
+
+
+# ── CALIDAD ──────────────────────────────────────────────────────────────────
+
+ITINERARIO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'media', 'itinerarios', 'itinerarios.csv')
+QUALITY_LABEL   = 'Calidad'
+
+
+@login_required
+def calidad_fetch_inbox(request):
+    """Fetch new emails from the Calidad mailbox label and import as FeedbackInboxItem."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    load_dotenv(override=True)
+    username = os.environ.get('MAIL_USERNAME')
+    password = os.environ.get('MAIL_PASSWORD')
+    server   = os.environ.get('MAIL_SERVER')
+
+    if not all([username, password, server]):
+        return JsonResponse({'error': 'Faltan variables de entorno de correo'}, status=500)
+
+    from tariff.models import FeedbackInboxItem
+    import re as _re
+    from datetime import timezone as _tz
+
+    def _get_message_id(msg):
+        raw = msg.headers.get('message-id') or msg.headers.get('Message-ID') or []
+        if isinstance(raw, list) and raw:
+            return raw[0].strip()
+        if isinstance(raw, str):
+            return raw.strip()
+        return f'uid-{msg.uid}'
+
+    def _get_body(msg):
+        if msg.text:
+            return msg.text.strip()
+        if msg.html:
+            text = _re.sub(r'<[^>]+>', ' ', msg.html)
+            text = _re.sub(r'&nbsp;', ' ', text)
+            text = _re.sub(r'\s{2,}', ' ', text)
+            return text.strip()
+        return ''
+
+    imported = 0
+    skipped  = 0
+    try:
+        with MailBox(server).login(username, password, QUALITY_LABEL) as mb:
+            for msg in mb.fetch(mark_seen=False, bulk=True):
+                message_id = _get_message_id(msg)
+                if FeedbackInboxItem.objects.filter(gmail_message_id=message_id).exists():
+                    skipped += 1
+                    continue
+                from_raw = msg.from_ or ''
+                m = _re.search(r'<([^>]+)>', from_raw)
+                sender = m.group(1).lower() if m else from_raw.lower().strip()
+                received_at = msg.date
+                if received_at and received_at.tzinfo is None:
+                    received_at = received_at.replace(tzinfo=_tz.utc)
+                try:
+                    FeedbackInboxItem.objects.create(
+                        received_at=received_at,
+                        email_subject=msg.subject or '',
+                        email_body=_get_body(msg),
+                        email_sender=sender,
+                        gmail_label=QUALITY_LABEL,
+                        gmail_message_id=message_id,
+                        status='pendiente',
+                    )
+                    imported += 1
+                except Exception:
+                    pass
+    except Exception as e:
+        return JsonResponse({'error': f'Error al conectar al buzón: {e}'}, status=500)
+
+    # Auto-process new items with AI
+    ai_ok, ai_err = 0, 0
+    if imported > 0:
+        from tariff.quality_ai import process_all_pending
+        ai_ok, ai_err = process_all_pending()
+
+    return JsonResponse({'ok': True, 'imported': imported, 'skipped': skipped, 'ai_ok': ai_ok, 'ai_err': ai_err})
+
+
+@login_required
+def calidad(request):
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    from tariff.models import FeedbackInboxItem, Feedback, TYPE_QUALITY, FeedbackEntity, Supplier
+    from django.db.models import Count
+
+    inbox_items = FeedbackInboxItem.objects.filter(status='pendiente').order_by('-received_at')
+    feedbacks   = Feedback.objects.select_related('supplier', 'trip', 'target_user', 'target_guide', 'target_dh', 'target_entity').order_by('-creation_date')[:50]
+    from django.db.models import Q
+    entities = FeedbackEntity.objects.annotate(
+        pos_count=Count('feedback_entities', filter=Q(feedback_entities__sentiment='positivo')),
+        neu_count=Count('feedback_entities', filter=Q(feedback_entities__sentiment='neutral')),
+        neg_count=Count('feedback_entities', filter=Q(feedback_entities__sentiment='negativo')),
+        feedback_count=Count('feedback_entities'),
+    ).order_by('name')
+    guides = Guide.objects.annotate(
+        pos_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='positivo')),
+        neu_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='neutral')),
+        neg_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='negativo')),
+        trip_count=Count('trips'),
+    ).order_by('name')
+    dhs = DestinationHost.objects.annotate(
+        pos_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='positivo')),
+        neu_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='neutral')),
+        neg_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='negativo')),
+        trip_count=Count('trips'),
+    ).order_by('name')
+    suppliers_fb = Supplier.objects.annotate(
+        pos_count=Count('feedback_suppliers', filter=Q(feedback_suppliers__sentiment='positivo')),
+        neu_count=Count('feedback_suppliers', filter=Q(feedback_suppliers__sentiment='neutral')),
+        neg_count=Count('feedback_suppliers', filter=Q(feedback_suppliers__sentiment='negativo')),
+        feedback_count=Count('feedback_suppliers'),
+    ).filter(feedback_count__gt=0).order_by('-feedback_count')
+    users_fb = User.objects.annotate(
+        pos_count=Count('feedback_targets', filter=Q(feedback_targets__sentiment='positivo')),
+        neu_count=Count('feedback_targets', filter=Q(feedback_targets__sentiment='neutral')),
+        neg_count=Count('feedback_targets', filter=Q(feedback_targets__sentiment='negativo')),
+        feedback_count=Count('feedback_targets'),
+    ).filter(feedback_count__gt=0).order_by('-feedback_count')
+
+    itinerario_exists = os.path.exists(ITINERARIO_PATH)
+    itinerario_date   = None
+    if itinerario_exists:
+        import datetime as _dt
+        itinerario_date = _dt.datetime.fromtimestamp(os.path.getmtime(ITINERARIO_PATH)).strftime('%d/%m/%Y %H:%M')
+
+    from tariff.models import Location
+    locations = Location.objects.all().order_by('name')
+
+    return render(request, 'intranet/calidad.html', {
+        'inbox_items':          inbox_items,
+        'feedbacks':            feedbacks,
+        'entities':             entities,
+        'guides':               guides,
+        'dhs':                  dhs,
+        'locations':            locations,
+        'suppliers_fb':         suppliers_fb,
+        'users_fb':             users_fb,
+        'itinerario_exists':    itinerario_exists,
+        'itinerario_date':      itinerario_date,
+        'type_quality_choices': TYPE_QUALITY,
+    })
+
+
+@login_required
+def calidad_upload_itinerario(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    f = request.FILES.get('itinerario')
+    if not f:
+        return JsonResponse({'error': 'No file'}, status=400)
+
+    if not f.name.lower().endswith('.csv'):
+        return JsonResponse({'error': 'Solo se aceptan archivos CSV'}, status=400)
+
+    os.makedirs(os.path.dirname(ITINERARIO_PATH), exist_ok=True)
+    with open(ITINERARIO_PATH, 'wb+') as dest:
+        for chunk in f.chunks():
+            dest.write(chunk)
+
+    import datetime as _dt
+    uploaded_date = _dt.datetime.now().strftime('%d/%m/%Y %H:%M')
+    return JsonResponse({'ok': True, 'date': uploaded_date, 'filename': f.name})
+
+
+@login_required
+def calidad_discard_inbox(request, item_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackInboxItem
+    try:
+        item = FeedbackInboxItem.objects.get(pk=item_id)
+        item.status = 'descartado'
+        item.save(update_fields=['status'])
+        return JsonResponse({'ok': True})
+    except FeedbackInboxItem.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def calidad_process_ai(request, item_id):
+    """Run AI analysis on a single FeedbackInboxItem and return the result."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackInboxItem
+    from tariff.quality_ai import process_inbox_item_with_ai, try_match_supplier, try_match_trip
+    try:
+        item = FeedbackInboxItem.objects.get(pk=item_id, status='pendiente')
+        analysis = process_inbox_item_with_ai(item)
+        supplier = try_match_supplier(analysis.get('supplier_name'))
+        trip     = try_match_trip(analysis.get('trip_file_id'))
+        return JsonResponse({
+            'ok': True,
+            'analysis': analysis,
+            'supplier_matched': supplier.name if supplier else None,
+            'supplier_id':      supplier.id   if supplier else None,
+            'trip_matched':     trip.name     if trip     else None,
+            'trip_id':          trip.id       if trip     else None,
+        })
+    except FeedbackInboxItem.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def calidad_confirm_inbox(request, item_id):
+    """Confirm an AI-analyzed inbox item, creating one Feedback per target."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackInboxItem
+    from tariff.quality_ai import create_feedbacks_from_inbox
+    try:
+        item = FeedbackInboxItem.objects.get(pk=item_id, status='pendiente')
+        data = json.loads(request.body)
+        confirmed_targets = data.get('targets', [])
+        overrides = {k: v for k, v in data.items() if k != 'targets'}
+        feedbacks = create_feedbacks_from_inbox(item, confirmed_targets, overrides=overrides)
+        return JsonResponse({'ok': True, 'created': len(feedbacks)})
+    except FeedbackInboxItem.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Calidad: search endpoints ─────────────────────────────────────────────────
+
+@login_required
+def calidad_search_guides(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    qs = Guide.objects.select_related('location').filter(name__icontains=q) if q else Guide.objects.select_related('location').all()
+    results = [{'id': g.id, 'name': g.name, 'notes': g.notes, 'location_id': g.location_id, 'location_name': g.location.name if g.location else ''} for g in qs[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_search_dhs(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    qs = DestinationHost.objects.select_related('location').filter(name__icontains=q) if q else DestinationHost.objects.select_related('location').all()
+    results = [{'id': d.id, 'name': d.name, 'location_id': d.location_id, 'location_name': d.location.name if d.location else ''} for d in qs[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_create_guide(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Location
+    data = json.loads(request.body)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'Nombre requerido'}, status=400)
+    location_id = data.get('location_id') or None
+    location = Location.objects.filter(pk=location_id).first() if location_id else None
+    guide, created = Guide.objects.get_or_create(name=name, defaults={'notes': data.get('notes', ''), 'location': location})
+    return JsonResponse({'ok': True, 'id': guide.id, 'name': guide.name, 'created': created,
+                         'location_id': guide.location_id, 'location_name': guide.location.name if guide.location else ''})
+
+
+@login_required
+def calidad_create_dh(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Location
+    data = json.loads(request.body)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'Nombre requerido'}, status=400)
+    location_id = data.get('location_id') or None
+    location = Location.objects.filter(pk=location_id).first() if location_id else None
+    dh, created = DestinationHost.objects.get_or_create(name=name, defaults={'location': location, 'notes': data.get('notes', '')})
+    return JsonResponse({'ok': True, 'id': dh.id, 'name': dh.name, 'created': created,
+                         'location_id': dh.location_id, 'location_name': dh.location.name if dh.location else ''})
+
+
+@login_required
+def calidad_delete_guide(request, guide_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        g = Guide.objects.get(pk=guide_id)
+        if g.feedback_guides.exists() or g.trips.exists():
+            return JsonResponse({'error': 'Tiene feedbacks o viajes asociados, no se puede eliminar'}, status=400)
+        g.delete()
+        return JsonResponse({'ok': True})
+    except Guide.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def calidad_delete_dh(request, dh_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        d = DestinationHost.objects.get(pk=dh_id)
+        if d.feedback_dhs.exists() or d.trips.exists():
+            return JsonResponse({'error': 'Tiene feedbacks o viajes asociados, no se puede eliminar'}, status=400)
+        d.delete()
+        return JsonResponse({'ok': True})
+    except DestinationHost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def calidad_edit_guide(request, guide_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Location
+    try:
+        g = Guide.objects.get(pk=guide_id)
+    except Guide.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    g.name = (data.get('name') or g.name).strip()
+    g.email = data.get('email', g.email).strip()
+    g.notes = data.get('notes', g.notes).strip()
+    location_id = data.get('location_id') or None
+    g.location = Location.objects.filter(pk=location_id).first() if location_id else None
+    g.save()
+    return JsonResponse({'ok': True, 'id': g.id, 'name': g.name,
+                         'location_id': g.location_id, 'location_name': g.location.name if g.location else ''})
+
+
+@login_required
+def calidad_edit_dh(request, dh_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Location
+    try:
+        d = DestinationHost.objects.get(pk=dh_id)
+    except DestinationHost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    d.name = (data.get('name') or d.name).strip()
+    d.email = data.get('email', d.email).strip()
+    d.notes = data.get('notes', d.notes).strip()
+    location_id = data.get('location_id') or None
+    d.location = Location.objects.filter(pk=location_id).first() if location_id else None
+    d.save()
+    return JsonResponse({'ok': True, 'id': d.id, 'name': d.name,
+                         'location_id': d.location_id, 'location_name': d.location.name if d.location else ''})
+
+
+@login_required
+def calidad_search_suppliers(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Supplier
+    from tariff.quality_ai import _supplier_score
+    q = request.GET.get('q', '').strip()
+    if not q:
+        results = [{'id': s.id, 'name': s.name, 'provisional': s.is_provisional}
+                   for s in Supplier.objects.order_by('is_provisional', 'name')[:30]]
+        return JsonResponse({'results': results})
+
+    # First try DB-level contains (fast)
+    db_matches = list(Supplier.objects.filter(name__icontains=q).order_by('is_provisional', 'name')[:30])
+
+    # Then score ALL suppliers with the accent/noise-aware scorer
+    scored = []
+    seen_ids = {s.id for s in db_matches}
+    for s in Supplier.objects.all():
+        if s.id in seen_ids:
+            continue
+        score = _supplier_score(q, s.name)
+        if score >= 1:
+            scored.append((score, s))
+    scored.sort(key=lambda x: -x[0])
+
+    combined = db_matches + [s for _, s in scored]
+    results = [{'id': s.id, 'name': s.name, 'provisional': s.is_provisional}
+               for s in combined[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_create_supplier(request):
+    """Create a provisional Supplier (no group, minimal fields)."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Supplier
+    data = json.loads(request.body)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'Nombre requerido'}, status=400)
+    s, created = Supplier.objects.get_or_create(
+        name=name, is_provisional=True,
+        defaults={
+            'code': '', 'children_ranking': 1, 'disabled_ranking': 1,
+            'sustentability_ranking': 1, 'order': 9999,
+            'margin': 0, 'margin_info': 'Regular', 'group': None, 'note': '',
+        }
+    )
+    return JsonResponse({'ok': True, 'id': s.id, 'name': s.name, 'created': created, 'provisional': True})
+
+
+@login_required
+def calidad_resolve_provisional(request):
+    """Move feedbacks from a provisional supplier to a real one, then delete provisional."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Supplier, Feedback
+    data = json.loads(request.body)
+    prov_id = data.get('provisional_id')
+    real_id = data.get('real_id')
+    try:
+        prov = Supplier.objects.get(pk=prov_id, is_provisional=True)
+        real = Supplier.objects.get(pk=real_id)
+        count = Feedback.objects.filter(supplier=prov).update(supplier=real)
+        prov.delete()
+        return JsonResponse({'ok': True, 'feedbacks_moved': count})
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Proveedor no encontrado'}, status=404)
+
+
+@login_required
+def calidad_edit_feedback(request, feedback_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Feedback
+    try:
+        fb = Feedback.objects.get(pk=feedback_id)
+    except Feedback.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    if 'brief_summary' in data:
+        fb.brief_summary = data['brief_summary']
+    if 'content' in data:
+        fb.content = data['content']
+    if 'solution' in data:
+        fb.solution = data['solution']
+    if 'cost' in data:
+        try:
+            fb.cost = float(data['cost']) if data['cost'] not in (None, '') else 0
+        except (ValueError, TypeError):
+            fb.cost = 0
+    if 'status' in data:
+        fb.status = data['status']
+    if 'sentiment' in data:
+        fb.sentiment = data['sentiment']
+    if 'supplier_id' in data:
+        sid = data['supplier_id']
+        fb.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+    if 'guide_id' in data:
+        gid = data['guide_id']
+        if gid:
+            from intranet.models import Guide
+            fb.target_guide = Guide.objects.filter(pk=gid).first()
+            # If assigning a guide, clear user/supplier/dh targets to avoid confusion
+            if fb.target_guide:
+                fb.target_user = None
+        else:
+            fb.target_guide = None
+    if 'trip_file' in data and data['trip_file']:
+        from intranet.models import Trip
+        trip = Trip.objects.filter(tourplanId__iexact=data['trip_file'].strip()).first()
+        if trip:
+            fb.trip = trip
+    fb.save()
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def calidad_delete_feedback(request, feedback_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Feedback
+    try:
+        Feedback.objects.get(pk=feedback_id).delete()
+        return JsonResponse({'ok': True})
+    except Feedback.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def calidad_search_users(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    qs = User.objects.filter(userType__in=['Ventas', 'Operaciones', 'Internal'])
+    if q:
+        from django.db.models import Q
+        qs = qs.filter(Q(other_name__icontains=q) | Q(username__icontains=q))
+    results = [{'id': u.id, 'name': u.other_name or u.username} for u in qs.order_by('other_name')[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_search_entities(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackEntity
+    q = request.GET.get('q', '').strip()
+    qs = FeedbackEntity.objects.all()
+    if q:
+        qs = qs.filter(name__icontains=q)
+    results = [{'id': e.id, 'name': e.name, 'description': e.description} for e in qs.order_by('name')[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_entities(request):
+    """Create a new FeedbackEntity (POST) or list all (GET)."""
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackEntity
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        if not name:
+            return JsonResponse({'error': 'El nombre es obligatorio'}, status=400)
+        entity, created = FeedbackEntity.objects.get_or_create(name=name, defaults={'description': description})
+        return JsonResponse({'ok': True, 'id': entity.id, 'name': entity.name, 'created': created})
+    entities = list(FeedbackEntity.objects.order_by('name').values('id', 'name', 'description'))
+    return JsonResponse({'results': entities})
+
+
+@login_required
+def calidad_edit_entity(request, entity_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackEntity
+    try:
+        entity = FeedbackEntity.objects.get(pk=entity_id)
+    except FeedbackEntity.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'El nombre es obligatorio'}, status=400)
+    entity.name = name
+    entity.description = (data.get('description') or '').strip()
+    entity.save()
+    return JsonResponse({'ok': True, 'name': entity.name, 'description': entity.description})
+
+
+@login_required
+def calidad_entity_delete(request, entity_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import FeedbackEntity
+    try:
+        entity = FeedbackEntity.objects.get(pk=entity_id)
+        if entity.feedback_entities.exists():
+            return JsonResponse({'error': 'Tiene feedbacks asociados, no se puede eliminar'}, status=400)
+        entity.delete()
+        return JsonResponse({'ok': True})
+    except FeedbackEntity.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
