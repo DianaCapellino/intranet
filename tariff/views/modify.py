@@ -473,6 +473,10 @@ def modify_supplier(request, supplier_id):
             supplier.hotel_quality=category
             supplier.group=group
             supplier.prepayment=request.POST.get("prepayment")
+            supplier.child_note=request.POST.get("child_note")
+            supplier.stay_note=request.POST.get("stay_note")
+            supplier.closing_note=request.POST.get("closing_note")
+            supplier.recommended=request.POST.get("recommended") == "on"
 
         # Modifies the model of the supplier from the form information
         supplier.name=name

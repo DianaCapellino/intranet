@@ -6,9 +6,57 @@
     background-color: #FFFBEB !important;
     border-left: 3px solid #F59E0B !important;
 }
+
+.revised-row td {
+    background-color: #f5e20b !important;
+}
+.revised-row {
+    border-left: 3px solid #F59E0B !important;
+}
+
+.cost-col { display: none; }
+.show-costs .cost-col { display: table-cell; }
 </style>
 
 {% if rate_lines %}
+
+{% if show_costs %}
+<div class="mb-3 text-end">
+    <button id="btn-toggle-costs" class="btn btn-sm btn-outline-secondary" onclick="toggleCosts()">
+        <i class="fa-solid fa-dollar-sign me-1"></i>Ver costos
+    </button>
+</div>
+<script>
+function toggleCosts() {
+    const wrap = document.getElementById('tariff-content');
+    const btn = document.getElementById('btn-toggle-costs');
+    const showing = wrap.classList.toggle('show-costs');
+    btn.innerHTML = showing
+        ? '<i class="fa-solid fa-eye-slash me-1"></i>Ocultar costos'
+        : '<i class="fa-solid fa-dollar-sign me-1"></i>Ver costos';
+}
+</script>
+{% endif %}
+
+<script>
+function markRevised(lineId, btn) {
+    const url = "{% url 'mark_rate_line_revised' 0 %}".replace('/0/', '/' + lineId + '/');
+    fetch(url, {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''},
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            const row = btn.closest('tr');
+            row.classList.remove('revised-row');
+            btn.remove();
+        }
+    });
+}
+</script>
+
+<div id="tariff-content">
 
 {# ===================================================== #}
 {# ================= ALOJAMIENTO ======================= #}
@@ -126,7 +174,9 @@
                                         Validity
                                     </th>
                                     <th class="text-center border-0">SGL</th>
+                                    {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo SGL</th>{% endif %}
                                     <th class="text-center border-0">DBL</th>
+                                    {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo DBL</th>{% endif %}
                                     <th class="text-center border-0 d-none">TPL</th>
                                 </tr>
                             </thead>
@@ -145,7 +195,10 @@
                                     {% for line in dtg.list %}
                                         {% if not is_client or line.rates_by_column %}
 
-                                        <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}">
+                                        <tr class="border-bottom
+                                            {% if not is_client and line.provisional_columns %} provisional-row{% endif %}
+                                            {% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}
+                                        ">
                                             <td class="ps-3 py-2 border-0">
                                                 <div class="fw-bold text-secondary" style="font-size:0.85rem;">
                                                     {{ line.group.product.name }}
@@ -168,15 +221,31 @@
                                                 {% if not is_client and line.provisional_columns %}
                                                     <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
                                                 {% endif %}
+                                                {% if request.user.isAdmin and not line.is_revised %}
+                                                    <button class="btn btn-sm btn-success ms-1 py-0 px-1" style="font-size:0.65rem;" title="Marcar como revisado"
+                                                        onclick="markRevised({{ line.id }}, this)">
+                                                        <i class="fa-solid fa-check"></i>
+                                                    </button>
+                                                {% endif %}
                                             </td>
 
                                             <td class="text-center fw-bold border-0">
                                                 {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
                                             </td>
+                                            {% if show_costs %}
+                                            <td class="text-center border-0 cost-col text-muted small">
+                                                {{ line.costs_by_column.SGL|default:"—" }}
+                                            </td>
+                                            {% endif %}
 
                                             <td class="text-center fw-bold border-0">
                                                 {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
                                             </td>
+                                            {% if show_costs %}
+                                            <td class="text-center border-0 cost-col text-muted small">
+                                                {{ line.costs_by_column.DBL|default:"—" }}
+                                            </td>
+                                            {% endif %}
 
                                             <td class="text-center fw-bold border-0 d-none">
                                                 {{ line.rates_by_column.TPL|default:"N/A" }}
@@ -201,7 +270,7 @@
                                         </div>
                                     {% endfor %}
                                     <tr class="vigency-separator">
-                                        <td colspan="5" style="height:30px"></td>
+                                        <td colspan="{% if show_costs %}7{% else %}5{% endif %}" style="height:30px"></td>
                                     </tr>
                                 {% endfor %}
 
@@ -481,17 +550,23 @@
                 <th class="ps-3 border-0" style="width:45%;">Service</th>
                 <th class="border-0" style="width:20%;">Validity</th>
                 <th class="text-center border-0">1 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 1</th>{% endif %}
                 <th class="text-center border-0">2 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 2</th>{% endif %}
                 <th class="text-center border-0">3 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 3</th>{% endif %}
                 <th class="text-center border-0">4 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 4</th>{% endif %}
                 <th class="text-center border-0">5 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 5</th>{% endif %}
                 <th class="text-center border-0">6 Pax</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 6</th>{% endif %}
             </tr>
         </thead>
         <tbody>
 
         {% for line in pg.list %}
-            <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}">
+            <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
                         {% if line.group.product.tour_timing %}
@@ -589,31 +664,31 @@
                     {% if not is_client and line.provisional_columns %}
                         <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
                     {% endif %}
+                    {% if request.user.isAdmin and not line.is_revised %}
+                        <button class="btn btn-sm btn-success ms-1 py-0 px-1" style="font-size:0.65rem;" title="Marcar como revisado"
+                            onclick="markRevised({{ line.id }}, this)">
+                            <i class="fa-solid fa-check"></i>
+                        </button>
+                    {% endif %}
                 </td>
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.1|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.1|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.1|default:"—" }}</td>{% endif %}
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.2|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.2|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.2|default:"—" }}</td>{% endif %}
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.3|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.3|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.3|default:"—" }}</td>{% endif %}
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.4|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.4|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.4|default:"—" }}</td>{% endif %}
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.5|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.5|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.5|default:"—" }}</td>{% endif %}
 
-                <td class="text-center fw-bold">
-                    {{ line.rates_by_column.6|default:"N/A" }}
-                </td>
+                <td class="text-center fw-bold">{{ line.rates_by_column.6|default:"N/A" }}</td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.6|default:"—" }}</td>{% endif %}
             </tr>
 
             <div class="modal fade" id="windowMoreInfoProduct{{ line.group.product.id }}" tabindex="-1" aria-labelledby="labelProduct{{ line.group.product.id }}">
@@ -860,6 +935,8 @@
 
 {% endfor %}
 {% endif %}
+
+</div>{# /tariff-content #}
 
 {% else %}
     <div class="text-center p-5 text-muted">

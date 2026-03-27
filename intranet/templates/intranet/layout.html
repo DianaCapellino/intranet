@@ -55,14 +55,18 @@
                       <a class="nav-link text-light" href="{% url 'entries' %}" id="pendings">Pendientes</a>
                   </li>
                   <li class="nav-item">
-                    <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff</a>
+                    <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff
+                      {% if nav_pending_revised %}<span class="badge rounded-pill text-bg-warning ms-1" style="font-size:0.65rem;">{{ nav_pending_revised }}</span>{% endif %}
+                    </a>
                   </li>
                   {% if user.isAdmin %}
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'stats' %}">Estadísticas</a>
                   </li>
                   <li class="nav-item">
-                      <a class="nav-link text-light" href="{% url 'calidad' %}">Calidad</a>
+                      <a class="nav-link text-light" href="{% url 'calidad' %}">Calidad
+                        {% if nav_pending_emails %}<span class="badge rounded-pill text-bg-danger ms-1" style="font-size:0.65rem;">{{ nav_pending_emails }}</span>{% endif %}
+                      </a>
                   </li>
                   <li class="nav-item dropdown">
                     <a class="nav-link text-light dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">

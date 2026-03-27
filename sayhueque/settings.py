@@ -32,7 +32,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 # Absolute base URL used to build image links in outgoing emails
-SITE_URL = "https://intranet.aliwenincoming.com.ar"
+SITE_URL = "https://sayaliwen.pythonanywhere.com"
 
 
 # Application definition
@@ -77,6 +77,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'intranet.context_processors.admin_nav_counts',
             ],
         },
     },

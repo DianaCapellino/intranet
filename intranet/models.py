@@ -242,9 +242,21 @@ class Trip(models.Model):
     ignore_margin_warning = models.BooleanField(default=False)
     margin_reviewed = models.BooleanField(default=False)
 
+    @property
+    def pos_fb_count(self):
+        return self.feedback_trips.filter(sentiment='positivo').count()
+
+    @property
+    def neu_fb_count(self):
+        return self.feedback_trips.filter(sentiment='neutral').count()
+
+    @property
+    def neg_fb_count(self):
+        return self.feedback_trips.filter(sentiment='negativo').count()
+
     def __str__(self):
         return f"{self.name}"
-    
+
     class Meta:
         ordering = ["-creation_date"]
 

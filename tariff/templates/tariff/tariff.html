@@ -22,7 +22,15 @@
             {% if user.userType == "Cliente"%}
                 <h1>TARIFF</h1>
             {% else %}
-                <h1>TARIFARIO</h1>
+                <div class="d-flex align-items-center gap-3">
+                    <h1 class="mb-0">TARIFARIO</h1>
+                    {% if user.isAdmin and pending_suppliers %}
+                        <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modalPendingSuppliers">
+                            <i class="fa-solid fa-triangle-exclamation me-1"></i>Ver pendientes
+                            <span class="badge text-bg-dark ms-1">{{ pending_suppliers|length }}</span>
+                        </button>
+                    {% endif %}
+                </div>
             {% endif %}
 
             <div class="d-flex align-items-center justify-content-between">
@@ -330,6 +338,44 @@
             </div>
         </div>
     </div>
+
+{% if user.isAdmin and pending_suppliers %}
+<div class="modal fade" id="modalPendingSuppliers" tabindex="-1" aria-labelledby="labelPendingSuppliers">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="labelPendingSuppliers">
+                    <i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>Proveedores pendientes de revisión
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-hover table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Proveedor</th>
+                            <th>Destino</th>
+                            <th class="text-center">Líneas pendientes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in pending_suppliers %}
+                        <tr>
+                            <td>{{ s.name }}</td>
+                            <td class="text-muted small">{{ s.group.location.name }}</td>
+                            <td class="text-center">
+                                <span class="badge text-bg-warning">{{ s.pending_count }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 {% block extra_js %}
 <script>

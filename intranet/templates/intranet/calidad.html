@@ -210,7 +210,7 @@
                   </div>
                   <div class="col-12">
                     <label class="form-label small mb-1">Resumen breve</label>
-                    <input type="text" class="form-control form-control-sm t-brief" value="{{ t.brief_summary }}" maxlength="200">
+                    <input type="text" class="form-control form-control-sm t-brief" value="{{ t.brief_summary }}" maxlength="120">
                   </div>
                   <div class="col-12">
                     <label class="form-label small mb-1">Contenido detallado</label>
@@ -300,7 +300,7 @@
               </td>
               <td class="small text-muted">{{ fb.type }}</td>
               <td class="small text-muted">{% if fb.trip %}{{ fb.trip.name }}{% else %}—{% endif %}</td>
-              <td class="small">{{ fb.brief_summary|default:fb.content|truncatechars:60 }}</td>
+              <td class="small">{{ fb.brief_summary|default:fb.content|truncatechars:120 }}</td>
               <td>
                 {% if fb.status == "cerrado" %}<span class="badge text-bg-success">Cerrado</span>
                 {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
@@ -530,16 +530,19 @@
               <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
               <tbody>
                 {% for g in guides %}
-                <tr id="guide-row-{{ g.id }}">
+                <tr id="guide-row-{{ g.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('guide', {{ g.id }}, this)">
                   <td class="small fw-semibold">{{ g.name }}</td>
                   <td class="small text-muted">{{ g.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ g.notes|default:"—" }}</td>
                   <td class="text-center">{% if g.pos_count %}<span class="badge text-bg-success">{{ g.pos_count }}</span> {% endif %}{% if g.neu_count %}<span class="badge text-bg-secondary">{{ g.neu_count }}</span> {% endif %}{% if g.neg_count %}<span class="badge text-bg-danger">{{ g.neg_count }}</span>{% endif %}{% if not g.pos_count and not g.neu_count and not g.neg_count %}—{% endif %}</td>
                   <td class="text-center small">{{ g.trip_count }}</td>
                   <td class="text-nowrap">
-                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-pencil"></i></button>
-                    {% if not g.pos_count and not g.neu_count and not g.neg_count and g.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if not g.pos_count and not g.neu_count and not g.neg_count and g.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
+                </tr>
+                <tr id="cat-fb-row-guide-{{ g.id }}" class="d-none">
+                  <td colspan="6" class="p-0"><div id="cat-fb-panel-guide-{{ g.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 <tr id="guide-edit-row-{{ g.id }}" class="d-none table-warning">
                   <td><input type="text" class="form-control form-control-sm" id="edit-guide-name-{{ g.id }}" value="{{ g.name }}"></td>
@@ -584,16 +587,19 @@
               <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
               <tbody>
                 {% for d in dhs %}
-                <tr id="dh-row-{{ d.id }}">
+                <tr id="dh-row-{{ d.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('dh', {{ d.id }}, this)">
                   <td class="small fw-semibold">{{ d.name }}</td>
                   <td class="small text-muted">{{ d.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ d.notes|default:"—" }}</td>
                   <td class="text-center">{% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}{% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}{% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}{% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}</td>
                   <td class="text-center small">{{ d.trip_count }}</td>
                   <td class="text-nowrap">
-                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
-                    {% if not d.pos_count and not d.neu_count and not d.neg_count and d.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count and d.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
+                </tr>
+                <tr id="cat-fb-row-dh-{{ d.id }}" class="d-none">
+                  <td colspan="6" class="p-0"><div id="cat-fb-panel-dh-{{ d.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 <tr id="dh-edit-row-{{ d.id }}" class="d-none table-warning">
                   <td><input type="text" class="form-control form-control-sm" id="edit-dh-name-{{ d.id }}" value="{{ d.name }}"></td>
@@ -633,14 +639,17 @@
               <thead class="table-light"><tr><th>Nombre</th><th>Descripción</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
               <tbody>
                 {% for e in entities %}
-                <tr id="entity-row-{{ e.id }}">
+                <tr id="entity-row-{{ e.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('entity', {{ e.id }}, this)">
                   <td class="small fw-semibold">{{ e.name }}</td>
                   <td class="small text-muted">{{ e.description|default:"—" }}</td>
                   <td class="text-center">{% if e.pos_count %}<span class="badge text-bg-success">{{ e.pos_count }}</span> {% endif %}{% if e.neu_count %}<span class="badge text-bg-secondary">{{ e.neu_count }}</span> {% endif %}{% if e.neg_count %}<span class="badge text-bg-danger">{{ e.neg_count }}</span>{% endif %}{% if not e.pos_count and not e.neu_count and not e.neg_count %}—{% endif %}</td>
                   <td class="text-nowrap">
-                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editEntity({{ e.id }})"><i class="fa-solid fa-pencil"></i></button>
-                    {% if e.feedback_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="deleteEntity({{ e.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editEntity({{ e.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if e.feedback_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteEntity({{ e.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
+                </tr>
+                <tr id="cat-fb-row-entity-{{ e.id }}" class="d-none">
+                  <td colspan="4" class="p-0"><div id="cat-fb-panel-entity-{{ e.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 <tr id="entity-edit-row-{{ e.id }}" class="d-none table-warning">
                   <td><input type="text" class="form-control form-control-sm" id="edit-entity-name-{{ e.id }}" value="{{ e.name }}"></td>
@@ -664,12 +673,15 @@
               <thead class="table-light"><tr><th>Proveedor</th><th class="text-center">Feedbacks</th></tr></thead>
               <tbody>
                 {% for s in suppliers_fb %}
-                <tr>
+                <tr style="cursor:pointer" onclick="toggleCatalogFeedbacks('supplier', {{ s.id }}, this)">
                   <td class="small fw-semibold">
                     {{ s.name }}
                     {% if s.is_provisional %}<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:0.65rem;">provisional</span>{% endif %}
                   </td>
                   <td class="text-center">{% if s.pos_count %}<span class="badge text-bg-success">{{ s.pos_count }}</span> {% endif %}{% if s.neu_count %}<span class="badge text-bg-secondary">{{ s.neu_count }}</span> {% endif %}{% if s.neg_count %}<span class="badge text-bg-danger">{{ s.neg_count }}</span>{% endif %}</td>
+                </tr>
+                <tr id="cat-fb-row-supplier-{{ s.id }}" class="d-none">
+                  <td colspan="2" class="p-0"><div id="cat-fb-panel-supplier-{{ s.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 {% empty %}
                   <tr><td colspan="2" class="text-muted small">No hay feedbacks de proveedores aún.</td></tr>
@@ -686,9 +698,12 @@
               <thead class="table-light"><tr><th>Usuario</th><th class="text-center">Feedbacks</th></tr></thead>
               <tbody>
                 {% for u in users_fb %}
-                <tr>
+                <tr style="cursor:pointer" onclick="toggleCatalogFeedbacks('user', {{ u.id }}, this)">
                   <td class="small fw-semibold">{{ u.other_name|default:u.username }}</td>
                   <td class="text-center">{% if u.pos_count %}<span class="badge text-bg-success">{{ u.pos_count }}</span> {% endif %}{% if u.neu_count %}<span class="badge text-bg-secondary">{{ u.neu_count }}</span> {% endif %}{% if u.neg_count %}<span class="badge text-bg-danger">{{ u.neg_count }}</span>{% endif %}</td>
+                </tr>
+                <tr id="cat-fb-row-user-{{ u.id }}" class="d-none">
+                  <td colspan="2" class="p-0"><div id="cat-fb-panel-user-{{ u.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 {% empty %}
                   <tr><td colspan="2" class="text-muted small">No hay feedbacks de usuarios aún.</td></tr>
@@ -707,6 +722,78 @@
 <script>
 const csrfToken = "{{ csrf_token }}";
 let searchTimer = null;
+
+// ── Catalog feedback panels ─────────────────────────────────────────────────
+const _catFbUrl = "{% url 'calidad_feedbacks_by_target' %}";
+
+function toggleCatalogFeedbacks(type, id, clickedRow) {
+  const panelRow = document.getElementById(`cat-fb-row-${type}-${id}`);
+  const panel    = document.getElementById(`cat-fb-panel-${type}-${id}`);
+  if (!panelRow) return;
+
+  // Toggle if already loaded
+  if (!panelRow.classList.contains('d-none')) {
+    panelRow.classList.add('d-none');
+    return;
+  }
+
+  // Load feedbacks if not yet loaded
+  if (!panel.dataset.loaded) {
+    panel.innerHTML = '<span class="text-muted small">Cargando...</span>';
+    fetch(`${_catFbUrl}?type=${type}&id=${id}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.feedbacks || !data.feedbacks.length) {
+          panel.innerHTML = '<span class="text-muted small fst-italic">Sin feedbacks registrados.</span>';
+        } else {
+          panel.innerHTML = data.feedbacks.map((fb, i) => {
+            const sentBadge = fb.sentiment === 'positivo'
+              ? '<span class="badge text-bg-success me-1">Positivo</span>'
+              : fb.sentiment === 'negativo'
+              ? '<span class="badge text-bg-danger me-1">Negativo</span>'
+              : '<span class="badge text-bg-secondary me-1">Neutral</span>';
+            const tripInfo = fb.trip_tourplan
+              ? `<span class="text-muted ms-2 small">${fb.trip_tourplan}${fb.trip_name ? ' — ' + fb.trip_name : ''}</span>`
+              : '';
+            const collapseId = `cat-fb-detail-${type}-${id}-${fb.id}`;
+            const negativeSection = (fb.sentiment === 'negativo' && (fb.solution || fb.cost))
+              ? `<div class="mt-2 pt-2 border-top">
+                  ${fb.solution ? `<div class="small"><span class="fw-semibold text-danger">Solución:</span> ${fb.solution}</div>` : ''}
+                  ${fb.cost ? `<div class="small"><span class="fw-semibold text-danger">Costo:</span> USD ${fb.cost}</div>` : ''}
+                 </div>` : '';
+            return `
+              <div class="border rounded mb-1 overflow-hidden">
+                <div class="d-flex align-items-center px-2 py-1 gap-2"
+                     style="cursor:pointer;background:#f8f9fa"
+                     onclick="event.stopPropagation();toggleCatFbDetail('${collapseId}')">
+                  ${sentBadge}
+                  <span class="small flex-grow-1">${fb.brief_summary || '(sin resumen)'}</span>
+                  ${tripInfo}
+                  <span class="text-muted small ms-2">${fb.creation_date}</span>
+                  <i class="fa-solid fa-chevron-down small text-muted ms-1" id="${collapseId}-icon"></i>
+                </div>
+                <div id="${collapseId}" class="d-none px-3 py-2 small border-top">
+                  <div>${fb.content || ''}</div>
+                  ${negativeSection}
+                </div>
+              </div>`;
+          }).join('');
+        }
+        panel.dataset.loaded = '1';
+        panelRow.classList.remove('d-none');
+      });
+  } else {
+    panelRow.classList.remove('d-none');
+  }
+}
+
+function toggleCatFbDetail(collapseId) {
+  const el   = document.getElementById(collapseId);
+  const icon = document.getElementById(collapseId + '-icon');
+  if (!el) return;
+  const hidden = el.classList.toggle('d-none');
+  if (icon) icon.style.transform = hidden ? '' : 'rotate(180deg)';
+}
 
 const searchUrls = {
   supplier: "{% url 'calidad_search_suppliers' %}",

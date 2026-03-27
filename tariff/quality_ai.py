@@ -77,23 +77,30 @@ SOLUCIÓN (para feedbacks negativos):
 - Si se menciona un costo de resolución (compensación, reembolso, etc.) incluilo en "cost" como número sin símbolo de moneda
 - Si no hay información de resolución: solution="", cost=0
 
+DEDUPLICACIÓN (usar solo si se proveen FEEDBACKS EXISTENTES del viaje en el prompt):
+- Misma cadena, mismo target → "existing_feedback_id": <id>, "content" con SOLO la info nueva.
+- Gestión con proveedor (Aliwen contactó/fue contactado por el proveedor para resolver) → "existing_feedback_id": <id>, "is_provider_update": true, "content" con resumen breve de esa gestión.
+- Target nuevo no registrado → omitir existing_feedback_id.
+
 Respondé ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
 {
   "targets": [
     {
       "target_type": "supplier" | "user" | "guide" | "dh" | "aliwen_team" | "entity",
+      "existing_feedback_id": null,
+      "is_provider_update": false,
       "name": "nombre exacto del proveedor/guía/DH según itinerario, o nombre mencionado",
       "destination": "ciudad/destino donde trabajó el guía o DH según el itinerario (ej: 'Bariloche', 'Buenos Aires') — solo para guide y dh, null para el resto",
       "sentiment": "positivo" | "neutral" | "negativo",
       "type": "Calidad del servicio" | "Demora/rapidez" | "Salud/higiene" | "Inclusiones" | "Otro",
-      "brief_summary": "máximo 150 caracteres",
-      "content": "resumen del feedback en español",
+      "brief_summary": "máximo 120 caracteres, frase completa y coherente",
+      "content": "resumen del feedback (solo info nueva si existing_feedback_id está presente)",
       "solution": "cómo se resolvió (solo si aplica)",
       "cost": 0
     }
   ],
   "trip_file_id": "código ALAL/ALFI/ALGR/ALFT del viaje SOLO si aparece literalmente en el texto del email — no inferir ni inventar, dejar null si no está explícito",
-  "verbatim": "texto original textual del pasajero (solo si está en otro idioma) o vacío",
+  "verbatim": "primeras 200 chars del texto original del pasajero (solo si está en otro idioma), truncar con '...' si es más largo, o vacío",
   "needs_more_info": true | false,
   "missing_fields": ["lista de campos faltantes"]
 }"""
@@ -223,6 +230,39 @@ def get_relevant_rows(rows, email_text, email_date, matched_trip=None):
             return date_rows[:80]
 
     return []
+
+
+def format_existing_feedbacks_for_prompt(trip):
+    """
+    Return a compact text summary of existing feedbacks for a trip,
+    to give the AI context for deduplication.
+    Returns empty string if no feedbacks exist.
+    """
+    if not trip:
+        return ''
+    from tariff.models import Feedback
+    fbs = Feedback.objects.filter(trip=trip).select_related(
+        'supplier', 'target_guide', 'target_dh', 'target_user', 'target_entity'
+    )
+    if not fbs.exists():
+        return ''
+    lines = ['FEEDBACKS YA REGISTRADOS PARA ESTE VIAJE:',
+             'ID | Target | Sentimiento | Resumen']
+    for fb in fbs:
+        if fb.supplier:
+            target = f"proveedor:{fb.supplier.name}"
+        elif fb.target_guide:
+            target = f"guía:{fb.target_guide.name}"
+        elif fb.target_dh:
+            target = f"dh:{fb.target_dh.name}"
+        elif fb.target_user:
+            target = f"usuario:{fb.target_user.other_name or fb.target_user.username}"
+        elif fb.target_entity:
+            target = f"entidad:{fb.target_entity.name}"
+        else:
+            target = "aliwen_team"
+        lines.append(f"{fb.id} | {target} | {fb.sentiment} | {fb.brief_summary[:80]}")
+    return '\n'.join(lines)
 
 
 def format_rows_for_prompt(rows):
@@ -363,6 +403,8 @@ def process_inbox_item_with_ai(item):
             f" (cliente: {matched_trip.client})\n"
         )
 
+    existing_fb_text = format_existing_feedbacks_for_prompt(matched_trip)
+
     user_prompt = (
         f"EMAIL:\nDe: {item.email_sender}\n"
         f"Asunto: {item.email_subject}\n"
@@ -370,6 +412,7 @@ def process_inbox_item_with_ai(item):
         f"{trip_note}\n"
         f"{_sanitize_email_body(item.email_body)}\n\n"
         f"---\nITINERARIO (servicios relevantes):\n{itinerary_text}"
+        + (f"\n\n---\n{existing_fb_text}" if existing_fb_text else "")
     )
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -818,11 +861,37 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
         target_type   = t.get('target_type', 'entity')
         sentiment     = t.get('sentiment', 'neutral')
         fb_type       = t.get('type', 'Otro')
-        brief_summary = (t.get('brief_summary') or '')[:200]
+        brief_summary = (t.get('brief_summary') or '')[:120]
         content       = t.get('content', '')
         solution      = (t.get('solution') or '')
         cost          = t.get('cost') or 0
         fb_status     = 'abierto' if sentiment == 'negativo' else 'cerrado'
+
+        # ── Update existing feedback (same chain or provider communication) ──
+        existing_id = t.get('existing_feedback_id')
+        if existing_id:
+            try:
+                existing_fb = Feedback.objects.get(pk=existing_id)
+                date_str = creation_date.strftime('%d/%m/%Y') if hasattr(creation_date, 'strftime') else str(creation_date)
+                if t.get('is_provider_update'):
+                    note = f"\n[{date_str}] Gestión con proveedor: {content}"
+                else:
+                    note = f"\n[{date_str}] Actualización: {content}"
+                existing_fb.content = (existing_fb.content or '') + note
+                if solution and not existing_fb.solution:
+                    existing_fb.solution = solution
+                if cost and not existing_fb.cost:
+                    existing_fb.cost = cost
+                update_fields = ['content']
+                if solution and not existing_fb.solution:
+                    update_fields.append('solution')
+                if cost and not existing_fb.cost:
+                    update_fields.append('cost')
+                existing_fb.save(update_fields=update_fields)
+                created.append(existing_fb)
+                continue
+            except Feedback.DoesNotExist:
+                pass  # Fall through to create new
 
         supplier     = None
         target_user  = None

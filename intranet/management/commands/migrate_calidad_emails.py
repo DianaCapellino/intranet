@@ -253,12 +253,13 @@ class Command(BaseCommand):
 
             try:
                 with MailBox(server).login(username, password, QUALITY_LABEL) as mb:
-                    # fetch() with no criteria returns ALL messages in the selected mailbox/label
+                    to_archive = []
                     for msg in mb.fetch(mark_seen=False, bulk=True):
                         message_id = _get_message_id(msg)
 
                         if FeedbackInboxItem.objects.filter(gmail_message_id=message_id).exists():
                             skipped += 1
+                            to_archive.append(msg.uid)
                             continue
 
                         from_raw = msg.from_ or ""
@@ -283,11 +284,19 @@ class Command(BaseCommand):
                                     status="pendiente",
                                 )
                                 imported += 1
+                                to_archive.append(msg.uid)
                             except Exception as e:
                                 errors += 1
                                 self.stderr.write(f"    ! Error guardando: {e}")
                         else:
                             imported += 1
+
+                    if to_archive and not dry_run:
+                        try:
+                            mb.move(to_archive, '[Gmail]/All Mail')
+                            self.stdout.write(f"  Archivados en Gmail: {len(to_archive)} emails")
+                        except Exception as e:
+                            self.stderr.write(f"  ! Error archivando emails: {e}")
 
             except Exception as e:
                 self.stderr.write(f"Error conectando al buzón: {e}")

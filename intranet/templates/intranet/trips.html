@@ -177,7 +177,14 @@
                                     {% else %}
                                         <td>{{ trip.tourplanId }}</td>
                                     {% endif %}
-                                    <td>{{ trip.name }} x {{ trip.quantity_pax }}</td>
+                                    <td>
+                                        {{ trip.name }} x {{ trip.quantity_pax }}
+                                        {% with pos=trip.pos_fb_count neu=trip.neu_fb_count neg=trip.neg_fb_count %}
+                                        {% if pos %}<span class="badge text-bg-success">{{ pos }}</span>{% endif %}
+                                        {% if neu %}<span class="badge text-bg-secondary">{{ neu }}</span>{% endif %}
+                                        {% if neg %}<span class="badge text-bg-danger">{{ neg }}</span>{% endif %}
+                                        {% endwith %}
+                                    </td>
                                     <td>{{ trip.trip_type }}</td>
                                     {% if trip.status == "Quote" %}
                                         {% if trip.version_quote == "@" %}
@@ -330,23 +337,44 @@
                                                     {% endfor %}
                                                 </div>
                                                 <br>
-                                                <div class="d-flex align-items-center justify-content-between">
-                                                    <h2>Feedbacks</h2>
-                                                    <div id="new-feedback-container">
-                                                        <a href="{% url 'create_feedback' trip.id %}" ><button type="button" id="new_feedback_btn{{ trip.id }}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo feedback"><i class="fa-solid fa-plus"></i></button></a>
-                                                    </div>
-                                                </div>
+                                                <h2>Feedbacks</h2>
                                                 <br>
                                                 {% for feedback in feedbacks %}
-                                                    {% if feedback.trip.id == trip.id %}
-                                                        <div><b>{{ feedback.user.other_name }} ({{ feedback.creation_date }}):
-                                                            {% if feedback.complaint == True %}
-                                                                <img src="../../static/intranet/images/complaint.png" style="width:20px">
-                                                            {% else %}
-                                                                <img src="../../static/intranet/images/congratulations.png" style="width:20px">
-                                                            {% endif %}
-                                                        </b><i>{{ feedback.destination }} - {{ feedback.supplier }} - {{ feedback.content }}</i></div>
+                                                {% if feedback.trip.id == trip.id %}
+                                                <div class="border-bottom py-1">
+                                                  <div class="d-flex align-items-center gap-2 cursor-pointer" style="cursor:pointer;" onclick="toggleTripFbDetail('trip-fb-detail-{{ feedback.id }}', this)">
+                                                    <div style="min-width:80px;">
+                                                      {% if feedback.sentiment == 'positivo' %}<span class="badge text-bg-success">Positivo</span>
+                                                      {% elif feedback.sentiment == 'negativo' %}<span class="badge text-bg-danger">Negativo</span>
+                                                      {% else %}<span class="badge text-bg-secondary">Neutral</span>{% endif %}
+                                                    </div>
+                                                    <div class="small text-muted text-nowrap" style="min-width:75px;">{{ feedback.creation_date|date:"d/m/Y" }}</div>
+                                                    <div class="small text-nowrap" style="min-width:140px; max-width:180px; overflow:hidden; text-overflow:ellipsis;">
+                                                      {% if feedback.supplier %}<i class="fa-solid fa-building me-1 text-primary"></i>{{ feedback.supplier.name }}
+                                                      {% elif feedback.target_user %}<i class="fa-solid fa-user me-1 text-success"></i>{{ feedback.target_user.get_full_name|default:feedback.target_user.username }}
+                                                      {% elif feedback.target_guide %}<i class="fa-solid fa-compass me-1 text-warning"></i>{{ feedback.target_guide.name }}
+                                                      {% elif feedback.target_dh %}<i class="fa-solid fa-earth-americas me-1 text-info"></i>{{ feedback.target_dh.name }}
+                                                      {% elif feedback.target_entity %}<i class="fa-solid fa-layer-group me-1 text-muted"></i>{{ feedback.target_entity.name }}
+                                                      {% else %}<span class="text-muted">—</span>{% endif %}
+                                                    </div>
+                                                    <div class="small text-muted text-nowrap" style="min-width:130px;">{{ feedback.type }}</div>
+                                                    <div class="small flex-grow-1">{{ feedback.brief_summary|default:feedback.content|truncatechars:120 }}</div>
+                                                    <div style="min-width:90px;" class="text-end">
+                                                      {% if feedback.status == 'cerrado' %}<span class="badge text-bg-success">Cerrado</span>
+                                                      {% elif feedback.status == 'en_seguimiento' %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
+                                                      {% else %}<span class="badge text-bg-secondary">Abierto</span>{% endif %}
+                                                    </div>
+                                                    <div><i class="fa-solid fa-chevron-down trip-fb-chevron" style="transition:transform .2s;"></i></div>
+                                                  </div>
+                                                  <div id="trip-fb-detail-{{ feedback.id }}" class="d-none mt-1 ps-2 text-muted" style="border-left:3px solid #dee2e6;">
+                                                    <div class="small">{{ feedback.content }}</div>
+                                                    {% if feedback.sentiment == 'negativo' %}
+                                                      {% if feedback.solution %}<div class="small mt-1"><strong>Solución:</strong> {{ feedback.solution }}</div>{% endif %}
+                                                      {% if feedback.cost %}<div class="small mt-1"><strong>Costo:</strong> {{ feedback.cost }}</div>{% endif %}
                                                     {% endif %}
+                                                  </div>
+                                                </div>
+                                                {% endif %}
                                                 {% endfor %}
                                             </div>
                                         </div>
@@ -594,6 +622,19 @@
 {% endif %}
 
 <script>
+  function toggleTripFbDetail(detailId, row) {
+    const el = document.getElementById(detailId);
+    if (!el) return;
+    const chevron = row.querySelector('.trip-fb-chevron');
+    if (el.classList.contains('d-none')) {
+      el.classList.remove('d-none');
+      if (chevron) chevron.style.transform = 'rotate(180deg)';
+    } else {
+      el.classList.add('d-none');
+      if (chevron) chevron.style.transform = '';
+    }
+  }
+
   if (new URLSearchParams(window.location.search).get("new") === "1") {
     const newDiv  = document.getElementById("new_trip");
     const listDiv = document.getElementById("trip_list");

@@ -4583,6 +4583,15 @@ def email_processor(request):
             m_addr = re.search(r'<([^>]+)>', from_raw)
             sender_email = m_addr.group(1).lower() if m_addr else from_raw.lower().strip()
 
+            # Extract CC user: match CC addresses against internal users
+            cc_user = None
+            for cc_addr in (msg.cc or []):
+                cc_email = cc_addr.strip().lower()
+                if cc_email:
+                    cc_user = User.objects.filter(email__iexact=cc_email, isActivated=True).first()
+                    if cc_user:
+                        break
+
             passenger_name = ''
             first_date     = None
             pax            = 2
@@ -4651,9 +4660,9 @@ def email_processor(request):
                 request.user.department, is_audley=bool(ref_prefix),
             )
 
-            # Suggest default user_working based on status and matched trip
-            suggested_user_id = None
-            if matched_trip:
+            # Suggest default user_working: CC user takes priority, then trip-based
+            suggested_user_id = cc_user.id if cc_user else None
+            if not suggested_user_id and matched_trip:
                 if status in ('Quote', 'Booking'):
                     first_entry = Entry.objects.filter(trip=matched_trip).order_by('starting_date').first()
                     if first_entry:
@@ -4911,9 +4920,12 @@ def calidad_fetch_inbox(request):
     skipped  = 0
     try:
         with MailBox(server).login(username, password, QUALITY_LABEL) as mb:
+            to_archive = []
             for msg in mb.fetch(mark_seen=False, bulk=True):
                 message_id = _get_message_id(msg)
                 if FeedbackInboxItem.objects.filter(gmail_message_id=message_id).exists():
+                    # Already imported — archive it anyway so it leaves the label
+                    to_archive.append(msg.uid)
                     skipped += 1
                     continue
                 from_raw = msg.from_ or ''
@@ -4933,6 +4945,13 @@ def calidad_fetch_inbox(request):
                         status='pendiente',
                     )
                     imported += 1
+                    to_archive.append(msg.uid)
+                except Exception:
+                    pass
+            # Archive all processed messages (move to All Mail = remove Calidad label)
+            if to_archive:
+                try:
+                    mb.move(to_archive, '[Gmail]/All Mail')
                 except Exception:
                     pass
     except Exception as e:
@@ -5096,6 +5115,43 @@ def calidad_confirm_inbox(request, item_id):
 
 
 # ── Calidad: search endpoints ─────────────────────────────────────────────────
+
+@login_required
+def calidad_feedbacks_by_target(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    target_type = request.GET.get('type', '')
+    target_id   = request.GET.get('id', '')
+    if not target_type or not target_id:
+        return JsonResponse({'error': 'Missing params'}, status=400)
+    from tariff.models import Feedback
+    filter_map = {
+        'guide':    {'target_guide_id': target_id},
+        'dh':       {'target_dh_id': target_id},
+        'supplier': {'supplier_id': target_id},
+        'user':     {'target_user_id': target_id},
+        'entity':   {'target_entity_id': target_id},
+    }
+    if target_type not in filter_map:
+        return JsonResponse({'error': 'Invalid type'}, status=400)
+    fbs = (Feedback.objects.filter(**filter_map[target_type])
+           .select_related('trip').order_by('-creation_date'))
+    result = []
+    for fb in fbs:
+        result.append({
+            'id': fb.id,
+            'sentiment': fb.sentiment,
+            'brief_summary': fb.brief_summary or '',
+            'content': fb.content or '',
+            'solution': fb.solution or '',
+            'cost': float(fb.cost) if fb.cost else 0,
+            'status': fb.status,
+            'type': fb.type or '',
+            'creation_date': fb.creation_date.strftime('%d/%m/%Y') if fb.creation_date else '',
+            'trip_tourplan': fb.trip.tourplanId if fb.trip else '',
+            'trip_name': fb.trip.name if fb.trip else '',
+        })
+    return JsonResponse({'feedbacks': result})
 
 @login_required
 def calidad_search_guides(request):

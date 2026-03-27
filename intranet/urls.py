@@ -93,6 +93,7 @@ urlpatterns = [
     path("calidad/suppliers/create", views.calidad_create_supplier, name="calidad_create_supplier"),
     path("calidad/suppliers/resolve", views.calidad_resolve_provisional, name="calidad_resolve_provisional"),
     # Search endpoints for target selection
+    path("calidad/feedbacks/by_target", views.calidad_feedbacks_by_target, name="calidad_feedbacks_by_target"),
     path("calidad/search/suppliers", views.calidad_search_suppliers, name="calidad_search_suppliers"),
     path("calidad/search/users", views.calidad_search_users, name="calidad_search_users"),
     path("calidad/search/guides", views.calidad_search_guides, name="calidad_search_guides"),

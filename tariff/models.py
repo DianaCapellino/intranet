@@ -334,6 +334,7 @@ class RateLine(models.Model):
     date_to = models.DateField(verbose_name='to_date')
     group = models.ForeignKey(RateGroup, on_delete=models.CASCADE, related_name="group_rate")
     season = models.CharField(max_length=64)
+    is_revised = models.BooleanField(default=True)
 
     def __str__(self):
         return f"{self.group} - {self.date_from}/{self.date_to}"
@@ -465,7 +466,7 @@ class Feedback(models.Model):
 
     type = models.CharField(max_length=64, choices=TYPE_QUALITY)
     sentiment = models.CharField(max_length=16, choices=SENTIMENT, default="neutral")
-    brief_summary = models.CharField(max_length=200, blank=True, default="", verbose_name="Resumen breve")
+    brief_summary = models.CharField(max_length=120, blank=True, default="", verbose_name="Resumen breve")
     content = models.TextField(blank=True, default="")
     verbatim = models.TextField(blank=True, default="", verbose_name="Texto original del pasajero")
     solution = models.CharField(max_length=3000, null=True, blank=True)

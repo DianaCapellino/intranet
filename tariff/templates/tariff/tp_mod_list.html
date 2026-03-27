@@ -462,6 +462,7 @@ function rowHTML(item) {
             <div class="flex-grow-1">
                 <div class="fw-semibold" style="font-size:.88rem">${item.product_name}
                     ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Solo se actualiza el costo — venta no se modifica">ítems de costo</span>' : ""}
+                    ${item.status === "Provisional" ? '<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:.62rem;">Provisional</span>' : ""}
                 </div>
                 ${item.has_items && item.ci_name ? `<div class="text-info-emphasis" style="font-size:.70rem">↳ ${item.ci_name}</div>` : ""}
                 <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
@@ -577,6 +578,7 @@ function confirmChanges() {
         base:           item.base,
         margin:         item.margin,
         margin_info:    item.margin_info,
+        status:         item.status,
     }));
     const ignored_ids = reviewState.filter(i => i.ignored).map(i => i._id);
 

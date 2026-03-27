@@ -29,10 +29,25 @@ def index(request):
 
     this_year = date.today().year
 
+    pending_suppliers = []
+    if request.user.isAdmin:
+        from django.db.models import Count
+        pending_suppliers = (
+            Supplier.objects
+            .filter(supplier_products__rate_products__group_rate__is_revised=False)
+            .annotate(pending_count=Count(
+                'supplier_products__rate_products__group_rate',
+                filter=Q(supplier_products__rate_products__group_rate__is_revised=False)
+            ))
+            .distinct()
+            .order_by('name')
+        )
+
     return render(request, "tariff/tariff.html", {
         "locations": Location.objects.all().order_by("order"),
         "clients": Client.objects.all(),
         "this_year": this_year,
+        "pending_suppliers": pending_suppliers,
     })
 
 logger = logging.getLogger(__name__)
@@ -123,10 +138,11 @@ def get_filtered_rate_lines(request):
 
     for line in rate_lines:
         rates = {}
+        costs = {}
         provisional_columns = set()
 
         for r in line.line_rates.all():
-            if is_client and r.status != "Confirmed":
+            if is_client and r.status != "Confirmed" and not r.rate_line.is_revised:
                 continue
 
             sell_adjusted = apply_client_margin(
@@ -136,10 +152,12 @@ def get_filtered_rate_lines(request):
             )
 
             rates[r.column_options] = sell_adjusted
+            costs[r.column_options] = r.cost
             if r.status == "Provisional":
                 provisional_columns.add(r.column_options)
 
         line.rates_by_column = rates
+        line.costs_by_column = costs
         line.provisional_columns = provisional_columns
 
     return rate_lines, t_type, is_client
@@ -154,10 +172,12 @@ def tariff_search(request):
 
     rate_lines, t_type, is_client = get_filtered_rate_lines(request)
 
+    show_costs = request.user.userType in ("Ventas", "Operaciones", "Internal")
     return render(request, "tariff/tariff_table_partial.html", {
         "rate_lines": rate_lines,
         "tariff_type": t_type,
         "is_client": is_client,
+        "show_costs": show_costs,
     })
 
 
@@ -433,6 +453,17 @@ def toggle_supplier_update_tp(request):
 
 
 @login_required
+def mark_rate_line_revised(request, line_id):
+    """Mark a RateLine as revised (is_revised=True). Admin users only."""
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    updated = RateLine.objects.filter(pk=line_id).update(is_revised=True)
+    return JsonResponse({'ok': bool(updated)})
+
+
+@login_required
 def tp_mod_list_services(request):
     """Upload services tariff file (Tourplan format for NA products)."""
     if request.method == 'POST':
@@ -572,10 +603,16 @@ def upload_data(csv_obj):
 
             if c10 == "K":
                 status = "Confirmed"
+                is_closed = False
             elif c10 == "P":
                 status = "Provisional"
+                is_closed = False
+            elif c10 == "C":
+                status = "Confirmed"
+                is_closed = True
             else:
                 status = "Confirmed"
+                is_closed = False
                 
 
             # ---- per-row: room type classification
@@ -662,8 +699,12 @@ def upload_data(csv_obj):
                         ctx_last_dbl_cost = cost   # new base
                     cost = ctx_last_dbl_cost
 
+            # ---- closed rate: force everything to zero
+            if is_closed:
+                cost = 0.0
+                sell_tourplan = 0
             # ---- calculate sell_tourplan with final accumulated cost
-            if is_zero_cost:
+            elif is_zero_cost:
                 sell_tourplan = 0
             else:
                 margin = ctx_supplier_obj.margin
@@ -952,6 +993,7 @@ def upload_data_services(csv_obj):
     ctx_date_from_db = None
     ctx_date_to_db   = None
     ctx_service_desc = None  # service name from col 16 rows without PXB band
+    ctx_status       = "Confirmed"
 
     result_index = {}
 
@@ -969,8 +1011,15 @@ def upload_data_services(csv_obj):
             c8  = cols[7].strip()   # FCU: Person / Group
             c13 = cols[12].strip()  # date_from
             c14 = cols[13].strip()  # date_to
+            c15 = cols[14].strip()  # status: Conf / Prov
             c16 = cols[15].strip()  # PXB band
             c20 = cols[19].strip()  # cost value
+
+            # ---- inherit: status
+            if c15 == "Conf":
+                ctx_status = "Confirmed"
+            elif c15 == "Prov":
+                ctx_status = "Provisional"
 
             # ---- inherit: supplier
             if c3:
@@ -1111,7 +1160,7 @@ def upload_data_services(csv_obj):
                             "date_to":               ctx_date_to,
                             "column_options":        rate.column_options,
                             "fcu":                   ctx_fcu,
-                            "status":                "Confirmed",
+                            "status":                ctx_status,
                             "margin":                svc_margin,
                             "margin_info":           svc_margin_info,
                             "rate_group_name":       rate_group.name,
@@ -1181,7 +1230,7 @@ def upload_data_services(csv_obj):
                             "column_options":        column_options,
                             "fcu":                   ctx_fcu,
                             "cost":                  direct_cost,
-                            "status":                "Confirmed",
+                            "status":                ctx_status,
                             "sell_tourplan":         sell_tourplan,
                             "sell":                  sell_tourplan,
                             "margin":                margin,
@@ -1256,7 +1305,7 @@ def upload_data_services(csv_obj):
                                         "date_to":               ctx_date_to,
                                         "column_options":        column_options,
                                         "fcu":                   ctx_fcu,
-                                        "status":                "Confirmed",
+                                        "status":                ctx_status,
                                         "margin":                margin,
                                         "margin_info":           margin_info,
                                         "rate_group_name":       rate_group.name,
@@ -1335,7 +1384,7 @@ def upload_data_services(csv_obj):
                         "date_to":         ctx_date_to,
                         "column_options":  column_options,
                         "fcu":             ctx_fcu,
-                        "status":          "Confirmed",
+                        "status":          ctx_status,
                         "margin":          margin,
                         "margin_info":     margin_info,
                         "rate_group_name": rate_group.name,
@@ -1455,6 +1504,8 @@ def apply_confirmed_changes(confirmed_items):
 
     # ── Paso 2: aplicar los cambios ──────────────────────────────────────
     added_rate_lines = []   # (RateLine instance, product_id)
+    provisional_rateline_ids       = set()   # skip Change for Update
+    provisional_added_rateline_ids = set()   # skip Change for Add
 
     for item in confirmed_items:
         action        = item.get("action")
@@ -1502,6 +1553,12 @@ def apply_confirmed_changes(confirmed_items):
                 if margin_info:
                     update_fields["margin"] = margin_info
                 Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
+                if status == "Provisional":
+                    try:
+                        rl_id = Rate.objects.get(pk=item["rate_id"]).rate_line_id
+                        provisional_rateline_ids.add(rl_id)
+                    except Rate.DoesNotExist:
+                        pass
 
         elif action == "Add":
             rate_group_id = item.get("rate_group_id")
@@ -1519,11 +1576,14 @@ def apply_confirmed_changes(confirmed_items):
                 rate_group_id = rate_group_obj.pk
             date_from = datetime.strptime(item["date_from"], "%d/%m/%Y").date()
             date_to   = datetime.strptime(item["date_to"],   "%d/%m/%Y").date()
-            rate_line, _ = RateLine.objects.get_or_create(
+            rate_line, rl_created = RateLine.objects.get_or_create(
                 group_id=rate_group_id,
                 date_from=date_from,
                 date_to=date_to,
-                defaults={"season": item.get("season") or "To be defined"},
+                defaults={
+                    "season":     item.get("season") or "To be defined",
+                    "is_revised": status != "Confirmed",  # Confirmed → needs review
+                },
             )
             # Resolve margin_info from DB if not present in session item (old data)
             if not margin_info:
@@ -1547,6 +1607,8 @@ def apply_confirmed_changes(confirmed_items):
             if not any(rl.id == rate_line.id for rl, _ in added_rate_lines):
                 product_id = rate_line.group.product_id
                 added_rate_lines.append((rate_line, product_id))
+            if status == "Provisional":
+                provisional_added_rateline_ids.add(rate_line.id)
 
         elif action == "Delete":
             rate_line_id = item.get("rate_line_id")
@@ -1555,6 +1617,8 @@ def apply_confirmed_changes(confirmed_items):
 
     # ── Paso 3a: Change para Update ──────────────────────────────────────
     for rl_id, data_rl in rateline_data.items():
+        if rl_id in provisional_rateline_ids:
+            continue
         rl      = data_rl["instance"]
         old_avg = data_rl["old_avg"]
         new_avg = rl.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
@@ -1591,6 +1655,8 @@ def apply_confirmed_changes(confirmed_items):
 
     # ── Paso 3b: Change para Add / New ───────────────────────────────────
     for rl, product_id in added_rate_lines:
+        if rl.id in provisional_added_rateline_ids:
+            continue
         new_avg = rl.line_rates.aggregate(avg=Avg("sell"))["avg"] or 0
         if new_avg == 0:
             continue

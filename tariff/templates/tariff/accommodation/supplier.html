@@ -154,6 +154,25 @@
                             <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago"></textarea>
                         </div>
                     </div>
+                    <div class="mb-2">
+                        <small class="text-muted">Nota niños</small>
+                        <textarea class="form-control" name="child_note" rows="1" placeholder="Ej: Children under 6 stay free"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <small class="text-muted">Nota estadía mínima</small>
+                        <textarea class="form-control" name="stay_note" rows="1" placeholder="Ej: Minimum stay 3 nights"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Nota cierre</small>
+                        <textarea class="form-control" name="closing_note" rows="1" placeholder="Ej: Closed in January"></textarea>
+                    </div>
+
+                    <div class="mb-3 text-start">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="recommended" id="recommended-create">
+                            <label class="form-check-label" for="recommended-create">Recomendado</label>
+                        </div>
+                    </div>
 
                     <hr>
 
@@ -416,6 +435,25 @@ High – 0.82 - Tarifas especiales negociadas
                                                 <div class="col">
                                                     <small class="mb-3" muted>Ejemplo: 30% prepayment is required to confirm</small>
                                                     <textarea class="form-control" name="prepayment" rows="1" placeholder="Nota prepago">{{ supplier.prepayment|default:'' }}</textarea>
+                                                </div>
+                                            </div>
+                                            <div class="mb-2">
+                                                <small class="text-muted">Nota niños</small>
+                                                <textarea class="form-control" name="child_note" rows="1" placeholder="Ej: Children under 6 stay free">{{ supplier.child_note|default:'' }}</textarea>
+                                            </div>
+                                            <div class="mb-2">
+                                                <small class="text-muted">Nota estadía mínima</small>
+                                                <textarea class="form-control" name="stay_note" rows="1" placeholder="Ej: Minimum stay 3 nights">{{ supplier.stay_note|default:'' }}</textarea>
+                                            </div>
+                                            <div class="mb-3">
+                                                <small class="text-muted">Nota cierre</small>
+                                                <textarea class="form-control" name="closing_note" rows="1" placeholder="Ej: Closed in January">{{ supplier.closing_note|default:'' }}</textarea>
+                                            </div>
+
+                                            <div class="mb-3 text-start">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="recommended" id="recommended-{{ supplier.id }}" {% if supplier.recommended %}checked{% endif %}>
+                                                    <label class="form-check-label" for="recommended-{{ supplier.id }}">Recomendado</label>
                                                 </div>
                                             </div>
 
