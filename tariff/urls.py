@@ -64,6 +64,9 @@ urlpatterns = [
     path('modify/supplier/<int:supplier_id>/bulk-update-exchange/', modify.bulk_update_exchange, name='bulk_update_exchange'),
     path('modify/rate/update-cost/', modify.update_rate_cost, name='update_rate_cost'),
 
+    path("pdf/select/", tariff.pdf_select, name="pdf_select"),
+    path("pdf/view/", tariff.pdf_view, name="pdf_view"),
+
     path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
     path("tp/apply-changes/",  tariff.apply_changes,   name="apply_changes"),
     path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),

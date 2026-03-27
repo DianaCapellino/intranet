@@ -152,3 +152,11 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(os.path.dirname(BASE_DIR), 'media')
 
 CACHE_MIDDLEWARE_SECONDS = 36000
+
+# Tourplan SQL Server connection
+TOURPLAN_DB = {
+    "SERVER":   os.environ.get("TP_DB_SERVER",   "NX-DB04"),
+    "DATABASE": os.environ.get("TP_DB_DATABASE", "LA-SAYHUE"),
+    "UID":      os.environ.get("TP_DB_UID",      ""),
+    "PWD":      os.environ.get("TP_DB_PWD",      ""),
+}

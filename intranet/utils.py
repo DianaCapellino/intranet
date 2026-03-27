@@ -544,3 +544,221 @@ def report_tariff_error_service(user, product_obj, note):
         }
 
     return subject, email, template, context
+
+
+# ---------------------------------------------------------------------------
+# Tourplan DB sync
+# ---------------------------------------------------------------------------
+
+_TOURPLAN_SYNC_QUERY = """
+SELECT DISTINCT
+    BHD.FULL_REFERENCE    AS tourplan_id,
+    BHD.TRAVELDATE        AS travelling_date,
+    BHD.LAST_SERVICE_DATE AS out_date,
+    BHD.STATUS            AS status,
+    BHD.NAME              AS pax_name,
+    BHD.UDTEXT3           AS dh_type,
+    BHD.UDTEXT2           AS dh_name,
+    BHD.SALE4             AS responsable_code,
+    BHD.CONSULTANT        AS operations_code,
+    DRM.NAME              AS agent_name,
+    BHD.AGENT_REFERENCE   AS client_reference,
+    ISNULL(RTRIM(LTRIM((
+        SELECT STUFF((
+            SELECT ', ' + RTRIM(LTRIM(CRM.NAME))
+            FROM CRM
+            JOIN OPT ON OPT.SUPPLIER = CRM.CODE
+            JOIN BSL ON BSL.OPT_ID = OPT.OPT_ID
+            WHERE BSL.BHD_ID = BHD.BHD_ID
+              AND OPT.SERVICE = 'GU'
+              AND OPT.LOCATION = 'BUE'
+            GROUP BY CRM.NAME
+            FOR XML PATH ('')
+        ), 1, 1, '')
+    ))), '') AS guide,
+    CASE BHD.STATUS
+        WHEN 'HL' THEN 0 WHEN 'XC' THEN 0 WHEN 'XX' THEN 0
+        ELSE BSD.PAX
+    END AS num_pax,
+    CASE BHD.STATUS
+        WHEN 'HL' THEN 0
+        ELSE (BSD.AGENT - BSD.COST) / CASE BSD.AGENT WHEN 0 THEN 1 ELSE BSD.AGENT END
+    END AS rent_perc,
+    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount
+FROM BHD
+JOIN DRM ON DRM.CODE = BHD.AGENT
+JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
+WHERE BHD.BRANCH = 'AL'
+  AND BHD.TRAVELDATE >= ?
+  AND BHD.TRAVELDATE <= ?
+"""
+
+_BOOKING_STATUSES  = {"OK", "FI", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
+_CANCELLED_STATUSES = {"RX", "XC", "XX"}
+
+
+def get_tourplan_connection():
+    import pyodbc
+    tp = settings.TOURPLAN_DB
+    conn_str = (
+        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+        f"SERVER={tp['SERVER']};"
+        f"DATABASE={tp['DATABASE']};"
+        f"UID={tp['UID']};"
+        f"PWD={tp['PWD']};"
+        f"TrustServerCertificate=yes;"
+        f"Connection Timeout=30;"
+    )
+    return pyodbc.connect(conn_str)
+
+
+def sync_from_tourplan_db():
+    """
+    Connects directly to the Tourplan SQL Server DB and updates Trip records
+    using the same logic as upload_data() but without a CSV file.
+    Returns (updated_count, not_found_count).
+    """
+    from difflib import SequenceMatcher
+
+    today = date.today()
+    date_from = today.replace(year=today.year - 2).strftime("%Y%m%d")
+    date_to   = today.replace(year=today.year + 3).strftime("%Y%m%d")
+
+    # Pre-fetch lookups
+    users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+
+    trips_by_tourplan = {
+        t.tourplanId: t
+        for t in Trip.objects.select_related("responsable_user", "operations_user")
+        .exclude(tourplanId="").exclude(tourplanId__isnull=True)
+    }
+
+    entry_tp_ids = set(
+        Entry.objects.exclude(tourplanId="").exclude(tourplanId__isnull=True)
+        .values_list("tourplanId", flat=True)
+    )
+
+    client_ref_set = set()
+    for ref in (Trip.objects
+                .exclude(client_reference="").exclude(client_reference__isnull=True)
+                .values_list("client_reference", flat=True)):
+        if ref:
+            r = str(ref).strip()
+            client_ref_set.add(r)
+            if "/" in r:
+                client_ref_set.add(r.split("/")[0])
+
+    # Fetch rows from Tourplan
+    conn = get_tourplan_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(_TOURPLAN_SYNC_QUERY, date_from, date_to)
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    updated_count  = 0
+    not_found_count = 0
+    trips_to_update = []
+    csv_quote_tp_ids    = set()
+    csv_client_ref_to_tp = {}
+
+    for row in rows:
+        tp_id = str(row.tourplan_id).strip() if row.tourplan_id else ""
+        if not tp_id:
+            continue
+
+        raw_status       = str(row.status).strip() if row.status else ""
+        is_booking_row   = raw_status in _BOOKING_STATUSES
+        is_cancelled_row = raw_status in _CANCELLED_STATUSES
+
+        csv_client_ref   = str(row.client_reference).strip() if row.client_reference else ""
+        client_ref_prefix = csv_client_ref.split("/")[0].strip() if "/" in csv_client_ref else csv_client_ref
+        agent_name       = str(row.agent_name).strip() if row.agent_name else ""
+        is_consumidor_final = agent_name.lower().startswith("consumidor final")
+
+        if not is_booking_row and not is_cancelled_row:
+            csv_quote_tp_ids.add(tp_id)
+
+        if client_ref_prefix and not is_consumidor_final and is_booking_row:
+            pax_name = str(row.pax_name).strip() if row.pax_name else ""
+            if client_ref_prefix not in csv_client_ref_to_tp:
+                csv_client_ref_to_tp[client_ref_prefix] = {"tp_id": tp_id, "name": pax_name}
+
+        if tp_id not in trips_by_tourplan:
+            if tp_id in entry_tp_ids:
+                continue
+            if not is_consumidor_final and client_ref_prefix and client_ref_prefix in client_ref_set:
+                continue
+            if is_booking_row or is_cancelled_row:
+                not_found_count += 1
+            continue
+
+        trip = trips_by_tourplan[tp_id]
+        updated_count += 1
+
+        # travelling_date — pyodbc returns datetime/date objects directly
+        if row.travelling_date:
+            trip.travelling_date = row.travelling_date
+
+        # out_date
+        if row.out_date:
+            trip.out_date = row.out_date
+
+        # dh_type (S / B / F)
+        dh_type_val = str(row.dh_type).strip() if row.dh_type else ""
+        if dh_type_val in ("S", "B", "F"):
+            trip.dh_type = dh_type_val
+
+        # responsable_user
+        responsable_code = str(row.responsable_code).strip() if row.responsable_code else ""
+        if responsable_code in users_by_other_tp:
+            trip.responsable_user = users_by_other_tp[responsable_code]
+
+        # operations_user
+        operations_code = str(row.operations_code).strip() if row.operations_code else ""
+        if operations_code in users_by_other_tp:
+            trip.operations_user = users_by_other_tp[operations_code]
+
+        # dh name (strip "DH " prefix if present)
+        dh_name_val = str(row.dh_name).strip() if row.dh_name else ""
+        if dh_name_val.upper().startswith("DH "):
+            dh_name_val = dh_name_val[3:].strip()
+        if dh_name_val:
+            trip.dh = dh_name_val
+
+        # guide
+        trip.guide = str(row.guide).strip() if row.guide else ""
+
+        # rent_perc — SQL already returns decimal (e.g. 0.35), no /100 needed
+        if row.rent_perc is not None:
+            try:
+                trip.rent_perc = float(row.rent_perc)
+            except (ValueError, TypeError):
+                pass
+
+        # amount
+        if row.amount:
+            try:
+                trip.amount = int(float(row.amount))
+            except (ValueError, TypeError):
+                pass
+
+        trips_to_update.append(trip)
+
+    if trips_to_update:
+        Trip.objects.bulk_update(trips_to_update, [
+            "travelling_date", "out_date", "dh_type",
+            "responsable_user", "operations_user", "dh",
+            "guide", "rent_perc", "amount",
+        ])
+        for trip in trips_to_update:
+            if trip.amount:
+                tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).first()
+                if tp_entry:
+                    tp_entry.amount = trip.amount
+                    tp_entry.save()
+
+    return updated_count, not_found_count
+
+    return subject, email, template, context

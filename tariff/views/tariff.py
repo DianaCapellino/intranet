@@ -181,6 +181,113 @@ def tariff_search(request):
     })
 
 
+@login_required
+def pdf_select(request):
+    from collections import defaultdict
+    suppliers = (
+        Supplier.objects
+        .filter(group__type_service="AC")
+        .select_related("group__location", "group")
+        .order_by("group__location__order", "group__order", "order")
+    )
+
+    locs = defaultdict(list)
+    for s in suppliers:
+        locs[s.group.location].append(s)
+
+    locations_data = sorted(locs.items(), key=lambda x: x[0].order)
+    this_year = date.today().year
+
+    return render(request, "tariff/pdf_select.html", {
+        "locations_data": locations_data,
+        "clients": Client.objects.all().order_by("name"),
+        "this_year": this_year,
+    })
+
+
+@login_required
+def pdf_view(request):
+    supplier_ids = request.GET.getlist("suppliers")
+    client_id = request.GET.get("client")
+    season = request.GET.get("season")
+
+    if not supplier_ids:
+        return redirect("pdf_select")
+
+    client = None
+    if client_id:
+        try:
+            client = Client.objects.get(id=client_id)
+        except Client.DoesNotExist:
+            pass
+
+    year = int(season) if season else date.today().year
+    season_start = date(year, 5, 1)
+    season_end = date(year + 1, 4, 30)
+
+    rate_lines = (
+        RateLine.objects
+        .filter(
+            group__product__supplier_id__in=supplier_ids,
+            group__product__type_service="AC",
+            date_from__lte=season_end,
+            date_to__gte=season_start,
+        )
+        .select_related(
+            "group__product__supplier__group__location",
+            "group__product__supplier__group",
+            "group__product__supplier",
+            "group__product__group",
+            "group__product",
+            "group",
+        )
+        .prefetch_related("line_rates")
+        .order_by(
+            "group__product__supplier__group__location__order",
+            "group__product__supplier__group__order",
+            "group__product__supplier__id",
+            "group__product__group__order",
+            "date_from",
+            "date_to",
+            "group__product__order",
+        )
+    )
+
+    if client:
+        rate_lines = rate_lines.filter(group__product__clients__id=client.id)
+
+    client_category = client.category if client else "C"
+
+    for line in rate_lines:
+        rates = {}
+        for r in line.line_rates.all():
+            sell_adjusted = apply_client_margin(
+                rate=r,
+                client_category=client_category,
+                service_type="AC"
+            )
+            rates[r.column_options] = sell_adjusted
+        line.rates_by_column = rates
+
+    import base64
+    from django.contrib.staticfiles.finders import find as static_find
+    logo_path = static_find("intranet/images/logo2.png")
+    if not logo_path:
+        logo_path = os.path.join(settings.STATIC_ROOT, "intranet", "images", "logo2.png")
+    try:
+        with open(logo_path, "rb") as f:
+            logo_b64 = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
+    except (FileNotFoundError, TypeError):
+        logo_b64 = ""
+
+    return render(request, "tariff/pdf_view.html", {
+        "rate_lines": rate_lines,
+        "client": client,
+        "season": year,
+        "logo_b64": logo_b64,
+    })
+
+
 def export_services_excel(request):
 
     has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
