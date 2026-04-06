@@ -899,9 +899,43 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
         target_dh    = None
         entity       = None
 
+        # Build reference label for traceability (email subject + trip info)
+        ref_parts = []
+        if item.email_subject:
+            ref_parts.append(f'Asunto: {item.email_subject}')
+        if trip:
+            trip_parts = [trip.name]
+            if trip.tourplanId:
+                trip_parts.append(trip.tourplanId)
+            if trip.travelling_date:
+                trip_parts.append(trip.travelling_date.strftime('%d/%m/%Y'))
+            ref_parts.append('Viaje: ' + ' | '.join(trip_parts))
+        trip_ref = ' – '.join(ref_parts)
+
         if target_type == 'supplier':
             sid = t.get('supplier_id')
             supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+
+            # Deduplication: if same trip + supplier already has a feedback, update it
+            if trip and supplier:
+                existing_fb = Feedback.objects.filter(trip=trip, supplier=supplier).order_by('-creation_date').first()
+                if existing_fb:
+                    date_str = creation_date.strftime('%d/%m/%Y') if hasattr(creation_date, 'strftime') else str(creation_date)
+                    subject_tag = f' [{item.email_subject}]' if item.email_subject else ''
+                    note = f"\n\n[{date_str}{subject_tag}] {content}"
+                    existing_fb.content = (existing_fb.content or '') + note
+                    if solution and not existing_fb.solution:
+                        existing_fb.solution = solution
+                    if cost and not existing_fb.cost:
+                        existing_fb.cost = cost
+                    update_fields = ['content']
+                    if solution and not existing_fb.solution:
+                        update_fields.append('solution')
+                    if cost and not existing_fb.cost:
+                        update_fields.append('cost')
+                    existing_fb.save(update_fields=update_fields)
+                    created.append(existing_fb)
+                    continue
 
         elif target_type == 'user':
             uid = t.get('user_id')
@@ -943,6 +977,7 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             if not entity:
                 entity = get_or_create_entity('Servicio no registrado')
 
+        content_with_ref = f"[{trip_ref}]\n{content}" if trip_ref else content
         fb = Feedback.objects.create(
             user=creator, trip=trip,
             supplier=supplier,
@@ -951,7 +986,7 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             target_dh=target_dh,
             target_entity=entity,
             sentiment=sentiment, type=fb_type,
-            brief_summary=brief_summary, content=content,
+            brief_summary=brief_summary, content=content_with_ref,
             solution=solution, cost=cost,
             verbatim=verbatim, source='email',
             email_sender=item.email_sender, status=fb_status,

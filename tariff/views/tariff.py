@@ -89,9 +89,8 @@ def get_filtered_rate_lines(request):
             )
             .prefetch_related("line_rates")
             .order_by(
-                "group__product__supplier__group__order",
-                "group__product__supplier__order",
                 "group__product__group__order",
+                "group__product__supplier__order",
                 "group__product__order",
                 "date_from",
                 "date_to",
@@ -184,22 +183,34 @@ def tariff_search(request):
 @login_required
 def pdf_select(request):
     from collections import defaultdict
-    suppliers = (
+
+    acc_suppliers = (
         Supplier.objects
         .filter(group__type_service="AC")
         .select_related("group__location", "group")
         .order_by("group__location__order", "group__order", "order")
     )
+    acc_locs = defaultdict(list)
+    for s in acc_suppliers:
+        acc_locs[s.group.location].append(s)
+    acc_locations_data = sorted(acc_locs.items(), key=lambda x: x[0].order)
 
-    locs = defaultdict(list)
-    for s in suppliers:
-        locs[s.group.location].append(s)
+    svs_products = (
+        Product.objects
+        .filter(type_service="NA", isActivated=True)
+        .select_related("group__location", "group", "supplier")
+        .order_by("group__location__order", "group__order", "order")
+    )
+    svs_locs = defaultdict(list)
+    for p in svs_products:
+        svs_locs[p.group.location].append(p)
+    svs_locations_data = sorted(svs_locs.items(), key=lambda x: x[0].order)
 
-    locations_data = sorted(locs.items(), key=lambda x: x[0].order)
     this_year = date.today().year
 
     return render(request, "tariff/pdf_select.html", {
-        "locations_data": locations_data,
+        "acc_locations_data": acc_locations_data,
+        "svs_locations_data": svs_locations_data,
         "clients": Client.objects.all().order_by("name"),
         "this_year": this_year,
     })
@@ -207,11 +218,12 @@ def pdf_select(request):
 
 @login_required
 def pdf_view(request):
-    supplier_ids = request.GET.getlist("suppliers")
+    acc_supplier_ids = request.GET.getlist("suppliers")
+    svs_product_ids  = request.GET.getlist("svs_products")
     client_id = request.GET.get("client")
     season = request.GET.get("season")
 
-    if not supplier_ids:
+    if not acc_supplier_ids and not svs_product_ids:
         return redirect("pdf_select")
 
     client = None
@@ -224,50 +236,71 @@ def pdf_view(request):
     year = int(season) if season else date.today().year
     season_start = date(year, 5, 1)
     season_end = date(year + 1, 4, 30)
-
-    rate_lines = (
-        RateLine.objects
-        .filter(
-            group__product__supplier_id__in=supplier_ids,
-            group__product__type_service="AC",
-            date_from__lte=season_end,
-            date_to__gte=season_start,
-        )
-        .select_related(
-            "group__product__supplier__group__location",
-            "group__product__supplier__group",
-            "group__product__supplier",
-            "group__product__group",
-            "group__product",
-            "group",
-        )
-        .prefetch_related("line_rates")
-        .order_by(
-            "group__product__supplier__group__location__order",
-            "group__product__supplier__group__order",
-            "group__product__supplier__id",
-            "group__product__group__order",
-            "date_from",
-            "date_to",
-            "group__product__order",
-        )
-    )
-
-    if client:
-        rate_lines = rate_lines.filter(group__product__clients__id=client.id)
-
     client_category = client.category if client else "C"
 
-    for line in rate_lines:
-        rates = {}
-        for r in line.line_rates.all():
-            sell_adjusted = apply_client_margin(
-                rate=r,
-                client_category=client_category,
-                service_type="AC"
+    shared_select = [
+        "group__product__supplier__group__location",
+        "group__product__supplier__group",
+        "group__product__supplier",
+        "group__product__group",
+        "group__product",
+        "group",
+    ]
+    shared_order = [
+        "group__product__supplier__group__location__order",
+        "group__product__supplier__group__order",
+        "group__product__supplier__id",
+        "group__product__group__order",
+        "date_from",
+        "date_to",
+        "group__product__order",
+    ]
+
+    # ACC rate lines
+    acc_rate_lines = []
+    if acc_supplier_ids:
+        qs = (
+            RateLine.objects
+            .filter(
+                group__product__supplier_id__in=acc_supplier_ids,
+                group__product__type_service="AC",
+                date_from__lte=season_end,
+                date_to__gte=season_start,
             )
-            rates[r.column_options] = sell_adjusted
-        line.rates_by_column = rates
+            .select_related(*shared_select)
+            .prefetch_related("line_rates")
+            .order_by(*shared_order)
+        )
+        if client:
+            qs = qs.filter(group__product__clients__id=client.id)
+        for line in qs:
+            rates = {}
+            for r in line.line_rates.all():
+                rates[r.column_options] = apply_client_margin(r, client_category, "AC")
+            line.rates_by_column = rates
+        acc_rate_lines = qs
+
+    # SVS rate lines
+    svs_rate_lines = []
+    if svs_product_ids:
+        qs = (
+            RateLine.objects
+            .filter(
+                group__product_id__in=svs_product_ids,
+                group__product__type_service="NA",
+                date_from__lte=season_end,
+                date_to__gte=season_start,
+            )
+            .select_related(*shared_select)
+            .prefetch_related("line_rates")
+            .order_by(*shared_order)
+        )
+        for line in qs:
+            rates = {}
+            for r in line.line_rates.all():
+                rates[r.column_options] = apply_client_margin(r, client_category, "NA")
+            line.rates_by_column = rates
+        svs_rate_lines = qs
 
     import base64
     from django.contrib.staticfiles.finders import find as static_find
@@ -281,7 +314,8 @@ def pdf_view(request):
         logo_b64 = ""
 
     return render(request, "tariff/pdf_view.html", {
-        "rate_lines": rate_lines,
+        "acc_rate_lines": acc_rate_lines,
+        "svs_rate_lines": svs_rate_lines,
         "client": client,
         "season": year,
         "logo_b64": logo_b64,
@@ -762,7 +796,7 @@ def upload_data(csv_obj):
                 continue
             if not ctx_date_from_db or not ctx_date_to_db:
                 continue
-            if ctx_date_from_db <= today:
+            if ctx_date_from_db < today - timedelta(days=180):
                 continue
 
             # ---- price_code validation
@@ -787,7 +821,12 @@ def upload_data(csv_obj):
                 if not raw_cost or set(raw_cost) <= {"-"}:
                     continue
                 try:
-                    cost = round(float(raw_cost.replace(",", ".")), 2)
+                    # Handle both "1818.25" and "1.818,25" (dot as thousands separator)
+                    if "," in raw_cost and "." in raw_cost:
+                        raw_cost = raw_cost.replace(".", "").replace(",", ".")
+                    else:
+                        raw_cost = raw_cost.replace(",", ".")
+                    cost = round(float(raw_cost), 2)
                 except ValueError:
                     continue
 
@@ -1166,7 +1205,7 @@ def upload_data_services(csv_obj):
                 continue
             if not ctx_date_from_db or not ctx_date_to_db:
                 continue
-            if ctx_date_from_db <= today:
+            if ctx_date_from_db < today - timedelta(days=180):
                 continue
             if not ctx_fcu:
                 continue

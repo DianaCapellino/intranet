@@ -35,59 +35,124 @@
                         </select>
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label fw-bold">Buscar hotel</label>
-                        <input type="text" id="hotel-search" class="form-control" placeholder="Filtrar por nombre...">
+                        <label class="form-label fw-bold">Buscar</label>
+                        <input type="text" id="supplier-search" class="form-control" placeholder="Filtrar por nombre...">
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Select all / none -->
-        <div class="mb-3 d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll(true)">
-                <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll(false)">
-                <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
-            </button>
-        </div>
+        <!-- Tabs -->
+        <ul class="nav nav-tabs mb-3" id="pdfTabs">
+            <li class="nav-item">
+                <button class="nav-link active" type="button" data-bs-toggle="tab" data-bs-target="#tab-acc">
+                    <i class="fa-solid fa-hotel me-1"></i>Alojamiento
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" type="button" data-bs-toggle="tab" data-bs-target="#tab-svs">
+                    <i class="fa-solid fa-van-shuttle me-1"></i>Servicios
+                </button>
+            </li>
+        </ul>
 
-        <!-- Hotels grouped by location -->
-        {% for location, suppliers in locations_data %}
-        <div class="card mb-3 shadow-sm location-block">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
-                <span class="fw-bold text-uppercase small" style="letter-spacing:1px;">{{ location.name }}</span>
-                <div class="form-check mb-0">
-                    <input class="form-check-input" type="checkbox" id="all-{{ location.id }}"
-                           onchange="toggleLocation('{{ location.id }}', this.checked)">
-                    <label class="form-check-label text-white small" for="all-{{ location.id }}">Todos</label>
+        <div class="tab-content">
+
+            <!-- ALOJAMIENTO -->
+            <div class="tab-pane fade show active" id="tab-acc">
+                <div class="mb-3 d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', true)">
+                        <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', false)">
+                        <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
+                    </button>
                 </div>
-            </div>
-            <div class="card-body p-2">
-                <div class="row g-0">
-                    {% for supplier in suppliers %}
-                    <div class="col-md-4 col-lg-3 p-2 supplier-item"
-                         data-location="{{ location.id }}"
-                         data-name="{{ supplier.name|lower }}">
-                        <div class="form-check">
-                            <input class="form-check-input supplier-check loc-{{ location.id }}"
-                                   type="checkbox"
-                                   name="suppliers"
-                                   value="{{ supplier.id }}"
-                                   id="sup-{{ supplier.id }}">
-                            <label class="form-check-label" for="sup-{{ supplier.id }}">
-                                {{ supplier.name }}
-                                {% if supplier.hotel_quality %}
-                                    <small class="text-muted d-block">{{ supplier.hotel_quality }}</small>
-                                {% endif %}
-                            </label>
+
+                {% for location, suppliers in acc_locations_data %}
+                <div class="card mb-3 shadow-sm location-block">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                        <span class="fw-bold text-uppercase small" style="letter-spacing:1px;">{{ location.name }}</span>
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="acc-all-{{ location.id }}"
+                                   onchange="toggleLocation('acc', '{{ location.id }}', this.checked)">
+                            <label class="form-check-label text-white small" for="acc-all-{{ location.id }}">Todos</label>
                         </div>
                     </div>
-                    {% endfor %}
+                    <div class="card-body p-2">
+                        <div class="row g-0">
+                            {% for supplier in suppliers %}
+                            <div class="col-md-4 col-lg-3 p-2 supplier-item acc-item"
+                                 data-location="{{ location.id }}"
+                                 data-name="{{ supplier.name|lower }}">
+                                <div class="form-check">
+                                    <input class="form-check-input acc-check loc-acc-{{ location.id }}"
+                                           type="checkbox"
+                                           name="suppliers"
+                                           value="{{ supplier.id }}"
+                                           id="acc-sup-{{ supplier.id }}">
+                                    <label class="form-check-label" for="acc-sup-{{ supplier.id }}">
+                                        {{ supplier.name }}
+                                        {% if supplier.hotel_quality %}
+                                            <small class="text-muted d-block">{{ supplier.hotel_quality }}</small>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
+                {% endfor %}
             </div>
-        </div>
-        {% endfor %}
+
+            <!-- SERVICIOS -->
+            <div class="tab-pane fade" id="tab-svs">
+                <div class="mb-3 d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('svs', true)">
+                        <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('svs', false)">
+                        <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
+                    </button>
+                </div>
+
+                {% for location, products in svs_locations_data %}
+                <div class="card mb-3 shadow-sm location-block">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                        <span class="fw-bold text-uppercase small" style="letter-spacing:1px;">{{ location.name }}</span>
+                        <div class="form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="svs-all-{{ location.id }}"
+                                   onchange="toggleLocation('svs', '{{ location.id }}', this.checked)">
+                            <label class="form-check-label text-white small" for="svs-all-{{ location.id }}">Todos</label>
+                        </div>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="row g-0">
+                            {% for product in products %}
+                            <div class="col-md-4 col-lg-3 p-2 supplier-item svs-item"
+                                 data-location="{{ location.id }}"
+                                 data-name="{{ product.name|lower }}">
+                                <div class="form-check">
+                                    <input class="form-check-input svs-check loc-svs-{{ location.id }}"
+                                           type="checkbox"
+                                           name="svs_products"
+                                           value="{{ product.id }}"
+                                           id="svs-prod-{{ product.id }}">
+                                    <label class="form-check-label" for="svs-prod-{{ product.id }}">
+                                        {{ product.name }}
+                                        <small class="text-muted d-block">{{ product.group.name }}</small>
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+        </div>{# tab-content #}
 
         <div class="d-flex justify-content-end mt-4 pb-5">
             <button type="submit" class="btn btn-dark btn-lg px-5">
@@ -101,32 +166,32 @@
 
 {% block extra_js %}
 <script>
-function selectAll(checked) {
-    document.querySelectorAll('.supplier-check').forEach(cb => cb.checked = checked);
-    document.querySelectorAll('[id^="all-"]').forEach(cb => cb.checked = checked);
+function selectAll(type, checked) {
+    document.querySelectorAll('.' + type + '-check').forEach(cb => cb.checked = checked);
+    document.querySelectorAll('[id^="' + type + '-all-"]').forEach(cb => cb.checked = checked);
 }
 
-function toggleLocation(locId, checked) {
-    document.querySelectorAll('.loc-' + locId).forEach(cb => cb.checked = checked);
-    // sync the location "all" checkbox
-    const allCb = document.getElementById('all-' + locId);
+function toggleLocation(type, locId, checked) {
+    document.querySelectorAll('.loc-' + type + '-' + locId).forEach(cb => cb.checked = checked);
+    const allCb = document.getElementById(type + '-all-' + locId);
     if (allCb) allCb.checked = checked;
 }
 
-// Keep per-location "all" checkbox in sync when individual hotels are clicked
+// Keep per-location "all" checkbox in sync
 document.addEventListener('change', function(e) {
-    if (!e.target.classList.contains('supplier-check')) return;
+    const type = e.target.classList.contains('acc-check') ? 'acc'
+               : e.target.classList.contains('svs-check') ? 'svs' : null;
+    if (!type) return;
     const locId = [...e.target.classList]
-        .find(c => c.startsWith('loc-'))?.replace('loc-', '');
+        .find(c => c.startsWith('loc-' + type + '-'))?.replace('loc-' + type + '-', '');
     if (!locId) return;
-    const all = document.querySelectorAll('.loc-' + locId);
-    const checked = [...all].every(cb => cb.checked);
-    const allCb = document.getElementById('all-' + locId);
-    if (allCb) allCb.checked = checked;
+    const all = document.querySelectorAll('.loc-' + type + '-' + locId);
+    const allCb = document.getElementById(type + '-all-' + locId);
+    if (allCb) allCb.checked = [...all].every(cb => cb.checked);
 });
 
-// Search filter
-document.getElementById('hotel-search').addEventListener('input', function() {
+// Search filter — searches whichever tab is active
+document.getElementById('supplier-search').addEventListener('input', function() {
     const q = this.value.toLowerCase();
     document.querySelectorAll('.supplier-item').forEach(item => {
         item.style.display = item.dataset.name.includes(q) ? '' : 'none';

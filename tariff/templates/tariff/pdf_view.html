@@ -160,6 +160,11 @@
         .col-validity { width: 26%; color: #666; font-size: 7.5pt; }
         .col-rate     { width: 16%; text-align: center; font-weight: bold; }
 
+        /* Services table */
+        .col-svc-name     { width: 38%; }
+        .col-svc-validity { width: 22%; color: #666; font-size: 7.5pt; }
+        .col-svc-rate     { text-align: center; font-weight: bold; }
+
         .separator-row td {
             height: 4px;
             border: none;
@@ -227,7 +232,7 @@
     <a class="btn-back" href="javascript:history.back()">&#8592; Volver</a>
 </div>
 
-{% regroup rate_lines by group.product.supplier.group.location.id as location_groups %}
+{% regroup acc_rate_lines by group.product.supplier.group.location.id as location_groups %}
 
 {% for lg in location_groups %}
 
@@ -242,7 +247,7 @@
     <!-- Destination + season -->
     <div class="location-title">
         {{ lg.list.0.group.product.supplier.group.location.name }}
-        <span class="location-season">Season {{ season }}/{{ season|add:1 }}</span>
+        <span class="location-season">Accommodation · Season {{ season }}/{{ season|add:1 }}</span>
     </div>
 
     {% regroup lg.list by group.product.supplier.group.id as supplier_groups %}
@@ -335,6 +340,82 @@
 
 </div>
 {% endfor %}{# location_groups #}
+
+{# ── SERVICES ── #}
+{% regroup svs_rate_lines by group.product.supplier.group.location.id as svs_location_groups %}
+
+{% for lg in svs_location_groups %}
+
+<div class="destination-block pdf-page-break">
+
+    <div class="page-header">
+        <img src="{{ logo_b64 }}" alt="Aliwen Incoming">
+        <h1>Rates</h1>
+    </div>
+
+    <div class="location-title">
+        {{ lg.list.0.group.product.supplier.group.location.name }}
+        <span class="location-season">Services · Season {{ season }}/{{ season|add:1 }}</span>
+    </div>
+
+    {% regroup lg.list by group.product.group.id as product_groups %}
+
+    {% for pg in product_groups %}
+
+        <div class="supplier-group-bar">
+            {{ pg.list.0.group.product.group.name }}
+        </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th class="col-svc-name">Service</th>
+                        <th class="col-svc-validity">Validity</th>
+                        <th class="col-svc-rate">1 Pax</th>
+                        <th class="col-svc-rate">2 Pax</th>
+                        <th class="col-svc-rate">3 Pax</th>
+                        <th class="col-svc-rate">4 Pax</th>
+                        <th class="col-svc-rate">5 Pax</th>
+                        <th class="col-svc-rate">6 Pax</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% regroup pg.list by date_from as date_groups %}
+                {% for dg in date_groups %}
+                    {% regroup dg.list by date_to as date_to_groups %}
+                    {% for dtg in date_to_groups %}
+                        {% for line in dtg.list %}
+                        {% if line.rates_by_column %}
+                        <tr>
+                            <td class="col-svc-name">
+                                {{ line.group.product.name }}
+                                <span style="font-weight:normal; color:#888;"> – {{ line.group.name }}</span>
+                                {% if line.group.product.note %}
+                                    <div class="supplier-note">* {{ line.group.product.note }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="col-svc-validity">
+                                {{ line.date_from|date:"d M Y" }} – {{ line.date_to|date:"d M Y" }}
+                            </td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.1|default:"—" }}</td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.2|default:"—" }}</td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.3|default:"—" }}</td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.4|default:"—" }}</td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.5|default:"—" }}</td>
+                            <td class="col-svc-rate">{{ line.rates_by_column.6|default:"—" }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="separator-row"><td colspan="8"></td></tr>
+                    {% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+
+    {% endfor %}{# product_groups #}
+
+</div>
+{% endfor %}{# svs_location_groups #}
 
 </body>
 </html>

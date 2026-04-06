@@ -644,17 +644,6 @@ function markRevised(lineId, btn) {
                         <div class="text-primary fw-bold ms-2">{{ line.group.product.note }}</div>
                     </div>
                     {% endif %}
-                    {% if request.user.userType != "Cliente" %}
-                    {% with pos=line.group.product.supplier.pos_fb_count neu=line.group.product.supplier.neu_fb_count neg=line.group.product.supplier.neg_fb_count %}
-                    {% if pos or neu or neg %}
-                    <div class="d-flex gap-1 mt-1">
-                        {% if pos %}<span class="badge text-bg-success">{{ pos }}</span>{% endif %}
-                        {% if neu %}<span class="badge text-bg-secondary">{{ neu }}</span>{% endif %}
-                        {% if neg %}<span class="badge text-bg-danger">{{ neg }}</span>{% endif %}
-                    </div>
-                    {% endif %}
-                    {% endwith %}
-                    {% endif %}
                 </td>
 
                 <td>
@@ -690,7 +679,12 @@ function markRevised(lineId, btn) {
                 <td class="text-center fw-bold">{{ line.rates_by_column.6|default:"N/A" }}</td>
                 {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.6|default:"—" }}</td>{% endif %}
             </tr>
+        {% endfor %}
 
+        </tbody>
+    </table>
+
+        {% for line in pg.list %}
             <div class="modal fade" id="windowMoreInfoProduct{{ line.group.product.id }}" tabindex="-1" aria-labelledby="labelProduct{{ line.group.product.id }}">
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content text-dark">
@@ -920,6 +914,47 @@ function markRevised(lineId, btn) {
                                 <div>
                                     Proveedor: {{ line.group.product.supplier.name }}
                                 </div>
+                                {% with feedbacks=line.group.product.supplier.all_feedbacks %}
+                                {% if feedbacks %}
+                                <hr>
+                                <h5 class="mt-3"><i class="fa-solid fa-comments me-2 text-primary"></i> Feedbacks</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Fecha</th>
+                                                <th>Sentimiento</th>
+                                                <th>Resumen</th>
+                                                <th>Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        {% for fb in feedbacks %}
+                                        <tr>
+                                            <td class="small">{{ fb.creation_date|date:"d M Y" }}</td>
+                                            <td>
+                                                {% if fb.sentiment == 'positivo' %}
+                                                    <span class="badge text-bg-success">Positivo</span>
+                                                {% elif fb.sentiment == 'negativo' %}
+                                                    <span class="badge text-bg-danger">Negativo</span>
+                                                {% else %}
+                                                    <span class="badge text-bg-secondary">Neutro</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="small">{{ fb.brief_summary }}</td>
+                                            <td class="small">{{ fb.get_status_display }}</td>
+                                        </tr>
+                                        {% if fb.content %}
+                                        <tr class="table-light">
+                                            <td colspan="4" class="small text-muted fst-italic ps-3">{{ fb.content }}</td>
+                                        </tr>
+                                        {% endif %}
+                                        {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% endif %}
+                                {% endwith %}
                             {% endif %}
                             <div class="container text-center mt-4">
                                 <button type="button" class="btn btn-dark" data-bs-dismiss="modal">CERRAR</button>
@@ -929,9 +964,6 @@ function markRevised(lineId, btn) {
                 </div>
             </div>
         {% endfor %}
-
-        </tbody>
-    </table>
 
 {% endfor %}
 {% endif %}
