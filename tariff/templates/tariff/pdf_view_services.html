@@ -1,0 +1,307 @@
+{% load custom_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SERVICES {{ season }}/{{ season|add:1 }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        @page {
+            size: A4 landscape;
+            margin: 10mm 13mm;
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 9pt;
+            color: #1a1a1a;
+            margin: 0;
+            padding: 0;
+        }
+
+        .pdf-page-break {
+            page-break-before: always;
+        }
+
+        .destination-block {
+            padding: 14mm 13mm;
+        }
+
+        /* ── Header ── */
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 10px;
+            border-bottom: 1.5px solid #1a1a1a;
+            margin-bottom: 16px;
+        }
+
+        .page-header img {
+            height: 52px;
+        }
+
+        .page-header h1 {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 20pt;
+            font-weight: bold;
+            letter-spacing: 6px;
+            margin: 0;
+            text-transform: uppercase;
+            color: #1a1a1a;
+        }
+
+        /* ── Destination title ── */
+        .location-title {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 10px 0 4px 0;
+            color: #1a1a1a;
+        }
+
+        .location-season {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8pt;
+            font-weight: normal;
+            color: #666;
+            margin-left: 10px;
+        }
+
+        /* ── Supplier block ── */
+        .supplier-name {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 14px 0 1px 0;
+            color: #1a1a1a;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 4px 8px;
+        }
+
+        .supplier-note {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8pt;
+            color: #D88775;
+            font-weight: bold;
+            margin: 2px 0;
+        }
+
+        /* ── Product group label ── */
+        .product-group-label {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #999;
+            letter-spacing: 1px;
+            margin: 7px 0 2px 2px;
+        }
+
+        /* ── Rate table ── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 2px;
+        }
+
+        thead tr {
+            background: #f5f5f5;
+            border-bottom: 1px solid #ccc;
+        }
+
+        th {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7pt;
+            color: #666;
+            padding: 3px 6px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8.5pt;
+            padding: 3px 6px;
+            border-bottom: 1px solid #efefef;
+        }
+
+        .col-service  { width: 28%; }
+        .col-timing   { width: 8%; color: #777; font-size: 7.5pt; text-align: center; }
+        .col-validity { width: 18%; color: #666; font-size: 7.5pt; }
+        .col-pax      { width: 7.67%; text-align: center; font-weight: bold; }
+
+        .separator-row td {
+            height: 4px;
+            border: none;
+            background: transparent;
+        }
+
+        /* ── Screen-only toolbar ── */
+        @media screen {
+            body { background: #e8e8e8; }
+
+            .destination-block {
+                background: #fff;
+                max-width: 1100px;
+                margin: 0 auto 4px auto;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            }
+
+            .print-toolbar {
+                position: fixed;
+                top: 16px;
+                right: 20px;
+                z-index: 999;
+                display: flex;
+                gap: 8px;
+            }
+
+            .btn-print {
+                padding: 9px 20px;
+                font-size: 13px;
+                cursor: pointer;
+                background: #1a1a1a;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                font-family: Arial, sans-serif;
+            }
+
+            .btn-back {
+                padding: 9px 14px;
+                font-size: 13px;
+                text-decoration: none;
+                background: #fff;
+                border-radius: 4px;
+                color: #333;
+                font-family: Arial, sans-serif;
+                border: 1px solid #ccc;
+            }
+        }
+
+        @media print {
+            .print-toolbar { display: none !important; }
+            body { background: #fff; }
+            .destination-block { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Screen-only toolbar -->
+<div class="print-toolbar">
+    <button class="btn-print" onclick="window.print()">
+        &#x1F4C4;&nbsp; Imprimir / Guardar PDF
+    </button>
+    <a class="btn-back" href="javascript:history.back()">&#8592; Volver</a>
+</div>
+
+{% regroup rate_lines by group.product.supplier.group.location.id as location_groups %}
+
+{% for lg in location_groups %}
+
+<div class="destination-block {% if not forloop.first %}pdf-page-break{% endif %}">
+
+    <!-- Header: logo + title -->
+    <div class="page-header">
+        <img src="{{ logo_b64 }}" alt="Aliwen Incoming">
+        <h1>Services</h1>
+    </div>
+
+    <!-- Destination + season -->
+    <div class="location-title">
+        {{ lg.list.0.group.product.supplier.group.location.name }}
+        <span class="location-season">Season {{ season }}/{{ season|add:1 }}</span>
+    </div>
+
+    {% regroup lg.list by group.product.supplier.id as supplier_blocks %}
+
+    {% for supplier_block in supplier_blocks %}
+    {% with supplier=supplier_block.list.0.group.product.supplier %}
+
+        <div class="supplier-name">{{ supplier.name }}</div>
+
+        {% if supplier.note %}
+            <div class="supplier-note">* {{ supplier.note }}</div>
+        {% endif %}
+        {% if supplier.child_note %}
+            <div class="supplier-note">&#9675; {{ supplier.child_note }}</div>
+        {% endif %}
+
+        {% regroup supplier_block.list by group.product.group.id as product_groups %}
+
+        {% for pg in product_groups %}
+
+            <div class="product-group-label">{{ pg.list.0.group.product.group.name }}</div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th class="col-service">Service</th>
+                        <th class="col-timing">Timing</th>
+                        <th class="col-validity">Validity</th>
+                        <th class="col-pax">1 pax</th>
+                        <th class="col-pax">2 pax</th>
+                        <th class="col-pax">3 pax</th>
+                        <th class="col-pax">4 pax</th>
+                        <th class="col-pax">5 pax</th>
+                        <th class="col-pax">6 pax</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                {% regroup pg.list by date_from as date_groups %}
+                {% for dg in date_groups %}
+                    {% regroup dg.list by date_to as date_to_groups %}
+                    {% for dtg in date_to_groups %}
+                        {% for line in dtg.list %}
+                        {% if line.rates_by_column %}
+                        <tr>
+                            <td class="col-service">
+                                {{ line.group.product.name }}
+                                <span style="font-weight:normal; color:#888;"> – {{ line.group.name }}</span>
+                            </td>
+                            <td class="col-timing">
+                                {{ line.group.product.tour_timing|default:"" }}
+                            </td>
+                            <td class="col-validity">
+                                {{ line.date_from|date:"d M Y" }} – {{ line.date_to|date:"d M Y" }}
+                            </td>
+                            <td class="col-pax">{{ line.rates_by_column.1|default:"–" }}</td>
+                            <td class="col-pax">{{ line.rates_by_column.2|default:"–" }}</td>
+                            <td class="col-pax">{{ line.rates_by_column.3|default:"–" }}</td>
+                            <td class="col-pax">{{ line.rates_by_column.4|default:"–" }}</td>
+                            <td class="col-pax">{{ line.rates_by_column.5|default:"–" }}</td>
+                            <td class="col-pax">{{ line.rates_by_column.6|default:"–" }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="separator-row"><td colspan="9"></td></tr>
+                    {% endfor %}
+                {% endfor %}
+
+                </tbody>
+            </table>
+
+        {% endfor %}{# product_groups #}
+
+    {% endwith %}
+    {% endfor %}{# supplier_blocks #}
+
+</div>
+{% endfor %}{# location_groups #}
+
+</body>
+</html>

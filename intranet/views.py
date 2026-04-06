@@ -4975,7 +4975,9 @@ def calidad(request):
     from django.db.models import Count
 
     inbox_items = FeedbackInboxItem.objects.filter(status='pendiente').order_by('-received_at')
-    feedbacks   = Feedback.objects.select_related('supplier', 'trip', 'target_user', 'target_guide', 'target_dh', 'target_entity').order_by('-creation_date')[:50]
+    feedbacks_qs = Feedback.objects.select_related('supplier', 'trip', 'target_user', 'target_guide', 'target_dh', 'target_entity').order_by('-creation_date')
+    feedbacks_open_count = feedbacks_qs.exclude(status='cerrado').count()
+    feedbacks_total = feedbacks_qs.count()
     from django.db.models import Q
     entities = FeedbackEntity.objects.annotate(
         pos_count=Count('feedback_entities', filter=Q(feedback_entities__sentiment='positivo')),
@@ -5019,7 +5021,9 @@ def calidad(request):
 
     return render(request, 'intranet/calidad.html', {
         'inbox_items':          inbox_items,
-        'feedbacks':            feedbacks,
+        'feedbacks':            feedbacks_qs,
+        'feedbacks_open_count': feedbacks_open_count,
+        'feedbacks_total':      feedbacks_total,
         'entities':             entities,
         'guides':               guides,
         'dhs':                  dhs,
@@ -5370,19 +5374,41 @@ def calidad_edit_feedback(request, feedback_id):
         fb.status = data['status']
     if 'sentiment' in data:
         fb.sentiment = data['sentiment']
-    if 'supplier_id' in data:
-        sid = data['supplier_id']
-        fb.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
-    if 'guide_id' in data:
-        gid = data['guide_id']
-        if gid:
+    # Clear all targets first, then set only the chosen one
+    target_type = data.get('target_type')
+    if target_type:
+        fb.supplier      = None
+        fb.target_guide  = None
+        fb.target_dh     = None
+        fb.target_user   = None
+        fb.target_entity = None
+        if target_type == 'supplier':
+            sid = data.get('supplier_id')
+            fb.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+        elif target_type == 'guide':
             from intranet.models import Guide
-            fb.target_guide = Guide.objects.filter(pk=gid).first()
-            # If assigning a guide, clear user/supplier/dh targets to avoid confusion
-            if fb.target_guide:
-                fb.target_user = None
-        else:
-            fb.target_guide = None
+            gid = data.get('guide_id')
+            fb.target_guide = Guide.objects.filter(pk=gid).first() if gid else None
+        elif target_type == 'dh':
+            from intranet.models import DestinationHost
+            dhid = data.get('dh_id')
+            fb.target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
+        elif target_type == 'user':
+            uid = data.get('user_id')
+            fb.target_user = User.objects.filter(pk=uid).first() if uid else None
+        elif target_type == 'entity':
+            from tariff.models import FeedbackEntity
+            eid = data.get('entity_id')
+            fb.target_entity = FeedbackEntity.objects.filter(pk=eid).first() if eid else None
+    else:
+        # Legacy path: backwards compat for supplier/guide only
+        if 'supplier_id' in data:
+            sid = data['supplier_id']
+            fb.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+        if 'guide_id' in data:
+            gid = data['guide_id']
+            from intranet.models import Guide
+            fb.target_guide = Guide.objects.filter(pk=gid).first() if gid else None
     if 'trip_file' in data and data['trip_file']:
         from intranet.models import Trip
         trip = Trip.objects.filter(tourplanId__iexact=data['trip_file'].strip()).first()

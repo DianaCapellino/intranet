@@ -1,0 +1,8 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/intranet-virtualenv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.env.linux": {
+        "VIRTUAL_ENV": "${workspaceFolder}/intranet-virtualenv",
+        "PATH": "${workspaceFolder}/intranet-virtualenv/bin:${env:PATH}"
+    }
+}

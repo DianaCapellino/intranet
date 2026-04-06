@@ -1,0 +1,130 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block body %}
+<div class="container py-4">
+
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a href="{% url 'tariff' %}" class="text-decoration-none text-dark">
+            <i class="fa-solid fa-arrow-left"></i>
+        </a>
+        <h2 class="mb-0">Generar PDF de Tarifario — Servicios</h2>
+    </div>
+
+    <form id="pdf-form" method="get" action="{% url 'pdf_view_services' %}" target="_blank">
+
+        <!-- Filters -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Cliente</label>
+                        <select name="client" class="form-select">
+                            <option value="">-- Sin ajuste de margen --</option>
+                            {% for client in clients %}
+                                <option value="{{ client.id }}">{{ client.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Temporada</label>
+                        <select name="season" class="form-select">
+                            <option value="{{ this_year|add:-1 }}">{{ this_year|add:-1 }}/{{ this_year }}</option>
+                            <option value="{{ this_year }}" selected>{{ this_year }}/{{ this_year|add:1 }}</option>
+                            <option value="{{ this_year|add:1 }}">{{ this_year|add:1 }}/{{ this_year|add:2 }}</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold">Buscar proveedor</label>
+                        <input type="text" id="supplier-search" class="form-control" placeholder="Filtrar por nombre...">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Select all / none -->
+        <div class="mb-3 d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll(true)">
+                <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll(false)">
+                <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
+            </button>
+        </div>
+
+        <!-- Suppliers grouped by location -->
+        {% for location, suppliers in locations_data %}
+        <div class="card mb-3 shadow-sm location-block">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold text-uppercase small" style="letter-spacing:1px;">{{ location.name }}</span>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="all-{{ location.id }}"
+                           onchange="toggleLocation('{{ location.id }}', this.checked)">
+                    <label class="form-check-label text-white small" for="all-{{ location.id }}">Todos</label>
+                </div>
+            </div>
+            <div class="card-body p-2">
+                <div class="row g-0">
+                    {% for supplier in suppliers %}
+                    <div class="col-md-4 col-lg-3 p-2 supplier-item"
+                         data-location="{{ location.id }}"
+                         data-name="{{ supplier.name|lower }}">
+                        <div class="form-check">
+                            <input class="form-check-input supplier-check loc-{{ location.id }}"
+                                   type="checkbox"
+                                   name="suppliers"
+                                   value="{{ supplier.id }}"
+                                   id="sup-{{ supplier.id }}">
+                            <label class="form-check-label" for="sup-{{ supplier.id }}">
+                                {{ supplier.name }}
+                            </label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="d-flex justify-content-end mt-4 pb-5">
+            <button type="submit" class="btn btn-dark btn-lg px-5">
+                <i class="fa-solid fa-file-pdf me-2"></i>Generar PDF
+            </button>
+        </div>
+
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function selectAll(checked) {
+    document.querySelectorAll('.supplier-check').forEach(cb => cb.checked = checked);
+    document.querySelectorAll('[id^="all-"]').forEach(cb => cb.checked = checked);
+}
+
+function toggleLocation(locId, checked) {
+    document.querySelectorAll('.loc-' + locId).forEach(cb => cb.checked = checked);
+    const allCb = document.getElementById('all-' + locId);
+    if (allCb) allCb.checked = checked;
+}
+
+document.addEventListener('change', function(e) {
+    if (!e.target.classList.contains('supplier-check')) return;
+    const locId = [...e.target.classList]
+        .find(c => c.startsWith('loc-'))?.replace('loc-', '');
+    if (!locId) return;
+    const all = document.querySelectorAll('.loc-' + locId);
+    const checked = [...all].every(cb => cb.checked);
+    const allCb = document.getElementById('all-' + locId);
+    if (allCb) allCb.checked = checked;
+});
+
+document.getElementById('supplier-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.supplier-item').forEach(item => {
+        item.style.display = item.dataset.name.includes(q) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

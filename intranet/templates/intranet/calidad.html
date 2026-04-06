@@ -34,7 +34,9 @@
     </li>
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-feedbacks">
-        Feedbacks<span class="badge bg-secondary ms-1">{{ feedbacks|length }}</span>
+        Feedbacks
+        <span class="badge bg-secondary ms-1">{{ feedbacks_open_count }} abiertos</span>
+        {% if feedbacks_total %}<span class="badge bg-light text-muted ms-1" style="font-size:0.7rem;">{{ feedbacks_total }} total</span>{% endif %}
       </button>
     </li>
     <li class="nav-item">
@@ -238,6 +240,10 @@
               <i class="fa-solid fa-triangle-exclamation me-1"></i>Faltan datos: {{ item.ai_analysis.missing_fields|join:", " }}
             </div>
             {% endif %}
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                    onclick="addManualTarget('{{ item.id }}')">
+              <i class="fa-solid fa-plus me-1"></i>Agregar feedback manualmente
+            </button>
           </div>
           {% endif %}
         </div>
@@ -265,9 +271,16 @@
 
     <!-- ── FEEDBACKS ── -->
     <div class="tab-pane fade" id="tab-feedbacks">
+      {% if inbox_items %}
+      <div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Hay <strong>{{ inbox_items|length }}</strong> email{% if inbox_items|length != 1 %}s{% endif %} pendiente{% if inbox_items|length != 1 %}s{% endif %} de procesar en la bandeja.
+        <a href="#tab-bandeja" class="alert-link ms-1" onclick="document.querySelector('[data-bs-target=\'#tab-bandeja\']').click()">Ver bandeja</a></span>
+      </div>
+      {% endif %}
       {% if feedbacks %}
       <div class="table-responsive">
-        <table class="table table-hover align-middle" style="cursor:pointer;">
+        <table class="table table-hover align-middle" id="feedbacks-table" style="cursor:pointer;">
           <thead class="table-light">
             <tr><th>Sentiment</th><th>Destinatario</th><th>Tipo</th><th>Viaje</th><th>Resumen</th><th>Estado</th><th>Fecha</th><th></th></tr>
           </thead>
@@ -284,6 +297,12 @@
                 data-fb-supplier-name="{{ fb.supplier.name|default:''|escapejs }}"
                 data-fb-guide-id="{{ fb.target_guide_id|default:'' }}"
                 data-fb-guide-name="{{ fb.target_guide.name|default:''|escapejs }}"
+                data-fb-dh-id="{{ fb.target_dh_id|default:'' }}"
+                data-fb-dh-name="{{ fb.target_dh.name|default:''|escapejs }}"
+                data-fb-user-id="{{ fb.target_user_id|default:'' }}"
+                data-fb-user-name="{{ fb.target_user.username|default:''|escapejs }}"
+                data-fb-entity-id="{{ fb.target_entity_id|default:'' }}"
+                data-fb-entity-name="{{ fb.target_entity.name|default:''|escapejs }}"
                 data-fb-trip-file="{{ fb.trip.tourplanId|default:''|escapejs }}">
               <td>
                 {% if fb.sentiment == "positivo" %}<span class="badge text-bg-success">Positivo</span>
@@ -306,7 +325,7 @@
                 {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
                 {% else %}<span class="badge text-bg-secondary">Abierto</span>{% endif %}
               </td>
-              <td class="small text-muted text-nowrap">{{ fb.creation_date|date:"d/m/Y" }}</td>
+              <td class="small text-muted text-nowrap" data-order="{{ fb.creation_date|date:'Y-m-d' }}">{{ fb.creation_date|date:"d/m/Y" }}</td>
               <td class="text-nowrap">
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="width:28px;height:28px;"
                   onclick="event.stopPropagation(); openFeedbackEditFromRow({{ fb.id }})"
@@ -451,24 +470,65 @@
                 <input type="text" class="form-control form-control-sm" id="fb-edit-trip-file" placeholder="ALAL100052">
               </div>
             </div>
-            <div class="row g-2 mb-3">
-              <div class="col-sm-6 position-relative">
-                <label class="form-label small fw-semibold">Proveedor</label>
-                <input type="text" class="form-control form-control-sm" id="fb-edit-supplier-name"
-                       placeholder="Buscar proveedor..." oninput="searchFbEditSupplier(this)">
-                <input type="hidden" id="fb-edit-supplier-id">
-                <div id="fb-edit-supplier-results" class="list-group mt-1"
-                     style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
-              </div>
-              <div class="col-sm-6 position-relative">
-                <label class="form-label small fw-semibold">Guía</label>
-                <input type="text" class="form-control form-control-sm" id="fb-edit-guide-name"
-                       placeholder="Buscar guía..." oninput="searchFbEditGuide(this)">
-                <input type="hidden" id="fb-edit-guide-id">
-                <div id="fb-edit-guide-results" class="list-group mt-1"
-                     style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
-              </div>
+
+            <!-- Target type selector -->
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Tipo de destinatario</label>
+              <select class="form-select form-select-sm" id="fb-edit-target-type" onchange="onFbEditTargetTypeChange(this)">
+                <option value="supplier">🏢 Proveedor</option>
+                <option value="user">👤 Usuario Aliwen</option>
+                <option value="guide">🧭 Guía</option>
+                <option value="dh">🌍 DH</option>
+                <option value="aliwen_team">🏠 Equipo Aliwen</option>
+                <option value="entity">📋 Otros</option>
+              </select>
             </div>
+
+            <!-- Supplier -->
+            <div id="fb-edit-target-supplier" class="mb-3 position-relative">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-supplier-name"
+                     placeholder="Buscar proveedor..." oninput="searchFbEditTarget('supplier', this)">
+              <input type="hidden" id="fb-edit-supplier-id">
+              <div id="fb-edit-supplier-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- Guide -->
+            <div id="fb-edit-target-guide" class="mb-3 position-relative" style="display:none">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-guide-name"
+                     placeholder="Buscar guía..." oninput="searchFbEditTarget('guide', this)">
+              <input type="hidden" id="fb-edit-guide-id">
+              <div id="fb-edit-guide-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- DH -->
+            <div id="fb-edit-target-dh" class="mb-3 position-relative" style="display:none">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-dh-name"
+                     placeholder="Buscar DH..." oninput="searchFbEditTarget('dh', this)">
+              <input type="hidden" id="fb-edit-dh-id">
+              <div id="fb-edit-dh-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- User -->
+            <div id="fb-edit-target-user" class="mb-3 position-relative" style="display:none">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-user-name"
+                     placeholder="Buscar usuario..." oninput="searchFbEditTarget('user', this)">
+              <input type="hidden" id="fb-edit-user-id">
+              <div id="fb-edit-user-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- Entity -->
+            <div id="fb-edit-target-entity" class="mb-3 position-relative" style="display:none">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-entity-name"
+                     placeholder="Buscar entidad..." oninput="searchFbEditTarget('entity', this)">
+              <input type="hidden" id="fb-edit-entity-id">
+              <div id="fb-edit-entity-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- Aliwen team -->
+            <div id="fb-edit-target-aliwen_team" class="mb-3" style="display:none">
+              <p class="small text-muted mb-0"><i class="fa-solid fa-info-circle me-1"></i>Se asignará al vendedor y operador del file.</p>
+            </div>
+
             <div class="mb-3">
               <label class="form-label small fw-semibold">Resumen breve</label>
               <input type="text" class="form-control form-control-sm" id="fb-edit-summary" maxlength="200">
@@ -1292,27 +1352,59 @@ document.getElementById('detail-delete-btn').addEventListener('click', function(
 });
 
 // ── Feedback edit ───────────────────────────────────────────────────────────
+const FB_EDIT_TARGET_TYPES = ['supplier','guide','dh','user','entity','aliwen_team'];
+
+function onFbEditTargetTypeChange(sel) {
+  FB_EDIT_TARGET_TYPES.forEach(t => {
+    document.getElementById('fb-edit-target-' + t).style.display = sel.value === t ? '' : 'none';
+  });
+}
+
 function openFeedbackEditFromRow(id) {
   const row = document.querySelector(`.fb-row[data-fb-id="${id}"]`);
   if (!row) return;
   const d = row.dataset;
-  document.getElementById('fb-edit-id').value            = id;
-  document.getElementById('fb-edit-summary').value       = d.fbSummary || '';
-  document.getElementById('fb-edit-content').value       = d.fbContent || '';
-  document.getElementById('fb-edit-solution').value      = d.fbSolution || '';
-  document.getElementById('fb-edit-cost').value          = d.fbCost || '';
-  document.getElementById('fb-edit-status').value        = d.fbStatus || '';
-  document.getElementById('fb-edit-sentiment').value     = d.fbSentiment || 'neutral';
-  document.getElementById('fb-edit-supplier-id').value   = d.fbSupplierId || '';
+
+  document.getElementById('fb-edit-id').value        = id;
+  document.getElementById('fb-edit-summary').value   = d.fbSummary || '';
+  document.getElementById('fb-edit-content').value   = d.fbContent || '';
+  document.getElementById('fb-edit-solution').value  = d.fbSolution || '';
+  document.getElementById('fb-edit-cost').value      = d.fbCost || '';
+  document.getElementById('fb-edit-status').value    = d.fbStatus || '';
+  document.getElementById('fb-edit-sentiment').value = d.fbSentiment || 'neutral';
+  document.getElementById('fb-edit-trip-file').value = d.fbTripFile || '';
+
+  // Determine current target type and pre-fill
+  let targetType = 'supplier';
+  if (d.fbGuideId)    { targetType = 'guide'; }
+  else if (d.fbDhId)  { targetType = 'dh'; }
+  else if (d.fbUserId){ targetType = 'user'; }
+  else if (d.fbEntityId){ targetType = 'entity'; }
+
+  document.getElementById('fb-edit-target-type').value = targetType;
+  onFbEditTargetTypeChange(document.getElementById('fb-edit-target-type'));
+
+  // Clear + fill each target field
   document.getElementById('fb-edit-supplier-name').value = d.fbSupplierName || '';
-  document.getElementById('fb-edit-guide-id').value      = d.fbGuideId || '';
+  document.getElementById('fb-edit-supplier-id').value   = d.fbSupplierId || '';
   document.getElementById('fb-edit-guide-name').value    = d.fbGuideName || '';
-  document.getElementById('fb-edit-trip-file').value     = d.fbTripFile || '';
-  document.getElementById('fb-edit-supplier-results').style.display = 'none';
-  document.getElementById('fb-edit-guide-results').style.display = 'none';
-  // Show/hide solution+cost based on sentiment
-  const neg = d.fbSentiment === 'negativo';
-  document.getElementById('fb-edit-negative-fields').style.display = neg ? '' : 'none';
+  document.getElementById('fb-edit-guide-id').value      = d.fbGuideId || '';
+  document.getElementById('fb-edit-dh-name').value       = d.fbDhName || '';
+  document.getElementById('fb-edit-dh-id').value         = d.fbDhId || '';
+  document.getElementById('fb-edit-user-name').value     = d.fbUserName || '';
+  document.getElementById('fb-edit-user-id').value       = d.fbUserId || '';
+  document.getElementById('fb-edit-entity-name').value   = d.fbEntityName || '';
+  document.getElementById('fb-edit-entity-id').value     = d.fbEntityId || '';
+
+  // Hide all dropdowns
+  FB_EDIT_TARGET_TYPES.forEach(t => {
+    const r = document.getElementById('fb-edit-' + t + '-results');
+    if (r) r.style.display = 'none';
+  });
+
+  document.getElementById('fb-edit-negative-fields').style.display =
+    d.fbSentiment === 'negativo' ? '' : 'none';
+
   new bootstrap.Modal(document.getElementById('feedbackEditModal')).show();
 }
 
@@ -1321,15 +1413,16 @@ function onFbEditSentimentChange(sel) {
     sel.value === 'negativo' ? '' : 'none';
 }
 
-let _fbEditSupplierTimer;
-function searchFbEditSupplier(input) {
-  clearTimeout(_fbEditSupplierTimer);
-  document.getElementById('fb-edit-supplier-id').value = '';
+// Unified search for all target types in edit modal
+const _fbEditTimers = {};
+function searchFbEditTarget(type, input) {
+  clearTimeout(_fbEditTimers[type]);
+  document.getElementById('fb-edit-' + type + '-id').value = '';
   const q = input.value.trim();
-  const results = document.getElementById('fb-edit-supplier-results');
+  const results = document.getElementById('fb-edit-' + type + '-results');
   if (q.length < 1) { results.style.display = 'none'; return; }
-  _fbEditSupplierTimer = setTimeout(() => {
-    fetch(`${searchUrls.supplier}?q=${encodeURIComponent(q)}`)
+  _fbEditTimers[type] = setTimeout(() => {
+    fetch(`${searchUrls[type]}?q=${encodeURIComponent(q)}`)
       .then(r => r.json()).then(d => {
         results.innerHTML = '';
         if (!d.results?.length) { results.style.display = 'none'; return; }
@@ -1337,10 +1430,10 @@ function searchFbEditSupplier(input) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'list-group-item list-group-item-action small py-1';
-          btn.textContent = r.name + (r.provisional ? ' (provisional)' : '');
+          btn.textContent = r.name + (r.provisional ? ' (provisional)' : '') + (r.location_name ? ` — ${r.location_name}` : '');
           btn.onclick = () => {
-            document.getElementById('fb-edit-supplier-name').value = r.name;
-            document.getElementById('fb-edit-supplier-id').value   = r.id;
+            document.getElementById('fb-edit-' + type + '-name').value = r.name;
+            document.getElementById('fb-edit-' + type + '-id').value   = r.id;
             results.style.display = 'none';
           };
           results.appendChild(btn);
@@ -1351,43 +1444,18 @@ function searchFbEditSupplier(input) {
 }
 
 document.addEventListener('click', e => {
-  if (!e.target.closest('#fb-edit-supplier-name') && !e.target.closest('#fb-edit-supplier-results'))
-    document.getElementById('fb-edit-supplier-results').style.display = 'none';
-  if (!e.target.closest('#fb-edit-guide-name') && !e.target.closest('#fb-edit-guide-results'))
-    document.getElementById('fb-edit-guide-results').style.display = 'none';
+  FB_EDIT_TARGET_TYPES.forEach(t => {
+    const nameEl    = document.getElementById('fb-edit-' + t + '-name');
+    const resultsEl = document.getElementById('fb-edit-' + t + '-results');
+    if (!resultsEl) return;
+    if (!e.target.closest('#fb-edit-' + t + '-name') && !e.target.closest('#fb-edit-' + t + '-results'))
+      resultsEl.style.display = 'none';
+  });
 });
-
-let _fbEditGuideTimer;
-function searchFbEditGuide(input) {
-  clearTimeout(_fbEditGuideTimer);
-  document.getElementById('fb-edit-guide-id').value = '';
-  const q = input.value.trim();
-  const results = document.getElementById('fb-edit-guide-results');
-  if (q.length < 1) { results.style.display = 'none'; return; }
-  _fbEditGuideTimer = setTimeout(() => {
-    fetch(`${searchUrls.guide}?q=${encodeURIComponent(q)}`)
-      .then(r => r.json()).then(d => {
-        results.innerHTML = '';
-        if (!d.results?.length) { results.style.display = 'none'; return; }
-        d.results.forEach(r => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'list-group-item list-group-item-action small py-1';
-          btn.textContent = r.name + (r.location ? ` (${r.location})` : '');
-          btn.onclick = () => {
-            document.getElementById('fb-edit-guide-name').value = r.name;
-            document.getElementById('fb-edit-guide-id').value   = r.id;
-            results.style.display = 'none';
-          };
-          results.appendChild(btn);
-        });
-        results.style.display = '';
-      });
-  }, 250);
-}
 
 function saveFeedbackEdit() {
   const id = document.getElementById('fb-edit-id').value;
+  const targetType = document.getElementById('fb-edit-target-type').value;
   const payload = {
     brief_summary: document.getElementById('fb-edit-summary').value,
     content:       document.getElementById('fb-edit-content').value,
@@ -1395,9 +1463,13 @@ function saveFeedbackEdit() {
     cost:          document.getElementById('fb-edit-cost').value,
     status:        document.getElementById('fb-edit-status').value,
     sentiment:     document.getElementById('fb-edit-sentiment').value,
-    supplier_id:   document.getElementById('fb-edit-supplier-id').value || null,
-    guide_id:      document.getElementById('fb-edit-guide-id').value || null,
     trip_file:     document.getElementById('fb-edit-trip-file').value.trim(),
+    target_type:   targetType,
+    supplier_id:   document.getElementById('fb-edit-supplier-id').value  || null,
+    guide_id:      document.getElementById('fb-edit-guide-id').value     || null,
+    dh_id:         document.getElementById('fb-edit-dh-id').value        || null,
+    user_id:       document.getElementById('fb-edit-user-id').value      || null,
+    entity_id:     document.getElementById('fb-edit-entity-id').value    || null,
   };
   fetch(`/calidad/feedbacks/${id}/edit`, {
     method: 'POST',
@@ -1410,6 +1482,136 @@ function saveFeedbackEdit() {
     location.reload();
   });
 }
+
+// ── Add manual target card to inbox item ────────────────────────────────────
+function addManualTarget(itemId) {
+  const container = document.getElementById('targets-' + itemId);
+  if (!container) return;
+  const tpl = document.querySelector('#targets-' + itemId + ' .target-card');
+  const newCard = document.createElement('div');
+  newCard.className = 'border rounded p-2 mb-2 bg-white target-card';
+  newCard.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <select class="form-select form-select-sm t-type w-auto" onchange="onTargetTypeChange(this)">
+        <option value="supplier">🏢 Proveedor</option>
+        <option value="user">👤 Usuario Aliwen</option>
+        <option value="guide">🧭 Guía</option>
+        <option value="dh">🌍 DH</option>
+        <option value="aliwen_team">🏠 Equipo Aliwen</option>
+        <option value="entity">📋 Otros</option>
+      </select>
+      <button type="button" class="btn-close" onclick="this.closest('.target-card').remove()"></button>
+    </div>
+    <div class="mb-2 position-relative">
+      <div class="target-selector" data-for="supplier">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar proveedor..." data-type="supplier" oninput="searchTarget(this)">
+          <input type="hidden" class="t-supplier-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+      <div class="target-selector" data-for="user" style="display:none">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar usuario..." data-type="user" oninput="searchTarget(this)">
+          <input type="hidden" class="t-user-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+      <div class="target-selector" data-for="guide" style="display:none">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar guía..." data-type="guide" oninput="searchTarget(this)">
+          <input type="hidden" class="t-guide-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+      <div class="target-selector" data-for="dh" style="display:none">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar DH..." data-type="dh" oninput="searchTarget(this)">
+          <input type="hidden" class="t-dh-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+      <div class="target-selector" data-for="aliwen_team" style="display:none">
+        <p class="small text-muted mb-0 py-1"><i class="fa-solid fa-info-circle me-1"></i>Se creará un feedback para el vendedor y el operador del file automáticamente.</p>
+      </div>
+      <div class="target-selector" data-for="entity" style="display:none">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar entidad..." data-type="entity" oninput="searchTarget(this)">
+          <input type="hidden" class="t-entity-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Sentiment</label>
+        <select class="form-select form-select-sm t-sentiment" onchange="onSentimentChange(this)">
+          <option value="positivo">Positivo</option>
+          <option value="neutral" selected>Neutral</option>
+          <option value="negativo">Negativo</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Tipo</label>
+        <select class="form-select form-select-sm t-fbtype">
+          {% for val, label in type_quality_choices %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label small mb-1">Resumen breve</label>
+        <input type="text" class="form-control form-control-sm t-brief" value="" maxlength="120">
+      </div>
+      <div class="col-12">
+        <label class="form-label small mb-1">Contenido detallado</label>
+        <textarea class="form-control form-control-sm t-content" rows="2"></textarea>
+      </div>
+      <div class="col-12 t-negative-fields" style="display:none">
+        <div class="row g-2 mt-0">
+          <div class="col-md-9">
+            <label class="form-label small mb-1 text-danger"><i class="fa-solid fa-wrench me-1"></i>Solución</label>
+            <textarea class="form-control form-control-sm t-solution" rows="2"></textarea>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-1 text-danger">Costo USD</label>
+            <input type="number" class="form-control form-control-sm t-cost" value="0" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+    </div>`;
+  container.appendChild(newCard);
+  newCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Feedbacks DataTable ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof $.fn !== 'undefined' && typeof $.fn.DataTable !== 'undefined') {
+    $('#feedbacks-table').DataTable({
+      order: [[6, 'desc']],
+      pageLength: 25,
+      lengthMenu: [10, 25, 50, 100],
+      language: {
+        search:        'Buscar:',
+        lengthMenu:    'Mostrar _MENU_ registros',
+        info:          'Mostrando _START_ a _END_ de _TOTAL_ feedbacks',
+        infoEmpty:     'Sin feedbacks',
+        infoFiltered:  '(filtrado de _MAX_ total)',
+        paginate: { first:'«', previous:'‹', next:'›', last:'»' },
+        emptyTable:    'No hay feedbacks',
+        zeroRecords:   'Sin resultados',
+      },
+      columnDefs: [
+        { orderable: false, targets: [4, 7] },
+      ],
+    });
+  }
+});
 
 // ── Feedback delete ─────────────────────────────────────────────────────────
 function deleteFeedback(id, btn) {
