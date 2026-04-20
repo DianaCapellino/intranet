@@ -44,6 +44,9 @@ LOCATIONS
 # Showing locations and creating new ones
 @login_required
 def locations(request):
+    last_order = Location.objects.order_by('-order').values_list('order', flat=True).first() or 0
+    next_order = last_order + 5
+
     if request.method == "POST":
 
         code = request.POST["code"].upper()
@@ -52,11 +55,13 @@ def locations(request):
         max_nights = request.POST["max_nights"]
         margin_acc = request.POST["margin_acc"]
         margin_svs = request.POST["margin_svs"]
+        order = request.POST.get("order", next_order)
 
         if not name or not code or not min_nights or not max_nights or not margin_acc or not margin_svs:
             return render(request, "tariff/locations.html", {
                 "message": "Todos los campos deben ser completados",
                 "locations": Location.objects.all(),
+                "next_order": next_order,
                 "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
                 "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
                 "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
@@ -80,11 +85,13 @@ def locations(request):
             pic1_url=request.POST.get("pic1_url"),
             pic2_url=request.POST.get("pic2_url"),
             pic3_url=request.POST.get("pic3_url"),
+            order=order,
         )
 
-
+        last_order = Location.objects.order_by('-order').values_list('order', flat=True).first() or 0
         return render(request, "tariff/locations.html", {
             "locations": Location.objects.all(),
+            "next_order": last_order + 5,
             "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
             "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
             "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
@@ -94,6 +101,7 @@ def locations(request):
     else:
         return render(request, "tariff/locations.html", {
             "locations": Location.objects.all(),
+            "next_order": next_order,
             "CHILDREN_RANKING_OPTIONS": CHILDREN_RANKING_OPTIONS,
             "DISABLED_RANKING_OPTIONS": DISABLED_RANKING_OPTIONS,
             "SUSTENTABILITY_RANKING_OPTIONS": SUSTENTABILITY_RANKING_OPTIONS,
@@ -147,7 +155,8 @@ def modify_location(request, location_id):
         location.pic1_url=request.POST.get("pic1_url")
         location.pic2_url=request.POST.get("pic2_url")
         location.pic3_url=request.POST.get("pic3_url")
-        
+        location.order=request.POST.get("order", location.order)
+
         location.save()
 
         return HttpResponseRedirect(reverse("locations"), {
@@ -655,7 +664,7 @@ def modify_supplier_rates(request, supplier_id):
                 if rate:
                     for ci in rate.cost_items.all():
                         ci.cost_per_pax = _cost_per_pax(
-                            ci.value, ci.fcu, ci.tax, rate.increase, ci.usd, ci.exchange, i
+                            ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, i
                         )
                         cost_items_list.append(ci)
                     for frc in rate.rates_with_fixed.all():
@@ -671,7 +680,10 @@ def modify_supplier_rates(request, supplier_id):
                 ) if has_items else None
 
                 effective_cost = total_cost if has_items else (float(rate.cost) if rate and rate.cost else None)
-                margin_ai      = getattr(rate, 'margin_ai', 0) if rate else 0
+                if has_items and total_cost and rate and rate.sell and float(rate.sell) > 0:
+                    margin_ai = round((float(rate.sell) - total_cost) / float(rate.sell) * 100, 1)
+                else:
+                    margin_ai = getattr(rate, 'margin_ai', 0) if rate else 0
                 suggested_sell = None
                 if has_items and total_cost and supplier.margin:
                     import math as _math
@@ -686,6 +698,7 @@ def modify_supplier_rates(request, supplier_id):
                     "fixed_costs": fixed_costs_list,
                     "has_items": has_items,
                     "total_cost": total_cost,
+                    "margin_ai": margin_ai,
                     "suggested_sell": suggested_sell,
                 })
 
@@ -705,13 +718,33 @@ def modify_supplier_rates(request, supplier_id):
 
     for (date_from, date_to, season), lines in blocks.items():
         sorted_lines = sorted(lines, key=lambda x: x.group.product.orden if hasattr(x.group.product, 'orden') and x.group.product.orden is not None else 999999)
-        
+
+        # Read representative increase/status from the first available rate in the block
+        first_rate = None
+        for _line in sorted_lines:
+            if type_service == "AC":
+                for _r in (_line.sgl, _line.dbl):
+                    if _r:
+                        first_rate = _r
+                        break
+            else:
+                for _base in _line.bases:
+                    if _base['rate']:
+                        first_rate = _base['rate']
+                        break
+            if first_rate:
+                break
+        if not first_rate and sorted_lines and type_service == "AC":
+            first_rate = sorted_lines[0].line_rates.first()
+
         rate_blocks.append({
             "date_from": date_from,
             "date_to": date_to,
             "season": season,
             "lines": sorted_lines,
             "margin": supplier.margin,
+            "increase": first_rate.increase if first_rate and first_rate.increase is not None else 0,
+            "status": first_rate.status if first_rate else "Confirmed",
         })
 
     if type_service == "AC":
@@ -943,26 +976,27 @@ def update_rate_block(request):
         
         # 👇 Actualizar season si se envió
         if "season" in data and data["season"]:
-            # Obtener los rate_ids del bloque
-            rate_ids = [r.get("rate_id") for r in data["rates"] if r.get("rate_id")]
-            
-            # Encontrar las RateLines asociadas
-            ratelines = RateLine.objects.filter(
-                line_rates__id__in=rate_ids
-            ).distinct()
-            
-            # Actualizar el season
-            ratelines.update(season=data["season"])
+            if "rateline_ids" in data and data["rateline_ids"]:
+                RateLine.objects.filter(id__in=data["rateline_ids"]).update(season=data["season"])
+            else:
+                rate_ids = [r.get("rate_id") for r in data["rates"] if r.get("rate_id")]
+                RateLine.objects.filter(
+                    line_rates__id__in=rate_ids
+                ).distinct().update(season=data["season"])
 
-        if "status" in data and data["status"]:
-            return
-        
-        if "margin" in data and data["margin"]:
-            return
-        
-        if "increase" in data and data["increase"]:
-            return
-        
+        # Actualizar status e increase a nivel de bloque (todas las rates de las ratelines enviadas)
+        if "rateline_ids" in data and data["rateline_ids"]:
+            rate_update_kwargs = {}
+            if "status" in data and data["status"] in ("Confirmed", "Provisional"):
+                rate_update_kwargs["status"] = data["status"]
+            if "increase" in data and data["increase"] is not None:
+                try:
+                    rate_update_kwargs["increase"] = float(data["increase"])
+                except (ValueError, TypeError):
+                    pass
+            if rate_update_kwargs:
+                Rate.objects.filter(rate_line_id__in=data["rateline_ids"]).update(**rate_update_kwargs)
+
         # ✅ Actualizar nombres de RateGroup
         if "groups" in data and data["groups"]:
             for g in data["groups"]:
@@ -1019,14 +1053,16 @@ def update_rate_block(request):
                 change_type = "Update"
                 percent = ((new_avg - old_avg) / old_avg * 100) if old_avg != 0 else 0
 
-            Change.objects.create(
-                rate_line=rl,
-                type=change_type,
-                amount=round(percent, 2)
-            )
+            # Only track history for Confirmed rate lines
+            if rl.line_rates.filter(status="Confirmed").exists():
+                Change.objects.create(
+                    rate_line=rl,
+                    type=change_type,
+                    amount=round(percent, 2)
+                )
 
         return JsonResponse({
-            "ok": True, 
+            "ok": True,
             "updated": updated_count,
             "errors": errors if errors else None,
             "message": f"Se actualizaron {updated_count} tarifas"
@@ -1052,12 +1088,14 @@ def copy_rate_block(request):
         
         data = json.loads(request.body)
         
-        print("Datos recibidos:", data)  # 👈 Debug
-        
         date_from = data.get("date_from")
         date_to = data.get("date_to")
         season = data.get("season")
         lines = data.get("lines", [])
+        override_increase = data.get("increase")  # None means "keep original"
+        override_status = data.get("status")  # None means "keep original"
+        if override_status not in ("Confirmed", "Provisional"):
+            override_status = None
         
         if not date_from or not date_to or not season:
             return JsonResponse({"ok": False, "error": "Faltan datos requeridos (fechas o season)"}, status=400)
@@ -1102,27 +1140,37 @@ def copy_rate_block(request):
                 season=season
             )
             created_ratelines += 1
-            
-            print(f"Nueva RateLine creada: {new_rateline.id}")  # 👈 Debug
-            
+
+            # Supplier margin for sell recalculation (decimal, e.g. 0.85)
+            supplier_margin = rate_group.product.supplier.margin if rate_group.product.supplier else None
+
             # Copiar todos los Rates de la línea original
             original_rates = Rate.objects.filter(rate_line=original_rateline)
-            
-            print(f"Copiando {original_rates.count()} rates")  # 👈 Debug
-            
+
             for original_rate in original_rates:
+                # Recalculate sell only when a positive increase is provided and supplier margin is valid
+                if override_increase and override_increase > 0:
+                    import math
+                    new_sell = math.ceil(original_rate.sell * (1 + override_increase / 100))
+                    new_sell_tp = math.ceil(original_rate.sell_tourplan * (1 + override_increase / 100))
+                else:
+                    # increase = 0 or None: copy original sell as-is
+                    new_sell = original_rate.sell
+                    new_sell_tp = original_rate.sell_tourplan
+
                 new_rate = Rate.objects.create(
                     rate_line=new_rateline,
-                    status=original_rate.status,
-                    increase=original_rate.increase,
+                    status=override_status if override_status else original_rate.status,
+                    increase=override_increase if override_increase is not None else original_rate.increase,
                     cost=original_rate.cost,
                     margin=original_rate.margin,
-                    sell=original_rate.sell,
-                    sell_tourplan=original_rate.sell_tourplan,
+                    sell=new_sell,
+                    sell_tourplan=new_sell_tp,
                     column_options=original_rate.column_options,
                     has_rate=original_rate.has_rate,
                     has_items=original_rate.has_items,
-                    text_value=original_rate.text_value
+                    text_value=original_rate.text_value,
+                    locked=original_rate.locked,
                 )
                 # Copy CostItems from original rate
                 for ci in original_rate.cost_items.all():
@@ -1131,6 +1179,9 @@ def copy_rate_block(request):
                         usd=ci.usd, exchange=ci.exchange, fcu=ci.fcu,
                         code=ci.code, rate=new_rate,
                     )
+                # Link FixedRateCosts from original rate to new rate
+                for frc in original_rate.rates_with_fixed.all():
+                    frc.rate.add(new_rate)
                 created_rates += 1
                 print(f"Rate creado: {new_rate.id} - {new_rate.column_options}")  # 👈 Debug
         
@@ -1202,6 +1253,25 @@ def delete_rate_block(request):
             "ok": False,
             "error": f"Error en el servidor: {str(e)}"
         }, status=500)
+
+
+@login_required
+@csrf_exempt
+def delete_rate_line(request):
+    """Delete a single RateLine (one product row within a block)."""
+    if not request.user.is_staff and not getattr(request.user, 'isAdmin', False):
+        return JsonResponse({"ok": False, "error": "Sin permisos"}, status=403)
+    try:
+        data = json.loads(request.body)
+        rateline_id = data.get("rateline_id")
+        if not rateline_id:
+            return JsonResponse({"ok": False, "error": "Falta rateline_id"}, status=400)
+        deleted, _ = RateLine.objects.filter(pk=rateline_id).delete()
+        if not deleted:
+            return JsonResponse({"ok": False, "error": "Línea no encontrada"}, status=404)
+        return JsonResponse({"ok": True})
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 @login_required
@@ -1296,6 +1366,10 @@ def create_rate_block(request):
                         .prefetch_related('cost_items')
                         .first()
                     )
+                    ref_rate = Rate.objects.filter(
+                        rate_line__group__product=product,
+                        column_options=column_type,
+                    ).order_by('-id').first()
                     new_rate = Rate.objects.create(
                         rate_line=new_rateline,
                         status=status,
@@ -1307,7 +1381,8 @@ def create_rate_block(request):
                         column_options=column_type,
                         has_rate=True,
                         has_items=bool(template_rate),
-                        text_value=None
+                        text_value=None,
+                        locked=ref_rate.locked if ref_rate else False,
                     )
                     # Replicate CostItem structure with value=0
                     if template_rate:
@@ -1317,6 +1392,9 @@ def create_rate_block(request):
                                 usd=ci.usd, exchange=ci.exchange, fcu=ci.fcu,
                                 code=ci.code, rate=new_rate,
                             )
+                    # Link existing FixedRateCosts for this product to the new rate
+                    for frc in FixedRateCost.objects.filter(rate__rate_line__group__product=product).distinct():
+                        frc.rate.add(new_rate)
                     created_rates += 1
 
                 # Check if it is the first rate_line in the product
@@ -1324,8 +1402,8 @@ def create_rate_block(request):
                     group__product=product
                 ).count()
 
-                if rate_lines_count == 1:
-                    # Create the history of changes
+                if rate_lines_count == 1 and status == "Confirmed":
+                    # Create the history of changes (only for Confirmed rates)
                     new_change = Change.objects.create(
                         date = date.today(),
                         type = "New",
@@ -1430,6 +1508,7 @@ def add_cost_item(request):
     exchange  = int(data.get('exchange', 1))
     fcu       = data.get('fcu', 'Person')
     code      = data.get('code', '')
+    increase  = float(data.get('increase', 0) or 0)
 
     created = []
     for rate_id in rate_ids:
@@ -1437,7 +1516,7 @@ def add_cost_item(request):
             rate = Rate.objects.get(pk=rate_id)
             ci = CostItem.objects.create(
                 name=name, value=value, tax=tax, usd=usd,
-                exchange=exchange, fcu=fcu, rate=rate, code=code,
+                exchange=exchange, fcu=fcu, rate=rate, code=code, increase=increase,
             )
             if not rate.has_items:
                 rate.has_items = True
@@ -1453,12 +1532,25 @@ def delete_cost_item(request, item_id):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
-        ci = CostItem.objects.select_related('rate').get(pk=item_id)
-        rate = ci.rate
-        ci.delete()
-        if rate.has_items and not rate.cost_items.exists():
-            rate.has_items = False
-            rate.save(update_fields=['has_items'])
+        ci = CostItem.objects.select_related('rate__rate_line').get(pk=item_id)
+        rate_line = ci.rate.rate_line
+        ci_name   = ci.name
+
+        # Collect all rates affected (this CI + siblings with same name in same RateLine)
+        affected_rate_pks = list(
+            CostItem.objects.filter(rate__rate_line=rate_line, name=ci_name)
+            .values_list('rate', flat=True).distinct()
+        )
+
+        # Delete all CIs with this name in this RateLine (block-wide)
+        CostItem.objects.filter(rate__rate_line=rate_line, name=ci_name).delete()
+
+        # Update has_items flags for every affected rate
+        for r in Rate.objects.filter(pk__in=affected_rate_pks):
+            if r.has_items and not r.cost_items.exists():
+                r.has_items = False
+                r.save(update_fields=['has_items'])
+
         return JsonResponse({'deleted': True})
     except CostItem.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
@@ -1601,13 +1693,32 @@ def update_cost_item(request):
         ci = CostItem.objects.get(pk=data['id'])
     except CostItem.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
+    original_name = ci.name  # capture before overwrite for sibling lookup
     ci.name     = data.get('name', ci.name)
     ci.value    = float(data.get('value', ci.value))
     ci.fcu      = data.get('fcu', ci.fcu)
     ci.tax      = data.get('tax', ci.tax)
     ci.usd      = data.get('usd', ci.usd)
     ci.exchange = int(data.get('exchange', ci.exchange))
+    ci.code     = data.get('code', ci.code)
+    ci.increase = float(data.get('increase', ci.increase or 0) or 0)
     ci.save()
+
+    # Propagate to sibling CIs (same name, same RateLine = same block-line)
+    CostItem.objects.filter(
+        rate__rate_line=ci.rate.rate_line,
+        name=original_name,
+    ).exclude(pk=ci.pk).update(
+        name=ci.name,
+        value=ci.value,
+        fcu=ci.fcu,
+        tax=ci.tax,
+        usd=ci.usd,
+        exchange=ci.exchange,
+        code=ci.code,
+        increase=ci.increase,
+    )
+
     return JsonResponse({'updated': True})
 
 
@@ -1621,3 +1732,22 @@ def update_rate_cost(request):
     cost    = float(data['cost'])
     Rate.objects.filter(pk=rate_id).update(cost=cost)
     return JsonResponse({'ok': True})
+
+
+
+@login_required
+def toggle_rate_lock(request):
+    """Toggle locked flag on a Rate. Locked rates are skipped during CSV uploads."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    rate_id = data.get('rate_id')
+    try:
+        rate = Rate.objects.get(pk=rate_id)
+    except Rate.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    rate.locked = not rate.locked
+    rate.save(update_fields=['locked'])
+    return JsonResponse({'ok': True, 'locked': rate.locked})

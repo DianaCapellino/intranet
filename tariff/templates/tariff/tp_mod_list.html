@@ -189,6 +189,11 @@
                     </div>
                     <div class="vr"></div>
                     <div class="text-center">
+                        <div class="fw-bold fs-4 text-info" id="count-update-ci">0</div>
+                        <div class="text-muted small">Ítems de costo</div>
+                    </div>
+                    <div class="vr"></div>
+                    <div class="text-center">
                         <div class="fw-bold fs-4" id="count-add">0</div>
                         <div class="text-muted small">Para agregar</div>
                     </div>
@@ -230,6 +235,19 @@
                             </div>
                         </div>
                         <div id="rows-update"></div>
+                    </div>
+
+                    <div id="section-update-ci">
+                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
+                            <span class="text-info fw-semibold small text-uppercase" style="letter-spacing:.08em">
+                                <i class="fa-solid fa-tag me-1"></i> Actualizar ítems de costo
+                            </span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('UpdateCI')">Ignorar todos</button>
+                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('UpdateCI')">Restaurar</button>
+                            </div>
+                        </div>
+                        <div id="rows-update-ci"></div>
                     </div>
 
                     <div id="section-add">
@@ -369,9 +387,10 @@ const reviewState = CHANGES.map((item, idx) => ({
 }));
 
 function renderAll() {
-    renderSection("Update",  "rows-update");
-    renderSection("Add",     "rows-add");
-    renderSection("Delete",  "rows-delete");
+    renderSection("Update",   "rows-update");
+    renderSection("UpdateCI", "rows-update-ci");
+    renderSection("Add",      "rows-add");
+    renderSection("Delete",   "rows-delete");
     updateCounts();
 }
 
@@ -545,10 +564,11 @@ function restoreAll(action) {
 
 function updateCounts() {
     const active = reviewState.filter(i => !i.ignored);
-    document.getElementById("count-update").textContent  = active.filter(i => i.action === "Update").length;
-    document.getElementById("count-add").textContent     = active.filter(i => i.action === "Add").length;
-    document.getElementById("count-delete").textContent  = active.filter(i => i.action === "Delete").length;
-    document.getElementById("count-ignored").textContent = reviewState.filter(i => i.ignored).length;
+    document.getElementById("count-update").textContent    = active.filter(i => i.action === "Update").length;
+    document.getElementById("count-update-ci").textContent = active.filter(i => i.action === "UpdateCI").length;
+    document.getElementById("count-add").textContent       = active.filter(i => i.action === "Add").length;
+    document.getElementById("count-delete").textContent    = active.filter(i => i.action === "Delete").length;
+    document.getElementById("count-ignored").textContent   = reviewState.filter(i => i.ignored).length;
     const n = active.length;
     document.getElementById("btn-confirm-all").textContent = `Confirmar ${n} cambio${n !== 1 ? "s" : ""}`;
     document.getElementById("btn-confirm-all").disabled = n === 0;
@@ -558,6 +578,8 @@ function confirmChanges() {
     const confirmed  = reviewState.filter(i => !i.ignored).map(item => ({
         _id:            item._id,
         action:         item.action,
+        product_name:   item.product_name,
+        product_id:     item.product_id,
         rate_id:        item.rate_id,
         rate_group_id:  item.rate_group_id,
         rate_line_id:   item.rate_line_id,
@@ -582,12 +604,33 @@ function confirmChanges() {
     }));
     const ignored_ids = reviewState.filter(i => i.ignored).map(i => i._id);
 
+    // Show spinner in confirm button
+    const btn = document.getElementById('btn-confirm-all');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando…';
+
     fetch("{% url 'apply_changes' %}", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
         body: JSON.stringify({ confirmed, ignored_ids }),
-    }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error al guardar: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = 'Confirmar cambios';
+            return;
+        }
+        window.location.href = "{% url 'tp_mod_list' %}";
+    })
+    .catch(err => {
+        alert('Error al guardar: ' + String(err));
+        btn.disabled = false;
+        btn.innerHTML = 'Confirmar cambios';
+    });
 }
+
 
 function discardAll() {
     fetch("{% url 'discard_changes' %}", {

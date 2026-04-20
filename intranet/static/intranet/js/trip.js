@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     editing_blocks();
     copyBlocks();
+    deleteLineButtons();
 
     // Creates the listeners for deleting elements
     deleting_functionality("countries");
@@ -1085,7 +1086,7 @@ function editing_blocks() {
                     marginInput.addEventListener('input', function() {
                         const newMargin = parseFloat(this.value) || 0;
                         const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
-                        
+
                         rows.forEach(row => {
                             // Actualizar SGL y DBL con el nuevo margen global del bloque
                             const costInputs = row.querySelectorAll('.rate-input[data-field="cost"]');
@@ -1105,6 +1106,47 @@ function editing_blocks() {
                             });
                         });
                     });
+                }
+
+                // Mostrar input de aumento (increase) y actualizar sell al cambiar
+                const increaseDisplay = document.querySelector(`.increase-display[data-block="${blockId}"]`);
+                const increaseInput = document.querySelector(`.increase-input[data-block="${blockId}"]`);
+                if (increaseDisplay && increaseInput) {
+                    increaseInput.dataset.originalValue = increaseInput.value;
+                    increaseDisplay.classList.add("d-none");
+                    increaseInput.classList.remove("d-none");
+
+                    increaseInput.addEventListener('input', function() {
+                        const pct = parseFloat(this.value) || 0;
+                        const marginVal = parseFloat(marginInput ? marginInput.value : 0) || 0;
+                        const blockRows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
+                        blockRows.forEach(row => {
+                            const collapseDiv = getCollapseDiv(row);
+                            if (!collapseDiv) return;
+                            collapseDiv.querySelectorAll('.rate-input[data-field="cost"]').forEach(costInput => {
+                                const rateType = costInput.dataset.rateType;
+                                const cost = parseFloat(costInput.value) || 0;
+                                if (cost <= 0) return;
+                                const sellInput = collapseDiv.querySelector(`.rate-input[data-field="sell"][data-rate-type="${rateType}"]`);
+                                if (!sellInput) return;
+                                if (marginVal > 0 && marginVal < 1) {
+                                    sellInput.value = Math.ceil((cost / marginVal) * (1 + pct / 100));
+                                } else {
+                                    sellInput.value = Math.ceil(cost * (1 + pct / 100));
+                                }
+                                updateMarginForRow(row, sellInput);
+                            });
+                        });
+                    });
+                }
+
+                // Mostrar select de estado (status)
+                const statusDisplay = document.querySelector(`.status-display[data-block="${blockId}"]`);
+                const statusSelect = document.querySelector(`.status-select[data-block="${blockId}"]`);
+                if (statusDisplay && statusSelect) {
+                    statusSelect.dataset.originalValue = statusSelect.value;
+                    statusDisplay.classList.add("d-none");
+                    statusSelect.classList.remove("d-none");
                 }
             }
         });
@@ -1244,11 +1286,28 @@ function copyBlocks() {
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label">Nombre Vigencia</label>
-                                    <input type="text" 
-                                        class="form-control" 
-                                        id="newSeason${blockId}" 
-                                        value="${this.dataset.season}" 
+                                    <input type="text"
+                                        class="form-control"
+                                        id="newSeason${blockId}"
+                                        value="${this.dataset.season}"
                                         required>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <label class="form-label">Aumento aplicado (%)</label>
+                                        <input type="number"
+                                            class="form-control"
+                                            id="newIncrease${blockId}"
+                                            value="${this.dataset.increase || 0}"
+                                            min="0" max="100" step="0.1">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label">Estado</label>
+                                        <select class="form-select" id="newStatus${blockId}">
+                                            <option value="Confirmed" ${this.dataset.status !== 'Provisional' ? 'selected' : ''}>Confirmed</option>
+                                            <option value="Provisional" ${this.dataset.status === 'Provisional' ? 'selected' : ''}>Provisional</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -1365,6 +1424,17 @@ function saveBlock(blockId, rows, button) {
     const seasonInput = document.querySelector(`.season-input[data-block="${blockId}"]`);
     const newSeason = seasonInput ? seasonInput.value : null;
 
+    const increaseInput = document.querySelector(`.increase-input[data-block="${blockId}"]`);
+    const newIncrease = increaseInput ? parseFloat(increaseInput.value) : null;
+
+    const statusSelect = document.querySelector(`.status-select[data-block="${blockId}"]`);
+    const newStatus = statusSelect ? statusSelect.value : null;
+
+    // Collect all rateline IDs for this block (needed to update increase/status)
+    const ratelineIds = Array.from(rows)
+        .map(r => parseInt(r.dataset.ratelineId))
+        .filter(n => !isNaN(n));
+
     fetch("/tariff/modify/update-rate-block/", {
         method: "POST",
         headers: {
@@ -1375,7 +1445,10 @@ function saveBlock(blockId, rows, button) {
             rates: rateData,
             groups: groupData,
             season: newSeason,
-            block_id: blockId
+            block_id: blockId,
+            rateline_ids: ratelineIds,
+            increase: newIncrease,
+            status: newStatus,
         })
     })
     .then(r => r.json())
@@ -1455,6 +1528,27 @@ function restoreBlock(blockId, button) {
         marginDisplay.textContent = marginInput.value;
         marginDisplay.classList.remove("d-none");
         marginInput.classList.add("d-none");
+    }
+
+    // Restaurar aumento (increase)
+    const increaseDisplay = document.querySelector(`.increase-display[data-block="${blockId}"]`);
+    const increaseInput2 = document.querySelector(`.increase-input[data-block="${blockId}"]`);
+    if (increaseDisplay && increaseInput2) {
+        increaseDisplay.textContent = increaseInput2.value + '%';
+        increaseDisplay.classList.remove("d-none");
+        increaseInput2.classList.add("d-none");
+    }
+
+    // Restaurar estado (status)
+    const statusDisplay = document.querySelector(`.status-display[data-block="${blockId}"]`);
+    const statusSelect2 = document.querySelector(`.status-select[data-block="${blockId}"]`);
+    if (statusDisplay && statusSelect2) {
+        statusDisplay.textContent = statusSelect2.value;
+        statusDisplay.classList.remove("d-none");
+        statusSelect2.classList.add("d-none");
+        // Update color class
+        statusDisplay.classList.remove("text-success", "text-warning");
+        statusDisplay.classList.add(statusSelect2.value === "Confirmed" ? "text-success" : "text-warning");
     }
 
     currentEditingBlock = null;
@@ -1638,48 +1732,41 @@ function confirmCopyBlock(blockId) {
     const newDateFrom = document.getElementById(`newDateFrom${blockId}`).value;
     const newDateTo = document.getElementById(`newDateTo${blockId}`).value;
     const newSeason = document.getElementById(`newSeason${blockId}`).value;
-    
+
     if (!newDateFrom || !newDateTo || !newSeason) {
         alert("Todos los campos son obligatorios");
         return;
     }
-    
+
+    const increaseEl = document.getElementById(`newIncrease${blockId}`);
+    const statusEl = document.getElementById(`newStatus${blockId}`);
+    const newIncrease = increaseEl ? parseFloat(increaseEl.value) || 0 : null;
+    const newStatus = statusEl ? statusEl.value : null;
+
     // Recolectar todas las líneas del bloque original
     const rows = document.querySelectorAll(`.row-rateline[data-block="${blockId}"]`);
     const lines = [];
-    
+
     rows.forEach(row => {
         const ratelineId = row.dataset.ratelineId;
         const rategroupId = row.dataset.rategroupId;
-        
-        console.log("Processing row:", {
-            ratelineId,
-            rategroupId
-        });
-        
+
         if (!ratelineId || !rategroupId) {
             console.warn("Fila sin IDs válidos:", row);
             return;
         }
-        
+
         lines.push({
             rateline_id: ratelineId,
             rategroup_id: rategroupId
         });
     });
-    
-    console.log("Datos a enviar:", {
-        date_from: newDateFrom,
-        date_to: newDateTo,
-        season: newSeason,
-        lines: lines
-    });
-    
+
     if (lines.length === 0) {
         alert("No hay líneas válidas para copiar");
         return;
     }
-    
+
     // Enviar al servidor
     fetch("/tariff/modify/copy-rate-block/", {
         method: "POST",
@@ -1691,7 +1778,9 @@ function confirmCopyBlock(blockId) {
             date_from: newDateFrom,
             date_to: newDateTo,
             season: newSeason,
-            lines: lines
+            lines: lines,
+            increase: newIncrease,
+            status: newStatus,
         })
     })
     .then(r => r.json())
@@ -1718,6 +1807,34 @@ function confirmCopyBlock(blockId) {
 }
 
 // ========================================
+// ELIMINAR LÍNEA INDIVIDUAL (un producto dentro de un bloque)
+// ========================================
+function deleteLineButtons() {
+    document.querySelectorAll(".delete-line-btn").forEach(button => {
+        button.addEventListener("click", function () {
+            // id format: "delete-line-<rateline_id>"
+            const ratelineId = this.id.replace("delete-line-", "");
+            fetch("/tariff/modify/delete-rate-line/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCookie("csrftoken")
+                },
+                body: JSON.stringify({ rateline_id: ratelineId })
+            })
+            .then(r => r.json())
+            .then(resp => {
+                if (resp.ok) {
+                    location.reload();
+                } else {
+                    alert("Error al eliminar: " + (resp.error || "Desconocido"));
+                }
+            })
+            .catch(() => alert("Error de conexión"));
+        });
+    });
+}
+
 // ELIMINAR BLOQUE
 // ========================================
 document.querySelectorAll(".delete-block").forEach(button => {
@@ -2090,18 +2207,28 @@ function cancelBlockEdit(blockId) {
         toggle.closest('.cost-link-toggle-block').remove();
     }
 
-    // 3. Revertir MARGEN y TEMPORADA (Input -> Span)
-    const displays = ['margin', 'season'];
+    // 3. Revertir MARGEN, TEMPORADA, AUMENTO y ESTADO (Input/Select -> Span)
+    const displays = ['margin', 'season', 'increase'];
     displays.forEach(type => {
         const display = document.querySelector(`.${type}-display[data-block="${blockId}"]`);
         const input = document.querySelector(`.${type}-input[data-block="${blockId}"]`);
         if (display && input) {
             input.value = input.dataset.originalValue || input.value;
-            display.textContent = input.value; // Volver al texto original
+            display.textContent = type === 'increase' ? (input.value + '%') : input.value;
             display.classList.remove("d-none");
             input.classList.add("d-none");
         }
     });
+    // Revertir STATUS (select)
+    const statusDisplay = document.querySelector(`.status-display[data-block="${blockId}"]`);
+    const statusSelect = document.querySelector(`.status-select[data-block="${blockId}"]`);
+    if (statusDisplay && statusSelect) {
+        statusSelect.value = statusSelect.dataset.originalValue || statusSelect.value;
+        statusDisplay.textContent = statusSelect.value;
+        statusDisplay.classList.remove("d-none", "text-success", "text-warning");
+        statusDisplay.classList.add(statusSelect.value === "Confirmed" ? "text-success" : "text-warning");
+        statusSelect.classList.add("d-none");
+    }
 
     // 4. Revertir CELDAS DE TARIFAS (Venta, Costo, etc.)
     rows.forEach(row => {

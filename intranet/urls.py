@@ -24,6 +24,7 @@ urlpatterns = [
 
     # Paths for modifying items
     path("modify_user/<int:user_id>", views.modify_user, name="modify_user"),
+    path("change_password/<int:user_id>", views.change_password_user, name="change_password_user"),
     path("modify_country/<int:country_id>", views.modify_country, name="modify_country"),
     path("modify_client/<int:client_id>", views.modify_client, name="modify_client"),
     path("modify_contact/<int:contact_id>", views.modify_contact, name="modify_contact"),

@@ -71,6 +71,8 @@
                                                 data-from="{{ block.date_from }}"
                                                 data-to="{{ block.date_to }}"
                                                 data-season="{{ block.season }}"
+                                                data-increase="{{ block.increase|default:0 }}"
+                                                data-status="{{ block.status|default:'Confirmed' }}"
                                                 title="Copiar bloque">
                                             <i class="fa-solid fa-copy"></i>
                                         </button>
@@ -89,7 +91,32 @@
                                             style="width: 150px;">
                                     </div>
 
-                                    
+                                    <div>Aumento:</div>
+                                    <div>
+                                        <span class="increase-display text-primary fw-bold" data-block="{{ forloop.counter }}">
+                                            {{ block.increase|default:0 }}%
+                                        </span>
+                                        <input type="number"
+                                            class="form-control form-control-sm increase-input d-none"
+                                            data-block="{{ forloop.counter }}"
+                                            value="{{ block.increase|default:0 }}"
+                                            min="0" max="100" step="0.1"
+                                            style="width: 90px;">
+                                    </div>
+
+                                    <div>Estado:</div>
+                                    <div>
+                                        <span class="status-display fw-bold {% if block.status == 'Confirmed' %}text-success{% else %}text-warning{% endif %}" data-block="{{ forloop.counter }}">
+                                            {{ block.status|default:"Confirmed" }}
+                                        </span>
+                                        <select class="form-select form-select-sm status-select d-none"
+                                                data-block="{{ forloop.counter }}"
+                                                style="width: 140px;">
+                                            <option value="Confirmed" {% if block.status == "Confirmed" %}selected{% endif %}>Confirmed</option>
+                                            <option value="Provisional" {% if block.status == "Provisional" %}selected{% endif %}>Provisional</option>
+                                        </select>
+                                    </div>
+
                                     <div class="ms-auto d-flex gap-2">
                                         <button class="btn btn-sm btn-outline-dark toggle-all-block"
                                                 data-block="{{ forloop.counter }}"
@@ -186,9 +213,13 @@
                                             <tbody>
 
                                                 {# ── SGL ── #}
-                                                <tr>
+                                                <tr{% if line.sgl and line.sgl.locked %} class="locked-base-row"{% endif %}>
                                                     <td>
-                                                        <span class="badge bg-dark fs-6">SGL</span>
+                                                        <span class="badge fs-6 rate-lock-badge {% if line.sgl and line.sgl.locked %}bg-danger{% else %}bg-dark{% endif %}"
+                                                            {% if line.sgl %}data-rate-id="{{ line.sgl.id }}"{% endif %}
+                                                            style="cursor:pointer;" title="{% if line.sgl and line.sgl.locked %}Desbloquear base{% else %}Bloquear base{% endif %}">
+                                                            SGL{% if line.sgl and line.sgl.locked %} <i class="fa-solid fa-lock" style="font-size:0.75rem;"></i>{% endif %}
+                                                        </span>
                                                     </td>
                                                     {% if line.sgl %}
                                                         <td class="rate-cell"
@@ -218,9 +249,13 @@
                                                 </tr>
 
                                                 {# ── DBL ── #}
-                                                <tr>
+                                                <tr{% if line.dbl and line.dbl.locked %} class="locked-base-row"{% endif %}>
                                                     <td>
-                                                        <span class="badge bg-secondary fs-6">DBL</span>
+                                                        <span class="badge fs-6 rate-lock-badge {% if line.dbl and line.dbl.locked %}bg-danger{% else %}bg-secondary{% endif %}"
+                                                            {% if line.dbl %}data-rate-id="{{ line.dbl.id }}"{% endif %}
+                                                            style="cursor:pointer;" title="{% if line.dbl and line.dbl.locked %}Desbloquear base{% else %}Bloquear base{% endif %}">
+                                                            DBL{% if line.dbl and line.dbl.locked %} <i class="fa-solid fa-lock" style="font-size:0.75rem;"></i>{% endif %}
+                                                        </span>
                                                     </td>
                                                     {% if line.dbl %}
                                                         <td class="rate-cell"
@@ -256,25 +291,6 @@
                             </td>
                         </tr>
 
-                        {# Modal eliminar línea #}
-                        <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1">
-                            <div class="modal-dialog">
-                                <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h1 class="modal-title fs-8">Eliminando {{ line.group }}</h1>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <h3>¿Está seguro que desea eliminar la línea {{ line.group }} - {{ line.date_from }} / {{ line.date_to }}?</h3>
-                                        <br>
-                                        <div class="container text-center">
-                                            <button id="delete-line-{{ line.id }}" class="btn btn-dark btn-lg delete-line-btn">ELIMINAR</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
                         {% endfor %}
                     {% endfor %}
                     </tbody>
@@ -283,5 +299,70 @@
         </div>
     </div>
     <br>
+
+    {# ── Modales eliminar línea (fuera de <tbody> para HTML válido) ── #}
+    {% for block in rate_blocks %}
+        {% for line in block.lines %}
+        {% if user.isAdmin %}
+        <div class="modal fade modal-lg" id="windowRateLineTrash{{ line.id }}" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-8">Eliminando {{ line.group }}</h1>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <h3>¿Está seguro que desea eliminar la línea {{ line.group }} - {{ line.date_from }} / {{ line.date_to }}?</h3>
+                        <br>
+                        <div class="container text-center">
+                            <button id="delete-line-{{ line.id }}" class="btn btn-dark btn-lg delete-line-btn">ELIMINAR</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    {% endfor %}
 {% endif %}
+
+<style>
+.locked-base-row td { background-color: #f3f4f6 !important; color: #6b7280; }
+.locked-base-row { border-left: 3px solid #dc2626 !important; }
+</style>
+<script>
+document.addEventListener('click', function(e) {
+    const badge = e.target.closest('.rate-lock-badge');
+    if (!badge || !badge.dataset.rateId) return;
+    const rateId = badge.dataset.rateId;
+    const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+    fetch("{% url 'toggle_rate_lock' %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+        body: JSON.stringify({rate_id: rateId}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) return;
+        const row = badge.closest('tr');
+        const locked = data.locked;
+        row.classList.toggle('locked-base-row', locked);
+        badge.classList.toggle('bg-dark', !locked && badge.textContent.trim().startsWith('SGL'));
+        badge.classList.toggle('bg-secondary', !locked && badge.textContent.trim().startsWith('DBL'));
+        badge.classList.toggle('bg-danger', locked);
+        badge.title = locked ? 'Desbloquear base' : 'Bloquear base';
+        let icon = badge.querySelector('.fa-lock');
+        if (locked && !icon) {
+            const i = document.createElement('i');
+            i.className = 'fa-solid fa-lock';
+            i.style.fontSize = '0.75rem';
+            badge.appendChild(document.createTextNode(' '));
+            badge.appendChild(i);
+        } else if (!locked && icon) {
+            icon.previousSibling?.nodeType === 3 && icon.previousSibling.remove();
+            icon.remove();
+        }
+    });
+});
+</script>
 {% endblock %}

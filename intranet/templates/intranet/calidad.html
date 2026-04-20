@@ -587,7 +587,7 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="guides-table">
-              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
+              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
               <tbody>
                 {% for g in guides %}
                 <tr id="guide-row-{{ g.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('guide', {{ g.id }}, this)">
@@ -595,14 +595,13 @@
                   <td class="small text-muted">{{ g.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ g.notes|default:"—" }}</td>
                   <td class="text-center">{% if g.pos_count %}<span class="badge text-bg-success">{{ g.pos_count }}</span> {% endif %}{% if g.neu_count %}<span class="badge text-bg-secondary">{{ g.neu_count }}</span> {% endif %}{% if g.neg_count %}<span class="badge text-bg-danger">{{ g.neg_count }}</span>{% endif %}{% if not g.pos_count and not g.neu_count and not g.neg_count %}—{% endif %}</td>
-                  <td class="text-center small">{{ g.trip_count }}</td>
                   <td class="text-nowrap">
                     <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-pencil"></i></button>
-                    {% if not g.pos_count and not g.neu_count and not g.neg_count and g.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                    {% if not g.pos_count and not g.neu_count and not g.neg_count %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
                 </tr>
                 <tr id="cat-fb-row-guide-{{ g.id }}" class="d-none">
-                  <td colspan="6" class="p-0"><div id="cat-fb-panel-guide-{{ g.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
+                  <td colspan="5" class="p-0"><div id="cat-fb-panel-guide-{{ g.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 <tr id="guide-edit-row-{{ g.id }}" class="d-none table-warning">
                   <td><input type="text" class="form-control form-control-sm" id="edit-guide-name-{{ g.id }}" value="{{ g.name }}"></td>
@@ -644,7 +643,7 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="dhs-table">
-              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th class="text-center">Viajes</th><th></th></tr></thead>
+              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
               <tbody>
                 {% for d in dhs %}
                 <tr id="dh-row-{{ d.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('dh', {{ d.id }}, this)">
@@ -652,14 +651,13 @@
                   <td class="small text-muted">{{ d.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ d.notes|default:"—" }}</td>
                   <td class="text-center">{% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}{% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}{% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}{% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}</td>
-                  <td class="text-center small">{{ d.trip_count }}</td>
                   <td class="text-nowrap">
                     <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
-                    {% if not d.pos_count and not d.neu_count and not d.neg_count and d.trip_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
                 </tr>
                 <tr id="cat-fb-row-dh-{{ d.id }}" class="d-none">
-                  <td colspan="6" class="p-0"><div id="cat-fb-panel-dh-{{ d.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
+                  <td colspan="5" class="p-0"><div id="cat-fb-panel-dh-{{ d.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
                 <tr id="dh-edit-row-{{ d.id }}" class="d-none table-warning">
                   <td><input type="text" class="form-control form-control-sm" id="edit-dh-name-{{ d.id }}" value="{{ d.name }}"></td>

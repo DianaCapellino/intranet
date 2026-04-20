@@ -31,15 +31,9 @@ def _get_message_id(msg):
 
 
 def _get_body(msg):
-    """Return plain text body, falling back to HTML stripped of tags."""
+    """Return plain text body only. Ignores HTML to keep storage small."""
     if msg.text:
         return msg.text.strip()
-    if msg.html:
-        import re
-        text = re.sub(r"<[^>]+>", " ", msg.html)
-        text = re.sub(r"&nbsp;", " ", text)
-        text = re.sub(r"\s{2,}", " ", text)
-        return text.strip()
     return ""
 
 
@@ -58,9 +52,11 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Conectando a {server} como {username}…")
 
-        imported = 0
-        skipped  = 0
-        errors   = 0
+        imported              = 0
+        skipped               = 0
+        errors                = 0
+        to_archive            = []
+        message_ids_to_archive = set()
 
         try:
             with MailBox(server).login(username, password, QUALITY_LABEL) as mb:
@@ -70,6 +66,8 @@ class Command(BaseCommand):
 
                     if FeedbackInboxItem.objects.filter(gmail_message_id=message_id).exists():
                         skipped += 1
+                        to_archive.append(msg.uid)
+                        message_ids_to_archive.add(message_id)
                         continue
 
                     # Normalize sender
@@ -94,14 +92,34 @@ class Command(BaseCommand):
                             status="pendiente",
                         )
                         imported += 1
+                        to_archive.append(msg.uid)
+                        message_ids_to_archive.add(message_id)
                         self.stdout.write(f"  + Guardado: {sender} — {msg.subject[:60]}")
                     except Exception as e:
                         errors += 1
                         self.stderr.write(f"  ! Error guardando {message_id}: {e}")
 
+
         except Exception as e:
             self.stderr.write(f"Error conectando al buzón '{QUALITY_LABEL}': {e}")
             return
+
+        # Remove emails from INBOX (Gmail "archive") while keeping the Calidad label.
+        if message_ids_to_archive:
+            try:
+                with MailBox(server).login(username, password, "INBOX") as mb_inbox:
+                    inbox_uids = [
+                        msg.uid
+                        for msg in mb_inbox.fetch(mark_seen=False, bulk=True)
+                        if _get_message_id(msg) in message_ids_to_archive
+                    ]
+                    if inbox_uids:
+                        mb_inbox.move(inbox_uids, "[Gmail]/All Mail")
+                        self.stdout.write(f"  Archivados {len(inbox_uids)} emails desde INBOX.")
+                    else:
+                        self.stdout.write("  (Ningún email encontrado en INBOX para archivar.)")
+            except Exception as e:
+                self.stderr.write(f"  ! Error archivando desde INBOX: {e}")
 
         self.stdout.write(self.style.SUCCESS(
             f"\nImportados: {imported} | Ya existían: {skipped} | Errores: {errors}"

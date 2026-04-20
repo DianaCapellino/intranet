@@ -22,3 +22,14 @@ def divided(value, arg):
         return int(value) / int(arg)
     except (ValueError, TypeError):
         return None
+
+@register.filter
+def dict_get(d, key):
+    try:
+        return d[key]
+    except (KeyError, TypeError):
+        return None
+
+@register.filter
+def split(value, sep):
+    return value.split(sep)

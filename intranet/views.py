@@ -557,10 +557,26 @@ def modify_user(request, user_id):
     
 
 @login_required
+def change_password_user(request, user_id):
+    requesting_user = User.objects.get(id=request.user.id)
+    if not requesting_user.isAdmin:
+        return HttpResponseRedirect(reverse("users"))
+
+    if request.method == "POST":
+        target_user = User.objects.get(id=user_id)
+        new_password = request.POST.get("new_password", "").strip()
+        if new_password:
+            target_user.set_password(new_password)
+            target_user.save()
+
+    return HttpResponseRedirect(reverse("users"))
+
+
+@login_required
 def modify_client(request, client_id):
 
     # Gets the object of the client modifying
-    client = Client.objects.get(id=client_id) 
+    client = Client.objects.get(id=client_id)
     
     # Gets the information from the form
     if request.method == "POST":
@@ -4909,11 +4925,6 @@ def calidad_fetch_inbox(request):
     def _get_body(msg):
         if msg.text:
             return msg.text.strip()
-        if msg.html:
-            text = _re.sub(r'<[^>]+>', ' ', msg.html)
-            text = _re.sub(r'&nbsp;', ' ', text)
-            text = _re.sub(r'\s{2,}', ' ', text)
-            return text.strip()
         return ''
 
     imported = 0
@@ -4986,16 +4997,14 @@ def calidad(request):
         feedback_count=Count('feedback_entities'),
     ).order_by('name')
     guides = Guide.objects.annotate(
-        pos_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='positivo')),
-        neu_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='neutral')),
-        neg_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='negativo')),
-        trip_count=Count('trips'),
+        pos_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='positivo'), distinct=True),
+        neu_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='neutral'), distinct=True),
+        neg_count=Count('feedback_guides', filter=Q(feedback_guides__sentiment='negativo'), distinct=True),
     ).order_by('name')
     dhs = DestinationHost.objects.annotate(
-        pos_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='positivo')),
-        neu_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='neutral')),
-        neg_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='negativo')),
-        trip_count=Count('trips'),
+        pos_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='positivo'), distinct=True),
+        neu_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='neutral'), distinct=True),
+        neg_count=Count('feedback_dhs', filter=Q(feedback_dhs__sentiment='negativo'), distinct=True),
     ).order_by('name')
     suppliers_fb = Supplier.objects.annotate(
         pos_count=Count('feedback_suppliers', filter=Q(feedback_suppliers__sentiment='positivo')),

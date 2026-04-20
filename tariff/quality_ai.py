@@ -316,8 +316,17 @@ def _fix_json_strings(s):
                 i += 2
                 continue
             elif c == '"':
-                result.append(c)
-                in_string = False
+                # Lookahead: if next non-whitespace is a JSON structural char,
+                # this is the closing quote; otherwise it's an unescaped embedded
+                # quote inside the value (escape it).
+                j = i + 1
+                while j < len(s) and s[j] in ' \t\n\r':
+                    j += 1
+                if j >= len(s) or s[j] in ':,}]':
+                    result.append(c)
+                    in_string = False
+                else:
+                    result.append('\\"')
             elif c == '\n':
                 result.append('\\n')
             elif c == '\r':
@@ -348,9 +357,35 @@ def _safe_json_loads(raw):
     except json.JSONDecodeError:
         pass
 
-    # Strategy 2: extract the outermost {...} block
-    m = re.search(r'\{.*\}', raw, re.DOTALL)
-    candidate = m.group() if m else raw
+    # Strategy 2: extract the outermost {...} block via brace-balancing
+    def _extract_json_block(text):
+        start = text.find('{')
+        if start == -1:
+            return None
+        depth = 0
+        in_str = False
+        i = start
+        while i < len(text):
+            c = text[i]
+            if in_str:
+                if c == '\\':
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            else:
+                if c == '"':
+                    in_str = True
+                elif c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return text[start:i + 1]
+            i += 1
+        return None
+
+    candidate = _extract_json_block(raw) or raw
 
     try:
         return json.loads(candidate)
@@ -367,16 +402,21 @@ def _safe_json_loads(raw):
     text = _fix_json_strings(candidate)
     for field in ('verbatim', 'content', 'solution', 'brief_summary'):
         text = re.sub(
-            r'("' + re.escape(field) + r'"\s*:\s*)"[^"]{20,}"',
+            r'("' + re.escape(field) + r'"\s*:\s*)"(?:[^"\\]|\\.)*"',
             r'\1""',
-            text
+            text,
+            flags=re.DOTALL,
         )
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-    # Give up — include truncated raw response in error for debugging
+    # Give up — log full raw for debugging and raise
+    import logging as _logging
+    _logging.getLogger(__name__).error(
+        "JSON parse failed. Full raw response:\n%s", raw
+    )
     preview = raw[:300].replace('\n', '↵')
     raise ValueError(f"No se pudo parsear JSON de la respuesta IA. Primeros 300 chars: {preview!r}")
 
@@ -418,7 +458,7 @@ def process_inbox_item_with_ai(item):
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=2048,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     )

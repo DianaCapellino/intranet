@@ -351,6 +351,7 @@ class Rate(models.Model):
     has_rate = models.BooleanField(default=True)
     text_value = models.CharField(max_length=3, blank=True, null=True)
     has_items = models.BooleanField(default=False)
+    locked = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.rate_line} - {self.column_options}"
@@ -365,6 +366,7 @@ class CostItem(models.Model):
     rate = models.ForeignKey(Rate, on_delete=models.CASCADE, related_name="cost_items")
     value = models.FloatField()
     fcu = models.CharField(choices=FCU_OPTIONS, max_length=64, default='Person')
+    increase = models.FloatField(null=True, blank=True, default=0)
 
     def __str__(self):
         return f"{self.name} - {self.rate}"

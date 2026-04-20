@@ -48,13 +48,9 @@ def _get_message_id(msg):
 
 
 def _get_body(msg):
+    """Return plain text body only. Ignores HTML to keep storage small."""
     if msg.text:
         return msg.text.strip()
-    if msg.html:
-        text = re.sub(r"<[^>]+>", " ", msg.html)
-        text = re.sub(r"&nbsp;", " ", text)
-        text = re.sub(r"\s{2,}", " ", text)
-        return text.strip()
     return ""
 
 

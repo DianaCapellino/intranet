@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager
 
 
 class Command(BaseCommand):
@@ -28,17 +28,6 @@ class Command(BaseCommand):
         today = date.today()
         is_wednesday = today.weekday() == 2
         is_first_wednesday = is_wednesday and today.day <= 7
-
-        # Sync from Tourplan DB — every day
-        self.stdout.write("-" * 30)
-        self.stdout.write("Sincronizando con base de datos Tourplan...")
-        try:
-            updated, not_found = sync_from_tourplan_db()
-            self.stdout.write(self.style.SUCCESS(
-                f"Tourplan sync: {updated} viajes actualizados, {not_found} en Tourplan sin match en la app"
-            ))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Error en Tourplan sync: {e}"))
 
         # Quality inbox — every day
         self.stdout.write("-" * 30)

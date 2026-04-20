@@ -111,6 +111,9 @@
                         <div class="col">
                             <input type="number" step="0.01" class="form-control" name="margin_svs" placeholder="Margen SVS %" required>
                         </div>
+                        <div class="col">
+                            <input type="number" class="form-control" name="order" placeholder="Orden" value="{{ next_order }}" required>
+                        </div>
                     </div>
 
                     <hr>
@@ -291,6 +294,9 @@
                                                             </div>
                                                             <div class="col">
                                                                 <input type="number" step="0.01" class="form-control" name="margin_svs" placeholder="Margen SVS %" value="{{ location.margin_svs }}" required>
+                                                            </div>
+                                                            <div class="col">
+                                                                <input type="number" class="form-control" name="order" placeholder="Orden" value="{{ location.order }}" required>
                                                             </div>
                                                         </div>
 

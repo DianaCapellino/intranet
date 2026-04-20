@@ -16,16 +16,56 @@
 
 .cost-col { display: none; }
 .show-costs .cost-col { display: table-cell; }
+
+.svs-group-header { cursor: pointer; user-select: none; }
+.svs-group-header:hover { opacity: 0.85; }
+.svs-chevron { transition: transform 0.2s; display: inline-block; }
+.svs-group-body.svs-collapsed { display: none; }
+
+.acc-group-header { cursor: pointer; user-select: none; }
+.acc-group-header:hover { opacity: 0.85; }
+.acc-chevron { transition: transform 0.2s; display: inline-block; }
+.acc-group-body.acc-collapsed { display: none; }
+
+.locked-row td { background-color: #f3f4f6 !important; }
+.locked-row { border-left: 3px solid #dc2626 !important; }
+.rate-cell-locked { color: #dc2626 !important; }
+.rate-lock-toggle:hover { opacity: 0.75; }
 </style>
 
 {% if rate_lines %}
 
-{% if show_costs %}
-<div class="mb-3 text-end">
+<div class="mb-3 d-flex align-items-center gap-2 justify-content-end">
+    {% if tariff_type == "acc" %}
+    <div class="input-group input-group-sm" style="max-width:280px;">
+        <span class="input-group-text bg-white border-end-0">
+            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+        </span>
+        <input type="text" id="acc-search" class="form-control border-start-0"
+               placeholder="Buscar hotel…" oninput="filterHotels(this.value)">
+        <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('acc-search').value='';filterHotels('');" title="Limpiar">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+    {% else %}
+    <div class="input-group input-group-sm" style="max-width:280px;">
+        <span class="input-group-text bg-white border-end-0">
+            <i class="fa-solid fa-magnifying-glass text-muted"></i>
+        </span>
+        <input type="text" id="svs-search" class="form-control border-start-0"
+               placeholder="Buscar servicio…" oninput="filterServices(this.value)">
+        <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('svs-search').value='';filterServices('');" title="Limpiar">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+    {% endif %}
+    {% if show_costs %}
     <button id="btn-toggle-costs" class="btn btn-sm btn-outline-secondary" onclick="toggleCosts()">
         <i class="fa-solid fa-dollar-sign me-1"></i>Ver costos
     </button>
+    {% endif %}
 </div>
+{% if show_costs %}
 <script>
 function toggleCosts() {
     const wrap = document.getElementById('tariff-content');
@@ -39,6 +79,86 @@ function toggleCosts() {
 {% endif %}
 
 <script>
+function filterHotels(query) {
+    const q = query.trim().toLowerCase();
+    document.querySelectorAll('.acc-group').forEach(group => {
+        const body  = group.querySelector('.acc-group-body');
+        const hotels = body ? body.querySelectorAll('.acc-hotel') : [];
+        let anyVisible = false;
+
+        hotels.forEach(hotel => {
+            const name = (hotel.dataset.hotel || '').toLowerCase();
+            const match = !q || name.includes(q);
+            hotel.style.display = match ? '' : 'none';
+            if (match) anyVisible = true;
+        });
+
+        group.style.display = anyVisible ? '' : 'none';
+
+        if (body) {
+            if (q && anyVisible) {
+                body.classList.remove('acc-collapsed');
+            } else if (!q) {
+                body.classList.add('acc-collapsed');
+            }
+        }
+        const icon = group.querySelector('.acc-chevron');
+        if (icon) {
+            icon.style.transform = (q && anyVisible) ? 'rotate(180deg)' : (body && !body.classList.contains('acc-collapsed') ? 'rotate(180deg)' : '');
+        }
+    });
+}
+
+function toggleAccGroup(header) {
+    const body = header.nextElementSibling;
+    const icon = header.querySelector('.acc-chevron');
+    const collapsed = body.classList.toggle('acc-collapsed');
+    icon.style.transform = collapsed ? '' : 'rotate(180deg)';
+}
+
+function filterServices(query) {
+    const q = query.trim().toLowerCase();
+    document.querySelectorAll('.svs-group').forEach(group => {
+        const header = group.querySelector('.svs-group-header');
+        const body   = group.querySelector('.svs-group-body');
+        const rows   = body ? body.querySelectorAll('tr.svs-row') : [];
+        let anyVisible = false;
+
+        rows.forEach(row => {
+            const name = (row.dataset.service || '').toLowerCase();
+            const match = !q || name.includes(q);
+            row.style.display = match ? '' : 'none';
+            if (match) anyVisible = true;
+        });
+
+        // Show/hide entire group
+        group.style.display = anyVisible ? '' : 'none';
+
+        // Expand group if search matches, collapse if empty query
+        if (body) {
+            if (q && anyVisible) {
+                body.classList.remove('svs-collapsed');
+            } else if (!q) {
+                body.classList.add('svs-collapsed');
+            }
+        }
+        if (header) {
+            const icon = header.querySelector('.svs-chevron');
+            if (icon) {
+                icon.style.transform = (q && anyVisible) || !body.classList.contains('svs-collapsed')
+                    ? 'rotate(180deg)' : '';
+            }
+        }
+    });
+}
+
+function toggleSvsGroup(header) {
+    const body  = header.nextElementSibling;
+    const icon  = header.querySelector('.svs-chevron');
+    const collapsed = body.classList.toggle('svs-collapsed');
+    icon.style.transform = collapsed ? '' : 'rotate(180deg)';
+}
+
 function markRevised(lineId, btn) {
     const url = "{% url 'mark_rate_line_revised' 0 %}".replace('/0/', '/' + lineId + '/');
     fetch(url, {
@@ -54,6 +174,39 @@ function markRevised(lineId, btn) {
         }
     });
 }
+
+document.addEventListener('click', function(e) {
+    const toggle = e.target.closest('.rate-lock-toggle');
+    if (!toggle) return;
+    const rateId = toggle.dataset.rateId;
+    const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+    fetch("{% url 'toggle_rate_lock' %}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+        body: JSON.stringify({rate_id: rateId}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) return;
+        const td = toggle.closest('td');
+        const row = toggle.closest('tr');
+        const locked = data.locked;
+        td.classList.toggle('rate-cell-locked', locked);
+        toggle.title = locked ? 'Desbloquear base' : 'Bloquear base';
+        let lockIcon = toggle.querySelector('.fa-lock');
+        if (locked && !lockIcon) {
+            const i = document.createElement('i');
+            i.className = 'fa-solid fa-lock ms-1';
+            i.style.fontSize = '0.7rem';
+            toggle.appendChild(i);
+        } else if (!locked && lockIcon) {
+            lockIcon.remove();
+        }
+        // Update row locked-row class based on whether any cell in the row is still locked
+        const anyLocked = row.querySelectorAll('.rate-cell-locked').length > 0;
+        row.classList.toggle('locked-row', anyLocked);
+    });
+});
 </script>
 
 <div id="tariff-content">
@@ -71,12 +224,17 @@ function markRevised(lineId, btn) {
 
 {% for sg in supplier_groups %}
 
-    <div class="p-2 mt-4 mb-2 shadow-sm rounded bg-dark text-light">
+    <div class="acc-group">
+    <div class="acc-group-header p-2 mt-4 mb-0 shadow-sm rounded bg-dark text-light d-flex justify-content-between align-items-center"
+         onclick="toggleAccGroup(this)">
         <h5 class="mb-0 px-2 text-uppercase small fw-bold"
             style="letter-spacing:2px;">
             {{ sg.list.0.group.product.supplier.group.name }}
         </h5>
+        <i class="fa-solid fa-chevron-down acc-chevron me-2 small"></i>
     </div>
+
+    <div class="acc-group-body acc-collapsed">
 
     {# === Supplier (hotel, colapsable) === #}
     {% regroup sg.list by group.product.supplier.id as suppliers %}
@@ -84,7 +242,7 @@ function markRevised(lineId, btn) {
     {% for supplier_block in suppliers %}
         {% with supplier=supplier_block.list.0.group.product.supplier %}
 
-        <div class="card mb-3 border-0 shadow-sm">
+        <div class="acc-hotel card mb-3 border-0 shadow-sm" data-hotel="{{ supplier.name|lower }}">
 
             <div class="card-header bg-white border-0
                         d-flex justify-content-between align-items-center py-2"
@@ -158,6 +316,19 @@ function markRevised(lineId, btn) {
                         {# === ProductGroup (desayuno / otros) === #}
                         {% regroup supplier_block.list by group.product.group.id as product_groups %}
                     </div>
+                    {% if show_costs %}
+                    <div class="d-flex gap-3 px-3 pb-2 align-items-center cost-col">
+                        <span class="text-muted small">
+                            <i class="fa-solid fa-percent me-1 text-secondary"></i>
+                            <strong>Markup:</strong>
+                            {% if supplier.margin %}
+                                {{ supplier.margin }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
                     {% for pg in product_groups %}
 
                         <div class="px-3 pt-3 pb-1 text-muted small fw-bold text-uppercase">
@@ -198,6 +369,7 @@ function markRevised(lineId, btn) {
                                         <tr class="border-bottom
                                             {% if not is_client and line.provisional_columns %} provisional-row{% endif %}
                                             {% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}
+                                            {% if line.locked_columns %} locked-row{% endif %}
                                         ">
                                             <td class="ps-3 py-2 border-0">
                                                 <div class="fw-bold text-secondary" style="font-size:0.85rem;">
@@ -227,10 +399,20 @@ function markRevised(lineId, btn) {
                                                         <i class="fa-solid fa-check"></i>
                                                     </button>
                                                 {% endif %}
+                                                {% if show_costs and line.increase %}
+                                                    <span class="cost-col badge bg-secondary ms-1" style="font-size:0.6rem;" title="Aumento aplicado">+{{ line.increase|floatformat:1 }}%</span>
+                                                {% endif %}
                                             </td>
 
-                                            <td class="text-center fw-bold border-0">
-                                                {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
+                                            <td class="text-center fw-bold border-0{% if 'SGL' in line.locked_columns %} rate-cell-locked{% endif %}">
+                                                {% if request.user.isAdmin and line.rate_ids_by_column.SGL %}
+                                                    <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column.SGL }}" title="{% if 'SGL' in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
+                                                        {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
+                                                        {% if 'SGL' in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
+                                                    </span>
+                                                {% else %}
+                                                    {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
+                                                {% endif %}
                                             </td>
                                             {% if show_costs %}
                                             <td class="text-center border-0 cost-col text-muted small">
@@ -238,8 +420,15 @@ function markRevised(lineId, btn) {
                                             </td>
                                             {% endif %}
 
-                                            <td class="text-center fw-bold border-0">
-                                                {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
+                                            <td class="text-center fw-bold border-0{% if 'DBL' in line.locked_columns %} rate-cell-locked{% endif %}">
+                                                {% if request.user.isAdmin and line.rate_ids_by_column.DBL %}
+                                                    <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column.DBL }}" title="{% if 'DBL' in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
+                                                        {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
+                                                        {% if 'DBL' in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
+                                                    </span>
+                                                {% else %}
+                                                    {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
+                                                {% endif %}
                                             </td>
                                             {% if show_costs %}
                                             <td class="text-center border-0 cost-col text-muted small">
@@ -521,6 +710,9 @@ function markRevised(lineId, btn) {
         {% endwith %}
     {% endfor %}
 
+    </div>{# /acc-group-body #}
+    </div>{# /acc-group #}
+
 {% endfor %}
 {% endif %}
 
@@ -536,14 +728,18 @@ function markRevised(lineId, btn) {
 
 {% for pg in product_groups %}
 
-    <div class="p-2 mt-4 mb-2 shadow-sm rounded"
-         style="background-color:black;color:white;">
+    <div class="svs-group">
+    <div class="svs-group-header p-2 mt-4 mb-0 shadow-sm rounded d-flex justify-content-between align-items-center"
+         style="background-color:black;color:white;"
+         onclick="toggleSvsGroup(this)">
         <h5 class="mb-0 px-2 text-uppercase small fw-bold"
             style="letter-spacing:2px;">
             {{ pg.list.0.group.product.group.name }}
         </h5>
+        <i class="fa-solid fa-chevron-down svs-chevron me-2 small"></i>
     </div>
 
+    <div class="svs-group-body svs-collapsed">
     <table class="table table-hover table-sm mb-4">
         <thead>
             <tr class="text-muted small bg-light border-bottom border-primary">
@@ -566,7 +762,8 @@ function markRevised(lineId, btn) {
         <tbody>
 
         {% for line in pg.list %}
-            <tr class="border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}">
+            <tr class="svs-row border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}{% if line.locked_columns %} locked-row{% endif %}"
+                data-service="{{ line.group.product.name|lower }}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
                         {% if line.group.product.tour_timing %}
@@ -661,28 +858,26 @@ function markRevised(lineId, btn) {
                     {% endif %}
                 </td>
 
-                <td class="text-center fw-bold">{{ line.rates_by_column.1|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.1|default:"—" }}</td>{% endif %}
-
-                <td class="text-center fw-bold">{{ line.rates_by_column.2|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.2|default:"—" }}</td>{% endif %}
-
-                <td class="text-center fw-bold">{{ line.rates_by_column.3|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.3|default:"—" }}</td>{% endif %}
-
-                <td class="text-center fw-bold">{{ line.rates_by_column.4|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.4|default:"—" }}</td>{% endif %}
-
-                <td class="text-center fw-bold">{{ line.rates_by_column.5|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.5|default:"—" }}</td>{% endif %}
-
-                <td class="text-center fw-bold">{{ line.rates_by_column.6|default:"N/A" }}</td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.6|default:"—" }}</td>{% endif %}
+                {% for col in "1,2,3,4,5,6"|split:"," %}
+                <td class="text-center fw-bold{% if col in line.locked_columns %} rate-cell-locked{% endif %}">
+                    {% if request.user.isAdmin and line.rate_ids_by_column|dict_get:col %}
+                        <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column|dict_get:col }}" title="{% if col in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
+                            {{ line.rates_by_column|dict_get:col|default:"N/A" }}
+                            {% if col in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
+                        </span>
+                    {% else %}
+                        {{ line.rates_by_column|dict_get:col|default:"N/A" }}
+                    {% endif %}
+                </td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column|dict_get:col|default:"—" }}</td>{% endif %}
+                {% endfor %}
             </tr>
         {% endfor %}
 
         </tbody>
     </table>
+    </div>{# /svs-group-body #}
+    </div>{# /svs-group #}
 
         {% for line in pg.list %}
             <div class="modal fade" id="windowMoreInfoProduct{{ line.group.product.id }}" tabindex="-1" aria-labelledby="labelProduct{{ line.group.product.id }}">

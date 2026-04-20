@@ -50,6 +50,7 @@ urlpatterns = [
     path("modify/update-rate-block/", modify.update_rate_block, name="update_rate_block"),
     path('modify/copy-rate-block/', modify.copy_rate_block, name='copy_rate_block'),
     path('modify/delete-rate-block/', modify.delete_rate_block, name='delete_rate_block'),
+    path('modify/delete-rate-line/', modify.delete_rate_line, name='delete_rate_line'),
     path('modify/create-rate-block/', modify.create_rate_block, name='create_rate_block'),
     # Cost item / fixed rate cost management
     path('modify/cost-item/add/', modify.add_cost_item, name='add_cost_item'),
@@ -63,6 +64,7 @@ urlpatterns = [
     path('modify/supplier/<int:supplier_id>/set-exchange/', modify.update_supplier_exchange, name='update_supplier_exchange'),
     path('modify/supplier/<int:supplier_id>/bulk-update-exchange/', modify.bulk_update_exchange, name='bulk_update_exchange'),
     path('modify/rate/update-cost/', modify.update_rate_cost, name='update_rate_cost'),
+    path('modify/rate/toggle-lock/', modify.toggle_rate_lock, name='toggle_rate_lock'),
 
     path("pdf/select/", tariff.pdf_select, name="pdf_select"),
     path("pdf/view/", tariff.pdf_view, name="pdf_view"),

@@ -75,6 +75,8 @@
                                                 data-from="{{ block.date_from }}"
                                                 data-to="{{ block.date_to }}"
                                                 data-season="{{ block.season }}"
+                                                data-increase="{{ block.increase|default:0 }}"
+                                                data-status="{{ block.status|default:'Confirmed' }}"
                                                 title="Copiar bloque">
                                             <i class="fa-solid fa-copy"></i>
                                         </button>
@@ -90,6 +92,32 @@
                                             data-block="{{ forloop.counter }}"
                                             value="{{ block.margin }}"
                                             style="width: 150px;">
+                                    </div>
+
+                                    <div>Aumento:</div>
+                                    <div>
+                                        <span class="increase-display text-primary fw-bold" data-block="{{ forloop.counter }}">
+                                            {{ block.increase|default:0 }}%
+                                        </span>
+                                        <input type="number"
+                                            class="form-control form-control-sm increase-input d-none"
+                                            data-block="{{ forloop.counter }}"
+                                            value="{{ block.increase|default:0 }}"
+                                            min="0" max="100" step="0.1"
+                                            style="width: 90px;">
+                                    </div>
+
+                                    <div>Estado:</div>
+                                    <div>
+                                        <span class="status-display fw-bold {% if block.status == 'Confirmed' %}text-success{% else %}text-warning{% endif %}" data-block="{{ forloop.counter }}">
+                                            {{ block.status|default:"Confirmed" }}
+                                        </span>
+                                        <select class="form-select form-select-sm status-select d-none"
+                                                data-block="{{ forloop.counter }}"
+                                                style="width: 140px;">
+                                            <option value="Confirmed" {% if block.status == "Confirmed" %}selected{% endif %}>Confirmed</option>
+                                            <option value="Provisional" {% if block.status == "Provisional" %}selected{% endif %}>Provisional</option>
+                                        </select>
                                     </div>
 
                                     <div class="ms-auto d-flex gap-2">
@@ -198,12 +226,16 @@
                                             <tbody>
                                                 {% for base in line.bases %}
                                                 {# ── Base row ── #}
-                                                <tr class="base-rate-row"
+                                                <tr class="base-rate-row{% if base.rate and base.rate.locked %} locked-base-row{% endif %}"
                                                     data-rate-id="{% if base.rate %}{{ base.rate.id }}{% endif %}"
-                                                    data-margin-ai="{% if base.rate %}{{ base.rate.margin_ai|default:0 }}{% endif %}"
+                                                    data-margin-ai="{% if base.rate %}{{ base.margin_ai|default:0 }}{% endif %}"
                                                     data-sell="{% if base.rate %}{{ base.rate.sell|default:0 }}{% endif %}">
                                                     <td>
-                                                        <span class="badge bg-dark fs-6">{{ base.pax }}</span>
+                                                        <span class="badge fs-6 rate-lock-badge {% if base.rate and base.rate.locked %}bg-danger{% else %}bg-dark{% endif %}"
+                                                            {% if base.rate %}data-rate-id="{{ base.rate.id }}"{% endif %}
+                                                            style="cursor:pointer;" title="{% if base.rate and base.rate.locked %}Desbloquear base{% else %}Bloquear base{% endif %}">
+                                                            {{ base.pax }}{% if base.rate and base.rate.locked %} <i class="fa-solid fa-lock" style="font-size:0.75rem;"></i>{% endif %}
+                                                        </span>
                                                     </td>
                                                     {% if base.rate %}
                                                         <td><small class="text-muted fw-semibold">Total</small></td>
@@ -230,7 +262,7 @@
                                                             {{ base.rate.sell|default:"N/A" }}
                                                         </td>
                                                         <td class="margin-cell" data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
-                                                            {{ base.rate.margin_ai|floatformat:1 }}%
+                                                            {{ base.margin_ai|floatformat:1 }}%
                                                         </td>
                                                         <td class="suggested-sell-cell text-success fw-semibold">
                                                             {% if base.suggested_sell %}{{ base.suggested_sell }}{% endif %}
@@ -246,11 +278,12 @@
                                                     {# view row #}
                                                     <tr class="table-warning ci-cost-row" style="font-size:0.82em;"
                                                         data-ci-id="{{ ci.id }}"
+                                                        data-ci-name="{{ ci.name }}"
                                                         data-rate-id="{{ base.rate.id }}"
                                                         data-value="{{ ci.value }}"
                                                         data-fcu="{{ ci.fcu }}"
                                                         data-tax="{{ ci.tax }}"
-                                                        data-rate-increase="{{ base.rate.increase|default:0 }}"
+                                                        data-increase="{{ ci.increase|default:0 }}"
                                                         data-usd="{{ ci.usd|yesno:'true,false' }}"
                                                         data-exchange="{{ ci.exchange }}"
                                                         data-pax="{{ base.pax }}">
@@ -259,7 +292,7 @@
                                                             <i class="fa-solid fa-tag me-1 text-warning"></i>
                                                             <strong>{{ ci.name }}</strong>
                                                             <span class="text-muted ms-1">
-                                                                ({{ ci.fcu|lower }}{% if ci.tax != "0" %}, IVA {{ ci.tax }}%{% endif %}{% if not ci.usd %}, ARS/<span class="ci-exchange-lbl">{{ ci.exchange }}</span>{% endif %})
+                                                                ({{ ci.fcu|lower }}{% if ci.tax != "0" %}, IVA {{ ci.tax }}%{% endif %}{% if not ci.usd %}, ARS/<span class="ci-exchange-lbl">{{ ci.exchange }}</span>{% endif %}{% if ci.increase %}, +<span class="ci-increase-lbl">{{ ci.increase }}</span>%{% endif %}{% if ci.code %}, <span class="ci-code-lbl">{{ ci.code }}</span>{% endif %})
                                                             </span>
                                                         </td>
                                                         <td><span class="cost-per-pax-val text-success fw-bold">${{ ci.cost_per_pax }}/pax</span></td>
@@ -314,10 +347,22 @@
                                                                            class="form-control form-control-sm" style="width:75px;"
                                                                            value="{{ ci.exchange }}">
                                                                 </div>
+                                                                <div>
+                                                                    <input type="number" id="ci_edit_increase_{{ ci.id }}"
+                                                                           class="form-control form-control-sm" style="width:75px;"
+                                                                           value="{{ ci.increase|default:0 }}" step="0.1" min="0" max="100"
+                                                                           placeholder="Aum. %">
+                                                                    <small class="text-muted">Aum. %</small>
+                                                                </div>
+                                                                <div>
+                                                                    <input type="text" id="ci_edit_code_{{ ci.id }}"
+                                                                           class="form-control form-control-sm" style="width:90px;"
+                                                                           value="{{ ci.code }}" placeholder="Código">
+                                                                    <small class="text-muted">Código</small>
+                                                                </div>
                                                                 <button class="btn btn-sm btn-success save-ci-btn"
                                                                         data-ci-id="{{ ci.id }}"
-                                                                        data-pax="{{ base.pax }}"
-                                                                        data-rate-increase="{{ base.rate.increase|default:0 }}">
+                                                                        data-pax="{{ base.pax }}">
                                                                     <i class="fa-solid fa-check"></i>
                                                                 </button>
                                                                 <button class="btn btn-sm btn-secondary cancel-ci-btn"
@@ -469,6 +514,10 @@
                             <div class="col-md-3" id="ci_exchange_wrap" style="display:none;">
                                 <label class="form-label">Tipo de cambio</label>
                                 <input type="number" class="form-control" id="ci_exchange" value="1">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Aumento %</label>
+                                <input type="number" step="0.1" min="0" max="100" class="form-control" id="ci_increase" value="0">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Código (opcional)</label>
@@ -741,6 +790,7 @@ document.getElementById('saveCostBtn').addEventListener('click', async () => {
                 fcu      : document.getElementById('ci_fcu').value,
                 usd      : document.getElementById('ci_usd').checked,
                 exchange : parseInt(document.getElementById('ci_exchange').value) || 1,
+                increase : parseFloat(document.getElementById('ci_increase').value) || 0,
                 code     : document.getElementById('ci_code').value.trim(),
             };
             if (!body.name || isNaN(body.value)) { alert('Completá nombre y valor.'); return; }
@@ -885,7 +935,7 @@ function refreshAllCiRows(newExchange) {
         if (lbl) lbl.textContent = newExchange;
         const v = calcCostPerPax(
             row.dataset.value, row.dataset.fcu, row.dataset.tax,
-            row.dataset.rateIncrease, false, newExchange, parseInt(row.dataset.pax)
+            row.dataset.increase || 0, false, newExchange, parseInt(row.dataset.pax)
         );
         row.querySelector('.cost-per-pax-val').textContent = `$${v}/pax`;
     });
@@ -1108,10 +1158,11 @@ document.querySelectorAll('.ci-edit-usd').forEach(cb => {
 
 document.querySelectorAll('.save-ci-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-        const id          = btn.dataset.ciId;
-        const pax         = parseInt(btn.dataset.pax);
-        const rateIncrease = parseFloat(btn.dataset.rateIncrease) || 0;
-        const usd         = document.getElementById(`ci_edit_usd_${id}`).checked;
+        const id       = btn.dataset.ciId;
+        const pax      = parseInt(btn.dataset.pax);
+        const usd      = document.getElementById(`ci_edit_usd_${id}`).checked;
+        const increase = parseFloat(document.getElementById(`ci_edit_increase_${id}`)?.value) || 0;
+        const code     = document.getElementById(`ci_edit_code_${id}`)?.value.trim() || '';
         const body = {
             id      : parseInt(id),
             name    : document.getElementById(`ci_edit_name_${id}`).value.trim(),
@@ -1120,29 +1171,77 @@ document.querySelectorAll('.save-ci-btn').forEach(btn => {
             tax     : document.getElementById(`ci_edit_tax_${id}`).value,
             usd     : usd,
             exchange: parseInt(document.getElementById(`ci_edit_exchange_${id}`)?.value) || 1,
+            increase: increase,
+            code    : code,
         };
         await postJSON('{% url "update_cost_item" %}', body);
 
         // Update data-attributes on view row
-        const viewRow = document.querySelector(`.ci-cost-row[data-ci-id="${id}"]`);
-        Object.assign(viewRow.dataset, {
-            value: body.value, fcu: body.fcu, tax: body.tax,
-            usd: usd ? 'true' : 'false', exchange: body.exchange,
-        });
+        const viewRow    = document.querySelector(`.ci-cost-row[data-ci-id="${id}"]`);
+        const originalName = viewRow.dataset.ciName;  // capture before rename
 
-        // Recalculate and update cost display
-        const v = calcCostPerPax(body.value, body.fcu, body.tax, rateIncrease, usd, body.exchange, pax);
-        viewRow.querySelector('.cost-per-pax-val').textContent = `$${v}/pax`;
+        function applyToRow(row, rowPax) {
+            Object.assign(row.dataset, {
+                ciName: body.name,
+                value: String(body.value), fcu: body.fcu, tax: body.tax,
+                usd: usd ? 'true' : 'false', exchange: String(body.exchange),
+                increase: String(increase),
+            });
+            // Name
+            const nameEl = row.querySelector('strong');
+            if (nameEl) nameEl.textContent = body.name;
+            // Exchange label
+            const exchLbl = row.querySelector('.ci-exchange-lbl');
+            if (exchLbl) exchLbl.textContent = body.exchange;
+            // Increase label
+            const incLbl = row.querySelector('.ci-increase-lbl');
+            if (incLbl) incLbl.textContent = increase;
+            // Code label
+            const codeLbl = row.querySelector('.ci-code-lbl');
+            if (codeLbl) codeLbl.textContent = code;
+            // Recalculate cost per pax for this row's base
+            const newCost = calcCostPerPax(body.value, body.fcu, body.tax, increase, usd, body.exchange, rowPax);
+            row.querySelector('.cost-per-pax-val').textContent = `$${newCost}/pax`;
+        }
 
-        // Update label text
-        const exchangeLbl = viewRow.querySelector('.ci-exchange-lbl');
-        if (exchangeLbl) exchangeLbl.textContent = body.exchange;
+        function applyEditInputs(sibCiId) {
+            const eRow = document.querySelector(`.ci-edit-row[data-ci-edit="${sibCiId}"]`);
+            if (!eRow) return;
+            const f = (sel, val) => { const el = eRow.querySelector(sel); if (el) el.value = val; };
+            const fc = (sel, val) => { const el = eRow.querySelector(sel); if (el) el.checked = val; };
+            f(`#ci_edit_name_${sibCiId}`,     body.name);
+            f(`#ci_edit_value_${sibCiId}`,    body.value);
+            f(`#ci_edit_fcu_${sibCiId}`,      body.fcu);
+            f(`#ci_edit_tax_${sibCiId}`,      body.tax);
+            f(`#ci_edit_exchange_${sibCiId}`, body.exchange);
+            f(`#ci_edit_increase_${sibCiId}`, increase);
+            f(`#ci_edit_code_${sibCiId}`,     code);
+            fc(`#ci_edit_usd_${sibCiId}`,     usd);
+        }
+
+        // Update the edited row itself
+        applyToRow(viewRow, pax);
+        applyEditInputs(id);
+
+        // Update sibling rows (same CI name, same rate line = same collapse div)
+        const lineCollapse = viewRow.closest('.collapse');
+        if (lineCollapse) {
+            lineCollapse.querySelectorAll('.ci-cost-row').forEach(sibRow => {
+                if (sibRow === viewRow) return;
+                if (sibRow.dataset.ciName !== originalName) return;
+                const sibPax   = parseInt(sibRow.dataset.pax);
+                const sibCiId  = sibRow.dataset.ciId;
+                applyToRow(sibRow, sibPax);
+                applyEditInputs(sibCiId);
+                refreshBaseCostTotal(sibRow.dataset.rateId);
+            });
+        }
 
         // Swap back to view row
         document.querySelector(`.ci-edit-row[data-ci-edit="${id}"]`).classList.add('d-none');
         viewRow.classList.remove('d-none');
 
-        // Refresh the base total if items control the cost cell
+        // Refresh the base total for the edited base
         refreshBaseCostTotal(viewRow.dataset.rateId);
     });
 });
@@ -1157,6 +1256,38 @@ async function postJSON(url, body) {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
 }
+
+// ─── Lock/unlock base ─────────────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    const badge = e.target.closest('.rate-lock-badge');
+    if (!badge || !badge.dataset.rateId) return;
+    postJSON("{% url 'toggle_rate_lock' %}", {rate_id: badge.dataset.rateId})
+    .then(data => {
+        if (!data.ok) return;
+        const row = badge.closest('tr');
+        const locked = data.locked;
+        row.classList.toggle('locked-base-row', locked);
+        badge.classList.toggle('bg-dark', !locked);
+        badge.classList.toggle('bg-danger', locked);
+        badge.title = locked ? 'Desbloquear base' : 'Bloquear base';
+        let icon = badge.querySelector('.fa-lock');
+        if (locked && !icon) {
+            const i = document.createElement('i');
+            i.className = 'fa-solid fa-lock';
+            i.style.fontSize = '0.75rem';
+            badge.appendChild(document.createTextNode(' '));
+            badge.appendChild(i);
+        } else if (!locked && icon) {
+            icon.previousSibling?.nodeType === 3 && icon.previousSibling.remove();
+            icon.remove();
+        }
+    });
+});
 </script>
+
+<style>
+.locked-base-row td { background-color: #f3f4f6 !important; color: #6b7280; }
+.locked-base-row { border-left: 3px solid #dc2626 !important; }
+</style>
 
 {% endblock %}

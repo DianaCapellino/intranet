@@ -228,7 +228,7 @@
                                                         </div>
                                                         <div class="mb-3 p-2 col">
                                                             <br>
-                                                            <button id="modify_password{{user.id}}" class="btn btn-dark" disabled>CAMBIAR CONTRASEÑA</button>
+                                                            <button type="button" class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#windowChangePassword{{ user.id }}">CAMBIAR CONTRASEÑA</button>
                                                         </div>
                                                     </div>
                                                     <div class="row modify-client-row-{{ user.id }}{% if user.userType != 'Cliente' %} d-none{% endif %}">
@@ -262,6 +262,29 @@
                                             <div class="container text-center">
                                                 <button id="delete-user-{{ user.id }}" class="btn btn-dark btn-lg delete-users-btn">ELIMINAR</button></a>
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal fade" id="windowChangePassword{{ user.id }}" tabindex="-1" aria-labelledby="labelChangePassword{{ user.id }}">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h1 class="modal-title fs-8" id="labelChangePassword{{ user.id }}">Cambiar contraseña — {{ user.other_name }}</h1>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <p>¿Está seguro que desea cambiar la contraseña de <strong>{{ user.other_name }}</strong>?</p>
+                                            <form action="{% url 'change_password_user' user.id %}" method="post">
+                                                {% csrf_token %}
+                                                <div class="mb-3">
+                                                    <label for="new_password_{{ user.id }}" class="form-label">Nueva contraseña</label>
+                                                    <input type="password" class="form-control" id="new_password_{{ user.id }}" name="new_password" required minlength="6">
+                                                </div>
+                                                <div class="text-center">
+                                                    <button type="submit" class="btn btn-dark">CAMBIAR CONTRASEÑA</button>
+                                                </div>
+                                            </form>
                                         </div>
                                     </div>
                                 </div>

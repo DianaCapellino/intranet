@@ -30,7 +30,7 @@ def index(request):
     this_year = date.today().year
 
     pending_suppliers = []
-    if request.user.isAdmin:
+    if request.user.userType != "Cliente":
         from django.db.models import Count
         pending_suppliers = (
             Supplier.objects
@@ -140,6 +140,9 @@ def get_filtered_rate_lines(request):
         costs = {}
         provisional_columns = set()
 
+        rate_meta = {}
+        locked_columns = set()
+
         for r in line.line_rates.all():
             if is_client and r.status != "Confirmed" and not r.rate_line.is_revised:
                 continue
@@ -152,12 +155,20 @@ def get_filtered_rate_lines(request):
 
             rates[r.column_options] = sell_adjusted
             costs[r.column_options] = r.cost
+            rate_meta[r.column_options] = {'id': r.id, 'locked': r.locked}
             if r.status == "Provisional":
                 provisional_columns.add(r.column_options)
+            if r.locked:
+                locked_columns.add(r.column_options)
 
         line.rates_by_column = rates
         line.costs_by_column = costs
+        line.rate_ids_by_column = {col: m['id'] for col, m in rate_meta.items()}
+        line.locked_columns = locked_columns
         line.provisional_columns = provisional_columns
+        # Representative increase for this rate line (all rates share the same value)
+        first_rate = next((r for r in line.line_rates.all() if r.increase is not None), None)
+        line.increase = first_rate.increase if first_rate else None
 
     return rate_lines, t_type, is_client
 
@@ -543,35 +554,75 @@ def apply_changes(request):
     """
     Receives { confirmed: [...], ignored_ids: [...] }
     Applies confirmed items and removes both confirmed + ignored from session.
+    Returns JSON with a detailed result for client-side display.
     """
-    if request.method == "POST":
-        try:
-            body = json.loads(request.body)
-            confirmed    = body.get("confirmed", [])
-            ignored_ids  = set(body.get("ignored_ids", []))
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
 
-            if confirmed:
+    try:
+        body        = json.loads(request.body)
+        confirmed   = body.get("confirmed", [])
+        ignored_ids = set(body.get("ignored_ids", []))
+
+        result = {
+            "saved":   0,
+            "updates": 0,
+            "adds":    0,
+            "deletes": 0,
+            "ignored": len(ignored_ids),
+            "details": [],
+            "error":   None,
+        }
+
+        if confirmed:
+            try:
                 apply_confirmed_changes(confirmed)
-                n = len(confirmed)
-                messages.success(request, f"Se guardaron <strong>{n}</strong> cambio{'s' if n != 1 else ''} correctamente.")
+            except Exception as e:
+                logger.exception("apply_confirmed_changes failed: %s", e)
+                return JsonResponse({"error": str(e), "saved": 0, "details": [], "ignored": len(ignored_ids)}, status=500)
 
-            # Remove processed items (confirmed + ignored) from session
-            confirmed_ids = {item["_id"] for item in confirmed}
-            removed_ids   = confirmed_ids | ignored_ids
+            # Count AFTER successful save
+            for item in confirmed:
+                action = item.get("action", "")
+                if action in ("Update", "UpdateCI"):
+                    result["updates"] += 1
+                elif action == "Add":
+                    result["adds"] += 1
+                elif action == "Delete":
+                    result["deletes"] += 1
+                result["details"].append({
+                    "action":       action,
+                    "product_name": item.get("product_name", "?"),
+                    "date_from":    item.get("date_from", ""),
+                    "date_to":      item.get("date_to", ""),
+                    "column":       item.get("column_options", ""),
+                    "sell":         item.get("sell"),
+                    "cost":         item.get("cost"),
+                })
+            result["saved"] = len(confirmed)
+            logger.info(
+                "apply_changes OK: saved=%d updates=%d adds=%d deletes=%d",
+                result["saved"], result["updates"], result["adds"], result["deletes"],
+            )
 
-            pending = request.session.get("pending_changes", [])
-            remaining = [item for item in pending if item.get("_id") not in removed_ids]
+        # Remove processed items from session
+        confirmed_ids = {item["_id"] for item in confirmed}
+        removed_ids   = confirmed_ids | ignored_ids
 
-            if remaining:
-                request.session["pending_changes"] = remaining
-                request.session.modified = True
-            else:
-                request.session.pop("pending_changes", None)
+        pending   = request.session.get("pending_changes", [])
+        remaining = [item for item in pending if item.get("_id") not in removed_ids]
 
-        except (json.JSONDecodeError, KeyError) as e:
-            messages.error(request, f"Error al aplicar los cambios: {e}")
+        if remaining:
+            request.session["pending_changes"] = remaining
+            request.session.modified = True
+        else:
+            request.session.pop("pending_changes", None)
 
-    return HttpResponseRedirect(reverse("tp_mod_list"))
+        return JsonResponse(result)
+
+    except Exception as e:
+        logger.exception("apply_changes error: %s", e)
+        return JsonResponse({"error": str(e), "saved": 0, "details": []}, status=500)
 
 
 def discard_changes(request):
@@ -888,7 +939,7 @@ def upload_data(csv_obj):
                         "product_code":    ctx_product.code,
                         "product_name":    str(ctx_product),
                         "product_id":      ctx_product.pk,
-                        "rate_group_name": "Standard",
+                        "rate_group_name": "Breakfast included",
                         "price_code":      ctx_price_code,
                         "date_from":       ctx_date_from,
                         "date_to":         ctx_date_to,
@@ -945,6 +996,8 @@ def upload_data(csv_obj):
                     ).first()
 
                     if existing_rate:
+                        if existing_rate.locked:
+                            continue
                         if existing_rate.sell_tourplan != sell_tourplan:
                             entry = {
                                 "action":                "Update",
@@ -1075,8 +1128,7 @@ def upload_data(csv_obj):
             })
             next_id += 1
 
-    csv_obj.read = True
-    csv_obj.save()
+    csv_obj.file_name.delete(save=False)
     csv_obj.delete()
 
     return result, stats
@@ -1201,7 +1253,7 @@ def upload_data_services(csv_obj):
                     ctx_date_to = ctx_date_to_db = None
 
             # ---- validate context
-            if not ctx_product or not ctx_supplier_obj:
+            if not ctx_supplier_obj:
                 continue
             if not ctx_date_from_db or not ctx_date_to_db:
                 continue
@@ -1210,13 +1262,13 @@ def upload_data_services(csv_obj):
             if not ctx_fcu:
                 continue
 
-            # ---- col 16: either a CostItem service name or a PXB band
+            # ---- col 16: either a CostItem service name/code or a PXB band
             if not c16:
                 continue
             m = _PXB_RE.search(c16)
 
             if not m:
-                # ── Service name row → update matching CostItems across all bases ──
+                # ── Service name/code row → update matching CostItems across all bases ──
                 ctx_service_desc = c16
                 raw_svc = c20.replace("\xa0", "").replace(" ", "")
                 if not raw_svc or set(raw_svc) <= {"-"}:
@@ -1231,100 +1283,124 @@ def upload_data_services(csv_obj):
                 if not svc_margin or svc_margin == 0:
                     continue
 
-                csv_products_seen.add(ctx_product.pk)
-                csv_product_dates.add((ctx_product.pk, ctx_date_from_db, ctx_date_to_db))
+                def _process_ci_match(matching_ci, rate, rate_group, product):
+                    """Build and register an update entry for one CI match."""
+                    try:
+                        base = int(rate.column_options)
+                    except (ValueError, TypeError):
+                        return
+                    new_ci_value = svc_cost
+                    if round(new_ci_value, 2) == round(matching_ci.value, 2):
+                        stats["up_to_date"] += 1
+                        return
+                    new_rate_cost = round(sum(
+                        new_ci_value if ci.pk == matching_ci.pk else ci.value
+                        for ci in rate.cost_items.all()
+                    ), 2)
+                    per_base_cost = (
+                        round(new_rate_cost / base, 2)
+                        if matching_ci.fcu == "Group" else new_rate_cost
+                    )
+                    new_sell_tp = math.ceil(per_base_cost / svc_margin)
+                    dedup_key = (product.pk, ctx_date_from_db, ctx_date_to_db,
+                                 rate.column_options, rate_group.pk)
+                    entry = {
+                        "action":                "UpdateCI",
+                        "has_items":             True,
+                        "ci_id":                 matching_ci.pk,
+                        "ci_name":               matching_ci.name,
+                        "ci_value":              new_ci_value,
+                        "ci_fcu":                matching_ci.fcu,
+                        "base":                  base,
+                        "new_rate_cost":         new_rate_cost,
+                        "current_cost":          round(matching_ci.value, 2),
+                        "current_sell_tourplan": rate.sell_tourplan,
+                        "current_sell":          rate.sell,
+                        "rate_id":               rate.pk,
+                        "rate_group_id":         None,
+                        "sell_tourplan":         new_sell_tp,
+                        "sell":                  rate.sell,
+                        "cost":                  new_rate_cost,
+                        "product_code":          product.code,
+                        "product_name":          str(product),
+                        "product_id":            product.pk,
+                        "price_code":            None,
+                        "date_from":             ctx_date_from,
+                        "date_to":               ctx_date_to,
+                        "column_options":        rate.column_options,
+                        "fcu":                   ctx_fcu,
+                        "status":                ctx_status,
+                        "margin":                svc_margin,
+                        "margin_info":           svc_margin_info,
+                        "rate_group_name":       rate_group.name,
+                        "season":                rate_line.season,
+                    }
+                    if dedup_key in result_index:
+                        idx = result_index[dedup_key]
+                        entry["_id"] = result[idx]["_id"]
+                        result[idx] = entry
+                    else:
+                        entry["_id"] = stats["rows_read"]
+                        stats["rows_read"] += 1
+                        stats["to_update"] += 1
+                        result_index[dedup_key] = len(result)
+                        result.append(entry)
 
-                for rate_group in RateGroup.objects.filter(product=ctx_product).order_by("order"):
-                    rate_line = RateLine.objects.filter(
-                        group=rate_group,
-                        date_from=ctx_date_from_db,
-                        date_to=ctx_date_to_db,
-                    ).first()
-                    if not rate_line:
-                        continue
+                if ctx_product:
+                    # ── Product matched: search within product's rates ──────────
+                    csv_products_seen.add(ctx_product.pk)
+                    csv_product_dates.add((ctx_product.pk, ctx_date_from_db, ctx_date_to_db))
 
-                    for rate in Rate.objects.prefetch_related("cost_items").filter(
-                        rate_line=rate_line, has_items=True
+                    for rate_group in RateGroup.objects.filter(product=ctx_product).order_by("order"):
+                        rate_line = RateLine.objects.filter(
+                            group=rate_group,
+                            date_from=ctx_date_from_db,
+                            date_to=ctx_date_to_db,
+                        ).first()
+                        if not rate_line:
+                            continue
+
+                        for rate in Rate.objects.prefetch_related("cost_items").filter(
+                            rate_line=rate_line, has_items=True
+                        ):
+                            # Match by name first, then by code
+                            matching_ci = next(
+                                (ci for ci in rate.cost_items.all()
+                                 if ci.name.strip() == c16.strip()
+                                 or (ci.code and ci.code.strip() == c16.strip())),
+                                None,
+                            )
+                            if matching_ci:
+                                _process_ci_match(matching_ci, rate, rate_group, ctx_product)
+
+                else:
+                    # ── No product match: search by CI code across supplier's rates ──
+                    for matching_ci in (
+                        CostItem.objects
+                        .filter(
+                            code=c16.strip(),
+                            rate__rate_line__group__product__supplier=ctx_supplier_obj,
+                            rate__rate_line__date_from=ctx_date_from_db,
+                            rate__rate_line__date_to=ctx_date_to_db,
+                            rate__has_items=True,
+                        )
+                        .select_related(
+                            'rate__rate_line__group__product',
+                            'rate__rate_line__group',
+                        )
+                        .prefetch_related('rate__cost_items')
                     ):
-                        try:
-                            base = int(rate.column_options)
-                        except (ValueError, TypeError):
-                            continue
+                        rate       = matching_ci.rate
+                        rate_line  = rate.rate_line
+                        rate_group = rate_line.group
+                        product    = rate_group.product
+                        _process_ci_match(matching_ci, rate, rate_group, product)
 
-                        matching_ci = next(
-                            (ci for ci in rate.cost_items.all()
-                             if ci.name.strip() == c16.strip()),
-                            None,
-                        )
-                        if not matching_ci:
-                            continue
-
-                        # Store raw svc_cost in CostItem (no base division here).
-                        # sell_tourplan divides by base for Group fcu.
-                        new_ci_value = svc_cost
-
-                        dedup_key = (ctx_product.pk, ctx_date_from_db, ctx_date_to_db,
-                                     rate.column_options, rate_group.pk)
-
-                        if round(new_ci_value, 2) == round(matching_ci.value, 2):
-                            stats["up_to_date"] += 1
-                            continue
-
-                        new_rate_cost = round(sum(
-                            new_ci_value if ci.pk == matching_ci.pk else ci.value
-                            for ci in rate.cost_items.all()
-                        ), 2)
-                        # Divide by base for Group fcu when computing sell price
-                        per_base_cost = (
-                            round(new_rate_cost / base, 2)
-                            if matching_ci.fcu == "Group" else new_rate_cost
-                        )
-                        new_sell_tp = math.ceil(per_base_cost / svc_margin)
-
-                        entry = {
-                            "action":                "Update",
-                            "has_items":             True,
-                            "ci_id":                 matching_ci.pk,
-                            "ci_name":               matching_ci.name,
-                            "ci_value":              new_ci_value,
-                            "ci_fcu":                matching_ci.fcu,
-                            "base":                  base,
-                            "new_rate_cost":         new_rate_cost,
-                            "current_cost":          round(matching_ci.value, 2),
-                            "current_sell_tourplan": rate.sell_tourplan,
-                            "current_sell":          rate.sell,
-                            "rate_id":               rate.pk,
-                            "rate_group_id":         None,
-                            "sell_tourplan":         new_sell_tp,
-                            "sell":                  rate.sell,
-                            "cost":                  new_rate_cost,
-                            "product_code":          ctx_product.code,
-                            "product_name":          str(ctx_product),
-                            "product_id":            ctx_product.pk,
-                            "price_code":            None,
-                            "date_from":             ctx_date_from,
-                            "date_to":               ctx_date_to,
-                            "column_options":        rate.column_options,
-                            "fcu":                   ctx_fcu,
-                            "status":                ctx_status,
-                            "margin":                svc_margin,
-                            "margin_info":           svc_margin_info,
-                            "rate_group_name":       rate_group.name,
-                            "season":                rate_line.season,
-                        }
-                        if dedup_key in result_index:
-                            idx = result_index[dedup_key]
-                            entry["_id"] = result[idx]["_id"]
-                            result[idx] = entry
-                        else:
-                            entry["_id"] = stats["rows_read"]
-                            stats["rows_read"] += 1
-                            stats["to_update"] += 1
-                            result_index[dedup_key] = len(result)
-                            result.append(entry)
-                continue  # done with this service name row
+                continue  # done with this service name/code row
 
             # ── PXB band row → update non-has_items rates (sell_tourplan) ──────
+            if not ctx_product:
+                continue
             band_min = int(m.group(2))
             band_max = int(m.group(3))
             if band_min > 6:
@@ -1369,7 +1445,7 @@ def upload_data_services(csv_obj):
                             "product_code":          ctx_product.code,
                             "product_name":          str(ctx_product),
                             "product_id":            ctx_product.pk,
-                            "rate_group_name":       "Standard",
+                            "rate_group_name":       "Breakfast included",
                             "price_code":            None,
                             "date_from":             ctx_date_from,
                             "date_to":               ctx_date_to,
@@ -1411,6 +1487,8 @@ def upload_data_services(csv_obj):
                         )
 
                         if existing_rate:
+                            if existing_rate.locked:
+                                continue
                             if existing_rate.has_items:
                                 # Find the parent CostItem (code == product code)
                                 parent_ci = next(
@@ -1598,8 +1676,7 @@ def upload_data_services(csv_obj):
             })
             next_id += 1
 
-    csv_obj.read = True
-    csv_obj.save()
+    csv_obj.file_name.delete(save=False)
     csv_obj.delete()
 
     return result, stats
@@ -1611,7 +1688,7 @@ def apply_confirmed_changes(confirmed_items):
     rate_ids_to_update = [
         item["rate_id"]
         for item in confirmed_items
-        if item.get("action") == "Update" and item.get("rate_id")
+        if item.get("action") in ("Update", "UpdateCI") and item.get("rate_id")
     ]
     rateline_data = {}
     if rate_ids_to_update:
@@ -1661,7 +1738,7 @@ def apply_confirmed_changes(confirmed_items):
         status      = item.get("status") or "Confirmed"
         margin_info = item.get("margin_info") or ""
 
-        if action == "Update":
+        if action in ("Update", "UpdateCI"):
             if item.get("has_items"):
                 # Update the CI value, then recalculate Rate.cost and
                 # sell_tourplan from the real DB sum of all CostItems.
@@ -1698,7 +1775,14 @@ def apply_confirmed_changes(confirmed_items):
                 }
                 if margin_info:
                     update_fields["margin"] = margin_info
-                Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
+                n_updated = Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
+                logger.info(
+                    "Update: Rate id=%s rows_updated=%s col=%s cost=%s sell_tp=%s product=%s",
+                    item["rate_id"], n_updated, item.get("column_options"),
+                    cost, sell_tourplan, item.get("product_name"),
+                )
+                if n_updated == 0:
+                    logger.warning("Update: Rate id=%s NOT FOUND in DB", item["rate_id"])
                 if status == "Provisional":
                     try:
                         rl_id = Rate.objects.get(pk=item["rate_id"]).rate_line_id
@@ -1709,16 +1793,24 @@ def apply_confirmed_changes(confirmed_items):
         elif action == "Add":
             rate_group_id = item.get("rate_group_id")
             if not rate_group_id:
-                # Brand-new product: create the RateGroup first
                 product_id = item.get("product_id")
                 if not product_id:
+                    logger.warning("Add: skipped — no rate_group_id and no product_id. item=%s", item.get("product_name"))
                     continue
-                rg_name = item.get("rate_group_name") or "Standard"
-                rate_group_obj, _ = RateGroup.objects.get_or_create(
-                    product_id=product_id,
-                    name=rg_name,
-                    defaults={"order": 1},
-                )
+                # Use existing rate group if the product already has one
+                existing_rg = RateGroup.objects.filter(product_id=product_id).order_by("order").first()
+                if existing_rg:
+                    rate_group_obj = existing_rg
+                    rg_created = False
+                    logger.info("Add: using existing RateGroup '%s' (id=%s) for product_id=%s", existing_rg.name, existing_rg.pk, product_id)
+                else:
+                    rg_name = item.get("rate_group_name") or "Breakfast included"
+                    rate_group_obj, rg_created = RateGroup.objects.get_or_create(
+                        product_id=product_id,
+                        name=rg_name,
+                        defaults={"order": 1},
+                    )
+                    logger.info("Add: RateGroup '%s' (created=%s) for product_id=%s", rg_name, rg_created, product_id)
                 rate_group_id = rate_group_obj.pk
             date_from = datetime.strptime(item["date_from"], "%d/%m/%Y").date()
             date_to   = datetime.strptime(item["date_to"],   "%d/%m/%Y").date()
@@ -1728,8 +1820,12 @@ def apply_confirmed_changes(confirmed_items):
                 date_to=date_to,
                 defaults={
                     "season":     item.get("season") or "To be defined",
-                    "is_revised": status != "Confirmed",  # Confirmed → needs review
+                    "is_revised": False,
                 },
+            )
+            logger.info(
+                "Add: RateLine id=%s (created=%s) group_id=%s %s→%s",
+                rate_line.id, rl_created, rate_group_id, date_from, date_to,
             )
             # Resolve margin_info from DB if not present in session item (old data)
             if not margin_info:
@@ -1737,7 +1833,7 @@ def apply_confirmed_changes(confirmed_items):
                     margin_info = rate_line.group.product.supplier.margin_info
                 except Exception:
                     margin_info = ""
-            Rate.objects.get_or_create(
+            rate_obj, rate_created = Rate.objects.get_or_create(
                 rate_line=rate_line,
                 column_options=item["column_options"],
                 defaults={
@@ -1749,6 +1845,16 @@ def apply_confirmed_changes(confirmed_items):
                     "has_rate":      True,
                 },
             )
+            logger.info(
+                "Add: Rate id=%s (created=%s) col=%s cost=%s sell_tp=%s sell=%s product=%s",
+                rate_obj.id, rate_created, item["column_options"],
+                cost, sell_tourplan, sell, item.get("product_name"),
+            )
+            if not rate_created:
+                logger.warning(
+                    "Add: Rate already existed (id=%s) — NOT updated. col=%s %s→%s product=%s",
+                    rate_obj.id, item["column_options"], date_from, date_to, item.get("product_name"),
+                )
             # Deduplicate by rate_line id
             if not any(rl.id == rate_line.id for rl, _ in added_rate_lines):
                 product_id = rate_line.group.product_id
