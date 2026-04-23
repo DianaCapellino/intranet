@@ -72,6 +72,7 @@ def get_filtered_rate_lines(request):
             .prefetch_related("line_rates")
             .order_by(
                 "group__product__supplier__group__order",
+                "group__product__supplier__order",
                 "group__product__supplier__id",
                 "group__product__group__order",
                 "date_from",
@@ -120,7 +121,7 @@ def get_filtered_rate_lines(request):
 
     if client_id:
         client = Client.objects.get(id=client_id)
-        rate_lines = rate_lines.filter(group__product__clients__id=client_id)
+        rate_lines = rate_lines.filter(group__product__clients__id=client_id).distinct()
     else:
         client = getattr(request.user, 'client', None)
         if client is None:
@@ -129,7 +130,7 @@ def get_filtered_rate_lines(request):
             except Client.DoesNotExist:
                 client = None
         if client:
-            rate_lines = rate_lines.filter(group__product__clients__id=client.id)
+            rate_lines = rate_lines.filter(group__product__clients__id=client.id).distinct()
         else:
             rate_lines = rate_lines.none()
 
@@ -652,6 +653,17 @@ def mark_rate_line_revised(request, line_id):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     updated = RateLine.objects.filter(pk=line_id).update(is_revised=True)
+    return JsonResponse({'ok': bool(updated)})
+
+
+@login_required
+def mark_rate_line_unrevised(request, line_id):
+    """Mark a RateLine as pending review (is_revised=False). Admin users only."""
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    updated = RateLine.objects.filter(pk=line_id).update(is_revised=False)
     return JsonResponse({'ok': bool(updated)})
 
 
@@ -1729,6 +1741,7 @@ def apply_confirmed_changes(confirmed_items):
     added_rate_lines = []   # (RateLine instance, product_id)
     provisional_rateline_ids       = set()   # skip Change for Update
     provisional_added_rateline_ids = set()   # skip Change for Add
+    updated_rate_ids = set()                 # para marcar ratelines como pendientes
 
     for item in confirmed_items:
         action        = item.get("action")
@@ -1766,6 +1779,7 @@ def apply_confirmed_changes(confirmed_items):
                     cost=recalc_cost,
                     sell_tourplan=recalc_sell_tp,
                 )
+                updated_rate_ids.add(item["rate_id"])
             else:
                 update_fields = {
                     "cost":          cost,
@@ -1776,6 +1790,7 @@ def apply_confirmed_changes(confirmed_items):
                 if margin_info:
                     update_fields["margin"] = margin_info
                 n_updated = Rate.objects.filter(pk=item["rate_id"]).update(**update_fields)
+                updated_rate_ids.add(item["rate_id"])
                 logger.info(
                     "Update: Rate id=%s rows_updated=%s col=%s cost=%s sell_tp=%s product=%s",
                     item["rate_id"], n_updated, item.get("column_options"),
@@ -1866,6 +1881,12 @@ def apply_confirmed_changes(confirmed_items):
             rate_line_id = item.get("rate_line_id")
             if rate_line_id:
                 RateLine.objects.filter(pk=rate_line_id).delete()
+
+    # Marcar como pendientes de revisión las ratelines afectadas por Update
+    if updated_rate_ids:
+        RateLine.objects.filter(
+            line_rates__id__in=updated_rate_ids
+        ).update(is_revised=False)
 
     # ── Paso 3a: Change para Update ──────────────────────────────────────
     for rl_id, data_rl in rateline_data.items():

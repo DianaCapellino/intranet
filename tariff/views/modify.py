@@ -743,6 +743,7 @@ def modify_supplier_rates(request, supplier_id):
             "season": season,
             "lines": sorted_lines,
             "margin": supplier.margin,
+            "margin_info": first_rate.margin if first_rate else "Regular",
             "increase": first_rate.increase if first_rate and first_rate.increase is not None else 0,
             "status": first_rate.status if first_rate else "Confirmed",
         })
@@ -994,6 +995,8 @@ def update_rate_block(request):
                     rate_update_kwargs["increase"] = float(data["increase"])
                 except (ValueError, TypeError):
                     pass
+            if "margin_info" in data and data["margin_info"] in ("Low", "Regular", "High"):
+                rate_update_kwargs["margin"] = data["margin_info"]
             if rate_update_kwargs:
                 Rate.objects.filter(rate_line_id__in=data["rateline_ids"]).update(**rate_update_kwargs)
 

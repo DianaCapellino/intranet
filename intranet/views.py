@@ -45,7 +45,7 @@ def index (request):
         trips = Trip.objects.filter(status="Booking").filter(operations_user=request.user).order_by('travelling_date')
     else:
         trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
-    
+
     # Quantity of files starting in 1 for arriving
     q_files = 1
 
@@ -115,7 +115,7 @@ def login_view (request):
             })
     else:
         return render(request, "intranet/login.html")
-    
+
 @login_required
 def logout_view(request):
     logout(request)
@@ -161,7 +161,7 @@ def get_filtered_trips(user):
 
         filter_trips = tourplan_ref_trips
         status_trips = []
- 
+
     # Filter applied when there is no search
     else:
         dep_trips = Trip.objects.filter(department=user.department)
@@ -187,7 +187,7 @@ def advanced_search(request):
     to_date_iso = to_date.strftime("%Y-%m-%d")
 
     if request.method == "POST":
-        
+
         # Delete previous search/s
         previous_search = Search.objects.filter(user=request.user)
         previous_search.delete()
@@ -229,7 +229,7 @@ def advanced_search(request):
             for operations_user_id in operations_user_form:
                 operations_user = User.objects.get(id=operations_user_id)
                 search.operations_user.add(operations_user)
-        
+
         search.save()
 
         return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
@@ -264,13 +264,13 @@ def create_country(request):
                 "message": "Todos los campos deben ser completados",
                 "countries": Country.objects.all(),
             })
-        
+
         if len(code) != 2:
             return render(request, "intranet/countries.html", {
                 "message": "El código del país debe tener 2 caracteres",
                 "countries": Country.objects.all(),
             })
-        
+
         # Creates the model of the country from the form information
         new_country = Country.objects.create(
             name=name,
@@ -282,13 +282,13 @@ def create_country(request):
             "countries": Country.objects.all(),
         })
 
-    
+
     # If method is GET it displays the form to add new country
     else:
         return render(request, "intranet/countries.html", {
             "countries": Country.objects.all()
         })
-    
+
 @login_required
 def create_client(request):
 
@@ -309,9 +309,9 @@ def create_client(request):
                 "categories": CLIENT_CATEGORIES,
                 "departments": DEPARTMENTS,
             })
-        
+
         # Defines the department as the user department
-        department = request.user.department        
+        department = request.user.department
 
         # Get the country from the country ID of the form
         country = Country.objects.get(id=country_form)
@@ -331,7 +331,7 @@ def create_client(request):
             "categories": CLIENT_CATEGORIES,
             "departments": DEPARTMENTS,
         })
-    
+
     # If method is GET it displays the form to add new client
     else:
         return render(request, "intranet/clients.html", {
@@ -340,7 +340,7 @@ def create_client(request):
             "categories": CLIENT_CATEGORIES,
             "departments": DEPARTMENTS,
         })
-    
+
 
 @login_required
 def create_client_contact(request):
@@ -358,7 +358,7 @@ def create_client_contact(request):
                 "clients": Client.objects.all(),
                 "contacts": ClientContact.objects.all()
             })
-        
+
         # Get the client from the client ID of the form
         client = Client.objects.get(id=client_form)
 
@@ -380,7 +380,7 @@ def create_client_contact(request):
             "clients": Client.objects.all(),
             "contacts": ClientContact.objects.all()
         })
-    
+
 
 @login_required
 def create_user(request):
@@ -394,7 +394,7 @@ def create_user(request):
         password = request.POST["password"]
         department = request.POST["department"]
         type = request.POST["type"]
-        
+
         try:
             isAdmin = request.POST['admin']
         except MultiValueDictKeyError:
@@ -411,7 +411,7 @@ def create_user(request):
                 "user_types": USER_TYPES,
                 "users": User.objects.all()
             })
-        
+
         if len(username) < 2 or len(username) > 3:
             return render(request, "intranet/users.html", {
                 "message_new": "El usuario debe tener entre 2 y 3 caracteres",
@@ -466,13 +466,13 @@ def create_user(request):
             "users": User.objects.all(),
             "clients": Client.objects.order_by("name"),
         })
-    
+
 @login_required
 def modify_user(request, user_id):
 
     # Gets the object of the user modifying
-    user = User.objects.get(id=user_id) 
-    
+    user = User.objects.get(id=user_id)
+
     # Gets the information from the form
     if request.method == "POST":
         # Attempt to modify user
@@ -482,7 +482,7 @@ def modify_user(request, user_id):
         email = request.POST["email"]
         department = request.POST["department"]
         type = request.POST["type"]
-                
+
         try:
             isAdmin = request.POST['admin']
         except MultiValueDictKeyError:
@@ -511,7 +511,7 @@ def modify_user(request, user_id):
             color = request.POST['color']
         except MultiValueDictKeyError:
             color = "#000000"
-        
+
         # Validations
         if not name or not email or not username or not department or not type:
             return render(request, "intranet/users.html", {
@@ -520,7 +520,7 @@ def modify_user(request, user_id):
                 "user_types": USER_TYPES,
                 "users": User.objects.all()
             })
-        
+
         if len(username) < 2 or len(username) > 3:
             return render(request, "intranet/users.html", {
                 "message_modify": "El usuario debe tener entre 2 y 3 caracteres",
@@ -554,7 +554,7 @@ def modify_user(request, user_id):
             "users": User.objects.all(),
             "clients": Client.objects.order_by("name"),
         })
-    
+
 
 @login_required
 def change_password_user(request, user_id):
@@ -577,7 +577,7 @@ def modify_client(request, client_id):
 
     # Gets the object of the client modifying
     client = Client.objects.get(id=client_id)
-    
+
     # Gets the information from the form
     if request.method == "POST":
 
@@ -604,7 +604,7 @@ def modify_client(request, client_id):
                 "categories": CLIENT_CATEGORIES,
                 "departments": DEPARTMENTS,
             })
-        
+
         country = Country.objects.get(pk=country_form)
 
         # Modifies the model of the user from the form information
@@ -613,7 +613,7 @@ def modify_client(request, client_id):
         client.category=category
         client.department=department
         client.isActivated=isActivated
-        
+
         client.save()
 
         return HttpResponseRedirect(reverse("clients"), {
@@ -629,7 +629,7 @@ def modify_contact(request, contact_id):
 
     # Gets the object of the contact modifying
     contact = ClientContact.objects.get(id=contact_id)
-    
+
     # Gets the information from the form
     if request.method == "POST":
 
@@ -653,7 +653,7 @@ def modify_contact(request, contact_id):
                 "clients": Client.objects.all(),
                 "contacts": ClientContact.objects.all()
             })
-        
+
         client = Client.objects.get(pk=client_form)
 
         # Modifies the model of the contact from the form information
@@ -661,21 +661,21 @@ def modify_contact(request, contact_id):
         contact.email=email
         contact.client=client
         contact.isActivated=isActivated
-        
+
         contact.save()
 
         return HttpResponseRedirect(reverse("contacts"), {
             "clients": Client.objects.all(),
             "contacts": ClientContact.objects.all()
         })
-    
+
 
 @login_required
 def modify_country(request, country_id):
 
     # Gets the object of the country modifying
     country = Country.objects.get(id=country_id)
-    
+
     # Gets the information from the form
     if request.method == "POST":
 
@@ -689,7 +689,7 @@ def modify_country(request, country_id):
                 "message_modify": "Todos los campos deben ser completados",
                 "countries": Country.objects.all(),
             })
-        
+
         if len(code) != 2:
             return render(request, "intranet/countries.html", {
                 "message_modify": "El código del país debe tener 2 caracteres",
@@ -699,14 +699,14 @@ def modify_country(request, country_id):
         # Modifies the model of the contact from the form information
         country.name=name
         country.code=code
-        
+
         country.save()
 
         return HttpResponseRedirect(reverse("countries"), {
             "countries": Country.objects.all(),
         })
-    
-    
+
+
 def get_return_page(page, type, user):
 
     filter_trips = get_filtered_trips(user)
@@ -763,7 +763,7 @@ def get_return_page(page, type, user):
                     "one_hundred": 100,
                     "feedbacks": Feedback.objects.filter(trip__department=user.department),
                 }
-        
+
     if page == "entries":
         if type == "error":
             return {
@@ -804,7 +804,7 @@ def create_trip(request):
     if request.method == "POST":
         # Detectar si es una request AJAX
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        
+
         try:
             # Get all the info from the form
             name = request.POST.get("name", "").strip()
@@ -828,9 +828,9 @@ def create_trip(request):
                         }
                     }, status=400)
                 else:
-                    return render(request, "intranet/trips.html", 
+                    return render(request, "intranet/trips.html",
                                 get_return_page("trips", "error", request.user))
-            
+
             # Get the client from the client ID of the form
             if client_form == "0" or client_form == "Cliente" or not client_form:
                 client = Client.objects.get(name="Sin Cliente")
@@ -845,7 +845,7 @@ def create_trip(request):
                             'errors': {'client': ['Cliente inválido']}
                         }, status=400)
                     else:
-                        return render(request, "intranet/trips.html", 
+                        return render(request, "intranet/trips.html",
                                     get_return_page("trips", "error", request.user))
 
             # Get the contact from the contact ID of the form
@@ -862,7 +862,7 @@ def create_trip(request):
                             'errors': {'contact': ['Contacto inválido']}
                         }, status=400)
                     else:
-                        return render(request, "intranet/trips.html", 
+                        return render(request, "intranet/trips.html",
                                     get_return_page("trips", "error", request.user))
 
             # Get the department from the user department
@@ -904,7 +904,7 @@ def create_trip(request):
             else:
                 # Método tradicional (fallback)
                 return HttpResponse(status=204)
-        
+
         except Exception as e:
             # Manejo de errores generales
             if is_ajax:
@@ -914,21 +914,21 @@ def create_trip(request):
                     'errors': {'general': [str(e)]}
                 }, status=500)
             else:
-                return render(request, "intranet/trips.html", 
+                return render(request, "intranet/trips.html",
                             get_return_page("trips", "error", request.user))
 
     else:
         # GET request - mostrar el formulario
-        return render(request, "intranet/trips.html", 
+        return render(request, "intranet/trips.html",
                      get_return_page("trips", "", request.user))
-    
-    
+
+
 @login_required
 def modify_trip(request, trip_id):
 
     # Gets the object of the trip modifying
     trip = Trip.objects.get(id=trip_id)
-    
+
     if request.method == "POST":
         name = request.POST["name"]
         quantity_pax = request.POST["quantity_pax"]
@@ -1009,7 +1009,7 @@ def modify_trip(request, trip_id):
         trip.save()
 
         return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
-    
+
 
 @login_required
 def create_note(request, trip_id):
@@ -1099,14 +1099,14 @@ def create_feedback(request, trip_id):
             "destinations": Location.objects.all(),
             "types": TYPE_QUALITY,
         })
-    
+
 
 @login_required
 def pendings(request):
-        
+
     # Shows all entries
     return render(request, "intranet/pendings.html", get_return_page("entries", "", request.user))
-    
+
 @login_required
 def create_entry(request, trip_id):
 
@@ -1132,7 +1132,7 @@ def create_entry(request, trip_id):
                 "users": User.objects.all(),
                 "trip": trip,
             })
-        
+
         # Get the user from the username in the form
         user_working = User.objects.get(username=user_working_form)
 
@@ -1157,7 +1157,7 @@ def create_entry(request, trip_id):
             trip.save()
             version = int(trip.version) + 1
             version_quote = trip.version_quote
-            
+
             trip.version += 1
 
         # If the status is Final Itinerary the user creator is the responsable user
@@ -1165,7 +1165,7 @@ def create_entry(request, trip_id):
             version = 1
             user_creator = trip.responsable_user
             version_quote = trip.version_quote
-        
+
         # If file is cancelled then the trip status change to "Cancelado"
         elif status == "Cancelado":
             version = 1
@@ -1210,7 +1210,7 @@ def create_entry(request, trip_id):
 
         # Si no, comportamiento normal (mantiene compatibilidad)
         return HttpResponse(status=204)
-    
+
     else:
 
         # Return all the entries without answer and the rest of the info for the form
@@ -1222,10 +1222,10 @@ def create_entry(request, trip_id):
             "users": User.objects.all(),
             "trip": trip,
         })
-    
+
 @login_required
 def modify_entry(request, entry_id):
-     
+
     # Get the entry from the entry ID of the button
     entry = Entry.objects.get(id=entry_id)
 
@@ -1264,7 +1264,7 @@ def modify_entry(request, entry_id):
 
         if isClosed != False:
             isClosed = True
-        
+
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
             return render(request, "intranet/edit_entry.html", {
@@ -1278,7 +1278,7 @@ def modify_entry(request, entry_id):
                 "formated_starting_date": formated_starting_date,
                 "formated_closing_date": formated_closing_date,
             })
-        
+
         # Checks if version and amount are Int
         versionIsInt = isinstance(version, int)
 
@@ -1288,7 +1288,7 @@ def modify_entry(request, entry_id):
             amount = int(amount)
         except ValueError:
             empty_amount = True
-        
+
         if status != "Quote" and versionIsInt:
             return render(request, "intranet/edit_entry.html", {
                 "message": "La versión debe ser un número, a no ser que sea status Quote",
@@ -1345,7 +1345,7 @@ def modify_entry(request, entry_id):
         # If there is tourplan ID is no empty get it from the form
         if tourplanId != "":
             trip.tourplanId = tourplanId
-        
+
         # Save all the changes of the trip
         trip.save()
 
@@ -1356,7 +1356,7 @@ def modify_entry(request, entry_id):
         entry.status=status
         entry.importance=importance
         entry.user_working=user_working
-        entry.user_creator=user_creator       
+        entry.user_creator=user_creator
         entry.progress=progress
         entry.isClosed=isClosed
         entry.note=note
@@ -1379,7 +1379,7 @@ def modify_entry(request, entry_id):
             "formated_starting_date": formated_starting_date,
             "formated_closing_date": formated_closing_date,
             })
-    
+
     else:
         return render(request, "intranet/edit_entry.html", {
             "trips": entries_trips,
@@ -1391,7 +1391,7 @@ def modify_entry(request, entry_id):
             "formated_starting_date": formated_starting_date,
             "formated_closing_date": formated_closing_date,
             })
-    
+
 @login_required
 def stats(request):
 
@@ -1400,7 +1400,7 @@ def stats(request):
     this_week = date.today().isocalendar()[1]
     this_year = date.today().year
     today = date.today()
-    
+
     # Empty list of the weeks that will be listed in the form
     weeks = []
 
@@ -1412,7 +1412,7 @@ def stats(request):
         start = start_of_week + timedelta(weeks=i)
         end = start + timedelta(days=6)
         week_number = start.isocalendar()[1]
-        
+
         # Add the weeks with Spanish format
         weeks.append(
             (week_number, f"Semana {week_number} - {start.strftime('%-d-%m-%Y')} al {end.strftime('%-d-%m-%Y')}")
@@ -1436,7 +1436,7 @@ def stats_entries_report(request):
     - period: descripción del período
     - week/month/year/date_from/date_to: según el filtro
     """
-    
+
     # Get the dates from the information sent
     date_from = request.GET.get('date_from', "Desde")
     date_to = request.GET.get('date_to', "Hasta")
@@ -1470,14 +1470,14 @@ def stats_entries_report(request):
     # Get the information type and period
     report_type = request.GET.get('type', 'vendor')
     period = request.GET.get('period', 'Período Personalizado')
-    
+
     context = {
         'report_type': report_type,
         'period': period,
         'message_one': message_one,
         'message_two': message_two,
     }
-    
+
     return render(request, 'intranet/stats_entries_report.html', context)
 
 
@@ -1490,7 +1490,7 @@ def stats_trips_report(request):
     - period: descripción del período
     - week/month/year/date_from/date_to: según el filtro
     """
-    
+
     # Get the dates from the information sent
     date_from = request.GET.get('date_from', "Desde")
     date_to = request.GET.get('date_to', "Hasta")
@@ -1524,14 +1524,14 @@ def stats_trips_report(request):
     # Get the information type and period
     report_type = request.GET.get('type', 'vendor')
     period = request.GET.get('period', 'Período Personalizado')
-    
+
     context = {
         'report_type': report_type,
         'period': period,
         'message_one': message_one,
         'message_two': message_two,
     }
-    
+
     return render(request, 'intranet/stats_trips_report.html', context)
 
 @login_required
@@ -1589,7 +1589,7 @@ def json_holidays(request):
             color = "#808080"
         elif event.type_holidays == "Día no laborable":
             color = "#FF8000"
-        
+
         # If it is workable it will bring the name of the user, otherwise empty string
         if event.workable:
             title = event.working_user.username
@@ -1604,9 +1604,9 @@ def json_holidays(request):
             'allDay': True,
             'backgroundColor': color,
         })
-    
+
     for event in absences:
-        
+
         data.append({
             'id': event.id,
             'title': event.absence_user.username,
@@ -1615,7 +1615,7 @@ def json_holidays(request):
             'allDay': True,
             'backgroundColor': "#00aae4",
         })
-    
+
     return JsonResponse(data, safe=False)
 
 
@@ -1632,7 +1632,7 @@ def jsontrips(_request):
 @login_required
 @csrf_exempt
 def jsontrip(request, trip_id):
-    
+
     # Query for trip
     try:
         trip_object = Trip.objects.get(pk=trip_id)
@@ -1656,7 +1656,7 @@ def jsontrip(request, trip_id):
         # Save the changes of the trip
         trip_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the trip
     elif request.method == "DELETE":
         trip_object.delete()
@@ -1667,7 +1667,7 @@ def jsontrip(request, trip_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
-    
+
 
 @login_required
 @csrf_exempt
@@ -1680,7 +1680,7 @@ def json_entries(request):
     for entry in Entry.objects.all():
         if entry.trip in trip_entries:
             entries_object_list.append(entry)
-    
+
     #entries_object_list = Entry.objects.filter(department=request.user.department)
     entries = [entry.serialize() for entry in entries_object_list]
 
@@ -1690,7 +1690,7 @@ def json_entries(request):
 @login_required
 @csrf_exempt
 def json_entry(request, entry_id):
-    
+
     # Query for entry
     try:
         entry_object = Entry.objects.get(pk=entry_id)
@@ -1714,7 +1714,7 @@ def json_entry(request, entry_id):
         # Save the changes of the entry
         entry_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the entry
     elif request.method == "DELETE":
         entry_object.delete()
@@ -1730,7 +1730,7 @@ def json_entry(request, entry_id):
 @login_required
 @csrf_exempt
 def json_last_entry(request):
-    
+
     # Get the last user entry
     entry = Entry.objects.filter(creation_user=request.user).first()
     return JsonResponse(entry.serialize(), safe=False)
@@ -1744,7 +1744,7 @@ def jsontrip_entries(request, trip_id):
     try:
         trip_object = Trip.objects.get(pk=trip_id)
         entries_object_list = Entry.objects.filter(trip=trip_object)
-        if not entries_object_list:          
+        if not entries_object_list:
             return JsonResponse({"empty": "No entries"})
 
     except Trip.DoesNotExist:
@@ -1770,7 +1770,7 @@ def jsontrip_notes(request, trip_id):
     try:
         trip_object = Trip.objects.get(pk=trip_id)
         notes_object_list = Notes.objects.filter(trip=trip_object)
-        if not notes_object_list:          
+        if not notes_object_list:
             return JsonResponse({"empty": "No notes"})
 
     except Trip.DoesNotExist:
@@ -1786,7 +1786,7 @@ def jsontrip_notes(request, trip_id):
         return JsonResponse({
             "error": "GET request required."
         }, status=400)
-    
+
 
 @login_required
 @csrf_exempt
@@ -1824,7 +1824,7 @@ def jsoncountry(request, country_id):
         # Save the changes of the country
         country_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the country
     elif request.method == "DELETE":
         country_object.delete()
@@ -1835,7 +1835,7 @@ def jsoncountry(request, country_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
-    
+
 @login_required
 @csrf_exempt
 def json_countries(_request):
@@ -1882,7 +1882,7 @@ def jsonclient(request, client_id):
         # Save the changes of the client
         client_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the client
     elif request.method == "DELETE":
         client_object.delete()
@@ -1893,7 +1893,7 @@ def jsonclient(request, client_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
-    
+
 @login_required
 @csrf_exempt
 def json_clients(_request):
@@ -1938,7 +1938,7 @@ def jsoncontact(request, contact_id):
         # Save the changes of the contact
         contact_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the contact
     elif request.method == "DELETE":
         contact_object.delete()
@@ -1949,7 +1949,7 @@ def jsoncontact(request, contact_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
-    
+
 @login_required
 @csrf_exempt
 def json_contacts(_request):
@@ -1987,7 +1987,7 @@ def jsonuser(request, user_id):
         # Save the changes of the user
         user_object.save()
         return HttpResponse(status=204)
-    
+
     # Deletes the user
     elif request.method == "DELETE":
         user_object.delete()
@@ -1998,7 +1998,7 @@ def jsonuser(request, user_id):
         return JsonResponse({
             "error": "GET or PUT or DELETE request required."
         }, status=400)
-    
+
 
 @login_required
 @csrf_exempt
@@ -2024,13 +2024,13 @@ def get_pendings(department):
     # Filter only the entries that are not closed (pending)
     pendings = Entry.objects.filter(isClosed=False)
 
-    # Add only the labels once and the ones in the department of the user 
+    # Add only the labels once and the ones in the department of the user
     for entry in pendings:
         if entry.user_working.username not in labels and entry.trip.department == department:
             labels.append(entry.user_working.username)
 
     row = []
-    
+
     for label in range(len(labels)):
         for column in range(len(columns)):
             row.append(0)
@@ -2111,7 +2111,7 @@ def entries_data(request):
     qs = Entry.objects.select_related("trip", "user_creator", "user_working", "trip__client", "trip__contact").filter(
         trip__department=request.user.department
     )
-    
+
     # 🚩 Solo entradas abiertas (isClosed == False) si no se pidió show_all
     if show_all != "1":
         qs = qs.filter(isClosed=False)
@@ -2185,13 +2185,13 @@ def entries_data(request):
                                 <div class="modal-header">
                                     <h1 class="modal-title fs-8">Eliminar {status} de {entry.trip.name}</h1>
                                     <!-- Botón cerrar con id único -->
-                                    <button id="btn-close-entries-{entry.id}" type="button" 
+                                    <button id="btn-close-entries-{entry.id}" type="button"
                                             class="btn-close" data-bs-dismiss="modal"></button>
                                 </div>
                                 <div class="modal-body text-center">
                                     <h3>¿Está seguro que desea eliminar la entrada?</h3>
                                     <!-- Botón eliminar con data-id -->
-                                    <button class="btn btn-dark btn-lg delete-entries-btn" 
+                                    <button class="btn btn-dark btn-lg delete-entries-btn"
                                             id="delete-entry-{entry.id}">
                                         ELIMINAR
                                     </button>
@@ -2200,7 +2200,7 @@ def entries_data(request):
                         </div>
                     </div>
             """
-        
+
         data.append({
             "starting_date": starting_date,
             "closing_date": closing_date,
@@ -2276,9 +2276,9 @@ def stats_entries_data(request):
     # filtros de fechas
     if month and year:
         qs = qs.filter(starting_date__month=month, starting_date__year=year)
-    
+
     this_year = date.today().year
-    
+
     if week:
         this_week = date.today().isocalendar()[1]
         if int(week) > this_week:
@@ -2447,7 +2447,7 @@ def stats_trips_data(request):
             pass  # si no se puede parsear, ignora el filtro
 
     this_year = date.today().year
-    
+
     if week:
         this_week = date.today().isocalendar()[1]
         if int(week) > this_week:
@@ -2501,7 +2501,7 @@ def stats_trips_data(request):
             "operations_user": trip.operations_user.username
         })
 
-    
+
     # summary inicialization
     summary = {
         "audley_count": 0,
@@ -2633,7 +2633,7 @@ def stats_entries_bookings_by_vendor(qs, date_from, date_to):
                 vendors_b[vendor]["audleyFirst"] += 1
             if entry.amount:
                 vendors_b[vendor]["amountFirst"] += float(entry.amount)
-            
+
             # Get the information of the person who booked the trip
             vendor_quoted = entry.user_creator.other_name
 
@@ -2688,7 +2688,7 @@ def stats_entries_by_client(qs):
             clients[client]["quotesCount"] += 1
             if entry.amount:
                 clients[client]["quotesAmount"] += float(entry.amount)
-            
+
         elif entry.status == "Booking" and entry.version == 1:
             clients[client]["bookingsCount"] += 1
             if entry.amount:
@@ -3011,7 +3011,7 @@ def stats_presentation_entries(request):
 
     for entry in cancellation_entries:
         trip_obj = entry.trip
-        
+
         last_booking = Entry.objects.filter(trip=trip_obj).filter(status="Booking").first()
         if last_booking:
             cancellations_amount += (last_booking.amount)
@@ -3101,7 +3101,7 @@ def stats_trips_by_responsable(qs, date_from, date_to):
             responsable_users[vendor]["audley"] += 1
             if trip.amount:
                 responsable_users[vendor]["amountAudley"] += float(trip.amount)
-            
+
         responsable_users[vendor]["total"] += 1
         if trip.amount:
             responsable_users[vendor]["amountTotal"] += float(trip.amount)
@@ -3154,7 +3154,7 @@ def stats_trips_by_operator(qs, date_from, date_to):
             operations_users[operator]["audley"] += 1
             if trip.amount:
                 operations_users[operator]["amountAudley"] += float(trip.amount)
-            
+
         operations_users[operator]["total"] += 1
         if trip.amount:
             operations_users[operator]["amountTotal"] += float(trip.amount)
@@ -3195,9 +3195,9 @@ def stats_trips_by_client(qs):
             clients[client]["bookingsAmount"] += float(trip.amount)
 
     for trip in qs:
-        if trip.status == "Cancelado":    
+        if trip.status == "Cancelado":
             clients[client]["cancelled"] += 1
-        
+
 
     # ✅ ORDENAR: Convertir a lista de tuplas y ordenar por cantidad
     sorted_clients = sorted(
@@ -3381,17 +3381,17 @@ def read_emails(request):
 
     with MailBox(MAIL_SERVER).login(MAIL_USERNAME, MAIL_PASSWORD, "Inbox") as mb:
         for msg in mb.fetch(limit=10, reverse=True, mark_seen=True):
-            
+
             attachments = []
             for att in msg.attachments:
                 attachments.append(att.part)
             emails.append({"id":msg.uid, "subject":msg.subject, "date":msg.date, "flags":msg.flags, "text":msg.text, "attachments":attachments})
-            
-    
+
+
     return render(request, "intranet/read_emails.html", {
         "emails": emails,
     })
-    
+
 
 @login_required
 def tourplan_files(request):
@@ -3402,7 +3402,7 @@ def tourplan_files(request):
 
             form.save()
 
-            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
+            csv_obj = CsvFileTourplanFiles.objects.get(read=False)
             tourplan_files = upload_data(csv_obj)
 
             return render(request, "intranet/tourplan_files.html", {
@@ -3422,7 +3422,6 @@ def upload_data(csv_obj):
 
     # Pre-fetch lookups into dicts to avoid per-row DB queries
     users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
-    users_by_other_name = {u.other_name: u for u in User.objects.all() if u.other_name}
 
     trips_by_tourplan = {
         t.tourplanId: t
@@ -3650,7 +3649,7 @@ def upload_data(csv_obj):
             "name":             t.name,
             "client_reference": client_ref,
             "travelling_date":  t.travelling_date.strftime("%d/%m/%Y") if t.travelling_date else "",
-            "vendedor":         t.responsable_user.username if t.responsable_user else "",
+            "vendedor":         t.responsable_user.other_tp if t.responsable_user else "",
             "client":           t.client.name if t.client else "",
             "suggested_tp":     suggested,
             "current_tp":       current_tp,
@@ -3940,7 +3939,7 @@ def upload_csv_intranet(csv_obj):
     all_clients = Client.objects.all()
     for client in all_clients:
         clients_names.append(client.name)
-    
+
     contact_names = []
     all_contacts = ClientContact.objects.all()
     for contact in all_contacts:
@@ -4163,7 +4162,7 @@ def upload_csv_entries(csv_obj):
                         col_number+=1
                     else:
                         col_number+=1
-                
+
                 if temp_obj:
                     entry_obj = Entry.objects.create(
                         trip=temp_obj["trip"],
@@ -4181,7 +4180,7 @@ def upload_csv_entries(csv_obj):
                     )
 
                     entry_obj.save()
-                    
+
                     all_obj.append(entry_obj)
 
     csv_obj.read = True
@@ -4200,7 +4199,7 @@ def intranet_files(request):
 
             form.save()
 
-            csv_obj = CsvFileTourplanFiles.objects.get(read=False)    
+            csv_obj = CsvFileTourplanFiles.objects.get(read=False)
             #intranet_files = upload_csv_intranet(csv_obj)
             intranet_files = upload_csv_entries(csv_obj)
 
@@ -4930,12 +4929,14 @@ def calidad_fetch_inbox(request):
     imported = 0
     skipped  = 0
     try:
-        with MailBox(server).login(username, password, QUALITY_LABEL) as mb:
+        with MailBox(server).login(username, password, 'INBOX') as mb:
             to_archive = []
-            for msg in mb.fetch(mark_seen=False, bulk=True):
+            # Gmail: fetch only inbox messages that carry the Calidad label
+            label_criterion = f'X-GM-LABELS "{QUALITY_LABEL}"' if 'gmail' in (server or '').lower() else 'ALL'
+            for msg in mb.fetch(label_criterion, mark_seen=False, bulk=True):
                 message_id = _get_message_id(msg)
                 if FeedbackInboxItem.objects.filter(gmail_message_id=message_id).exists():
-                    # Already imported — archive it anyway so it leaves the label
+                    # Already imported — archive it anyway so it leaves the inbox
                     to_archive.append(msg.uid)
                     skipped += 1
                     continue
@@ -4951,7 +4952,7 @@ def calidad_fetch_inbox(request):
                         email_subject=msg.subject or '',
                         email_body=_get_body(msg),
                         email_sender=sender,
-                        gmail_label=QUALITY_LABEL,
+                        gmail_label='INBOX',
                         gmail_message_id=message_id,
                         status='pendiente',
                     )
@@ -4959,7 +4960,7 @@ def calidad_fetch_inbox(request):
                     to_archive.append(msg.uid)
                 except Exception:
                     pass
-            # Archive all processed messages (move to All Mail = remove Calidad label)
+            # Archive all processed messages (move to All Mail = removes from inbox)
             if to_archive:
                 try:
                     mb.move(to_archive, '[Gmail]/All Mail')

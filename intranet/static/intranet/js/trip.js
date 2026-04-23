@@ -1148,6 +1148,15 @@ function editing_blocks() {
                     statusDisplay.classList.add("d-none");
                     statusSelect.classList.remove("d-none");
                 }
+
+                // Mostrar select de grupo tarifario (margin_info)
+                const marginInfoDisplay = document.querySelector(`.margin-info-display[data-block="${blockId}"]`);
+                const marginInfoSelect = document.querySelector(`.margin-info-select[data-block="${blockId}"]`);
+                if (marginInfoDisplay && marginInfoSelect) {
+                    marginInfoSelect.dataset.originalValue = marginInfoSelect.value;
+                    marginInfoDisplay.classList.add("d-none");
+                    marginInfoSelect.classList.remove("d-none");
+                }
             }
         });
     });
@@ -1430,6 +1439,9 @@ function saveBlock(blockId, rows, button) {
     const statusSelect = document.querySelector(`.status-select[data-block="${blockId}"]`);
     const newStatus = statusSelect ? statusSelect.value : null;
 
+    const marginInfoSelect = document.querySelector(`.margin-info-select[data-block="${blockId}"]`);
+    const newMarginInfo = marginInfoSelect ? marginInfoSelect.value : null;
+
     // Collect all rateline IDs for this block (needed to update increase/status)
     const ratelineIds = Array.from(rows)
         .map(r => parseInt(r.dataset.ratelineId))
@@ -1449,6 +1461,7 @@ function saveBlock(blockId, rows, button) {
             rateline_ids: ratelineIds,
             increase: newIncrease,
             status: newStatus,
+            margin_info: newMarginInfo,
         })
     })
     .then(r => r.json())
@@ -1549,6 +1562,15 @@ function restoreBlock(blockId, button) {
         // Update color class
         statusDisplay.classList.remove("text-success", "text-warning");
         statusDisplay.classList.add(statusSelect2.value === "Confirmed" ? "text-success" : "text-warning");
+    }
+
+    // Restaurar grupo tarifario (margin_info)
+    const marginInfoDisplay = document.querySelector(`.margin-info-display[data-block="${blockId}"]`);
+    const marginInfoSelect2 = document.querySelector(`.margin-info-select[data-block="${blockId}"]`);
+    if (marginInfoDisplay && marginInfoSelect2) {
+        marginInfoDisplay.textContent = marginInfoSelect2.value;
+        marginInfoDisplay.classList.remove("d-none");
+        marginInfoSelect2.classList.add("d-none");
     }
 
     currentEditingBlock = null;
@@ -2228,6 +2250,15 @@ function cancelBlockEdit(blockId) {
         statusDisplay.classList.remove("d-none", "text-success", "text-warning");
         statusDisplay.classList.add(statusSelect.value === "Confirmed" ? "text-success" : "text-warning");
         statusSelect.classList.add("d-none");
+    }
+    // Revertir GRUPO TARIFARIO (select)
+    const marginInfoDisplay = document.querySelector(`.margin-info-display[data-block="${blockId}"]`);
+    const marginInfoSelect = document.querySelector(`.margin-info-select[data-block="${blockId}"]`);
+    if (marginInfoDisplay && marginInfoSelect) {
+        marginInfoSelect.value = marginInfoSelect.dataset.originalValue || marginInfoSelect.value;
+        marginInfoDisplay.textContent = marginInfoSelect.value;
+        marginInfoDisplay.classList.remove("d-none");
+        marginInfoSelect.classList.add("d-none");
     }
 
     // 4. Revertir CELDAS DE TARIFAS (Venta, Costo, etc.)

@@ -74,5 +74,6 @@ urlpatterns = [
     path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),
     path("tp/toggle-update-tp/", tariff.toggle_supplier_update_tp, name="toggle_supplier_update_tp"),
     path("tp/upload-services/",  tariff.tp_mod_list_services,      name="tp_mod_list_services"),
-    path("rateline/<int:line_id>/mark-revised/", tariff.mark_rate_line_revised, name="mark_rate_line_revised"),
+    path("rateline/<int:line_id>/mark-revised/",   tariff.mark_rate_line_revised,   name="mark_rate_line_revised"),
+    path("rateline/<int:line_id>/mark-unrevised/", tariff.mark_rate_line_unrevised, name="mark_rate_line_unrevised"),
 ]

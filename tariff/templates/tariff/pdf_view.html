@@ -16,6 +16,17 @@
             margin: 10mm 13mm;
         }
 
+        .pdf-footer {
+            text-align: center;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7.5pt;
+            font-weight: bold;
+            color: #D88775;
+            border-top: 1px solid #D88775;
+            margin-top: 20px;
+            padding-top: 6px;
+        }
+
         body {
             font-family: Georgia, 'Times New Roman', serif;
             font-size: 9pt;
@@ -338,6 +349,7 @@
 
     {% endfor %}{# supplier_groups #}
 
+    <div class="pdf-footer">All prices are per person, in US dollars (USD), inclusive of taxes.</div>
 </div>
 {% endfor %}{# location_groups #}
 
@@ -414,8 +426,8 @@
 
     {% endfor %}{# product_groups #}
 
+    <div class="pdf-footer">All prices are per person, in US dollars (USD), inclusive of taxes.</div>
 </div>
 {% endfor %}{# svs_location_groups #}
-
 </body>
 </html>

@@ -160,6 +160,7 @@
                             <th>Código</th>
                             <th>Margen Acc</th>
                             <th>Margen Svs</th>
+                            <th>Orden</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -170,6 +171,7 @@
                             <td id="locations-code-{{location.id}}">{{ location.code }}</td>
                             <td id="locations-margenacc{{location.id}}">{{ location.margin_acc }}</td>
                             <td id="locations-margensvs{{location.id}}">{{ location.margin_svs }}</td>
+                            <td>{{ location.order }}</td>
                             <td>
                                 <div class="justify-content-around d-flex">
                                     <i class="fa-solid fa-pencil" width="1px" id="pencil-locations-{{location.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowLocationPencil{{ location.id }}"></i>

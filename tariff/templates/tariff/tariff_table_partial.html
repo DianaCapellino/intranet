@@ -168,9 +168,25 @@ function markRevised(lineId, btn) {
     .then(r => r.json())
     .then(data => {
         if (data.ok) {
-            const row = btn.closest('tr');
-            row.classList.remove('revised-row');
-            btn.remove();
+            btn.closest('tr').classList.remove('revised-row');
+            btn.classList.add('d-none');
+            btn.nextElementSibling?.classList.remove('d-none');
+        }
+    });
+}
+
+function markUnrevised(lineId, btn) {
+    const url = "{% url 'mark_rate_line_unrevised' 0 %}".replace('/0/', '/' + lineId + '/');
+    fetch(url, {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''},
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            btn.closest('tr').classList.add('revised-row');
+            btn.classList.add('d-none');
+            btn.previousElementSibling?.classList.remove('d-none');
         }
     });
 }
@@ -393,10 +409,14 @@ document.addEventListener('click', function(e) {
                                                 {% if not is_client and line.provisional_columns %}
                                                     <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
                                                 {% endif %}
-                                                {% if request.user.isAdmin and not line.is_revised %}
-                                                    <button class="btn btn-sm btn-success ms-1 py-0 px-1" style="font-size:0.65rem;" title="Marcar como revisado"
+                                                {% if request.user.isAdmin %}
+                                                    <button class="btn btn-sm btn-success ms-1 py-0 px-1{% if line.is_revised %} d-none{% endif %}" style="font-size:0.65rem;" title="Marcar como revisado"
                                                         onclick="markRevised({{ line.id }}, this)">
                                                         <i class="fa-solid fa-check"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-warning ms-1 py-0 px-1{% if not line.is_revised %} d-none{% endif %}" style="font-size:0.65rem;" title="Marcar como pendiente de revisión"
+                                                        onclick="markUnrevised({{ line.id }}, this)">
+                                                        <i class="fa-solid fa-clock"></i>
                                                     </button>
                                                 {% endif %}
                                                 {% if show_costs and line.increase %}
@@ -850,10 +870,14 @@ document.addEventListener('click', function(e) {
                     {% if not is_client and line.provisional_columns %}
                         <span class="badge ms-1" style="background-color:#F59E0B; color:#000; font-size:0.6rem; letter-spacing:0.5px;">Provisional</span>
                     {% endif %}
-                    {% if request.user.isAdmin and not line.is_revised %}
-                        <button class="btn btn-sm btn-success ms-1 py-0 px-1" style="font-size:0.65rem;" title="Marcar como revisado"
+                    {% if request.user.isAdmin %}
+                        <button class="btn btn-sm btn-success ms-1 py-0 px-1{% if line.is_revised %} d-none{% endif %}" style="font-size:0.65rem;" title="Marcar como revisado"
                             onclick="markRevised({{ line.id }}, this)">
                             <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning ms-1 py-0 px-1{% if not line.is_revised %} d-none{% endif %}" style="font-size:0.65rem;" title="Marcar como pendiente de revisión"
+                            onclick="markUnrevised({{ line.id }}, this)">
+                            <i class="fa-solid fa-clock"></i>
                         </button>
                     {% endif %}
                 </td>

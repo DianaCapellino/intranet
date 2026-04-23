@@ -558,17 +558,21 @@
 
     <!-- ── CATÁLOGOS ── -->
     <div class="tab-pane fade" id="tab-catalogos">
-      <ul class="nav nav-pills mb-3">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cat-guides">🧭 Guías <span class="badge bg-secondary ms-1">{{ guides|length }}</span></button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-dhs">🌍 DHs <span class="badge bg-secondary ms-1">{{ dhs|length }}</span></button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-entities">📋 Otros <span class="badge bg-secondary ms-1">{{ entities|length }}</span></button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-suppliers">🏢 Proveedores <span class="badge bg-secondary ms-1">{{ suppliers_fb|length }}</span></button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-users">👤 Usuarios <span class="badge bg-secondary ms-1">{{ users_fb|length }}</span></button></li>
-      </ul>
+
+      <!-- Pills + botón Excel -->
+      <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <ul class="nav nav-pills mb-0">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cat-guides">🧭 Guías <span class="badge bg-secondary ms-1">{{ guides|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-dhs">🌍 DHs <span class="badge bg-secondary ms-1">{{ dhs|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-entities">📋 Otros <span class="badge bg-secondary ms-1">{{ entities|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-suppliers">🏢 Proveedores <span class="badge bg-secondary ms-1">{{ suppliers_fb|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-users">👤 Usuarios <span class="badge bg-secondary ms-1">{{ users_fb|length }}</span></button></li>
+        </ul>
+      </div>
 
       <div class="tab-content">
 
-        <!-- Guías -->
+        <!-- ── Guías ── -->
         <div class="tab-pane fade show active" id="cat-guides">
           <div class="card mb-3">
             <div class="card-body">
@@ -587,19 +591,34 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="guides-table">
-              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
+              <thead class="table-light">
+                <tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr>
+              </thead>
+
+              <!-- tbody 1: filas de datos → DataTables las procesa -->
               <tbody>
                 {% for g in guides %}
                 <tr id="guide-row-{{ g.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('guide', {{ g.id }}, this)">
                   <td class="small fw-semibold">{{ g.name }}</td>
                   <td class="small text-muted">{{ g.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ g.notes|default:"—" }}</td>
-                  <td class="text-center">{% if g.pos_count %}<span class="badge text-bg-success">{{ g.pos_count }}</span> {% endif %}{% if g.neu_count %}<span class="badge text-bg-secondary">{{ g.neu_count }}</span> {% endif %}{% if g.neg_count %}<span class="badge text-bg-danger">{{ g.neg_count }}</span>{% endif %}{% if not g.pos_count and not g.neu_count and not g.neg_count %}—{% endif %}</td>
+                  <td class="text-center">
+                    {% if g.pos_count %}<span class="badge text-bg-success">{{ g.pos_count }}</span> {% endif %}
+                    {% if g.neu_count %}<span class="badge text-bg-secondary">{{ g.neu_count }}</span> {% endif %}
+                    {% if g.neg_count %}<span class="badge text-bg-danger">{{ g.neg_count }}</span>{% endif %}
+                    {% if not g.pos_count and not g.neu_count and not g.neg_count %}—{% endif %}
+                  </td>
                   <td class="text-nowrap">
                     <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-pencil"></i></button>
                     {% if not g.pos_count and not g.neu_count and not g.neg_count %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
                 </tr>
+                {% endfor %}
+              </tbody>
+
+              <!-- tbody 2: filas auxiliares → DataTables las ignora -->
+              <tbody class="dt-aux">
+                {% for g in guides %}
                 <tr id="cat-fb-row-guide-{{ g.id }}" class="d-none">
                   <td colspan="5" class="p-0"><div id="cat-fb-panel-guide-{{ g.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
@@ -612,19 +631,19 @@
                     </select>
                   </td>
                   <td><input type="text" class="form-control form-control-sm" id="edit-guide-notes-{{ g.id }}" value="{{ g.notes|default:'' }}"></td>
-                  <td colspan="2"></td>
-                  <td class="text-nowrap">
+                  <td colspan="2" class="text-nowrap">
                     <button class="btn btn-sm btn-success p-1 me-1" onclick="saveCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-check"></i></button>
                     <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditCatalogItem('guide',{{ g.id }})"><i class="fa-solid fa-xmark"></i></button>
                   </td>
                 </tr>
                 {% endfor %}
               </tbody>
+
             </table>
           </div>
         </div>
 
-        <!-- DHs -->
+        <!-- ── DHs ── -->
         <div class="tab-pane fade" id="cat-dhs">
           <div class="card mb-3">
             <div class="card-body">
@@ -643,19 +662,34 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="dhs-table">
-              <thead class="table-light"><tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
+              <thead class="table-light">
+                <tr><th>Nombre</th><th>Destino</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr>
+              </thead>
+
+              <!-- tbody 1: filas de datos -->
               <tbody>
                 {% for d in dhs %}
                 <tr id="dh-row-{{ d.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('dh', {{ d.id }}, this)">
                   <td class="small fw-semibold">{{ d.name }}</td>
                   <td class="small text-muted">{{ d.location.name|default:"—" }}</td>
                   <td class="small text-muted">{{ d.notes|default:"—" }}</td>
-                  <td class="text-center">{% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}{% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}{% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}{% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}</td>
+                  <td class="text-center">
+                    {% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}
+                    {% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}
+                    {% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}
+                  </td>
                   <td class="text-nowrap">
                     <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
                     {% if not d.pos_count and not d.neu_count and not d.neg_count %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
                 </tr>
+                {% endfor %}
+              </tbody>
+
+              <!-- tbody 2: filas auxiliares -->
+              <tbody class="dt-aux">
+                {% for d in dhs %}
                 <tr id="cat-fb-row-dh-{{ d.id }}" class="d-none">
                   <td colspan="5" class="p-0"><div id="cat-fb-panel-dh-{{ d.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
@@ -668,19 +702,19 @@
                     </select>
                   </td>
                   <td><input type="text" class="form-control form-control-sm" id="edit-dh-notes-{{ d.id }}" value="{{ d.notes|default:'' }}"></td>
-                  <td colspan="2"></td>
-                  <td class="text-nowrap">
+                  <td colspan="2" class="text-nowrap">
                     <button class="btn btn-sm btn-success p-1 me-1" onclick="saveCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-check"></i></button>
                     <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditCatalogItem('dh',{{ d.id }})"><i class="fa-solid fa-xmark"></i></button>
                   </td>
                 </tr>
                 {% endfor %}
               </tbody>
+
             </table>
           </div>
         </div>
 
-        <!-- Otros (FeedbackEntity) -->
+        <!-- ── Otros (FeedbackEntity) ── -->
         <div class="tab-pane fade" id="cat-entities">
           <p class="text-muted small mb-3">Para categorías que no son Proveedor, Usuario, Guía ni DH. Ej: "Aliwen - Empresa", aerolínea genérica, etc.</p>
           <div class="card mb-3">
@@ -694,18 +728,33 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="entities-table">
-              <thead class="table-light"><tr><th>Nombre</th><th>Descripción</th><th class="text-center">Feedbacks</th><th></th></tr></thead>
+              <thead class="table-light">
+                <tr><th>Nombre</th><th>Descripción</th><th class="text-center">Feedbacks</th><th></th></tr>
+              </thead>
+
+              <!-- tbody 1: filas de datos -->
               <tbody>
                 {% for e in entities %}
                 <tr id="entity-row-{{ e.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('entity', {{ e.id }}, this)">
                   <td class="small fw-semibold">{{ e.name }}</td>
                   <td class="small text-muted">{{ e.description|default:"—" }}</td>
-                  <td class="text-center">{% if e.pos_count %}<span class="badge text-bg-success">{{ e.pos_count }}</span> {% endif %}{% if e.neu_count %}<span class="badge text-bg-secondary">{{ e.neu_count }}</span> {% endif %}{% if e.neg_count %}<span class="badge text-bg-danger">{{ e.neg_count }}</span>{% endif %}{% if not e.pos_count and not e.neu_count and not e.neg_count %}—{% endif %}</td>
+                  <td class="text-center">
+                    {% if e.pos_count %}<span class="badge text-bg-success">{{ e.pos_count }}</span> {% endif %}
+                    {% if e.neu_count %}<span class="badge text-bg-secondary">{{ e.neu_count }}</span> {% endif %}
+                    {% if e.neg_count %}<span class="badge text-bg-danger">{{ e.neg_count }}</span>{% endif %}
+                    {% if not e.pos_count and not e.neu_count and not e.neg_count %}—{% endif %}
+                  </td>
                   <td class="text-nowrap">
                     <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editEntity({{ e.id }})"><i class="fa-solid fa-pencil"></i></button>
                     {% if e.feedback_count == 0 %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteEntity({{ e.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
                   </td>
                 </tr>
+                {% endfor %}
+              </tbody>
+
+              <!-- tbody 2: filas auxiliares -->
+              <tbody class="dt-aux">
+                {% for e in entities %}
                 <tr id="cat-fb-row-entity-{{ e.id }}" class="d-none">
                   <td colspan="4" class="p-0"><div id="cat-fb-panel-entity-{{ e.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
@@ -720,15 +769,20 @@
                 </tr>
                 {% endfor %}
               </tbody>
+
             </table>
           </div>
         </div>
 
-        <!-- Proveedores -->
+        <!-- ── Proveedores ── -->
         <div class="tab-pane fade" id="cat-suppliers">
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead class="table-light"><tr><th>Proveedor</th><th class="text-center">Feedbacks</th></tr></thead>
+            <table class="table table-sm align-middle" id="suppliers-table">
+              <thead class="table-light">
+                <tr><th>Proveedor</th><th class="text-center">Feedbacks</th></tr>
+              </thead>
+
+              <!-- tbody 1: filas de datos -->
               <tbody>
                 {% for s in suppliers_fb %}
                 <tr style="cursor:pointer" onclick="toggleCatalogFeedbacks('supplier', {{ s.id }}, this)">
@@ -736,43 +790,69 @@
                     {{ s.name }}
                     {% if s.is_provisional %}<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:0.65rem;">provisional</span>{% endif %}
                   </td>
-                  <td class="text-center">{% if s.pos_count %}<span class="badge text-bg-success">{{ s.pos_count }}</span> {% endif %}{% if s.neu_count %}<span class="badge text-bg-secondary">{{ s.neu_count }}</span> {% endif %}{% if s.neg_count %}<span class="badge text-bg-danger">{{ s.neg_count }}</span>{% endif %}</td>
+                  <td class="text-center">
+                    {% if s.pos_count %}<span class="badge text-bg-success">{{ s.pos_count }}</span> {% endif %}
+                    {% if s.neu_count %}<span class="badge text-bg-secondary">{{ s.neu_count }}</span> {% endif %}
+                    {% if s.neg_count %}<span class="badge text-bg-danger">{{ s.neg_count }}</span>{% endif %}
+                  </td>
                 </tr>
+                {% empty %}
+                <tr><td colspan="2" class="text-muted small">No hay feedbacks de proveedores aún.</td></tr>
+                {% endfor %}
+              </tbody>
+
+              <!-- tbody 2: filas auxiliares -->
+              <tbody class="dt-aux">
+                {% for s in suppliers_fb %}
                 <tr id="cat-fb-row-supplier-{{ s.id }}" class="d-none">
                   <td colspan="2" class="p-0"><div id="cat-fb-panel-supplier-{{ s.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
-                {% empty %}
-                  <tr><td colspan="2" class="text-muted small">No hay feedbacks de proveedores aún.</td></tr>
                 {% endfor %}
               </tbody>
+
             </table>
           </div>
         </div>
 
-        <!-- Usuarios -->
+        <!-- ── Usuarios ── -->
         <div class="tab-pane fade" id="cat-users">
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead class="table-light"><tr><th>Usuario</th><th class="text-center">Feedbacks</th></tr></thead>
+            <table class="table table-sm align-middle" id="users-table">
+              <thead class="table-light">
+                <tr><th>Usuario</th><th class="text-center">Feedbacks</th></tr>
+              </thead>
+
+              <!-- tbody 1: filas de datos -->
               <tbody>
                 {% for u in users_fb %}
                 <tr style="cursor:pointer" onclick="toggleCatalogFeedbacks('user', {{ u.id }}, this)">
                   <td class="small fw-semibold">{{ u.other_name|default:u.username }}</td>
-                  <td class="text-center">{% if u.pos_count %}<span class="badge text-bg-success">{{ u.pos_count }}</span> {% endif %}{% if u.neu_count %}<span class="badge text-bg-secondary">{{ u.neu_count }}</span> {% endif %}{% if u.neg_count %}<span class="badge text-bg-danger">{{ u.neg_count }}</span>{% endif %}</td>
+                  <td class="text-center">
+                    {% if u.pos_count %}<span class="badge text-bg-success">{{ u.pos_count }}</span> {% endif %}
+                    {% if u.neu_count %}<span class="badge text-bg-secondary">{{ u.neu_count }}</span> {% endif %}
+                    {% if u.neg_count %}<span class="badge text-bg-danger">{{ u.neg_count }}</span>{% endif %}
+                  </td>
                 </tr>
+                {% empty %}
+                <tr><td colspan="2" class="text-muted small">No hay feedbacks de usuarios aún.</td></tr>
+                {% endfor %}
+              </tbody>
+
+              <!-- tbody 2: filas auxiliares -->
+              <tbody class="dt-aux">
+                {% for u in users_fb %}
                 <tr id="cat-fb-row-user-{{ u.id }}" class="d-none">
                   <td colspan="2" class="p-0"><div id="cat-fb-panel-user-{{ u.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
                 </tr>
-                {% empty %}
-                  <tr><td colspan="2" class="text-muted small">No hay feedbacks de usuarios aún.</td></tr>
                 {% endfor %}
               </tbody>
+
             </table>
           </div>
         </div>
 
-      </div>
-    </div>
+      </div><!-- /tab-content catálogos -->
+    </div><!-- /tab-pane tab-catalogos -->
 
   </div>
 </div>
@@ -1595,17 +1675,46 @@ document.addEventListener('DOMContentLoaded', function() {
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100],
       language: {
-        search:        'Buscar:',
-        lengthMenu:    'Mostrar _MENU_ registros',
-        info:          'Mostrando _START_ a _END_ de _TOTAL_ feedbacks',
-        infoEmpty:     'Sin feedbacks',
-        infoFiltered:  '(filtrado de _MAX_ total)',
-        paginate: { first:'«', previous:'‹', next:'›', last:'»' },
-        emptyTable:    'No hay feedbacks',
-        zeroRecords:   'Sin resultados',
+        search:       'Buscar:',
+        lengthMenu:   'Mostrar _MENU_ registros',
+        info:         'Mostrando _START_ a _END_ de _TOTAL_ feedbacks',
+        infoEmpty:    'Sin feedbacks',
+        infoFiltered: '(filtrado de _MAX_ total)',
+        paginate:     { first: '«', previous: '‹', next: '›', last: '»' },
+        emptyTable:   'No hay feedbacks',
+        zeroRecords:  'Sin resultados',
+        buttons:      { excel: 'Descargar Excel' },
       },
       columnDefs: [
         { orderable: false, targets: [4, 7] },
+        // Columna "Resumen" (índice 4): en pantalla trunca a 120 chars,
+        // pero en el Excel exportamos el texto completo desde data-fb-summary
+        {
+          targets: 4,
+          render: function(data, type, row) {
+            if (type === 'export') {
+              // Lee el resumen completo del atributo data del <tr>
+              return $(row).data('fb-summary') || data;
+            }
+            return data; // en pantalla se muestra como está
+          },
+        },
+      ],
+      dom: '<"d-flex align-items-center justify-content-between mb-2"lB>frtip',
+      buttons: [
+        {
+          extend:    'excel',
+          text:      '<i class="fa-solid fa-file-excel me-1"></i>Excel',
+          className: 'btn btn-success btn-sm',
+          title:     'Aliwen Calidad — Feedbacks',
+          exportOptions: {
+            columns: [0, 1, 2, 3, 4, 5, 6], // excluye col 7 (acciones)
+            // Para cada fila, pasa el <tr> como tercer argumento al renderer
+            rows: function(idx, data, node) {
+              return true; // exporta todas las filas visibles (respeta filtros activos)
+            },
+          },
+        },
       ],
     });
   }
@@ -1629,5 +1738,6 @@ function deleteFeedback(id, btn) {
     }
   });
 }
+
 </script>
 {% endblock %}
