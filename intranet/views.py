@@ -3497,9 +3497,6 @@ def upload_data(csv_obj):
                 if not is_consumidor_final and client_ref_prefix and client_ref_prefix in client_ref_set:
                     continue
 
-                # Capture display fields for the "not in app" modal
-                vendedor_tp = row[9].strip() if len(row) > 9 else ""
-                vendedor_user = users_by_other_tp.get(vendedor_tp)
                 raw_status = row[5].strip() if len(row) > 5 else ""
                 if raw_status in ("OK", "FI"):
                     trip_status = "Booking"
@@ -3519,14 +3516,13 @@ def upload_data(csv_obj):
                     csv_not_in_app.append({
                         "tp_id":            tp_id,
                         "name":             row[6].strip() if len(row) > 6 else "",
-                        "vendedor":         vendedor_user.username if vendedor_user else vendedor_tp,
                         "client_name":      row[12].strip() if len(row) > 12 else "",
                         "contact_name":     row[13].strip() if len(row) > 13 else "",
                         "client_reference": row[14].strip() if len(row) > 14 else "",
                         "travelling_date":  row[3].strip() if len(row) > 3 else "",
                         "out_date":         row[4].strip() if len(row) > 4 else "",
                         "dh_type":          row[7].strip() if len(row) > 7 else "",
-                        "vendedor_tp":      vendedor_tp,
+                        "vendedor_tp":      row[9].strip() if len(row) > 9 else "",
                         "operations_tp":    row[10].strip() if len(row) > 10 else "",
                         "dh_name":          row[11].strip()[3:].strip() if len(row) > 11 and row[11].strip().startswith("DH ") else (row[11].strip() if len(row) > 11 else ""),
                         "guide":            row[16].strip() if len(row) > 16 else "",
@@ -3566,12 +3562,22 @@ def upload_data(csv_obj):
                 val = row[9].strip()
                 if val in users_by_other_tp:
                     trip.responsable_user = users_by_other_tp[val]
+                else:
+                    try:
+                        trip.responsable_user = User.objects.get(username=val)
+                    except User.DoesNotExist:
+                        pass
 
             # col 11 (index 10) — operations_user (lookup by other_tp)
             if len(row) > 10:
                 val = row[10].strip()
                 if val in users_by_other_tp:
                     trip.operations_user = users_by_other_tp[val]
+                else:
+                    try:
+                        trip.operations_user = User.objects.get(username=val)
+                    except User.DoesNotExist:
+                        pass
 
             # col 12 (index 11) — dh: strip "DH " prefix, store name string
             if len(row) > 11:

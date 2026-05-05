@@ -279,11 +279,13 @@ document.addEventListener('click', function(e) {
                     <div class="ms-3">{{ supplier.hotel_quality }}</div>
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    {% with pos=supplier.pos_fb_count neu=supplier.neu_fb_count neg=supplier.neg_fb_count %}
-                    {% if pos %}<span class="badge text-bg-success">{{ pos }}</span>{% endif %}
-                    {% if neu %}<span class="badge text-bg-secondary">{{ neu }}</span>{% endif %}
-                    {% if neg %}<span class="badge text-bg-danger">{{ neg }}</span>{% endif %}
-                    {% endwith %}
+                    {% if request.user.userType != "Cliente" %}
+                        {% with pos=supplier.pos_fb_count neu=supplier.neu_fb_count neg=supplier.neg_fb_count %}
+                        {% if pos %}<span class="badge text-bg-success">{{ pos }}</span>{% endif %}
+                        {% if neu %}<span class="badge text-bg-secondary">{{ neu }}</span>{% endif %}
+                        {% if neg %}<span class="badge text-bg-danger">{{ neg }}</span>{% endif %}
+                        {% endwith %}
+                    {% endif %}
                     <i class="fa-solid fa-chevron-down text-muted small"></i>
                 </div>
             </div>
@@ -384,7 +386,7 @@ document.addEventListener('click', function(e) {
 
                                         <tr class="border-bottom
                                             {% if not is_client and line.provisional_columns %} provisional-row{% endif %}
-                                            {% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}
+                                            {% if not line.is_revised %} revised-row{% endif %}
                                             {% if line.locked_columns %} locked-row{% endif %}
                                         ">
                                             <td class="ps-3 py-2 border-0">
@@ -782,7 +784,7 @@ document.addEventListener('click', function(e) {
         <tbody>
 
         {% for line in pg.list %}
-            <tr class="svs-row border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if request.user.isAdmin and not line.is_revised %} revised-row{% endif %}{% if line.locked_columns %} locked-row{% endif %}"
+            <tr class="svs-row border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if not line.is_revised %} revised-row{% endif %}{% if line.locked_columns %} locked-row{% endif %}"
                 data-service="{{ line.group.product.name|lower }}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
