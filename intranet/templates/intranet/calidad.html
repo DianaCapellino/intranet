@@ -869,11 +869,14 @@ function toggleCatalogFeedbacks(type, id, clickedRow) {
   const panel    = document.getElementById(`cat-fb-panel-${type}-${id}`);
   if (!panelRow) return;
 
-  // Toggle if already loaded
+  // Toggle if already visible
   if (!panelRow.classList.contains('d-none')) {
     panelRow.classList.add('d-none');
     return;
   }
+
+  // Move panel row immediately after the clicked row so it appears inline
+  clickedRow.after(panelRow);
 
   // Load feedbacks if not yet loaded
   if (!panel.dataset.loaded) {
@@ -890,29 +893,45 @@ function toggleCatalogFeedbacks(type, id, clickedRow) {
               : fb.sentiment === 'negativo'
               ? '<span class="badge text-bg-danger me-1">Negativo</span>'
               : '<span class="badge text-bg-secondary me-1">Neutral</span>';
+            const statusBadge = fb.status === 'cerrado'
+              ? '<span class="badge text-bg-dark me-1">Cerrado</span>'
+              : fb.status === 'en_seguimiento'
+              ? '<span class="badge text-bg-warning text-dark me-1">En seguimiento</span>'
+              : '<span class="badge text-bg-info text-dark me-1">Abierto</span>';
+            const sourceBadge = fb.source === 'email'
+              ? '<span class="badge text-bg-secondary me-1"><i class="fa-solid fa-envelope me-1"></i>Email</span>'
+              : '<span class="badge text-bg-light text-muted border me-1">Manual</span>';
             const tripInfo = fb.trip_tourplan
               ? `<span class="text-muted ms-2 small">${fb.trip_tourplan}${fb.trip_name ? ' — ' + fb.trip_name : ''}</span>`
               : '';
             const collapseId = `cat-fb-detail-${type}-${id}-${fb.id}`;
-            const negativeSection = (fb.sentiment === 'negativo' && (fb.solution || fb.cost))
-              ? `<div class="mt-2 pt-2 border-top">
-                  ${fb.solution ? `<div class="small"><span class="fw-semibold text-danger">Solución:</span> ${fb.solution}</div>` : ''}
-                  ${fb.cost ? `<div class="small"><span class="fw-semibold text-danger">Costo:</span> USD ${fb.cost}</div>` : ''}
-                 </div>` : '';
+            const row = (label, value) => value
+              ? `<div class="row mb-1"><div class="col-3 text-muted fw-semibold">${label}</div><div class="col-9">${value}</div></div>`
+              : '';
             return `
               <div class="border rounded mb-1 overflow-hidden">
                 <div class="d-flex align-items-center px-2 py-1 gap-2"
                      style="cursor:pointer;background:#f8f9fa"
                      onclick="event.stopPropagation();toggleCatFbDetail('${collapseId}')">
-                  ${sentBadge}
+                  ${sentBadge}${statusBadge}${sourceBadge}
                   <span class="small flex-grow-1">${fb.brief_summary || '(sin resumen)'}</span>
                   ${tripInfo}
                   <span class="text-muted small ms-2">${fb.creation_date}</span>
                   <i class="fa-solid fa-chevron-down small text-muted ms-1" id="${collapseId}-icon"></i>
                 </div>
                 <div id="${collapseId}" class="d-none px-3 py-2 small border-top">
-                  <div>${fb.content || ''}</div>
-                  ${negativeSection}
+                  ${row('Tipo', fb.type)}
+                  ${row('Viaje', fb.trip_tourplan ? (fb.trip_tourplan + (fb.trip_name ? ' — ' + fb.trip_name : '')) : '')}
+                  ${row('Registrado por', fb.user)}
+                  ${row('Fecha creación', fb.creation_date)}
+                  ${row('Última mod.', fb.last_modification_date !== fb.creation_date ? fb.last_modification_date : '')}
+                  ${fb.email_sender ? row('Email remitente', `<span class="font-monospace">${fb.email_sender}</span>`) : ''}
+                  ${fb.content ? `<div class="mt-2 mb-1 fw-semibold text-muted">Contenido</div><div class="border rounded p-2 bg-white">${fb.content}</div>` : ''}
+                  ${fb.verbatim ? `<div class="mt-2 mb-1 fw-semibold text-muted">Texto original del pasajero</div><div class="border rounded p-2 bg-white fst-italic text-secondary">${fb.verbatim}</div>` : ''}
+                  ${(fb.solution || fb.cost) ? `<div class="mt-2 pt-2 border-top">
+                    ${fb.solution ? `<div><span class="fw-semibold text-danger">Solución:</span> ${fb.solution}</div>` : ''}
+                    ${fb.cost ? `<div><span class="fw-semibold text-danger">Costo:</span> USD ${fb.cost}</div>` : ''}
+                  </div>` : ''}
                 </div>
               </div>`;
           }).join('');

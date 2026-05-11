@@ -101,13 +101,14 @@ def check_duplicate_trips(date_from, date_to):
 
 
 def check_missing_amounts(date_from, date_to):
-    missing_amounts_entries = []
-
-    for entry in Entry.objects.filter(starting_date__range=(date_from, date_to)):
-        if (entry.amount == 0 or entry.amount is None) and (entry.status == "Quote" and entry.version_quote == "A" or entry.status == "Booking" and entry.version == "1"):
-            missing_amounts_entries.append(entry)
-
-    return missing_amounts_entries
+    from django.db.models import Q
+    return Entry.objects.filter(
+        starting_date__range=(date_from, date_to)
+    ).filter(
+        Q(amount=0) | Q(amount__isnull=True)
+    ).filter(
+        Q(status="Quote", version_quote="A") | Q(status="Booking", version="1")
+    ).select_related('trip')
 
 
 def check_incongruent_trip_dates(date_from, date_to):
@@ -121,14 +122,14 @@ def check_incongruent_trip_dates(date_from, date_to):
 
 
 def check_incongruent_entry_dates(date_from, date_to):
-    incongruent_entries = []
-
-    for entry in Entry.objects.filter(starting_date__range=(date_from, date_to)):
-        difference = (entry.closing_date - entry.starting_date).days
-        if entry.starting_date == entry.trip.travelling_date or entry.starting_date > entry.closing_date or difference < 0 or difference > 30:
-            incongruent_entries.append(entry)
-
-    return incongruent_entries
+    from django.db.models import Q, F
+    return Entry.objects.filter(
+        starting_date__range=(date_from, date_to)
+    ).select_related('trip').filter(
+        Q(starting_date=F('trip__travelling_date')) |
+        Q(starting_date__gt=F('closing_date')) |
+        Q(closing_date__gt=F('starting_date') + timedelta(days=30))
+    )
 
 
 def send_templated_email(subject, to_emails, template_name, context):

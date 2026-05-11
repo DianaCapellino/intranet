@@ -5155,7 +5155,7 @@ def calidad_feedbacks_by_target(request):
     if target_type not in filter_map:
         return JsonResponse({'error': 'Invalid type'}, status=400)
     fbs = (Feedback.objects.filter(**filter_map[target_type])
-           .select_related('trip').order_by('-creation_date'))
+           .select_related('trip', 'user').order_by('-creation_date'))
     result = []
     for fb in fbs:
         result.append({
@@ -5163,11 +5163,16 @@ def calidad_feedbacks_by_target(request):
             'sentiment': fb.sentiment,
             'brief_summary': fb.brief_summary or '',
             'content': fb.content or '',
+            'verbatim': fb.verbatim or '',
             'solution': fb.solution or '',
             'cost': float(fb.cost) if fb.cost else 0,
             'status': fb.status,
             'type': fb.type or '',
+            'source': fb.source or '',
+            'email_sender': fb.email_sender or '',
+            'user': fb.user.get_full_name() or fb.user.username if fb.user else '',
             'creation_date': fb.creation_date.strftime('%d/%m/%Y') if fb.creation_date else '',
+            'last_modification_date': fb.last_modification_date.strftime('%d/%m/%Y') if fb.last_modification_date else '',
             'trip_tourplan': fb.trip.tourplanId if fb.trip else '',
             'trip_name': fb.trip.name if fb.trip else '',
         })
