@@ -142,6 +142,13 @@
         <div>{{ message_modify }}</div>
     {% endif %}
 
+    {% if filter_active %}
+    <div class="alert alert-info d-flex align-items-center justify-content-between py-2 mt-2" role="alert">
+        <span><i class="fas fa-filter me-2"></i>Mostrando resultado filtrado desde estadísticas ({{ trips|length }} viaje{{ trips|length|pluralize }})</span>
+        <a href="{% url 'trips' %}" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+    </div>
+    {% endif %}
+
     <br>
     <div class="row">
         <div class="col-12">
@@ -210,8 +217,8 @@
                                     <td>{{ trip.travelling_date|date:"Y/m/d" }}</td>
                                     <td>{{ trip.out_date|date:"Y/m/d" }}</td>
                                     <td>{{ trip.difficulty }}</td>
-                                    <td>{{ trip.responsable_user }}</td>
-                                    <td>{{ trip.operations_user }}</td>
+                                    <td>{% if trip.responsable_user %}<span style="background-color:{{ trip.responsable_user.color }};color:{{ trip.responsable_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.responsable_user }}</span>{% endif %}</td>
+                                    <td>{% if trip.operations_user %}<span style="background-color:{{ trip.operations_user.color }};color:{{ trip.operations_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.operations_user }}</span>{% endif %}</td>
                                     <td>{{ trip.dh_type }}</td>
                                     <td>{{ trip.dh }}</td>
                                     <td>{{ trip.guide }}</td>
@@ -288,10 +295,18 @@
                                                 {% if trip.status == "Booking" or trip.status == "Cancelado" %}
                                                     <div class="row">
                                                         <div class="col-4">
-                                                            <h5><b>Vendedor Responsable:</b> {{ trip.responsable_user }}</h5>
+                                                            <h5><b>Vendedor Responsable:</b>
+                                                            {% if trip.responsable_user %}
+                                                            <span style="background-color:{{ trip.responsable_user.color }};color:{{ trip.responsable_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.responsable_user }}</span>
+                                                            {% endif %}
+                                                            </h5>
                                                         </div>
                                                         <div class="col-4">
-                                                            <h5><b>Operador:</b> {{ trip.operations_user }}</h5>
+                                                            <h5><b>Operador:</b>
+                                                            {% if trip.operations_user %}
+                                                            <span style="background-color:{{ trip.operations_user.color }};color:{{ trip.operations_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.operations_user }}</span>
+                                                            {% endif %}
+                                                            </h5>
                                                         </div>
                                                         <div class="col-4">
                                                             <h5><b>Seguimiento:</b> {{ trip.dh_type }}</h5>
@@ -305,7 +320,15 @@
                                                             <h5><b>DH:</b> {{ trip.dh }}</h5>
                                                         </div>
                                                         <div class="col-4">
-                                                            <h5><b>Rentabilidad:</b> {{ trip.rent_perc|multiply:100|floatformat:2 }} %</h5>
+                                                            <h5><b>Rentabilidad:</b> {{ trip.rent_perc|multiply:100|floatformat:2 }} %
+                                                            {% if trip.tp_notes %}
+                                                            <button type="button" class="btn btn-sm btn-link p-0 ms-1"
+                                                                    onclick="openTripNoteModal('{{ trip.name|escapejs }}', '{{ trip.tp_notes|escapejs }}')"
+                                                                    title="Ver nota de rentabilidad">
+                                                                <i class="fa-solid fa-note-sticky text-warning"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                            </h5>
                                                         </div>
                                                     </div>
                                                 {% endif %}
@@ -642,6 +665,30 @@
     if (newDiv)  newDiv.className  = "d-block";
     if (listDiv) listDiv.className = "d-none";
     if (btn)     btn.className     = "d-none";
+  }
+</script>
+
+<!-- Modal: Nota de rentabilidad -->
+<div class="modal fade" id="tripNoteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">
+          <i class="fa-solid fa-note-sticky text-warning me-2"></i>Nota – <span id="trip-note-modal-name"></span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="trip-note-modal-content" class="mb-0" style="white-space:pre-wrap;"></p>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function openTripNoteModal(name, note) {
+    document.getElementById('trip-note-modal-name').textContent    = name;
+    document.getElementById('trip-note-modal-content').textContent = note;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('tripNoteModal')).show();
   }
 </script>
 {% endblock %}

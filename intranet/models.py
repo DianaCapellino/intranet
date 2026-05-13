@@ -102,6 +102,20 @@ TYPE_HOLIDAYS = [
     ("Día no laborable", "Se trabaja medio día"),
 ]
 
+TYPE_ABSENCE = [
+    ("Vacaciones", "Vacaciones"),
+    ("Beneficio Vacaciones", "Beneficio Vacaciones"),
+    ("Compensatorios", "Compensatorios"),
+    ("Cumpleaños", "Cumpleaños"),
+    ("Cumpleaños en baja", "Cumpleaños en baja"),
+    ("Exámenes/Día de Estudio", "Exámenes/Día de Estudio"),
+    ("FAM/Trabajando fuera ofi", "FAM/Trabajando fuera ofi"),
+    ("Feriado trabajado", "Feriado trabajado"),
+    ("Semana home", "Semana home"),
+    ("Sin goce de sueldo", "Sin goce de sueldo"),
+    ("Viernes OFF alta", "Viernes OFF alta"),
+]
+
 TIMING_STATUS = [
     ("light", "En tiempo"),
     ("warning", "Al límite"),
@@ -241,6 +255,7 @@ class Trip(models.Model):
     creation_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="creation_users")
     ignore_margin_warning = models.BooleanField(default=False)
     margin_reviewed = models.BooleanField(default=False)
+    tp_notes = models.TextField(null=True, blank=True, default="")
 
     @property
     def pos_fb_count(self):
@@ -346,6 +361,7 @@ class Absence(models.Model):
     date_from = models.DateField(verbose_name="absence from")
     date_to = models.DateField(verbose_name="absence to")
     absence_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="absence_users", null=True, blank=True)
+    type_absence = models.CharField(max_length=64, choices=TYPE_ABSENCE, default="Vacaciones")
 
 
 class CsvFileTourplanFiles (models.Model):

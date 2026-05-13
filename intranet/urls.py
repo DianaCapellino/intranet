@@ -37,6 +37,7 @@ urlpatterns = [
     path("entries_trip/json/<int:trip_id>", views.jsontrip_entries, name="jsontrip_entries"),
     path("notes_trip/json/<int:trip_id>", views.jsontrip_notes, name="jsontrip_notes"),
     path("entries/json/<int:entry_id>", views.json_entry, name="json_entry"),
+    path("entries/tp_lookup", views.entry_tp_lookup, name="entry_tp_lookup"),
     path("entries/data/", views.entries_data, name="entries_data"),
     path("entries/json/pendings", views.json_pendings, name="json_pendings"),
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
@@ -55,10 +56,16 @@ urlpatterns = [
     path("users/json", views.json_users, name="json_users"),
     path("entries/json", views.json_entries, name="json_entries"),
     path("holidays/json", views.json_holidays, name="json_holidays"),
+    path("holidays/holiday/create", views.create_holiday, name="create_holiday"),
+    path("holidays/holiday/<int:holiday_id>/delete", views.delete_holiday, name="delete_holiday"),
+    path("holidays/absence/create", views.create_absence, name="create_absence"),
+    path("holidays/absence/<int:absence_id>/delete", views.delete_absence, name="delete_absence"),
+    path("holidays/sync_arg", views.sync_arg_holidays, name="sync_arg_holidays"),
 
     # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),
     path("tourplan_files", views.tourplan_files, name="tourplan_files"),
+    path("tourplan_files/db_sync", views.tourplan_db_sync, name="tourplan_db_sync"),
     path("tourplan_files/create", views.tourplan_create_trips, name="tourplan_create_trips"),
     path("tourplan_files/discard", views.tourplan_discard_trips, name="tourplan_discard_trips"),
     path("tourplan_files/assign", views.tourplan_assign_tp, name="tourplan_assign_tp"),
@@ -112,7 +119,9 @@ urlpatterns = [
     path("calidad/entities/<int:entity_id>/edit",   views.calidad_edit_entity,   name="calidad_edit_entity"),
     path("calidad/entities/<int:entity_id>/delete", views.calidad_entity_delete, name="calidad_entity_delete"),
 
-    # Feedback edit / delete
+    # Feedback create / edit / delete
+    path("calidad/feedbacks/create",                   views.calidad_create_feedback, name="calidad_create_feedback"),
+    path("calidad/feedbacks/<int:feedback_id>/json",   views.calidad_feedback_json,   name="calidad_feedback_json"),
     path("calidad/feedbacks/<int:feedback_id>/edit",   views.calidad_edit_feedback,   name="calidad_edit_feedback"),
     path("calidad/feedbacks/<int:feedback_id>/delete", views.calidad_delete_feedback, name="calidad_delete_feedback"),
 

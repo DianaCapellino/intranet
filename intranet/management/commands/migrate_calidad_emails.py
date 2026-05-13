@@ -289,7 +289,8 @@ class Command(BaseCommand):
 
                     if to_archive and not dry_run:
                         try:
-                            mb.move(to_archive, '[Gmail]/All Mail')
+                            from intranet.management.commands.process_quality_inbox import _gmail_archive
+                            _gmail_archive(mb, to_archive)
                             self.stdout.write(f"  Archivados en Gmail: {len(to_archive)} emails")
                         except Exception as e:
                             self.stderr.write(f"  ! Error archivando emails: {e}")

@@ -1,6 +1,22 @@
 // Variable global para trackear el bloque en edición
 let currentEditingBlock = null;
 
+function contrastColor(hex) {
+    if (!hex || hex.length < 7) return '#333333';
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luminance > 0.45 ? '#333333' : '#ffffff';
+}
+
+function applyUserColor(cell, color) {
+    if (!color) return;
+    const text = contrastColor(color);
+    cell.style.setProperty('background-color', color, 'important');
+    cell.style.setProperty('color', text, 'important');
+}
+
 // Al inicio del archivo, agregar variable global para rastrear vínculos
 let linkedCostsByBlock = new Map(); // key: blockId, value: boolean
 
@@ -153,8 +169,44 @@ function modify_date_and_datetime() {
 
 function create_datatable (type) {
     if (type == ("entries")) {
-        let showAll = 0;
+        const _urlParams = new URLSearchParams(window.location.search);
+        const _drillUserOtherName = _urlParams.get("user_other_name_filter") || "";
+        const _drillClient        = _urlParams.get("client_filter") || "";
+        const _drillDateFrom      = _urlParams.get("date_from") || "";
+        const _drillDateTo        = _urlParams.get("date_to") || "";
+        const _drillMonth         = _urlParams.get("month") || "";
+        const _drillYear          = _urlParams.get("year") || "";
+        const _drillWeek          = _urlParams.get("week") || "";
+        const _drillSeason        = _urlParams.get("season") || "";
+        const _drillShowAll       = _urlParams.get("show_all") || "0";
+        const _drillStatus        = _urlParams.get("status_filter") || "";
+        const _hasDrillFilter = _drillUserOtherName || _drillClient ||
+            _drillDateFrom || _drillMonth || _drillWeek || _drillSeason;
+
+        let showAll = _drillShowAll === "1" ? 1 : 0;
         let userFilter = "";
+
+        if (_hasDrillFilter) {
+            const $banner = document.getElementById("drilldown-banner");
+            const $bannerText = document.getElementById("drilldown-banner-text");
+            if ($banner) {
+                let label = "Mostrando resultado filtrado desde estadísticas";
+                if (_drillStatus) label += ` — ${_drillStatus}s`;
+                if (_drillUserOtherName) label += ` — Vendedor: ${_drillUserOtherName}`;
+                if (_drillClient) label += ` — Cliente: ${_drillClient}`;
+                if (_drillDateFrom && _drillDateTo) label += ` — ${_drillDateFrom} / ${_drillDateTo}`;
+                else if (_drillMonth && _drillYear) label += ` — ${_drillMonth}/${_drillYear}`;
+                else if (_drillSeason) label += ` — Temporada ${_drillSeason}`;
+                else if (_drillWeek) label += ` — Semana ${_drillWeek}`;
+                $bannerText.textContent = label;
+                $banner.classList.remove("d-none");
+            }
+            const $eyeBtn = document.getElementById("pending-eye");
+            if ($eyeBtn) $eyeBtn.style.display = "none";
+            const $userSelect = document.getElementById("user_filter_select");
+            if ($userSelect) $userSelect.closest("div").style.display = "none";
+        }
+
         let entriesTable = $('#entries').DataTable({
             processing: true,
             serverSide: true,
@@ -162,8 +214,17 @@ function create_datatable (type) {
                 url: "/entries/data/",
                 type: "GET",
                 data: function (d) {
-                    d.show_all = showAll;  // 👈 por defecto solo abiertas
+                    d.show_all = showAll;
                     d.user_filter = userFilter;
+                    if (_drillUserOtherName) d.user_other_name_filter = _drillUserOtherName;
+                    if (_drillClient)        d.client_filter           = _drillClient;
+                    if (_drillStatus)        d.status_filter           = _drillStatus;
+                    if (_drillDateFrom)      d.date_from               = _drillDateFrom;
+                    if (_drillDateTo)        d.date_to                 = _drillDateTo;
+                    if (_drillMonth)         d.month                   = _drillMonth;
+                    if (_drillYear)          d.year                    = _drillYear;
+                    if (_drillWeek)          d.week                    = _drillWeek;
+                    if (_drillSeason)        d.season                  = _drillSeason;
                 }
             },
             columns: [
@@ -229,9 +290,8 @@ function create_datatable (type) {
               // callback que corre cada vez que DataTables crea un <tr>
             createdRow: function(row, data) {
                 try {
-                // data.id debe venir en el JSON (asegurate que tu entries_data incluya "id")
-                row.id = `row-entries-${data.id}`;
-                row.dataset.entryId = data.id;
+                    row.id = `row-entries-${data.id}`;
+                    row.dataset.entryId = data.id;
                 } catch (e) { console.warn("createdRow error", e); }
             },
             language: {
@@ -302,7 +362,7 @@ function create_datatable (type) {
             },
             columnDefs: [
                 { orderable: false, targets: -1 },
-                { visible: false, targets: [2, 9, 10, 11, 12, 13, 14, 15]}
+                { visible: false, targets: [2, 9, 10, 13, 14, 15]}
             ],
             language: {
                 url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',

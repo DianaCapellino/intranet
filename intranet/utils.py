@@ -1,3 +1,5 @@
+import re
+from html import unescape
 from datetime import datetime, date, timedelta
 from .models import Entry, Holidays, Trip, Absence
 from django.core.mail import EmailMultiAlternatives
@@ -5,6 +7,14 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from django.db import models
 from tariff.models import Change, User
+
+def strip_html(text):
+    if not text:
+        return ""
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = unescape(text)
+    return ' '.join(text.split()).strip()
+
 
 def update_entries():
 
@@ -56,7 +66,13 @@ def update_timingStatus(entry):
 
 def get_working_days(from_date, to_date):
 
-    # Normalize the dates
+    # Normalize strings
+    if isinstance(from_date, str):
+        from_date = datetime.fromisoformat(from_date)
+    if isinstance(to_date, str):
+        to_date = datetime.fromisoformat(to_date)
+
+    # Normalize datetime → date
     if hasattr(from_date, "date"):
         from_date = from_date.date()
     if hasattr(to_date, "date"):
@@ -76,15 +92,58 @@ def get_working_days(from_date, to_date):
     return working_days
 
 
+_ABSENCE_TYPES_REDUCE_WORK = frozenset({
+    'Vacaciones', 'Beneficio Vacaciones', 'Compensatorios',
+    'Cumpleaños', 'Cumpleaños en baja', 'Exámenes/Día de Estudio',
+    'Sin goce de sueldo', 'Viernes OFF alta',
+})
+
+
+def _days_overlap(records, from_date, to_date):
+    """Sum actual calendar days (inclusive) covered by a queryset of date-range records."""
+    total = 0
+    for r in records:
+        start = max(r.date_from, from_date)
+        end = min(r.date_to, to_date)
+        if start <= end:
+            total += (end - start).days + 1
+    return total
+
+
 def get_working_days_worker(from_date, to_date, worker):
+    # Normalize inputs (same logic as get_working_days)
+    if isinstance(from_date, str):
+        from_date = datetime.fromisoformat(from_date)
+    if isinstance(to_date, str):
+        to_date = datetime.fromisoformat(to_date)
+    if hasattr(from_date, "date"):
+        from_date = from_date.date()
+    if hasattr(to_date, "date"):
+        to_date = to_date.date()
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
 
     working_days = get_working_days(from_date, to_date)
 
-    holidays_worker = Holidays.objects.filter(working_user=worker).filter(date_from__range=(from_date, to_date)).count()
+    # Days this person worked on a company holiday (Feriado trabajado absence type)
+    worked_holiday_records = Absence.objects.filter(
+        absence_user=worker,
+        type_absence='Feriado trabajado',
+        date_from__lte=to_date,
+        date_to__gte=from_date,
+    )
+    worked_holiday_days = _days_overlap(worked_holiday_records, from_date, to_date)
 
-    absence_worker = Absence.objects.filter(absence_user=worker).filter(date_from__range=(from_date, to_date)).count()
+    # Absence days that reduce working count
+    absence_records = Absence.objects.filter(
+        absence_user=worker,
+        type_absence__in=_ABSENCE_TYPES_REDUCE_WORK,
+        date_from__lte=to_date,
+        date_to__gte=from_date,
+    )
+    absence_days = _days_overlap(absence_records, from_date, to_date)
 
-    return working_days + holidays_worker - absence_worker
+    return working_days + worked_holiday_days - absence_days
 
 
 def check_duplicate_trips(date_from, date_to):
@@ -166,6 +225,10 @@ def build_margin_warning_context(user):
         travelling_date__range=(today, date_limit),
         ignore_margin_warning=False,
         margin_reviewed=False,
+    ).exclude(
+        amount__isnull=True
+    ).exclude(
+        amount=0
     ).filter(
         models.Q(rent_perc__gt=0.35) | models.Q(rent_perc__lt=0.15)
     ).order_by("travelling_date")
@@ -265,6 +328,10 @@ def build_margin_warning_manager_context():
         travelling_date__range=(today, date_limit),
         ignore_margin_warning=False,
         margin_reviewed=False,
+    ).exclude(
+        amount__isnull=True
+    ).exclude(
+        amount=0
     ).filter(
         models.Q(rent_perc__gt=0.35) | models.Q(rent_perc__lt=0.15)
     ).order_by("responsable_user__username", "travelling_date")
@@ -558,10 +625,10 @@ SELECT DISTINCT
     BHD.LAST_SERVICE_DATE AS out_date,
     BHD.STATUS            AS status,
     BHD.NAME              AS pax_name,
-    BHD.UDTEXT3           AS dh_type,
-    BHD.UDTEXT2           AS dh_name,
-    BHD.SALE4             AS responsable_code,
-    BHD.CONSULTANT        AS operations_code,
+    BHD.UDTEXT2           AS dh_type,
+    BHD.SALE3             AS dh_name,
+    BHD.CONSULTANT        AS responsable_code,
+    BHD.SALE1             AS operations_code,
     DRM.NAME              AS agent_name,
     BHD.AGENT_REFERENCE   AS client_reference,
     ISNULL(RTRIM(LTRIM((
@@ -585,13 +652,21 @@ SELECT DISTINCT
         WHEN 'HL' THEN 0
         ELSE (BSD.AGENT - BSD.COST) / CASE BSD.AGENT WHEN 0 THEN 1 ELSE BSD.AGENT END
     END AS rent_perc,
-    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount
+    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount,
+    ISNULL((
+        SELECT STUFF((
+            SELECT ' | ' + RTRIM(LTRIM(CAST(N2.MESSAGE_TEXT AS NVARCHAR(MAX))))
+            FROM NTS N2
+            WHERE N2.BHD_ID = BHD.BHD_ID AND N2.CATEGORY = 'REN'
+            FOR XML PATH (''), TYPE
+        ).value('.', 'NVARCHAR(MAX)'), 1, 3, '')
+    ), '') AS tp_notes
 FROM BHD
 JOIN DRM ON DRM.CODE = BHD.AGENT
 JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
 WHERE BHD.BRANCH = 'AL'
-  AND BHD.TRAVELDATE >= ?
-  AND BHD.TRAVELDATE <= ?
+  AND BHD.TRAVELDATE >= %s
+  AND BHD.TRAVELDATE <= %s
 """
 
 _BOOKING_STATUSES  = {"OK", "FI", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
@@ -599,25 +674,24 @@ _CANCELLED_STATUSES = {"RX", "XC", "XX"}
 
 
 def get_tourplan_connection():
-    import pyodbc
+    import pymssql
     tp = settings.TOURPLAN_DB
-    conn_str = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={tp['SERVER']};"
-        f"DATABASE={tp['DATABASE']};"
-        f"UID={tp['UID']};"
-        f"PWD={tp['PWD']};"
-        f"TrustServerCertificate=yes;"
-        f"Connection Timeout=30;"
+    return pymssql.connect(
+        server=tp["SERVER"],
+        port=tp.get("PORT", 1433),
+        database=tp["DATABASE"],
+        user=tp["UID"],
+        password=tp["PWD"],
+        login_timeout=30,
+        as_dict=True,
     )
-    return pyodbc.connect(conn_str)
 
 
 def sync_from_tourplan_db():
     """
     Connects directly to the Tourplan SQL Server DB and updates Trip records
     using the same logic as upload_data() but without a CSV file.
-    Returns (updated_count, not_found_count).
+    Returns (updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app).
     """
     from difflib import SequenceMatcher
 
@@ -653,36 +727,40 @@ def sync_from_tourplan_db():
     conn = get_tourplan_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(_TOURPLAN_SYNC_QUERY, date_from, date_to)
+        cursor.execute(_TOURPLAN_SYNC_QUERY, (date_from, date_to))
         rows = cursor.fetchall()
     finally:
         conn.close()
 
     updated_count  = 0
-    not_found_count = 0
     trips_to_update = []
     csv_quote_tp_ids    = set()
     csv_client_ref_to_tp = {}
+    not_in_app = []
+
+    def _s(row, key):
+        v = row.get(key)
+        return str(v).strip() if v is not None else ""
 
     for row in rows:
-        tp_id = str(row.tourplan_id).strip() if row.tourplan_id else ""
+        tp_id = _s(row, "tourplan_id")
         if not tp_id:
             continue
 
-        raw_status       = str(row.status).strip() if row.status else ""
+        raw_status       = _s(row, "status")
         is_booking_row   = raw_status in _BOOKING_STATUSES
         is_cancelled_row = raw_status in _CANCELLED_STATUSES
 
-        csv_client_ref   = str(row.client_reference).strip() if row.client_reference else ""
+        csv_client_ref    = _s(row, "client_reference")
         client_ref_prefix = csv_client_ref.split("/")[0].strip() if "/" in csv_client_ref else csv_client_ref
-        agent_name       = str(row.agent_name).strip() if row.agent_name else ""
+        agent_name        = _s(row, "agent_name")
         is_consumidor_final = agent_name.lower().startswith("consumidor final")
 
         if not is_booking_row and not is_cancelled_row:
             csv_quote_tp_ids.add(tp_id)
 
         if client_ref_prefix and not is_consumidor_final and is_booking_row:
-            pax_name = str(row.pax_name).strip() if row.pax_name else ""
+            pax_name = _s(row, "pax_name")
             if client_ref_prefix not in csv_client_ref_to_tp:
                 csv_client_ref_to_tp[client_ref_prefix] = {"tp_id": tp_id, "name": pax_name}
 
@@ -692,56 +770,103 @@ def sync_from_tourplan_db():
             if not is_consumidor_final and client_ref_prefix and client_ref_prefix in client_ref_set:
                 continue
             if is_booking_row or is_cancelled_row:
-                not_found_count += 1
+                trip_status = "Booking" if raw_status in _BOOKING_STATUSES else "Cancelado"
+                num_pax = 2
+                try:
+                    num_pax = int(row.get("num_pax") or 2)
+                except (ValueError, TypeError):
+                    pass
+                rent_perc_raw = ""
+                rp = row.get("rent_perc")
+                if rp is not None:
+                    try:
+                        rent_perc_raw = str(round(float(rp) * 100, 2)) + "%"
+                    except (ValueError, TypeError):
+                        pass
+                amount_raw = ""
+                am = row.get("amount")
+                if am:
+                    try:
+                        amount_raw = str(int(float(am)))
+                    except (ValueError, TypeError):
+                        pass
+                dh_name_raw = _s(row, "dh_name")
+                if dh_name_raw.upper().startswith("DH "):
+                    dh_name_raw = dh_name_raw[3:].strip()
+                td = row.get("travelling_date")
+                od = row.get("out_date")
+                not_in_app.append({
+                    "tp_id":            tp_id,
+                    "name":             _s(row, "pax_name"),
+                    "client_name":      agent_name,
+                    "contact_name":     "",
+                    "client_reference": csv_client_ref,
+                    "travelling_date":  td.strftime("%d/%m/%Y") if td else "",
+                    "out_date":         od.strftime("%d/%m/%Y") if od else "",
+                    "dh_type":          _s(row, "dh_type"),
+                    "vendedor_tp":      _s(row, "responsable_code"),
+                    "operations_tp":    _s(row, "operations_code"),
+                    "dh_name":          dh_name_raw,
+                    "guide":            _s(row, "guide"),
+                    "status":           trip_status,
+                    "quantity_pax":     num_pax,
+                    "rent_perc_raw":    rent_perc_raw,
+                    "amount_raw":       amount_raw,
+                })
             continue
 
         trip = trips_by_tourplan[tp_id]
         updated_count += 1
 
-        # travelling_date — pyodbc returns datetime/date objects directly
-        if row.travelling_date:
-            trip.travelling_date = row.travelling_date
+        td = row.get("travelling_date")
+        if td:
+            trip.travelling_date = td
 
-        # out_date
-        if row.out_date:
-            trip.out_date = row.out_date
+        od = row.get("out_date")
+        if od:
+            trip.out_date = od
 
-        # dh_type (S / B / F)
-        dh_type_val = str(row.dh_type).strip() if row.dh_type else ""
+        dh_type_val = _s(row, "dh_type")
         if dh_type_val in ("S", "B", "F"):
             trip.dh_type = dh_type_val
 
-        # responsable_user
-        responsable_code = str(row.responsable_code).strip() if row.responsable_code else ""
+        responsable_code = _s(row, "responsable_code")
         if responsable_code in users_by_other_tp:
             trip.responsable_user = users_by_other_tp[responsable_code]
+        elif responsable_code:
+            try:
+                trip.responsable_user = User.objects.get(username=responsable_code)
+            except User.DoesNotExist:
+                pass
 
-        # operations_user
-        operations_code = str(row.operations_code).strip() if row.operations_code else ""
+        operations_code = _s(row, "operations_code")
         if operations_code in users_by_other_tp:
             trip.operations_user = users_by_other_tp[operations_code]
+        elif operations_code:
+            try:
+                trip.operations_user = User.objects.get(username=operations_code)
+            except User.DoesNotExist:
+                pass
 
-        # dh name (strip "DH " prefix if present)
-        dh_name_val = str(row.dh_name).strip() if row.dh_name else ""
+        dh_name_val = _s(row, "dh_name")
         if dh_name_val.upper().startswith("DH "):
             dh_name_val = dh_name_val[3:].strip()
-        if dh_name_val:
-            trip.dh = dh_name_val
+        trip.dh = dh_name_val
 
-        # guide
-        trip.guide = str(row.guide).strip() if row.guide else ""
+        trip.guide    = _s(row, "guide")
+        trip.tp_notes = strip_html(row.get("tp_notes") or "")
 
-        # rent_perc — SQL already returns decimal (e.g. 0.35), no /100 needed
-        if row.rent_perc is not None:
+        rp = row.get("rent_perc")
+        if rp is not None:
             try:
-                trip.rent_perc = float(row.rent_perc)
+                trip.rent_perc = float(rp)
             except (ValueError, TypeError):
                 pass
 
-        # amount
-        if row.amount:
+        am = row.get("amount")
+        if am:
             try:
-                trip.amount = int(float(row.amount))
+                trip.amount = int(float(am))
             except (ValueError, TypeError):
                 pass
 
@@ -751,15 +876,191 @@ def sync_from_tourplan_db():
         Trip.objects.bulk_update(trips_to_update, [
             "travelling_date", "out_date", "dh_type",
             "responsable_user", "operations_user", "dh",
-            "guide", "rent_perc", "amount",
+            "guide", "rent_perc", "amount", "tp_notes",
         ])
-        for trip in trips_to_update:
-            if trip.amount:
-                tp_entry = Entry.objects.filter(tourplanId=trip.tourplanId).first()
-                if tp_entry:
-                    tp_entry.amount = trip.amount
-                    tp_entry.save()
 
-    return updated_count, not_found_count
+    # Build the three "wrong TP" groups (same logic as upload_data)
+    no_tp_group1 = []
+    no_tp_group2 = []
+    no_tp_group3 = []
+    for t in (Trip.objects.filter(status="Booking")
+              .select_related("responsable_user", "client")
+              .order_by("travelling_date")):
+        client_ref = str(t.client_reference).strip() if t.client_reference else ""
+        cr_prefix = client_ref.split("/")[0] if "/" in client_ref else client_ref
+        if sum(c.isdigit() for c in cr_prefix) < 6:
+            continue
+        match = csv_client_ref_to_tp.get(client_ref) or csv_client_ref_to_tp.get(cr_prefix)
+        suggested = ""
+        if match:
+            ratio = SequenceMatcher(None, t.name.lower(), match["name"].lower()).ratio()
+            if ratio >= 0.35:
+                suggested = match["tp_id"]
 
-    return subject, email, template, context
+        current_tp = t.tourplanId.strip() if t.tourplanId else ""
+        has_no_tp    = not current_tp
+        is_quote_tp  = bool(current_tp) and current_tp in csv_quote_tp_ids
+        has_wrong_tp = bool(suggested) and bool(current_tp) and current_tp != suggested
+
+        row_data = {
+            "trip_id":          t.id,
+            "name":             t.name,
+            "client_reference": client_ref,
+            "travelling_date":  t.travelling_date.strftime("%d/%m/%Y") if t.travelling_date else "",
+            "vendedor":         t.responsable_user.other_tp if t.responsable_user else "",
+            "client":           t.client.name if t.client else "",
+            "suggested_tp":     suggested,
+            "current_tp":       current_tp,
+        }
+        if has_no_tp:
+            no_tp_group1.append(row_data)
+        elif is_quote_tp:
+            no_tp_group2.append(row_data)
+        elif has_wrong_tp:
+            no_tp_group3.append(row_data)
+
+    return updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app
+
+
+def backfill_conversion_dates():
+    """
+    For every Trip with status "Booking" or "Cancelado" that lacks a conversion_date,
+    find its oldest Entry with status="Booking" and version=1 and use that entry's
+    starting_date as the conversion_date.
+
+    Trips with no such entry are left untouched (booking pre-dates this feature).
+
+    Usage from Django shell:
+        from intranet.utils import backfill_conversion_dates
+        updated, skipped = backfill_conversion_dates()
+        print(f"Updated: {updated} | No booking entry found: {skipped}")
+    """
+    trips_qs = Trip.objects.filter(
+        status__in=("Booking", "Cancelado"),
+        conversion_date__isnull=True,
+    )
+
+    # Fetch the earliest Booking v1 entry per trip in one query
+    from django.db.models import Min
+    earliest = (
+        Entry.objects
+        .filter(status="Booking", version=1, trip__in=trips_qs)
+        .values("trip_id")
+        .annotate(first_date=Min("starting_date"))
+    )
+    date_by_trip = {row["trip_id"]: row["first_date"] for row in earliest}
+
+    to_update = []
+    skipped = 0
+    for trip in trips_qs:
+        first_date = date_by_trip.get(trip.id)
+        if first_date:
+            trip.conversion_date = first_date
+            to_update.append(trip)
+        else:
+            skipped += 1
+
+    if to_update:
+        Trip.objects.bulk_update(to_update, ["conversion_date"])
+
+    print(f"Updated: {len(to_update)} | No booking entry found: {skipped}")
+    return len(to_update), skipped
+
+
+def sync_trip_statuses_from_tourplan():
+    """
+    One-time utility: for every Trip that has a tourplanId, query Tourplan
+    and update Trip.status using the same booking/cancelled mapping as the
+    regular sync.
+
+    Mapping:
+        Tourplan OK/FI/B1-B8  →  "Booking"
+        Tourplan RX/XC/XX     →  "Cancelado"
+        anything else (HL…)   →  skipped (app status left unchanged)
+
+    Usage from Django shell:
+        from intranet.utils import sync_trip_statuses_from_tourplan
+        updated, not_found, skipped = sync_trip_statuses_from_tourplan()
+        for r in updated:
+            print(r)
+
+    Returns:
+        updated   - list of dicts {trip_id, name, tourplanId, tp_raw_status,
+                                   old_status, new_status}
+        not_found - list of tourplanIds present in the app but absent in Tourplan
+        skipped   - count of trips whose status already matched or whose
+                    Tourplan status is not in the mapping (HL, etc.)
+    """
+    trips_qs = (
+        Trip.objects
+        .exclude(tourplanId="")
+        .exclude(tourplanId__isnull=True)
+        .only("id", "name", "tourplanId", "status")
+    )
+
+    trips_by_tp = {t.tourplanId.strip(): t for t in trips_qs if t.tourplanId}
+    if not trips_by_tp:
+        print("No trips with tourplanId found.")
+        return [], [], 0
+
+    all_tp_ids = list(trips_by_tp.keys())
+    placeholders = ", ".join(["%s"] * len(all_tp_ids))
+    query = (
+        f"SELECT FULL_REFERENCE, STATUS FROM BHD "
+        f"WHERE FULL_REFERENCE IN ({placeholders})"
+    )
+
+    conn = get_tourplan_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, all_tp_ids)
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    # One row per FULL_REFERENCE; keep the first if duplicates exist
+    tp_status_map = {}
+    for row in rows:
+        ref = (row.get("FULL_REFERENCE") or "").strip()
+        if ref and ref not in tp_status_map:
+            tp_status_map[ref] = (row.get("STATUS") or "").strip()
+
+    updated    = []
+    not_found  = []
+    skipped    = 0
+    to_update  = []
+
+    for tp_id, trip in trips_by_tp.items():
+        if tp_id not in tp_status_map:
+            not_found.append(tp_id)
+            continue
+
+        raw = tp_status_map[tp_id]
+        if raw in _BOOKING_STATUSES:
+            new_status = "Booking"
+        elif raw in _CANCELLED_STATUSES:
+            new_status = "Cancelado"
+        else:
+            skipped += 1
+            continue
+
+        if trip.status == new_status:
+            skipped += 1
+            continue
+
+        updated.append({
+            "trip_id":       trip.id,
+            "name":          trip.name,
+            "tourplanId":    tp_id,
+            "tp_raw_status": raw,
+            "old_status":    trip.status,
+            "new_status":    new_status,
+        })
+        trip.status = new_status
+        to_update.append(trip)
+
+    if to_update:
+        Trip.objects.bulk_update(to_update, ["status"])
+
+    print(f"Updated: {len(updated)} | Not found in Tourplan: {len(not_found)} | Skipped: {skipped}")
+    return updated, not_found, skipped

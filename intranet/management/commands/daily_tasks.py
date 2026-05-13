@@ -4,13 +4,25 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db
 
 
 class Command(BaseCommand):
     help = "Ejecuta tareas diarias. Los miércoles también envía mails de rentabilidad."
 
     def handle(self, *args, **kwargs):
+
+        # Tourplan DB sync
+        self.stdout.write("Sincronizando datos desde Tourplan...")
+        try:
+            updated, no_tp1, no_tp2, no_tp3, not_in_app = sync_from_tourplan_db()
+            self.stdout.write(self.style.SUCCESS(
+                f"Tourplan sincronizado — {updated} viaje(s) actualizados"
+            ))
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error al sincronizar Tourplan: {exc}"))
+
+        self.stdout.write("-" * 30)
 
         # First task
         self.stdout.write("Actualizando colores...")

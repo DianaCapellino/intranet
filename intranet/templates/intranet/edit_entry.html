@@ -56,7 +56,12 @@
                     </div>
                     <div class="row">
                         <div class="mb-3 col-3">
-                            <label for="tourplanId" class="form-label"># Tourplan</label>
+                            <label for="tourplanId" class="form-label">
+                                # Tourplan
+                                <span id="tp-spinner" class="spinner-border spinner-border-sm text-secondary ms-1 d-none" role="status"></span>
+                                <span id="tp-ok" class="text-success ms-1 d-none"><i class="fa-solid fa-check"></i></span>
+                                <span id="tp-err" class="text-danger ms-1 small d-none"></span>
+                            </label>
                             {% if not entry.trip.tourplanId or entry.trip.tourplanId == "" %}
                                 <input class="form-control" type="text" name="tourplanId" id="tourplanId" value="{{ entry.tourplanId }}">
                             {% else %}
@@ -152,4 +157,44 @@
 </div>
 <br>
 {% endif %}
+
+<script>
+(function () {
+  const tpInput  = document.getElementById('tourplanId');
+  const amountEl = document.getElementById('amount');
+  const spinner  = document.getElementById('tp-spinner');
+  const okIcon   = document.getElementById('tp-ok');
+  const errMsg   = document.getElementById('tp-err');
+
+  let lastQueried = '';
+
+  function setStatus(state, msg) {
+    spinner.classList.add('d-none');
+    okIcon.classList.add('d-none');
+    errMsg.classList.add('d-none');
+    if (state === 'loading') spinner.classList.remove('d-none');
+    else if (state === 'ok')  okIcon.classList.remove('d-none');
+    else if (state === 'err') { errMsg.textContent = msg || 'No encontrado'; errMsg.classList.remove('d-none'); }
+  }
+
+  function lookup(tp_id) {
+    if (!tp_id || tp_id === lastQueried) return;
+    lastQueried = tp_id;
+    setStatus('loading');
+    fetch(`/entries/tp_lookup?tp_id=${encodeURIComponent(tp_id)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { setStatus('err', d.error); return; }
+        if (d.amount !== null && d.amount !== undefined) {
+          amountEl.value = d.amount;
+        }
+        setStatus('ok');
+      })
+      .catch(() => setStatus('err', 'Error de conexión'));
+  }
+
+  tpInput.addEventListener('blur', () => lookup(tpInput.value.trim()));
+  tpInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookup(tpInput.value.trim()); } });
+})();
+</script>
 {% endblock %}

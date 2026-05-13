@@ -45,7 +45,15 @@
 
         <!-- Contenido Principal -->
         <div id="report-content" style="display: none;">
-            
+
+            <!-- ========== SECCIÓN DRILL-DOWN (visible solo con filtro específico) ========== -->
+            <div id="section-drilldown" class="mb-4 d-none">
+                <div class="card card-body">
+                    <h3 id="drilldown-title"></h3>
+                    <table id="drilldown-table" class="table table-hover" style="width:100%"></table>
+                </div>
+            </div>
+
             <!-- ========== SECCIÓN 1: RESUMEN GENERAL ========== -->
             <div class="stats-section mb-4">
                 <button class="btn btn-lg btn-secondary w-100 text-start" type="button" 
@@ -101,15 +109,15 @@
 
                         <div class="mt-4">
                             <h4 class="d-inline">Dificultad de viajes</h4>
-                            <i class="fas fa-question-circle text-primary ms-1" 
-                               data-bs-toggle="tooltip" 
+                            <i class="fas fa-question-circle text-primary ms-1"
+                               data-bs-toggle="tooltip"
                                data-bs-html="true"
                                title="1 – Muy Fácil – 1 solo destino / cruceristas simples
 2 – Fácil – 2 destinos
 3 – Moderado – 3 destinos o 2 con dificultades
 4 – Complejo – 4 destinos o más
 5 – Muy Complejo" – Itinerarios con destinos no conocidos o muy largos></i>
-                            
+
                             <div class="row mt-3">
                                 <div class="col" id="average-difficulty"></div>
                                 <div class="col" id="difficulty-1"></div>
@@ -118,6 +126,29 @@
                                 <div class="col" id="difficulty-4"></div>
                                 <div class="col" id="difficulty-5"></div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Desglose mensual (visible solo en temporada / rango largo) -->
+                    <div id="monthly-breakdown-trips" class="d-none mt-4">
+                        <hr>
+                        <h4>📅 Evolución Mensual</h4>
+                        <div class="table-responsive mt-3">
+                            <table class="table table-bordered table-sm table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Mes</th>
+                                        <th>Bookings (cant.)</th>
+                                        <th>Facturación</th>
+                                        <th>Rentabilidad prom. %</th>
+                                        <th>Cancelaciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="monthly-breakdown-trips-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div class="chart-box mt-3">
+                            <canvas id="chartMonthlyTrips"></canvas>
                         </div>
                     </div>
                 </div>
@@ -166,6 +197,26 @@
                             <tfoot id="vendor-vr-tfoot"></tfoot>
                         </table>
 
+                        <!-- Evolución mensual por VR (visible solo en temporada / rango largo) -->
+                        <div id="monthly-by-vr-trips" class="d-none mt-4">
+                            <hr>
+                            <h4>📅 Evolución Mensual por Vendedor Responsable</h4>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Cantidad de Reservas por mes</h5>
+                                        <canvas id="chartMonthlyVrCount"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Facturación por mes</h5>
+                                        <canvas id="chartMonthlyVrAmount"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Gráficos VR -->
                         <h4 class="mt-4">📈 Análisis Visual - Vendedor Responsable</h4>
                         <div class="row">
@@ -201,6 +252,26 @@
                             <tbody id="operations-booking-tbody"></tbody>
                             <tfoot id="operations-booking-tfoot"></tfoot>
                         </table>
+
+                        <!-- Evolución mensual por Operador (visible solo en temporada / rango largo) -->
+                        <div id="monthly-by-operator-trips" class="d-none mt-4">
+                            <hr>
+                            <h4>📅 Evolución Mensual por Operador</h4>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Cantidad de Reservas por mes</h5>
+                                        <canvas id="chartMonthlyOperatorCount"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Facturación por mes</h5>
+                                        <canvas id="chartMonthlyOperatorAmount"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- Gráficos Operadores -->
                         <h4 class="mt-4">📈 Análisis Visual - Operadores</h4>
@@ -261,6 +332,26 @@
                                 </button>
                             </div>
                         </div>
+                        <!-- Evolución mensual por cliente (visible solo en temporada / rango largo) -->
+                        <div id="monthly-by-client-trips" class="d-none mb-4">
+                            <h4>📅 Evolución Mensual por Cliente</h4>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Cantidad de Reservas por mes</h5>
+                                        <canvas id="chartMonthlyClientTripsCount"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Facturación por mes</h5>
+                                        <canvas id="chartMonthlyClientTripsAmount"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr>
+                        </div>
+
                         <table class="table table-bordered table-striped" id="summary-clients-trips-table" style="width:100%">
                             <thead>
                                 <tr>

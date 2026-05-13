@@ -2,8 +2,349 @@
 
 {% block body %}
 {% if user.userType != "Cliente" %}
-<div id="calendar">
+<div class="container-fluid py-3">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h5 class="mb-0">Calendario de días laborables</h5>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <div class="input-group input-group-sm" style="width:auto">
+        <input type="number" id="syncYear" class="form-control" style="width:80px"
+               value="{{ current_year }}" min="2000" max="2050">
+        <button class="btn btn-outline-secondary" id="btnSyncArg" title="Importar feriados nacionales desde nolaborables.com.ar">
+          Sincronizar feriados argentinos
+        </button>
+      </div>
+      <button class="btn btn-sm btn-primary" id="btnOpenAdd">
+        + Agregar evento
+      </button>
+    </div>
+  </div>
+
+  <!-- Color legend -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex flex-wrap gap-3" id="legendContainer"></div>
+    </div>
+  </div>
+
+  <!-- Calendar -->
+  <div id="calendar"></div>
 
 </div>
+
+<!-- ── Modal: Add event ─────────────────────────────────────────────────────── -->
+<div class="modal fade" id="modalAdd" tabindex="-1" aria-labelledby="modalAddLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="modalAddLabel">Agregar evento</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Event kind toggle -->
+        <div class="mb-3">
+          <div class="btn-group w-100" role="group" id="eventTypeGroup">
+            <button type="button" class="btn btn-sm btn-primary active" data-etype="absence">
+              Ausencia / Evento personal
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-etype="holiday">
+              Feriado / Día especial
+            </button>
+          </div>
+        </div>
+
+        <!-- Absence fields -->
+        <div id="absenceFields">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Persona</label>
+            <select class="form-select form-select-sm" id="absUser">
+              {% for u in staff_users %}
+              <option value="{{ u.id }}">{{ u.get_full_name|default:u.username }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Tipo</label>
+            <select class="form-select form-select-sm" id="absType">
+              {% for val, label in absence_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <!-- Holiday fields -->
+        <div id="holidayFields" style="display:none">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Nombre</label>
+            <input type="text" class="form-control form-control-sm" id="holName" placeholder="Ej: Día de la Independencia">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Tipo</label>
+            <select class="form-select form-select-sm" id="holType">
+              <option value="Feriado">Feriado</option>
+              <option value="Día no laborable">Día no laborable</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Date range (shared) -->
+        <div class="row g-2 mt-1">
+          <div class="col">
+            <label class="form-label small mb-1">Desde</label>
+            <input type="date" class="form-control form-control-sm" id="addDateFrom">
+          </div>
+          <div class="col">
+            <label class="form-label small mb-1">Hasta</label>
+            <input type="date" class="form-control form-control-sm" id="addDateTo">
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-primary" id="btnSaveEvent">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Event detail ──────────────────────────────────────────────────── -->
+<div class="modal fade" id="modalDetail" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="detailTitle">Evento</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small" id="detailBody"></div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-sm btn-danger" id="btnDeleteEvent">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Color / label maps ────────────────────────────────────────────────────────
+const HOLIDAY_COLORS = {
+  'Feriado':          '#E74C3C',
+  'Fin de semana':    '#BDBDBD',
+  'Día no laborable': '#E67E22',
+};
+const ABSENCE_COLORS = {
+  'Vacaciones':               '#27AE60',
+  'Beneficio Vacaciones':     '#82E0AA',
+  'Compensatorios':           '#9B59B6',
+  'Cumpleaños':               '#FF69B4',
+  'Cumpleaños en baja':       '#F1948A',
+  'Exámenes/Día de Estudio':  '#3498DB',
+  'FAM/Trabajando fuera ofi': '#F39C12',
+  'Feriado trabajado':        '#C0392B',
+  'Semana home':              '#1ABC9C',
+  'Sin goce de sueldo':       '#7F8C8D',
+  'Viernes OFF alta':         '#85C1E9',
+};
+const ALL_COLORS = Object.assign({}, HOLIDAY_COLORS, ABSENCE_COLORS);
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+const legendContainer = document.getElementById('legendContainer');
+for (const [label, color] of Object.entries(ALL_COLORS)) {
+  const div = document.createElement('div');
+  div.className = 'd-flex align-items-center gap-1';
+  div.innerHTML =
+    `<span style="width:13px;height:13px;border-radius:3px;background:${color};flex-shrink:0;display:inline-block"></span>`
+    + `<small>${label}</small>`;
+  legendContainer.appendChild(div);
+}
+
+// ── FullCalendar ──────────────────────────────────────────────────────────────
+const calendarEl = document.getElementById('calendar');
+const calendar = new FullCalendar.Calendar(calendarEl, {
+  initialView: 'multiMonthYear',
+  multiMonthMaxColumns: 4,
+  headerToolbar: {
+    left:   'prev,next today',
+    center: 'title',
+    right:  'multiMonthYear,dayGridMonth',
+  },
+  views: {
+    multiMonthYear: { buttonText: 'Año completo' },
+    dayGridMonth:   { buttonText: 'Mes' },
+  },
+  height: 'auto',
+  events: '/holidays/json',
+  eventDidMount(info) {
+    info.el.title = info.event.title;
+  },
+  dateClick(info) {
+    openAddModal(info.dateStr);
+  },
+  eventClick(info) {
+    openDetailModal(info.event);
+    info.jsEvent.stopPropagation();
+  },
+});
+calendar.render();
+
+// ── Add modal ─────────────────────────────────────────────────────────────────
+let currentEventType = 'absence';
+const modalAddEl   = document.getElementById('modalAdd');
+const modalDetailEl = document.getElementById('modalDetail');
+const bsModalAdd    = new bootstrap.Modal(modalAddEl);
+const bsModalDetail = new bootstrap.Modal(modalDetailEl);
+
+document.getElementById('btnOpenAdd').addEventListener('click', () => openAddModal(''));
+
+document.querySelectorAll('#eventTypeGroup button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#eventTypeGroup button').forEach(b => {
+      b.classList.remove('active', 'btn-primary');
+      b.classList.add('btn-outline-primary');
+    });
+    btn.classList.remove('btn-outline-primary');
+    btn.classList.add('active', 'btn-primary');
+    currentEventType = btn.dataset.etype;
+    document.getElementById('absenceFields').style.display = currentEventType === 'absence' ? '' : 'none';
+    document.getElementById('holidayFields').style.display = currentEventType === 'holiday' ? '' : 'none';
+  });
+});
+
+function openAddModal(dateStr) {
+  document.getElementById('addDateFrom').value = dateStr;
+  document.getElementById('addDateTo').value   = dateStr;
+  bsModalAdd.show();
+}
+
+document.getElementById('btnSaveEvent').addEventListener('click', async () => {
+  const dateFrom = document.getElementById('addDateFrom').value;
+  const dateTo   = document.getElementById('addDateTo').value || dateFrom;
+  if (!dateFrom) { alert('Ingresá la fecha'); return; }
+
+  let url, body;
+  if (currentEventType === 'absence') {
+    url  = '/holidays/absence/create';
+    body = {
+      absence_user_id: document.getElementById('absUser').value,
+      type_absence:    document.getElementById('absType').value,
+      date_from: dateFrom,
+      date_to:   dateTo,
+    };
+  } else {
+    url  = '/holidays/holiday/create';
+    body = {
+      name:          document.getElementById('holName').value,
+      type_holidays: document.getElementById('holType').value,
+      date_from: dateFrom,
+      date_to:   dateTo,
+      workable:  false,
+    };
+  }
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+    body: JSON.stringify(body),
+  });
+  if (resp.ok) {
+    bsModalAdd.hide();
+    calendar.refetchEvents();
+  } else {
+    alert('Error al guardar el evento');
+  }
+});
+
+// ── Detail / delete modal ─────────────────────────────────────────────────────
+let currentDetailEvent = null;
+
+function fmt(dateStr) {
+  // dateStr is ISO date from FullCalendar; end is exclusive so subtract 1 day for display
+  if (!dateStr) return '—';
+  return dateStr.slice(0, 10);
+}
+
+function fmtEndDisplay(endStr) {
+  // FullCalendar end is exclusive — subtract 1 day for human display
+  if (!endStr) return '—';
+  const d = new Date(endStr);
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function openDetailModal(event) {
+  currentDetailEvent = event;
+  const props = event.extendedProps;
+  document.getElementById('detailTitle').textContent = event.title;
+
+  const startDisp = fmt(event.startStr);
+  const endDisp   = event.endStr ? fmtEndDisplay(event.endStr) : startDisp;
+  const range     = startDisp === endDisp ? startDisp : `${startDisp} → ${endDisp}`;
+
+  const typeLabel = props.type_absence || props.type_holidays || '—';
+  document.getElementById('detailBody').innerHTML =
+    `<p class="mb-1"><strong>Tipo:</strong> ${typeLabel}</p>`
+    + `<p class="mb-0"><strong>Fecha:</strong> ${range}</p>`;
+
+  // Weekends can't be deleted individually
+  document.getElementById('btnDeleteEvent').style.display =
+    props.type_holidays === 'Fin de semana' ? 'none' : '';
+
+  bsModalDetail.show();
+}
+
+document.getElementById('btnDeleteEvent').addEventListener('click', async () => {
+  if (!currentDetailEvent) return;
+  if (!confirm('¿Eliminar este evento?')) return;
+
+  const rawId      = currentDetailEvent.id; // 'h_5' or 'a_12'
+  const [kind, id] = rawId.split('_');
+  const url        = kind === 'h'
+    ? `/holidays/holiday/${id}/delete`
+    : `/holidays/absence/${id}/delete`;
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+  });
+  if (resp.ok) {
+    bsModalDetail.hide();
+    calendar.refetchEvents();
+  } else {
+    alert('Error al eliminar');
+  }
+});
+
+// ── Sync Argentine holidays ───────────────────────────────────────────────────
+document.getElementById('btnSyncArg').addEventListener('click', async () => {
+  const year = document.getElementById('syncYear').value;
+  const btn  = document.getElementById('btnSyncArg');
+  btn.disabled    = true;
+  btn.textContent = 'Sincronizando…';
+  try {
+    const resp = await fetch(`/holidays/sync_arg?year=${year}`, {
+      headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      alert(`Feriados ${year}: ${data.created} importados, ${data.skipped} ya existían.`);
+      calendar.refetchEvents();
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Sincronizar feriados argentinos';
+  }
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function getCookie(name) {
+  const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+  return m ? m[2] : null;
+}
+</script>
 {% endif %}
 {% endblock %}

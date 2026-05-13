@@ -45,7 +45,15 @@
 
         <!-- Contenido Principal -->
         <div id="report-content" style="display: none;">
-            
+
+            <!-- ========== SECCIÓN DRILL-DOWN (visible solo con filtro específico) ========== -->
+            <div id="section-drilldown" class="mb-4 d-none">
+                <div class="card card-body">
+                    <h3 id="drilldown-title"></h3>
+                    <table id="drilldown-table" class="table table-hover" style="width:100%"></table>
+                </div>
+            </div>
+
             <!-- ========== SECCIÓN 1: RESUMEN GENERAL ========== -->
             <div class="stats-section mb-4">
                 <button class="btn btn-lg btn-secondary w-100 text-start" type="button" 
@@ -141,6 +149,30 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Desglose mensual (visible solo en temporada / rango largo) -->
+                    <div id="monthly-breakdown-entries" class="d-none mt-4">
+                        <hr>
+                        <h4>📅 Evolución Mensual</h4>
+                        <div class="table-responsive mt-3">
+                            <table class="table table-bordered table-sm table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Mes</th>
+                                        <th>Quotes (cant.)</th>
+                                        <th>Quotes (monto)</th>
+                                        <th>Bookings (cant.)</th>
+                                        <th>Bookings (monto)</th>
+                                        <th>Vendedores activos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="monthly-breakdown-entries-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div class="chart-box mt-3">
+                            <canvas id="chartMonthlyEntries"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -185,6 +217,26 @@
                             <tbody id="vendor-quote-tbody"></tbody>
                             <tfoot id="vendor-quote-tfoot"></tfoot>
                         </table>
+
+                        <!-- Evolución mensual por vendedor (visible solo en temporada / rango largo) -->
+                        <div id="monthly-by-vendor-entries" class="d-none mt-4">
+                            <hr>
+                            <h4>📅 Evolución Mensual por Vendedor</h4>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Cotizaciones (A) por mes</h5>
+                                        <canvas id="chartMonthlyVendorQuotes"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Reservas (1) por mes</h5>
+                                        <canvas id="chartMonthlyVendorBookings"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- Gráficos Cotizaciones -->
                         <h4 class="mt-4">📈 Análisis Visual - Cotizaciones</h4>
@@ -359,6 +411,26 @@
                                 </button>
                             </div>
                         </div>
+                        <!-- Evolución mensual por cliente (visible solo en temporada / rango largo) -->
+                        <div id="monthly-by-client-entries" class="d-none mb-4">
+                            <h4>📅 Evolución Mensual por Cliente</h4>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Cotizaciones (A) por mes</h5>
+                                        <canvas id="chartMonthlyClientQuotes"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="chart-box">
+                                        <h5 class="text-center">Reservas (1) por mes</h5>
+                                        <canvas id="chartMonthlyClientBookings"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr>
+                        </div>
+
                         <table class="table table-bordered table-striped" id="summary-clients-table" style="width:100%">
                             <thead>
                                 <tr>

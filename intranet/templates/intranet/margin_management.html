@@ -42,6 +42,7 @@
                 <th>Fecha viaje</th>
                 <th class="text-center">Pax</th>
                 <th class="text-end">Rentabilidad</th>
+                <th style="width:36px;"></th>
                 <th style="width:110px;"></th>
               </tr>
             </thead>
@@ -67,6 +68,15 @@
                   <span class="badge text-bg-danger">{{ trip.rent_perc_display }}%</span>
                   {% else %}
                   <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  {% if trip.tp_notes %}
+                  <button type="button" class="btn btn-sm btn-link p-0 note-btn"
+                          onclick="openNoteModal('{{ trip.name|escapejs }}', '{{ trip.tp_notes|escapejs }}')"
+                          title="Ver nota de rentabilidad">
+                    <i class="fa-solid fa-note-sticky text-warning"></i>
+                  </button>
                   {% endif %}
                 </td>
                 <td class="text-end">
@@ -108,6 +118,7 @@
             <th>Cliente</th>
             <th>Fecha viaje</th>
             <th class="text-end">Rentabilidad</th>
+            <th style="width:36px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -125,6 +136,15 @@
               <span class="badge text-bg-danger">{{ trip.rent_perc_display }}%</span>
               {% else %}
               <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if trip.tp_notes %}
+              <button type="button" class="btn btn-sm btn-link p-0"
+                      onclick="openNoteModal('{{ trip.name|escapejs }}', '{{ trip.tp_notes|escapejs }}')"
+                      title="Ver nota de rentabilidad">
+                <i class="fa-solid fa-note-sticky text-warning"></i>
+              </button>
               {% endif %}
             </td>
           </tr>
@@ -149,6 +169,7 @@
             <th>Fecha viaje</th>
             <th class="text-center">Pax</th>
             <th class="text-end">Rentabilidad</th>
+            <th style="width:36px;"></th>
             <th style="width:110px;"></th>
           </tr>
         </thead>
@@ -176,6 +197,15 @@
               <span class="badge text-bg-warning text-dark">{{ trip.rent_perc_display }}%</span>
               {% endif %}
             </td>
+            <td class="text-center">
+              {% if trip.tp_notes %}
+              <button type="button" class="btn btn-sm btn-link p-0 note-btn"
+                      onclick="openNoteModal('{{ trip.name|escapejs }}', '{{ trip.tp_notes|escapejs }}')"
+                      title="Ver nota de rentabilidad">
+                <i class="fa-solid fa-note-sticky text-warning"></i>
+              </button>
+              {% endif %}
+            </td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-secondary ignore-btn"
                       onclick="openIgnoreModal({{ trip.id }}, '{{ trip.name|escapejs }}')"
@@ -199,6 +229,23 @@
 
 </div>
 
+
+<!-- Modal: Nota de rentabilidad -->
+<div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">
+          <i class="fa-solid fa-note-sticky text-warning me-2"></i>Nota – <span id="note-modal-trip"></span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="note-modal-content" class="mb-0" style="white-space:pre-wrap;"></p>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Confirmar ignorar -->
 <div class="modal fade" id="ignoreModal" tabindex="-1" aria-hidden="true">
@@ -287,6 +334,12 @@
       }
     })
     .catch(() => { checkbox.checked = !reviewed; });
+  }
+
+  function openNoteModal(tripName, noteText) {
+    document.getElementById('note-modal-trip').textContent    = tripName;
+    document.getElementById('note-modal-content').textContent = noteText;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('noteModal')).show();
   }
 
   function openIgnoreModal(tripId, tripName) {

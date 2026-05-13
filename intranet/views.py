@@ -1,3 +1,9 @@
+# ── Tourplan DB connection toggle ────────────────────────────────────────────
+# Set to False to disable the live lookup when editing entries (entry_tp_lookup).
+# The daily sync task (tourplan_db_sync) is NOT affected by this flag.
+TOURPLAN_ENABLED = True
+# ─────────────────────────────────────────────────────────────────────────────
+
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.contrib.auth import authenticate, login, logout
@@ -8,19 +14,19 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
 from difflib import SequenceMatcher
 from datetime import datetime, date, timedelta
-from django.utils.timezone import localtime
+from django.utils.timezone import localtime, now as timezone_now
 from imap_tools import MailBox
 import os
 from dotenv import load_dotenv
 import csv
-from django.db.models import Count, Avg, Q, FloatField
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Avg, Q, FloatField, Sum
+from django.db.models.functions import Coalesce, TruncMonth
 from django.core.paginator import Paginator
 from collections import OrderedDict
 from django.views.decorators.http import require_GET
@@ -131,49 +137,29 @@ def get_filtered_trips(user):
 
     try:
         search = Search.objects.get(user=user)
-
     except Search.DoesNotExist:
         search = None
 
-    # Empty list of trips filtered
-    filter_trips = []
+    base_qs = Trip.objects.filter(department=user.department).select_related(
+        'client', 'contact', 'responsable_user', 'operations_user'
+    )
 
-    # Check if a search is saved
     if search:
+        qs = base_qs
+        if search.name:
+            qs = qs.filter(name__icontains=search.name)
+        if search.client_reference:
+            qs = qs.filter(client_reference__icontains=search.client_reference)
+        if search.tourplanId:
+            qs = qs.filter(tourplanId__icontains=search.tourplanId)
+        return qs
 
-       # Filter the trips by deparment
-        dep_trips = Trip.objects.filter(department=user.department)
-
-        if search.name != "":
-            name_trips = dep_trips.filter(name__icontains=search.name)
-        else:
-            name_trips = dep_trips
-
-        if search.client_reference != "":
-            client_ref_trips = name_trips.filter(client_reference__icontains=search.client_reference)
-        else:
-            client_ref_trips = name_trips
-
-        if search.tourplanId != "":
-            tourplan_ref_trips = client_ref_trips.filter(tourplanId__icontains=search.tourplanId)
-        else:
-            tourplan_ref_trips = client_ref_trips
-
-        filter_trips = tourplan_ref_trips
-        status_trips = []
-
-    # Filter applied when there is no search
+    # No search — default view
+    if user.userType == "Ventas":
+        return base_qs.filter(responsable_user=user)
     else:
-        dep_trips = Trip.objects.filter(department=user.department)
-
-        if user.userType == "Ventas":
-            filter_trips = dep_trips.filter(responsable_user=user)
-        else:
-            for trip in dep_trips:
-                if (trip.travelling_date - today).days < 16 and (trip.travelling_date - today).days >= 0:
-                    filter_trips.append(trip)
-
-    return filter_trips
+        cutoff = today + timedelta(days=16)
+        return base_qs.filter(travelling_date__gte=today, travelling_date__lt=cutoff)
 
 
 @login_required
@@ -742,9 +728,9 @@ def get_return_page(page, type, user):
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.filter(department=user.department),
-                    "notes": Notes.objects.filter(trip__department=user.department),
+                    "notes": Notes.objects.filter(trip__in=filter_trips).select_related('trip', 'user'),
                     "one_hundred": 100,
-                    "feedbacks": Feedback.objects.filter(trip__department=user.department),
+                    "feedbacks": Feedback.objects.filter(trip__in=filter_trips).select_related('trip'),
                 }
         else:
             return {
@@ -759,9 +745,9 @@ def get_return_page(page, type, user):
                     "formated_travelling_dates": formated_travelling_dates,
                     "formated_out_dates": formated_out_dates,
                     "users": User.objects.filter(department=user.department),
-                    "notes": Notes.objects.filter(trip__department=user.department),
+                    "notes": Notes.objects.filter(trip__in=filter_trips).select_related('trip', 'user'),
                     "one_hundred": 100,
-                    "feedbacks": Feedback.objects.filter(trip__department=user.department),
+                    "feedbacks": Feedback.objects.filter(trip__in=filter_trips).select_related('trip'),
                 }
 
     if page == "entries":
@@ -919,8 +905,75 @@ def create_trip(request):
 
     else:
         # GET request - mostrar el formulario
-        return render(request, "intranet/trips.html",
-                     get_return_page("trips", "", request.user))
+        context = get_return_page("trips", "", request.user)
+
+        # Filtros para drill-down desde estadísticas
+        date_from    = request.GET.get("date_from")
+        date_to      = request.GET.get("date_to")
+        month        = request.GET.get("month")
+        year         = request.GET.get("year")
+        week         = request.GET.get("week")
+        season       = request.GET.get("season")
+        vr_filter    = request.GET.get("vr_filter")
+        op_filter    = request.GET.get("op_filter")
+        client_filter = request.GET.get("client_filter")
+        user_filter  = request.GET.get("user_filter")   # vendedor en entradas
+        status_filter = request.GET.get("status_filter")  # ej. "Booking" desde stats de viajes
+
+        has_filter = any([date_from, date_to, month, year, week, season,
+                          vr_filter, op_filter, client_filter, user_filter, status_filter])
+
+        if has_filter:
+            qs = Trip.objects.filter(
+                department=request.user.department
+            ).select_related('client', 'contact', 'responsable_user', 'operations_user')
+
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+
+            if date_from and date_to:
+                qs = qs.filter(travelling_date__range=(date_from, date_to))
+            elif month and year:
+                qs = qs.filter(travelling_date__month=month, travelling_date__year=year)
+            elif season:
+                _s = int(season)
+                qs = qs.filter(travelling_date__range=(date(_s, 5, 1), date(_s + 1, 4, 30)))
+            elif week:
+                _today = date.today()
+                _this_week = _today.isocalendar()[1]
+                _week_year = _today.year - 1 if int(week) > _this_week else _today.year
+                qs = qs.filter(travelling_date__range=(
+                    date.fromisocalendar(_week_year, int(week), 1),
+                    date.fromisocalendar(_week_year, int(week), 7),
+                ))
+
+            if vr_filter:
+                qs = qs.filter(responsable_user__other_name=vr_filter)
+            if op_filter:
+                qs = qs.filter(operations_user__other_name=op_filter)
+            if client_filter:
+                qs = qs.filter(client__name=client_filter)
+            if user_filter:
+                qs = qs.filter(entry_trips__user_working__other_name=user_filter).distinct()
+
+            formated_starting_dates, formated_travelling_dates, formated_out_dates = [], [], []
+            for t in qs:
+                formated_starting_dates.append((t.id, t.starting_date.isoformat()))
+                formated_travelling_dates.append((t.id, t.travelling_date.isoformat()))
+                _out = t.out_date or (t.travelling_date + timedelta(days=1))
+                formated_out_dates.append((t.id, _out.isoformat()))
+
+            context.update({
+                "trips": qs,
+                "formated_starting_dates": formated_starting_dates,
+                "formated_travelling_dates": formated_travelling_dates,
+                "formated_out_dates": formated_out_dates,
+                "notes": Notes.objects.filter(trip__in=qs).select_related('trip', 'user'),
+                "feedbacks": Feedback.objects.filter(trip__in=qs).select_related('trip'),
+                "filter_active": True,
+            })
+
+        return render(request, "intranet/trips.html", context)
 
 
 @login_required
@@ -1322,11 +1375,12 @@ def modify_entry(request, entry_id):
         trip = entry.trip
 
         # Set the version of the quote and booking defaults
-        if status == "Booking":
-            if (entry.version == 1):
-                trip.status = "Booking"
-                trip.conversion_date = starting_date
-            trip.version = version
+        new_version = int(version) if str(version).isdigit() else 0
+        if status == "Booking" and new_version == 1:
+            trip.status = "Booking"
+            if not trip.conversion_date:
+                trip.conversion_date = timezone_now()
+
         if status == "Quote":
             trip.version_quote = version_quote
         else:
@@ -1349,8 +1403,6 @@ def modify_entry(request, entry_id):
         # Save all the changes of the trip
         trip.save()
 
-        update_timingStatus(entry)
-
         # Modifies the model of the entry with the form information
         entry.starting_date=starting_date
         entry.status=status
@@ -1366,6 +1418,8 @@ def modify_entry(request, entry_id):
             entry.version_quote = version_quote
         else:
             entry.version = version
+
+        update_timingStatus(entry)
 
         entry.save()
 
@@ -1534,9 +1588,41 @@ def stats_trips_report(request):
 
     return render(request, 'intranet/stats_trips_report.html', context)
 
+
+_HOLIDAY_COLORS = {
+    'Feriado': '#E74C3C',
+    'Fin de semana': '#BDBDBD',
+    'Día no laborable': '#E67E22',
+}
+
+_ABSENCE_COLORS = {
+    'Vacaciones': '#27AE60',
+    'Beneficio Vacaciones': '#82E0AA',
+    'Compensatorios': '#9B59B6',
+    'Cumpleaños': '#FF69B4',
+    'Cumpleaños en baja': '#F1948A',
+    'Exámenes/Día de Estudio': '#3498DB',
+    'FAM/Trabajando fuera ofi': '#F39C12',
+    'Feriado trabajado': '#C0392B',
+    'Semana home': '#1ABC9C',
+    'Sin goce de sueldo': '#7F8C8D',
+    'Viernes OFF alta': '#85C1E9',
+}
+
+
 @login_required
 def holidays(request):
-    return render(request, "intranet/holidays.html")
+    staff_users = (
+        User.objects
+        .filter(isActivated=True)
+        .exclude(userType='Cliente')
+        .order_by('first_name', 'last_name', 'username')
+    )
+    return render(request, "intranet/holidays.html", {
+        'staff_users': staff_users,
+        'absence_types': TYPE_ABSENCE,
+        'current_year': date.today().year,
+    })
 
 
 def create_weekend_holidays(start_date, end_date):
@@ -1561,62 +1647,169 @@ def create_weekend_holidays(start_date, end_date):
 @login_required
 @csrf_exempt
 def json_holidays(request):
-    """
-    Function to create json for FullCalendar
-    """
+    start_str = request.GET.get('start')
+    end_str = request.GET.get('end')
 
-    # Getting the information of the dates required
-    start_date_str = request.GET.get('start', None)
-    end_date_str = request.GET.get('end', None)
+    if start_str and end_str:
+        # FullCalendar may pass ISO strings with timezone offset; strip the time part
+        start_date = datetime.fromisoformat(start_str[:10]).date()
+        end_date = datetime.fromisoformat(end_str[:10]).date()
+        holiday_qs = Holidays.objects.filter(date_from__lte=end_date, date_to__gte=start_date)
+        absence_qs = Absence.objects.filter(
+            date_from__lte=end_date, date_to__gte=start_date
+        ).select_related('absence_user')
+    else:
+        holiday_qs = Holidays.objects.all()
+        absence_qs = Absence.objects.all().select_related('absence_user')
 
-    # Filter the events of the model according to the required dates
-    if start_date_str and end_date_str:
-        start_date = datetime.fromisoformat(start_date_str)
-        end_date = datetime.fromisoformat(end_date_str)
-        holidays = Holidays.objects.filter(date_from__gte=start_date, date_to__lte=end_date)
-        absences = Absence.objects.filter(date_from__gte=start_date, date_to__lte=end_date)
-
-    # Inicialize empty list of the data to be send
     data = []
 
-    # Get the holidays events
-    for event in holidays:
-
-        # Select the color according to the type
-        if event.type_holidays == "Feriado":
-            color = "#FF0000"
-        elif event.type_holidays == "Fin de semana":
-            color = "#808080"
-        elif event.type_holidays == "Día no laborable":
-            color = "#FF8000"
-
-        # If it is workable it will bring the name of the user, otherwise empty string
-        if event.workable:
-            title = event.working_user.username
-        else:
-            title = ""
-
+    for event in holiday_qs:
+        color = _HOLIDAY_COLORS.get(event.type_holidays, '#E74C3C')
+        title = event.name or event.type_holidays
+        if event.workable and event.working_user:
+            title = f"{title} ({event.working_user.username})"
+        # FullCalendar allDay end is exclusive: add 1 day
+        end_date_fc = (event.date_to + timedelta(days=1)).isoformat()
         data.append({
-            'id': event.id,
+            'id': f'h_{event.id}',
             'title': title,
             'start': event.date_from.isoformat(),
-            'end': event.date_to.isoformat(),
+            'end': end_date_fc,
             'allDay': True,
             'backgroundColor': color,
+            'borderColor': color,
+            'extendedProps': {
+                'eventType': 'holiday',
+                'type_holidays': event.type_holidays,
+                'workable': event.workable,
+            },
         })
 
-    for event in absences:
-
+    for event in absence_qs:
+        color = _ABSENCE_COLORS.get(event.type_absence, '#00aae4')
+        user_name = ''
+        if event.absence_user:
+            user_name = event.absence_user.get_full_name() or event.absence_user.username
+        title = f"{user_name}: {event.type_absence}" if user_name else event.type_absence
+        end_date_fc = (event.date_to + timedelta(days=1)).isoformat()
         data.append({
-            'id': event.id,
-            'title': event.absence_user.username,
+            'id': f'a_{event.id}',
+            'title': title,
             'start': event.date_from.isoformat(),
-            'end': event.date_to.isoformat(),
+            'end': end_date_fc,
             'allDay': True,
-            'backgroundColor': "#00aae4",
+            'backgroundColor': color,
+            'borderColor': color,
+            'extendedProps': {
+                'eventType': 'absence',
+                'type_absence': event.type_absence,
+                'user_id': event.absence_user_id,
+            },
         })
 
     return JsonResponse(data, safe=False)
+
+
+@login_required
+@csrf_exempt
+def create_holiday(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    date_from = date.fromisoformat(data['date_from'])
+    date_to = date.fromisoformat(data.get('date_to') or data['date_from'])
+    working_user = None
+    if data.get('working_user_id'):
+        working_user = User.objects.filter(pk=data['working_user_id']).first()
+    h = Holidays.objects.create(
+        name=data.get('name', ''),
+        type_holidays=data.get('type_holidays', 'Feriado'),
+        date_from=date_from,
+        date_to=date_to,
+        workable=data.get('workable', False),
+        working_user=working_user,
+    )
+    return JsonResponse({'id': h.id, 'success': True})
+
+
+@login_required
+@csrf_exempt
+def delete_holiday(request, holiday_id):
+    if request.method not in ('POST', 'DELETE'):
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        Holidays.objects.get(pk=holiday_id).delete()
+        return JsonResponse({'success': True})
+    except Holidays.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+@csrf_exempt
+def create_absence(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    data = json.loads(request.body)
+    date_from = date.fromisoformat(data['date_from'])
+    date_to = date.fromisoformat(data.get('date_to') or data['date_from'])
+    absence_user = None
+    if data.get('absence_user_id'):
+        absence_user = User.objects.filter(pk=data['absence_user_id']).first()
+    a = Absence.objects.create(
+        type_absence=data.get('type_absence', 'Vacaciones'),
+        date_from=date_from,
+        date_to=date_to,
+        absence_user=absence_user,
+    )
+    return JsonResponse({'id': a.id, 'success': True})
+
+
+@login_required
+@csrf_exempt
+def delete_absence(request, absence_id):
+    if request.method not in ('POST', 'DELETE'):
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        Absence.objects.get(pk=absence_id).delete()
+        return JsonResponse({'success': True})
+    except Absence.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def sync_arg_holidays(request):
+    import urllib.request as _urlreq
+    year = request.GET.get('year', str(date.today().year))
+    url = f"https://nolaborables.com.ar/api/v2/feriados/{year}"
+    try:
+        with _urlreq.urlopen(url, timeout=10) as resp:
+            holidays_data = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+    created = skipped = 0
+    for h in holidays_data:
+        day = h.get('dia')
+        month = h.get('mes')
+        name = (h.get('motivo') or h.get('nombre') or '').strip()
+        if not day or not month:
+            continue
+        try:
+            event_date = date(int(year), int(month), int(day))
+        except ValueError:
+            continue
+        _, was_created = Holidays.objects.get_or_create(
+            date_from=event_date,
+            type_holidays='Feriado',
+            defaults={'date_to': event_date, 'name': name, 'workable': False},
+        )
+        if was_created:
+            created += 1
+        else:
+            skipped += 1
+
+    return JsonResponse({'created': created, 'skipped': skipped})
 
 
 @login_required
@@ -1685,6 +1878,154 @@ def json_entries(request):
     entries = [entry.serialize() for entry in entries_object_list]
 
     return JsonResponse(entries, safe=False)
+
+
+@login_required
+def entry_tp_lookup(request):
+    """
+    Queries the Tourplan DB for a single booking by tourplanId,
+    updates the related Trip, and returns the amount + key fields as JSON.
+    """
+    if not TOURPLAN_ENABLED:
+        return JsonResponse({"error": "Conexión a Tourplan deshabilitada temporalmente"}, status=503)
+
+    tp_id = request.GET.get("tp_id", "").strip()
+    if not tp_id:
+        return JsonResponse({"error": "tp_id requerido"}, status=400)
+
+    from intranet.utils import get_tourplan_connection, _BOOKING_STATUSES, _CANCELLED_STATUSES
+
+    SINGLE_BOOKING_QUERY = """
+        SELECT
+            BHD.FULL_REFERENCE    AS tourplan_id,
+            BHD.TRAVELDATE        AS travelling_date,
+            BHD.LAST_SERVICE_DATE AS out_date,
+            BHD.STATUS            AS status,
+            BHD.NAME              AS pax_name,
+            BHD.UDTEXT2           AS dh_type,
+            BHD.SALE3             AS dh_name,
+            BHD.CONSULTANT        AS responsable_code,
+            BHD.SALE1             AS operations_code,
+            DRM.NAME              AS agent_name,
+            BHD.AGENT_REFERENCE   AS client_reference,
+            ISNULL(RTRIM(LTRIM((
+                SELECT STUFF((
+                    SELECT ', ' + RTRIM(LTRIM(CRM.NAME))
+                    FROM CRM
+                    JOIN OPT ON OPT.SUPPLIER = CRM.CODE
+                    JOIN BSL ON BSL.OPT_ID = OPT.OPT_ID
+                    WHERE BSL.BHD_ID = BHD.BHD_ID
+                      AND OPT.SERVICE = 'GU' AND OPT.LOCATION = 'BUE'
+                    GROUP BY CRM.NAME
+                    FOR XML PATH ('')
+                ), 1, 1, '')
+            ))), '') AS guide,
+            CASE BHD.STATUS WHEN 'HL' THEN 0 WHEN 'XC' THEN 0 WHEN 'XX' THEN 0
+                ELSE BSD.PAX END AS num_pax,
+            CASE BHD.STATUS WHEN 'HL' THEN 0
+                ELSE (BSD.AGENT - BSD.COST) / CASE BSD.AGENT WHEN 0 THEN 1 ELSE BSD.AGENT END
+            END AS rent_perc,
+            CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount,
+            ISNULL((
+                SELECT STUFF((
+                    SELECT ' | ' + RTRIM(LTRIM(CAST(N2.MESSAGE_TEXT AS NVARCHAR(MAX))))
+                    FROM NTS N2
+                    WHERE N2.BHD_ID = BHD.BHD_ID AND N2.CATEGORY = 'REN'
+                    FOR XML PATH (''), TYPE
+                ).value('.', 'NVARCHAR(MAX)'), 1, 3, '')
+            ), '') AS tp_notes
+        FROM BHD
+        JOIN DRM ON DRM.CODE = BHD.AGENT
+        JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
+        WHERE BHD.FULL_REFERENCE = %s
+    """
+
+    try:
+        conn = get_tourplan_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(SINGLE_BOOKING_QUERY, (tp_id,))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+    except Exception as e:
+        return JsonResponse({"error": f"Error conectando a Tourplan: {e}"}, status=500)
+
+    if not row:
+        return JsonResponse({"error": f"Código {tp_id} no encontrado en Tourplan"}, status=404)
+
+    # Update the related Trip in the app (same logic as sync_from_tourplan_db)
+    trip = Trip.objects.filter(tourplanId=tp_id).first()
+    if trip:
+        users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+        if row.get("travelling_date"):
+            trip.travelling_date = row["travelling_date"]
+        if row.get("out_date"):
+            trip.out_date = row["out_date"]
+        dh_type_val = (row.get("dh_type") or "").strip()
+        if dh_type_val in ("S", "B", "F"):
+            trip.dh_type = dh_type_val
+        resp_code = (row.get("responsable_code") or "").strip()
+        if resp_code in users_by_other_tp:
+            trip.responsable_user = users_by_other_tp[resp_code]
+        elif resp_code:
+            try:
+                trip.responsable_user = User.objects.get(username=resp_code)
+            except User.DoesNotExist:
+                pass
+        ops_code = (row.get("operations_code") or "").strip()
+        if ops_code in users_by_other_tp:
+            trip.operations_user = users_by_other_tp[ops_code]
+        elif ops_code:
+            try:
+                trip.operations_user = User.objects.get(username=ops_code)
+            except User.DoesNotExist:
+                pass
+        dh_name_val = (row.get("dh_name") or "").strip()
+        if dh_name_val.upper().startswith("DH "):
+            dh_name_val = dh_name_val[3:].strip()
+        trip.dh = dh_name_val
+        trip.guide    = (row.get("guide") or "").strip()
+        from intranet.utils import strip_html
+        trip.tp_notes = strip_html(row.get("tp_notes") or "")
+        rp = row.get("rent_perc")
+        if rp is not None:
+            try:
+                trip.rent_perc = float(rp)
+            except (ValueError, TypeError):
+                pass
+        am = row.get("amount")
+        if am:
+            try:
+                trip.amount = int(float(am))
+            except (ValueError, TypeError):
+                pass
+        trip.save()
+
+    amount = row.get("amount")
+    try:
+        amount = int(float(amount)) if amount else None
+    except (ValueError, TypeError):
+        amount = None
+
+    td = row.get("travelling_date")
+    od = row.get("out_date")
+    raw_status = (row.get("status") or "").strip()
+    if raw_status in _BOOKING_STATUSES:
+        app_status = "Booking"
+    elif raw_status in _CANCELLED_STATUSES:
+        app_status = "Cancelado"
+    else:
+        app_status = "Quote"
+
+    return JsonResponse({
+        "amount":          amount,
+        "status":          app_status,
+        "travelling_date": td.strftime("%d/%m/%Y") if td else "",
+        "out_date":        od.strftime("%d/%m/%Y") if od else "",
+        "pax_name":        (row.get("pax_name") or "").strip(),
+        "guide":           (row.get("guide") or "").strip(),
+    })
 
 
 @login_required
@@ -2099,7 +2440,16 @@ def entries_data(request):
     length = int(request.GET.get("length", 10))
     search_value = request.GET.get("search[value]", "")
     show_all = request.GET.get("show_all", "0")
-    user_filter = request.GET.get("user_filter", "").strip()  # username o ""
+    user_filter = request.GET.get("user_filter", "").strip()  # username (pendings UI select)
+    user_other_name_filter = request.GET.get("user_other_name_filter", "").strip()  # other_name (stats drill-down)
+    client_filter_param = request.GET.get("client_filter", "").strip()  # stats drill-down
+    status_filter_param = request.GET.get("status_filter", "").strip()  # stats drill-down (Quote/Booking/Final)
+    date_from_param = request.GET.get("date_from", "").strip()
+    date_to_param   = request.GET.get("date_to", "").strip()
+    month_param     = request.GET.get("month", "").strip()
+    year_param      = request.GET.get("year", "").strip()
+    week_param      = request.GET.get("week", "").strip()
+    season_param    = request.GET.get("season", "").strip()
 
     order_col_index = int(request.GET.get("order[0][column]", 0))
     order_dir = request.GET.get("order[0][dir]", "asc")
@@ -2116,9 +2466,37 @@ def entries_data(request):
     if show_all != "1":
         qs = qs.filter(isClosed=False)
 
-    # si viene filtro de usuario, aplicar (ejemplo: filtrar por user_creator username)
+    # filtro de usuario por username (selector de pendings)
     if user_filter != "":
         qs = qs.filter(user_working__username=user_filter)
+
+    # filtro de usuario por other_name (drill-down desde estadísticas)
+    if user_other_name_filter:
+        qs = qs.filter(user_working__other_name=user_other_name_filter)
+
+    # filtro de cliente (drill-down desde estadísticas)
+    if client_filter_param:
+        qs = qs.filter(trip__client__name=client_filter_param)
+
+    # filtro de status (drill-down desde estadísticas: Quote / Booking / Final)
+    if status_filter_param:
+        qs = qs.filter(status=status_filter_param)
+
+    # filtros de fecha (drill-down desde estadísticas)
+    if month_param and year_param:
+        qs = qs.filter(starting_date__month=month_param, starting_date__year=year_param)
+    if week_param:
+        _today = date.today()
+        _this_week = _today.isocalendar()[1]
+        _week_year = _today.year - 1 if int(week_param) > _this_week else _today.year
+        _wdf = date.fromisocalendar(_week_year, int(week_param), 1)
+        _wdt = date.fromisocalendar(_week_year, int(week_param), 7)
+        qs = qs.filter(starting_date__date__range=[_wdf, _wdt])
+    if season_param:
+        _s = int(season_param)
+        qs = qs.filter(starting_date__date__range=[date(_s, 5, 1), date(_s + 1, 4, 30)])
+    if date_from_param and date_to_param:
+        qs = qs.filter(starting_date__date__range=[date_from_param, date_to_param])
 
     # Búsqueda global
     if search_value:
@@ -2149,6 +2527,20 @@ def entries_data(request):
     paginator = Paginator(qs, length)
     page_number = start // length + 1
     page_obj = paginator.get_page(page_number)
+
+    def _user_pill(user):
+        if not user:
+            return ""
+        color = str(user.color) if user.color else "#999999"
+        try:
+            h = color.lstrip('#')
+            r, g, b = int(h[0:2], 16)/255, int(h[2:4], 16)/255, int(h[4:6], 16)/255
+            text = '#333333' if (0.2126*r + 0.7152*g + 0.0722*b) > 0.45 else '#ffffff'
+        except (ValueError, TypeError):
+            text = '#333333'
+        return (f'<span style="background-color:{color};color:{text};'
+                f'padding:2px 10px;border-radius:999px;font-size:.85em;">'
+                f'{user.username}</span>')
 
     # Preparar datos
     data = []
@@ -2211,8 +2603,8 @@ def entries_data(request):
             "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
             "contact": str(entry.trip.contact) if entry.trip and entry.trip.contact else "",
             "client_reference": entry.trip.client_reference if entry.trip else "",
-            "user_creator": entry.user_creator.username,
-            "user_working": entry.user_working.username,
+            "user_creator": _user_pill(entry.user_creator),
+            "user_working": _user_pill(entry.user_working),
             "progress": entry.progress,
             "importance": entry.importance,
             "difficulty": entry.trip.difficulty,
@@ -2262,7 +2654,7 @@ def stats_entries_data(request):
     date_to = request.GET.get("date_to")
 
     # columna de orden
-    order_col_index = int(request.GET.get("order[0][column]", 0))
+    order_col_index = min(int(request.GET.get("order[0][column]", 0)), len(columns) - 1)
     order_dir = request.GET.get("order[0][dir]", "asc")
     order_col = columns[order_col_index]
     if order_dir == "desc":
@@ -2300,6 +2692,14 @@ def stats_entries_data(request):
 
     if date_from and date_to:
         qs = qs.filter(starting_date__date__range=[date_from, date_to])
+
+    # filtros drill-down por usuario/cliente
+    user_filter = request.GET.get("user_filter")
+    client_filter = request.GET.get("client_filter")
+    if user_filter:
+        qs = qs.filter(user_working__other_name=user_filter)
+    if client_filter:
+        qs = qs.filter(trip__client__name=client_filter)
 
     # búsqueda global
     if search_value:
@@ -2414,7 +2814,7 @@ def stats_trips_data(request):
     length = int(request.GET.get("length", 10))
     search_value = request.GET.get("search[value]", "")
 
-    order_col_index = int(request.GET.get("order[0][column]", 0))
+    order_col_index = min(int(request.GET.get("order[0][column]", 0)), len(columns) - 1)
     order_dir = request.GET.get("order[0][dir]", "asc")
     order_col = columns[order_col_index]
     if order_dir == "desc":
@@ -2466,6 +2866,17 @@ def stats_trips_data(request):
         season_date_to = date(season_to, 4, 30)
 
         qs = qs.filter(travelling_date__range=[season_date_from, season_date_to])
+
+    # filtros drill-down por vendedor/operador/cliente
+    vr_filter = request.GET.get("vr_filter")
+    op_filter = request.GET.get("op_filter")
+    trips_client_filter = request.GET.get("client_filter")
+    if vr_filter:
+        qs = qs.filter(responsable_user__other_name=vr_filter)
+    if op_filter:
+        qs = qs.filter(operations_user__other_name=op_filter)
+    if trips_client_filter:
+        qs = qs.filter(client__name=trips_client_filter)
 
     # 🚩 Búsqueda global
     if search_value:
@@ -2727,77 +3138,94 @@ def stats_entries_by_speed(qs):
     }
 
     def summarize_speed(subset):
-        """Devuelve un dict con los conteos y porcentajes por rango de días."""
-        total = subset.count()
+        """Devuelve un dict con los conteos y porcentajes por rango de días (1 sola query)."""
+        agg = subset.aggregate(
+            total=Count('id'),
+            same_day=Count('id', filter=Q(response_speed=0)),
+            one_day=Count('id', filter=Q(response_speed=1)),
+            two_days=Count('id', filter=Q(response_speed=2)),
+            three_days=Count('id', filter=Q(response_speed=3)),
+            four_days=Count('id', filter=Q(response_speed=4)),
+            five_days=Count('id', filter=Q(response_speed=5)),
+            more_days=Count('id', filter=Q(response_speed__gt=5)),
+            avg=Coalesce(Avg("response_speed", output_field=FloatField()), 0.0),
+        )
+        total = agg['total'] or 0
         if total == 0:
             return {
-                "total": 0,
-                "same_day": 0,
-                "one_day": 0,
-                "two_days": 0,
-                "three_days": 0,
-                "four_days": 0,
-                "five_days": 0,
-                "more_days": 0,
-                "average": 0,
-                "percentages": {},
+                "total": 0, "same_day": 0, "one_day": 0, "two_days": 0,
+                "three_days": 0, "four_days": 0, "five_days": 0, "more_days": 0,
+                "average": 0, "percentages": {},
             }
-
-        # Cálculos por rango
-        ranges = {
-            "same_day": subset.filter(response_speed=0).count(),
-            "one_day": subset.filter(response_speed=1).count(),
-            "two_days": subset.filter(response_speed=2).count(),
-            "three_days": subset.filter(response_speed=3).count(),
-            "four_days": subset.filter(response_speed=4).count(),
-            "five_days": subset.filter(response_speed=5).count(),
-            "more_days": subset.filter(response_speed__gt=5).count(),
-        }
-
-        # Promedio general
-        avg_days = subset.aggregate(avg=Coalesce(Avg("response_speed", output_field=FloatField()), 0.0))["avg"]
-
-        # Porcentajes (manteniendo el formato esperado en el JS)
-        percentages = {
-            k: round((v / total * 100), 2) if total > 0 else 0 for k, v in ranges.items()
-        }
-
+        ranges = {k: agg[k] or 0 for k in ("same_day","one_day","two_days","three_days","four_days","five_days","more_days")}
+        percentages = {k: round(v / total * 100, 2) for k, v in ranges.items()}
         return {
             "total": total,
             **ranges,
-            "average": round(avg_days, 2),
+            "average": round(agg['avg'], 2),
             "percentages": percentages,
         }
 
     # --- Totales globales por categoría ---
     summary = {cat: summarize_speed(subset) for cat, subset in categories.items()}
 
-    # --- Totales por vendedor ---
+    # --- Totales por vendedor: 1 sola query con conditional counts por status × speed ---
     vendors = defaultdict(dict)
-    all_vendors = (
-        qs.values_list("user_working__other_name", flat=True)
-        .distinct()
+    _SPEED_FIELDS = ("same_day","one_day","two_days","three_days","four_days","five_days","more_days")
+    _SPEED_Q = {
+        "same_day": Q(response_speed=0),
+        "one_day":  Q(response_speed=1),
+        "two_days": Q(response_speed=2),
+        "three_days": Q(response_speed=3),
+        "four_days":  Q(response_speed=4),
+        "five_days":  Q(response_speed=5),
+        "more_days":  Q(response_speed__gt=5),
+    }
+    _STATUSES = {
+        "total":    Q(),
+        "quotes":   Q(status="Quote"),
+        "bookings": Q(status="Booking"),
+        "finals":   Q(status="Final Itinerary"),
+    }
+    ann_kwargs = {}
+    for stat_key, stat_q in _STATUSES.items():
+        ann_kwargs[f"{stat_key}__total"] = Count('id', filter=stat_q)
+        ann_kwargs[f"{stat_key}__avg"]   = Coalesce(Avg("response_speed", filter=stat_q, output_field=FloatField()), 0.0)
+        for spd_key, spd_q in _SPEED_Q.items():
+            ann_kwargs[f"{stat_key}__{spd_key}"] = Count('id', filter=stat_q & spd_q)
+
+    vendor_rows = (
+        qs
+        .values("user_working__other_name")
+        .annotate(**ann_kwargs)
         .exclude(user_working__other_name__isnull=True)
         .exclude(user_working__other_name__exact="")
     )
 
-    for vendor in all_vendors:
-        vendor_qs = qs.filter(user_working__other_name=vendor)
+    # pre-fetch colors in one query
+    user_colors = {u.other_name: str(u.color) if u.color else "#999999"
+                   for u in User.objects.exclude(other_name__isnull=True).exclude(other_name="")}
 
-        # Color del vendedor
-        user_color = "#999999"
-        try:
-            worker_obj = User.objects.get(other_name=vendor)
-            if worker_obj.color:
-                user_color = str(worker_obj.color)
-        except User.DoesNotExist:
-            pass
+    def _build_speed_entry(row, prefix):
+        total = row[f"{prefix}__total"] or 0
+        if total == 0:
+            return {"total":0,"same_day":0,"one_day":0,"two_days":0,"three_days":0,
+                    "four_days":0,"five_days":0,"more_days":0,"average":0,"percentages":{}}
+        ranges = {k: row[f"{prefix}__{k}"] or 0 for k in _SPEED_FIELDS}
+        return {
+            "total": total,
+            **ranges,
+            "average": round(row[f"{prefix}__avg"], 2),
+            "percentages": {k: round(v/total*100, 2) for k, v in ranges.items()},
+        }
 
-        vendors[vendor]["total"] = summarize_speed(vendor_qs)
-        vendors[vendor]["quotes"] = summarize_speed(vendor_qs.filter(status="Quote"))
-        vendors[vendor]["bookings"] = summarize_speed(vendor_qs.filter(status="Booking"))
-        vendors[vendor]["finals"] = summarize_speed(vendor_qs.filter(status="Final Itinerary"))
-        vendors[vendor]["color"] = user_color
+    for row in vendor_rows:
+        vname = row["user_working__other_name"]
+        vendors[vname]["total"]    = _build_speed_entry(row, "total")
+        vendors[vname]["quotes"]   = _build_speed_entry(row, "quotes")
+        vendors[vname]["bookings"] = _build_speed_entry(row, "bookings")
+        vendors[vname]["finals"]   = _build_speed_entry(row, "finals")
+        vendors[vname]["color"]    = user_colors.get(vname, "#999999")
 
     # --- Estructura final compatible con tu JS ---
     summary_speed = {
@@ -2823,7 +3251,6 @@ def stats_presentation_entries(request):
     date_to = request.GET.get("date_to")
     season = request.GET.get("season")
 
-    print(request.GET.get("filter"))
 
     # base queryset
     qs = Entry.objects.select_related(
@@ -2832,19 +3259,35 @@ def stats_presentation_entries(request):
         trip__department=department
     )
 
-    # filtro por fechas
+    # Resolve d_from / d_to / this_year / this_month from whichever filter is active
+    import calendar as _cal
+    _today = date.today()
+    if date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to   = datetime.strptime(date_to,   "%Y-%m-%d").date()
+        except ValueError:
+            d_from = d_to = _today
+    elif month and year:
+        _y, _m = int(year), int(month)
+        d_from = date(_y, _m, 1)
+        d_to   = date(_y, _m, _cal.monthrange(_y, _m)[1])
+    elif season:
+        _s = int(season)
+        d_from = date(_s, 5, 1)
+        d_to   = date(_s + 1, 4, 30)
+    else:
+        d_from = d_to = _today
+    this_year  = d_from.year
+    this_month = d_from.month
+
+    # filtro por fechas — usar __date__range para que el último día sea inclusivo
     if month and year:
         qs = qs.filter(starting_date__month=month, starting_date__year=year)
     elif date_from and date_to:
-        try:
-            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
-            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
-            qs = qs.filter(starting_date__range=(d_from, d_to))
-        except ValueError:
-            pass
-
-    this_year = datetime.strptime(date_from, "%Y-%m-%d").year
-    this_month = datetime.strptime(date_from, "%Y-%m-%d").month
+        qs = qs.filter(starting_date__date__range=(d_from, d_to))
+    elif season:
+        qs = qs.filter(starting_date__date__range=(d_from, d_to))
 
     if this_month > 4:
         # String representation of the seasons if it is May or higher
@@ -2874,62 +3317,68 @@ def stats_presentation_entries(request):
         next2_season_from = date(this_year + 1, 5, 1)
         next2_season_to = date(this_year + 2, 4, 30)
 
-    quotes = qs.filter(status="Quote").filter(version_quote="A")
+    quotes = qs.filter(status="Quote", version_quote="A")
 
-    # === RESUMEN GLOBAL (para tu tabla doble entrada quotes) ===
-    total_count_quotes = quotes.count()
-    total_amount_quotes = sum(float(e.amount or 0) for e in quotes)
+    def _pct(num, denom): return round(num / denom * 100, 2) if denom else 0
 
-    # Count of the quotes
-    individual_count_quotes = quotes.filter(trip__trip_type="FIT's").count()  # suponiendo que tu modelo Trip tiene "is_group"
-    audley_count_quotes = quotes.filter(trip__client__name="Audley Travel UK").count()
-    group_count_quotes = quotes.filter(trip__trip_type="Grupos").count()
-    fam_count_quotes = quotes.filter(trip__trip_type="FAM Tours").count()
-    this_season_count_quotes = quotes.filter(trip__travelling_date__range=(this_season_from, this_season_to)).count()
-    next_season_count_quotes = quotes.filter(trip__travelling_date__range=(next_season_from, next_season_to)).count()
+    # Single aggregate query replaces ~20 individual queries
+    q_agg = quotes.aggregate(
+        total_count=Count('id'),
+        total_amount=Sum('amount'),
+        individual_count=Count('id', filter=Q(trip__trip_type="FIT's")),
+        individual_amount=Sum('amount', filter=Q(trip__trip_type="FIT's")),
+        audley_count=Count('id', filter=Q(trip__client__name="Audley Travel UK")),
+        audley_amount=Sum('amount', filter=Q(trip__client__name="Audley Travel UK")),
+        group_count=Count('id', filter=Q(trip__trip_type="Grupos")),
+        group_amount=Sum('amount', filter=Q(trip__trip_type="Grupos")),
+        fam_count=Count('id', filter=Q(trip__trip_type="FAM Tours")),
+        fam_amount=Sum('amount', filter=Q(trip__trip_type="FAM Tours")),
+        this_season_count=Count('id', filter=Q(trip__travelling_date__range=(this_season_from, this_season_to))),
+        this_season_amount=Sum('amount', filter=Q(trip__travelling_date__range=(this_season_from, this_season_to))),
+        next_season_count=Count('id', filter=Q(trip__travelling_date__range=(next_season_from, next_season_to))),
+        next_season_amount=Sum('amount', filter=Q(trip__travelling_date__range=(next_season_from, next_season_to))),
+        diff_1=Count('id', filter=Q(trip__difficulty="1")),
+        diff_2=Count('id', filter=Q(trip__difficulty="2")),
+        diff_3=Count('id', filter=Q(trip__difficulty="3")),
+        diff_4=Count('id', filter=Q(trip__difficulty="4")),
+        diff_5=Count('id', filter=Q(trip__difficulty="5")),
+    )
 
-    # Changes of the quotes (B, C, D)
+    total_count_quotes        = q_agg['total_count'] or 0
+    total_amount_quotes       = float(q_agg['total_amount'] or 0)
+    individual_count_quotes   = q_agg['individual_count'] or 0
+    individual_amount_quotes  = float(q_agg['individual_amount'] or 0)
+    audley_count_quotes       = q_agg['audley_count'] or 0
+    audley_amount_quotes      = float(q_agg['audley_amount'] or 0)
+    group_count_quotes        = q_agg['group_count'] or 0
+    group_amount_quotes       = float(q_agg['group_amount'] or 0)
+    fam_count_quotes          = q_agg['fam_count'] or 0
+    fam_amount_quotes         = float(q_agg['fam_amount'] or 0)
+    this_season_count_quotes  = q_agg['this_season_count'] or 0
+    this_season_amount_quotes = float(q_agg['this_season_amount'] or 0)
+    next_season_count_quotes  = q_agg['next_season_count'] or 0
+    next_season_amount_quotes = float(q_agg['next_season_amount'] or 0)
+    difficulty_1 = q_agg['diff_1'] or 0
+    difficulty_2 = q_agg['diff_2'] or 0
+    difficulty_3 = q_agg['diff_3'] or 0
+    difficulty_4 = q_agg['diff_4'] or 0
+    difficulty_5 = q_agg['diff_5'] or 0
+
     total_changes_quotes = qs.filter(status="Quote").exclude(version_quote="A").count()
 
-    # Amounts for quotes
-    individual_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="FIT's"))
-    audley_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__client__name="Audley Travel UK"))
-    group_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="Grupos"))
-    fam_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__trip_type="FAM Tours"))
-    this_season_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__travelling_date__range=(this_season_from, this_season_to)))
-    next_season_amount_quotes = sum(float(e.amount or 0) for e in quotes.filter(trip__travelling_date__range=(next_season_from, next_season_to)))
+    individual_perc_quotes    = _pct(individual_amount_quotes,    total_amount_quotes)
+    audley_perc_quotes        = _pct(audley_amount_quotes,        total_amount_quotes)
+    group_perc_quotes         = _pct(group_amount_quotes,         total_amount_quotes)
+    fam_perc_quotes           = _pct(fam_amount_quotes,           total_amount_quotes)
+    this_season_perc_quotes   = _pct(this_season_amount_quotes,   total_amount_quotes)
+    next_season_perc_quotes   = _pct(next_season_amount_quotes,   total_amount_quotes)
 
-    # Percentages
-    individual_perc_quotes = round(float(individual_amount_quotes / total_amount_quotes * 100), 2)
-    audley_perc_quotes = round(float(audley_amount_quotes / total_amount_quotes * 100), 2)
-    group_perc_quotes = round(float(group_amount_quotes / total_amount_quotes * 100), 2)
-    fam_perc_quotes = round(float(fam_amount_quotes / total_amount_quotes * 100), 2)
-    this_season_perc_quotes = round(float(this_season_amount_quotes / total_amount_quotes * 100), 2)
-    next_season_perc_quotes = round(float(next_season_amount_quotes / total_amount_quotes * 100), 2)
-
-    # Promedio por día (si hay rango de fechas)
-    days = 1
-    if date_from and date_to:
-        try:
-            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
-            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
-            days = get_working_days(d_from, d_to)
-        except Exception:
-            pass
-
-    average_quotes_quantity = round(total_count_quotes / days, 2) if days else 0
-    average_quotes_amount = round(total_amount_quotes / days, 2) if days else 0
-
-    if total_count_quotes > 0:
-        average_difficulty = round(sum(int(e.trip.difficulty or 0) for e in quotes) / total_count_quotes, 2)
-    else:
-        average_difficulty = 0
-
-    difficulty_1 = quotes.filter(trip__difficulty="1").count()
-    difficulty_2 = quotes.filter(trip__difficulty="2").count()
-    difficulty_3 = quotes.filter(trip__difficulty="3").count()
-    difficulty_4 = quotes.filter(trip__difficulty="4").count()
-    difficulty_5 = quotes.filter(trip__difficulty="5").count()
+    days = max(get_working_days(d_from, d_to), 1)
+    average_quotes_quantity = round(total_count_quotes / days, 2)
+    average_quotes_amount   = round(total_amount_quotes / days, 2)
+    average_difficulty = round(
+        (1*difficulty_1 + 2*difficulty_2 + 3*difficulty_3 + 4*difficulty_4 + 5*difficulty_5) / total_count_quotes, 2
+    ) if total_count_quotes else 0
 
     summary_table_quotes = {
         "working_days": days,
@@ -2966,41 +3415,52 @@ def stats_presentation_entries(request):
         "next_season_perc_quotes": next_season_perc_quotes
     }
 
-    bookings = qs.filter(status="Booking").filter(version=1)
+    bookings = qs.filter(status="Booking", version=1)
 
-    # === RESUMEN GLOBAL (para tu tabla doble entrada bookings) ===
-    total_count_bookings = bookings.count()
-    total_amount_bookings = sum(float(e.amount or 0) for e in bookings)
+    # Single aggregate query replaces ~16 individual queries
+    b_agg = bookings.aggregate(
+        total_count=Count('id'),
+        total_amount=Sum('amount'),
+        individual_count=Count('id', filter=Q(trip__trip_type="FIT's")),
+        individual_amount=Sum('amount', filter=Q(trip__trip_type="FIT's")),
+        audley_count=Count('id', filter=Q(trip__client__name="Audley Travel UK")),
+        audley_amount=Sum('amount', filter=Q(trip__client__name="Audley Travel UK")),
+        group_count=Count('id', filter=Q(trip__trip_type="Grupos")),
+        group_amount=Sum('amount', filter=Q(trip__trip_type="Grupos")),
+        fam_count=Count('id', filter=Q(trip__trip_type="FAM Tours")),
+        fam_amount=Sum('amount', filter=Q(trip__trip_type="FAM Tours")),
+        this_season_count=Count('id', filter=Q(trip__travelling_date__range=(this_season_from, this_season_to))),
+        this_season_amount=Sum('amount', filter=Q(trip__travelling_date__range=(this_season_from, this_season_to))),
+        next_season_count=Count('id', filter=Q(trip__travelling_date__range=(next_season_from, next_season_to))),
+        next_season_amount=Sum('amount', filter=Q(trip__travelling_date__range=(next_season_from, next_season_to))),
+    )
 
-    # Count of the bookings
-    individual_count_bookings = bookings.filter(trip__trip_type="FIT's").count()  # suponiendo que tu modelo Trip tiene "is_group"
-    audley_count_bookings = bookings.filter(trip__client__name="Audley Travel UK").count()
-    group_count_bookings = bookings.filter(trip__trip_type="Grupos").count()
-    fam_count_bookings = bookings.filter(trip__trip_type="FAM Tours").count()
-    this_season_count_bookings = bookings.filter(trip__travelling_date__range=(this_season_from, this_season_to)).count()
-    next_season_count_bookings = bookings.filter(trip__travelling_date__range=(next_season_from, next_season_to)).count()
+    total_count_bookings        = b_agg['total_count'] or 0
+    total_amount_bookings       = float(b_agg['total_amount'] or 0)
+    individual_count_bookings   = b_agg['individual_count'] or 0
+    individual_amount_bookings  = float(b_agg['individual_amount'] or 0)
+    audley_count_bookings       = b_agg['audley_count'] or 0
+    audley_amount_bookings      = float(b_agg['audley_amount'] or 0)
+    group_count_bookings        = b_agg['group_count'] or 0
+    group_amount_bookings       = float(b_agg['group_amount'] or 0)
+    fam_count_bookings          = b_agg['fam_count'] or 0
+    fam_amount_bookings         = float(b_agg['fam_amount'] or 0)
+    this_season_count_bookings  = b_agg['this_season_count'] or 0
+    this_season_amount_bookings = float(b_agg['this_season_amount'] or 0)
+    next_season_count_bookings  = b_agg['next_season_count'] or 0
+    next_season_amount_bookings = float(b_agg['next_season_amount'] or 0)
 
-    # Changes of the bookings (2, 3, 4)
     total_changes_bookings = qs.filter(status="Booking").exclude(version=1).count()
 
-    # Amounts for bookings
-    individual_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="FIT's"))
-    audley_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__client__name="Audley Travel UK"))
-    group_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="Grupos"))
-    fam_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__trip_type="FAM Tours"))
-    this_season_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__travelling_date__range=(this_season_from, this_season_to)))
-    next_season_amount_bookings = sum(float(e.amount or 0) for e in bookings.filter(trip__travelling_date__range=(next_season_from, next_season_to)))
+    individual_perc_bookings    = _pct(individual_amount_bookings,    total_amount_bookings)
+    audley_perc_bookings        = _pct(audley_amount_bookings,        total_amount_bookings)
+    group_perc_bookings         = _pct(group_amount_bookings,         total_amount_bookings)
+    fam_perc_bookings           = _pct(fam_amount_bookings,           total_amount_bookings)
+    this_season_perc_bookings   = _pct(this_season_amount_bookings,   total_amount_bookings)
+    next_season_perc_bookings   = _pct(next_season_amount_bookings,   total_amount_bookings)
 
-    # Percentages
-    individual_perc_bookings = round(float(individual_amount_bookings / total_amount_bookings * 100), 2)
-    audley_perc_bookings = round(float(audley_amount_bookings / total_amount_bookings * 100), 2)
-    group_perc_bookings = round(float(group_amount_bookings / total_amount_bookings * 100), 2)
-    fam_perc_bookings = round(float(fam_amount_bookings / total_amount_bookings * 100), 2)
-    this_season_perc_bookings = round(float(this_season_amount_bookings / total_amount_bookings * 100), 2)
-    next_season_perc_bookings = round(float(next_season_amount_bookings / total_amount_bookings * 100), 2)
-
-    average_bookings_quantity = round(total_count_bookings / days, 2) if days else 0
-    average_bookings_amount = round(total_amount_bookings / days, 2) if days else 0
+    average_bookings_quantity = round(total_count_bookings / days, 2)
+    average_bookings_amount   = round(total_amount_bookings / days, 2)
 
     # Cancellation information
     cancellations_count = qs.filter(status="Cancelado").count()
@@ -3011,15 +3471,14 @@ def stats_presentation_entries(request):
 
     for entry in cancellation_entries:
         trip_obj = entry.trip
-
-        last_booking = Entry.objects.filter(trip=trip_obj).filter(status="Booking").first()
+        last_booking = Entry.objects.filter(trip=trip_obj, status="Booking").first()
         if last_booking:
-            cancellations_amount += (last_booking.amount)
+            cancellations_amount += float(last_booking.amount or 0)
         else:
-            cancellations_amount = entry.amount
+            cancellations_amount += float(entry.amount or 0)
 
-    conversion_perc = round(total_count_bookings / total_count_quotes * 100, 2)
-    conversion_perc_audley = round(audley_count_bookings / audley_count_quotes * 100, 2)
+    conversion_perc        = _pct(total_count_bookings,  total_count_quotes)
+    conversion_perc_audley = _pct(audley_count_bookings, audley_count_quotes)
 
     summary_table_bookings = {
         "total_count_bookings": total_count_bookings,
@@ -3056,6 +3515,103 @@ def stats_presentation_entries(request):
     summary_speed = stats_entries_by_speed(qs)
     clients = stats_entries_by_client(qs)
 
+    # Monthly breakdown (only for season or multi-month ranges)
+    import calendar as _cal2
+    _is_multi_month = season or (
+        date_from and date_to and (
+            (d_to.year * 12 + d_to.month) - (d_from.year * 12 + d_from.month) >= 1
+        )
+    )
+    monthly_breakdown = []
+    if _is_multi_month:
+        rows = (
+            qs
+            .annotate(_month=TruncMonth('starting_date'))
+            .values('_month')
+            .annotate(
+                quotes_count=Count('id', filter=Q(status='Quote', version_quote='A')),
+                quotes_amount=Sum('amount', filter=Q(status='Quote', version_quote='A')),
+                bookings_count=Count('id', filter=Q(status='Booking')),
+                bookings_amount=Sum('amount', filter=Q(status='Booking')),
+                active_vendors=Count('user_working', filter=Q(status__in=['Quote', 'Booking']), distinct=True),
+            )
+            .order_by('_month')
+        )
+        _MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        for r in rows:
+            m = r['_month']
+            if not m:
+                continue
+            monthly_breakdown.append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES[m.month - 1]} {m.year}",
+                'quotes_count': r['quotes_count'] or 0,
+                'quotes_amount': float(r['quotes_amount'] or 0),
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+                'active_vendors': r['active_vendors'] or 0,
+            })
+
+    monthly_by_vendor = {}
+    monthly_by_client = {}
+    if _is_multi_month:
+        _MONTH_NAMES2 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        vendor_rows = (
+            qs
+            .annotate(_month=TruncMonth('starting_date'))
+            .values('_month', 'user_working__other_name')
+            .annotate(
+                quotes_count=Count('id', filter=Q(status='Quote', version_quote='A')),
+                quotes_amount=Sum('amount', filter=Q(status='Quote', version_quote='A')),
+                bookings_count=Count('id', filter=Q(status='Booking', version=1)),
+                bookings_amount=Sum('amount', filter=Q(status='Booking', version=1)),
+            )
+            .order_by('user_working__other_name', '_month')
+        )
+        for r in vendor_rows:
+            m = r['_month']
+            if not m:
+                continue
+            vname = r['user_working__other_name'] or 'Desconocido'
+            if vname not in monthly_by_vendor:
+                monthly_by_vendor[vname] = []
+            monthly_by_vendor[vname].append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES2[m.month - 1]} {m.year}",
+                'quotes_count': r['quotes_count'] or 0,
+                'quotes_amount': float(r['quotes_amount'] or 0),
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+            })
+
+        client_rows = (
+            qs
+            .annotate(_month=TruncMonth('starting_date'))
+            .values('_month', 'trip__client__name')
+            .annotate(
+                quotes_count=Count('id', filter=Q(status='Quote', version_quote='A')),
+                quotes_amount=Sum('amount', filter=Q(status='Quote', version_quote='A')),
+                bookings_count=Count('id', filter=Q(status='Booking', version=1)),
+                bookings_amount=Sum('amount', filter=Q(status='Booking', version=1)),
+            )
+            .order_by('trip__client__name', '_month')
+        )
+        for r in client_rows:
+            m = r['_month']
+            if not m:
+                continue
+            cname = r['trip__client__name'] or 'Desconocido'
+            if cname not in monthly_by_client:
+                monthly_by_client[cname] = []
+            monthly_by_client[cname].append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES2[m.month - 1]} {m.year}",
+                'quotes_count': r['quotes_count'] or 0,
+                'quotes_amount': float(r['quotes_amount'] or 0),
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+            })
+
     return JsonResponse({
         "vendors_quote": vendors_quote,
         "vendors_bookings": vendors_bookings,
@@ -3063,6 +3619,9 @@ def stats_presentation_entries(request):
         "summary_table_bookings": summary_table_bookings,
         "summary_speed": summary_speed,
         "clients": clients,
+        "monthly_breakdown": monthly_breakdown,
+        "monthly_by_vendor": monthly_by_vendor,
+        "monthly_by_client": monthly_by_client,
     })
 
 
@@ -3224,26 +3783,41 @@ def stats_presentation_trips(request):
     date_to = request.GET.get("date_to")
     season = request.GET.get("season")
 
-    print(request.GET.get("filter"))
 
     # base queryset
     qs = Trip.objects.select_related("client").filter(
         department=department
     )
 
+    # Resolve d_from / d_to / this_year / this_month from whichever filter is active
+    import calendar as _cal
+    _today = date.today()
+    if date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to   = datetime.strptime(date_to,   "%Y-%m-%d").date()
+        except ValueError:
+            d_from = d_to = _today
+    elif month and year:
+        _y, _m = int(year), int(month)
+        d_from = date(_y, _m, 1)
+        d_to   = date(_y, _m, _cal.monthrange(_y, _m)[1])
+    elif season:
+        _s = int(season)
+        d_from = date(_s, 5, 1)
+        d_to   = date(_s + 1, 4, 30)
+    else:
+        d_from = d_to = _today
+    this_year  = d_from.year
+    this_month = d_from.month
+
     # filtro por fechas
     if month and year:
         qs = qs.filter(travelling_date__month=month, travelling_date__year=year)
     elif date_from and date_to:
-        try:
-            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
-            d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
-            qs = qs.filter(travelling_date__range=(d_from, d_to))
-        except ValueError:
-            pass
-
-    this_year = datetime.strptime(date_from, "%Y-%m-%d").year
-    this_month = datetime.strptime(date_from, "%Y-%m-%d").month
+        qs = qs.filter(travelling_date__range=(d_from, d_to))
+    elif season:
+        qs = qs.filter(travelling_date__range=(d_from, d_to))
 
     if this_month > 4:
         # String representation of the seasons if it is May or higher
@@ -3275,58 +3849,67 @@ def stats_presentation_trips(request):
 
     trips = qs.filter(status="Booking")
 
-    # === RESUMEN GLOBAL ===
-    total_count_trips = trips.count()
-    total_amount_trips = sum(float(e.amount or 0) for e in trips)
+    def _pct(num, denom): return round(num / denom * 100, 2) if denom else 0
 
-    # Count of the trips
-    individual_count_trips = trips.filter(trip_type="FIT's").count()
-    audley_count_trips = trips.filter(client__name="Audley Travel UK").count()
-    group_count_trips = trips.filter(trip_type="Grupos").count()
-    fam_count_trips = trips.filter(trip_type="FAM Tours").count()
+    # Single aggregate query replaces ~18 individual queries
+    t_agg = trips.aggregate(
+        total_count=Count('id'),
+        total_amount=Sum('amount'),
+        individual_count=Count('id', filter=Q(trip_type="FIT's")),
+        individual_amount=Sum('amount', filter=Q(trip_type="FIT's")),
+        audley_count=Count('id', filter=Q(client__name="Audley Travel UK")),
+        audley_amount=Sum('amount', filter=Q(client__name="Audley Travel UK")),
+        group_count=Count('id', filter=Q(trip_type="Grupos")),
+        group_amount=Sum('amount', filter=Q(trip_type="Grupos")),
+        fam_count=Count('id', filter=Q(trip_type="FAM Tours")),
+        fam_amount=Sum('amount', filter=Q(trip_type="FAM Tours")),
+        all_rent=Sum('rent_perc'),
+        individual_rent_sum=Sum('rent_perc', filter=Q(trip_type="FIT's")),
+        audley_rent_sum=Sum('rent_perc', filter=Q(client__name="Audley Travel UK")),
+        group_rent_sum=Sum('rent_perc', filter=Q(trip_type="Grupos")),
+        fam_rent_sum=Sum('rent_perc', filter=Q(trip_type="FAM Tours")),
+        diff_1=Count('id', filter=Q(difficulty="1")),
+        diff_2=Count('id', filter=Q(difficulty="2")),
+        diff_3=Count('id', filter=Q(difficulty="3")),
+        diff_4=Count('id', filter=Q(difficulty="4")),
+        diff_5=Count('id', filter=Q(difficulty="5")),
+    )
 
-    # Amounts for trips
-    individual_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="FIT's"))
-    audley_amount_trips = sum(float(e.amount or 0) for e in trips.filter(client__name="Audley Travel UK"))
-    group_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="Grupos"))
-    fam_amount_trips = sum(float(e.amount or 0) for e in trips.filter(trip_type="FAM Tours"))
+    total_count_trips       = t_agg['total_count'] or 0
+    total_amount_trips      = float(t_agg['total_amount'] or 0)
+    individual_count_trips  = t_agg['individual_count'] or 0
+    individual_amount_trips = float(t_agg['individual_amount'] or 0)
+    audley_count_trips      = t_agg['audley_count'] or 0
+    audley_amount_trips     = float(t_agg['audley_amount'] or 0)
+    group_count_trips       = t_agg['group_count'] or 0
+    group_amount_trips      = float(t_agg['group_amount'] or 0)
+    fam_count_trips         = t_agg['fam_count'] or 0
+    fam_amount_trips        = float(t_agg['fam_amount'] or 0)
+    difficulty_1 = t_agg['diff_1'] or 0
+    difficulty_2 = t_agg['diff_2'] or 0
+    difficulty_3 = t_agg['diff_3'] or 0
+    difficulty_4 = t_agg['diff_4'] or 0
+    difficulty_5 = t_agg['diff_5'] or 0
 
-    # Percentages
-    individual_perc_trips = round(float(individual_amount_trips / total_amount_trips * 100), 2)
-    audley_perc_trips = round(float(audley_amount_trips / total_amount_trips * 100), 2)
-    group_perc_trips = round(float(group_amount_trips / total_amount_trips * 100), 2)
-    fam_perc_trips = round(float(fam_amount_trips / total_amount_trips * 100), 2)
+    individual_perc_trips = _pct(individual_amount_trips, total_amount_trips)
+    audley_perc_trips     = _pct(audley_amount_trips,     total_amount_trips)
+    group_perc_trips      = _pct(group_amount_trips,      total_amount_trips)
+    fam_perc_trips        = _pct(fam_amount_trips,        total_amount_trips)
 
-    # Profitability
-    all_rent_perc = sum(float(e.rent_perc or 0) for e in trips)
-    all_rent_average = round(float(all_rent_perc / total_count_trips * 100), 2)
-    individual_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="FIT's")) / individual_count_trips * 100), 2)
-    audley_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(client__name="Audley Travel UK")) / audley_count_trips * 100), 2)
-    if group_count_trips > 0:
-        group_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="Grupos")) / group_count_trips * 100), 2)
-    else:
-        group_rent = 0
-    if fam_count_trips > 0:
-        fam_rent = round(float(sum(float(e.rent_perc or 0) for e in trips.filter(trip_type="FAM Tours")) / fam_count_trips * 100), 2)
-    else:
-        fam_rent = 0
+    all_rent_average = _pct(float(t_agg['all_rent'] or 0),          total_count_trips)
+    individual_rent  = _pct(float(t_agg['individual_rent_sum'] or 0), individual_count_trips)
+    audley_rent      = _pct(float(t_agg['audley_rent_sum'] or 0),     audley_count_trips)
+    group_rent       = _pct(float(t_agg['group_rent_sum'] or 0),      group_count_trips)
+    fam_rent         = _pct(float(t_agg['fam_rent_sum'] or 0),        fam_count_trips)
 
-    if total_count_trips > 0:
-        average_difficulty = round(sum(int(e.difficulty or 0) for e in trips) / total_count_trips, 2)
-    else:
-        average_difficulty = 0
-
-    difficulty_1 = trips.filter(difficulty="1").count()
-    difficulty_2 = trips.filter(difficulty="2").count()
-    difficulty_3 = trips.filter(difficulty="3").count()
-    difficulty_4 = trips.filter(difficulty="4").count()
-    difficulty_5 = trips.filter(difficulty="5").count()
+    average_difficulty = round(
+        (1*difficulty_1 + 2*difficulty_2 + 3*difficulty_3 + 4*difficulty_4 + 5*difficulty_5) / total_count_trips, 2
+    ) if total_count_trips else 0
 
     # Cancellation information
-    cancellations_count = qs.filter(status="Cancelado").count()
-
-    # Cancellation amounts (difference with the last booking)
-    cancellations_amount = sum(float(e.amount or 0) for e in trips.filter(status="Cancelado"))
+    canc_agg = qs.filter(status="Cancelado").aggregate(count=Count('id'), amount=Sum('amount'))
+    cancellations_count  = canc_agg['count'] or 0
+    cancellations_amount = float(canc_agg['amount'] or 0)
 
     summary_table_trips = {
         "difficulty_1": difficulty_1,
@@ -3362,11 +3945,127 @@ def stats_presentation_trips(request):
     trips_by_operator = stats_trips_by_operator(qs, d_from, d_to)
     clients = stats_trips_by_client(qs)
 
+    # Monthly breakdown (only for season or multi-month ranges)
+    import calendar as _cal2
+    _is_multi_month = season or (
+        date_from and date_to and (
+            (d_to.year * 12 + d_to.month) - (d_from.year * 12 + d_from.month) >= 1
+        )
+    )
+    monthly_breakdown = []
+    if _is_multi_month:
+        rows = (
+            qs
+            .annotate(_month=TruncMonth('travelling_date'))
+            .values('_month')
+            .annotate(
+                bookings_count=Count('id', filter=Q(status='Booking')),
+                bookings_amount=Sum('amount', filter=Q(status='Booking')),
+                avg_rent=Avg('rent_perc', filter=Q(status='Booking')),
+                cancellations_count=Count('id', filter=Q(status='Cancelado')),
+            )
+            .order_by('_month')
+        )
+        _MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        for r in rows:
+            m = r['_month']
+            if not m:
+                continue
+            monthly_breakdown.append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES[m.month - 1]} {m.year}",
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+                'avg_rent': round(float(r['avg_rent'] or 0) * 100, 2),
+                'cancellations_count': r['cancellations_count'] or 0,
+            })
+
+    monthly_by_vr = {}
+    monthly_by_operator = {}
+    monthly_by_client = {}
+    if _is_multi_month:
+        _MONTH_NAMES2 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        vr_rows = (
+            qs.filter(status='Booking')
+            .annotate(_month=TruncMonth('travelling_date'))
+            .values('_month', 'responsable_user__other_name')
+            .annotate(
+                bookings_count=Count('id'),
+                bookings_amount=Sum('amount'),
+            )
+            .order_by('responsable_user__other_name', '_month')
+        )
+        for r in vr_rows:
+            m = r['_month']
+            if not m:
+                continue
+            vname = r['responsable_user__other_name'] or 'Desconocido'
+            if vname not in monthly_by_vr:
+                monthly_by_vr[vname] = []
+            monthly_by_vr[vname].append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES2[m.month - 1]} {m.year}",
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+            })
+
+        op_rows = (
+            qs.filter(status='Booking')
+            .annotate(_month=TruncMonth('travelling_date'))
+            .values('_month', 'operations_user__other_name')
+            .annotate(
+                bookings_count=Count('id'),
+                bookings_amount=Sum('amount'),
+            )
+            .order_by('operations_user__other_name', '_month')
+        )
+        for r in op_rows:
+            m = r['_month']
+            if not m:
+                continue
+            opname = r['operations_user__other_name'] or 'Desconocido'
+            if opname not in monthly_by_operator:
+                monthly_by_operator[opname] = []
+            monthly_by_operator[opname].append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES2[m.month - 1]} {m.year}",
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+            })
+
+        client_rows = (
+            qs.filter(status='Booking')
+            .annotate(_month=TruncMonth('travelling_date'))
+            .values('_month', 'client__name')
+            .annotate(
+                bookings_count=Count('id'),
+                bookings_amount=Sum('amount'),
+            )
+            .order_by('client__name', '_month')
+        )
+        for r in client_rows:
+            m = r['_month']
+            if not m:
+                continue
+            cname = r['client__name'] or 'Desconocido'
+            if cname not in monthly_by_client:
+                monthly_by_client[cname] = []
+            monthly_by_client[cname].append({
+                'month_key': m.strftime('%Y-%m'),
+                'label': f"{_MONTH_NAMES2[m.month - 1]} {m.year}",
+                'bookings_count': r['bookings_count'] or 0,
+                'bookings_amount': float(r['bookings_amount'] or 0),
+            })
+
     return JsonResponse({
         "summary_table_trips": summary_table_trips,
         "trips_by_responsable": trips_by_responsable,
         "trips_by_operator": trips_by_operator,
         "clients": clients,
+        "monthly_breakdown": monthly_breakdown,
+        "monthly_by_vr": monthly_by_vr,
+        "monthly_by_operator": monthly_by_operator,
+        "monthly_by_client": monthly_by_client,
     })
 
 
@@ -3722,6 +4421,39 @@ def tourplan_files(request):
         "no_tp_group3":    pending_group3,
         "show_results_modal": bool(pending_csv or pending_group1 or pending_group2 or pending_group3),
         "users": User.objects.all,
+    })
+
+
+@login_required
+def tourplan_db_sync(request):
+    """Sync trips directly from the Tourplan SQL Server database."""
+    if not request.user.isAdmin:
+        return redirect("error")
+    from intranet.utils import sync_from_tourplan_db
+    try:
+        updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app = sync_from_tourplan_db()
+    except Exception as e:
+        return render(request, "intranet/tourplan_files.html", {
+            "form": CsvFormTourplanFiles(),
+            "db_sync_error": str(e),
+            "users": User.objects.all,
+        })
+
+    request.session["tp_csv_not_in_app"] = not_in_app
+    request.session["tp_no_tp_group1"]   = no_tp_group1
+    request.session["tp_no_tp_group2"]   = no_tp_group2
+    request.session["tp_no_tp_group3"]   = no_tp_group3
+    request.session.modified = True
+
+    return render(request, "intranet/tourplan_files.html", {
+        "form":               CsvFormTourplanFiles(),
+        "updated_count":      updated_count,
+        "no_tp_group1":       no_tp_group1,
+        "no_tp_group2":       no_tp_group2,
+        "no_tp_group3":       no_tp_group3,
+        "csv_not_in_app":     not_in_app,
+        "show_results_modal": True,
+        "users":              User.objects.all,
     })
 
 
@@ -4225,6 +4957,7 @@ def intranet_files(request):
 # ── Margin Management ──────────────────────────────────────────────────────────
 
 def _trip_to_dict(t):
+    from intranet.utils import strip_html
     return {
         "id": t.id,
         "name": t.name,
@@ -4237,6 +4970,7 @@ def _trip_to_dict(t):
         "client_name": t.client.name if t.client else "",
         "margin_reviewed": t.margin_reviewed,
         "seller_name": t.responsable_user.username if t.responsable_user else "",
+        "tp_notes": strip_html(t.tp_notes or ""),
     }
 
 
@@ -4256,6 +4990,10 @@ def margin_management(request):
             ignore_margin_warning=False,
         ).filter(
             Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).exclude(
+            amount__isnull=True
+        ).exclude(
+            amount=0
         ).order_by("responsable_user__username", "travelling_date")
 
         seller_groups = []
@@ -4272,6 +5010,10 @@ def margin_management(request):
             ignore_margin_warning=True,
         ).filter(
             Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).exclude(
+            amount__isnull=True
+        ).exclude(
+            amount=0
         ).order_by("responsable_user__username", "travelling_date")
         ignored_trips = [_trip_to_dict(t) for t in ignored_qs]
 
@@ -4298,6 +5040,10 @@ def margin_management(request):
             ignore_margin_warning=False,
         ).filter(
             Q(rent_perc__gt=0.35) | Q(rent_perc__lt=0.15)
+        ).exclude(
+            amount__isnull=True
+        ).exclude(
+            amount=0
         ).order_by("travelling_date")
 
         trips = [_trip_to_dict(t) for t in trips_qs]
@@ -4863,6 +5609,35 @@ def email_processor_search_trips(request):
     ]})
 
 
+def _gmail_archive(mb, uids):
+    """
+    Move messages to the Gmail 'All Mail' folder (archives them from INBOX).
+    Detects the correct folder name by looking for the \\All special-use flag,
+    since the name varies by account language (e.g. '[Gmail]/Todos los mensajes').
+    Falls back to marking as read if the folder cannot be found.
+    """
+    all_mail_folder = None
+    try:
+        for f in mb.folder.list():
+            flags = getattr(f, 'flags', ()) or ()
+            if '\\All' in flags or '\\AllMail' in flags:
+                all_mail_folder = f.name
+                break
+        if not all_mail_folder:
+            for f in mb.folder.list():
+                name_lower = (f.name or '').lower()
+                if 'all mail' in name_lower or 'todos' in name_lower or 'all messages' in name_lower:
+                    all_mail_folder = f.name
+                    break
+    except Exception:
+        pass
+
+    if all_mail_folder:
+        mb.move(uids, all_mail_folder)
+    else:
+        mb.flag(uids, ['\\Seen'], True)
+
+
 @login_required
 def email_processor_archive(request):
     if request.method != 'POST':
@@ -4883,7 +5658,7 @@ def email_processor_archive(request):
     try:
         with MailBox(MAIL_SERVER).login(MAIL_USERNAME, MAIL_PASSWORD, 'Inbox') as mb:
             if 'gmail' in (MAIL_SERVER or '').lower():
-                mb.move([uid], '[Gmail]/All Mail')
+                _gmail_archive(mb, [uid])
             else:
                 try:
                     mb.move([uid], 'Archive')
@@ -4969,7 +5744,7 @@ def calidad_fetch_inbox(request):
             # Archive all processed messages (move to All Mail = removes from inbox)
             if to_archive:
                 try:
-                    mb.move(to_archive, '[Gmail]/All Mail')
+                    _gmail_archive(mb, to_archive)
                 except Exception:
                     pass
     except Exception as e:
@@ -4993,7 +5768,13 @@ def calidad(request):
     from django.db.models import Count
 
     inbox_items = FeedbackInboxItem.objects.filter(status='pendiente').order_by('-received_at')
-    feedbacks_qs = Feedback.objects.select_related('supplier', 'trip', 'target_user', 'target_guide', 'target_dh', 'target_entity').order_by('-creation_date')
+    feedbacks_qs = Feedback.objects.select_related(
+        'supplier', 'supplier__group', 'supplier__group__location',
+        'trip', 'target_user',
+        'target_guide', 'target_guide__location',
+        'target_dh', 'target_dh__location',
+        'target_entity',
+    ).order_by('-creation_date')
     feedbacks_open_count = feedbacks_qs.exclude(status='cerrado').count()
     feedbacks_total = feedbacks_qs.count()
     from django.db.models import Q
@@ -5437,6 +6218,100 @@ def calidad_edit_feedback(request, feedback_id):
             fb.trip = trip
     fb.save()
     return JsonResponse({'ok': True})
+
+
+@login_required
+def calidad_feedback_json(request, feedback_id):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Feedback
+    try:
+        fb = Feedback.objects.select_related(
+            'supplier', 'target_guide', 'target_dh', 'target_user', 'target_entity', 'trip'
+        ).get(pk=feedback_id)
+    except Feedback.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    if fb.supplier:          target_type = 'supplier'
+    elif fb.target_guide:    target_type = 'guide'
+    elif fb.target_dh:       target_type = 'dh'
+    elif fb.target_user:     target_type = 'user'
+    elif fb.target_entity:   target_type = 'entity'
+    else:                    target_type = 'supplier'
+    return JsonResponse({
+        'id': fb.id,
+        'brief_summary': fb.brief_summary or '',
+        'content':       fb.content or '',
+        'solution':      fb.solution or '',
+        'cost':          fb.cost or 0,
+        'status':        fb.status,
+        'sentiment':     fb.sentiment,
+        'type':          fb.type or '',
+        'trip_file':     fb.trip.tourplanId if fb.trip else '',
+        'target_type':   target_type,
+        'supplier_id':   fb.supplier_id or '',
+        'supplier_name': fb.supplier.name if fb.supplier else '',
+        'guide_id':      fb.target_guide_id or '',
+        'guide_name':    fb.target_guide.name if fb.target_guide else '',
+        'dh_id':         fb.target_dh_id or '',
+        'dh_name':       fb.target_dh.name if fb.target_dh else '',
+        'user_id':       fb.target_user_id or '',
+        'user_name':     (fb.target_user.get_full_name() or fb.target_user.username) if fb.target_user else '',
+        'entity_id':     fb.target_entity_id or '',
+        'entity_name':   fb.target_entity.name if fb.target_entity else '',
+    })
+
+
+@login_required
+def calidad_create_feedback(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Feedback, FeedbackEntity
+    data = json.loads(request.body)
+    target_type = data.get('target_type', 'supplier')
+    supplier = target_user = target_guide = target_dh = target_entity = None
+    if target_type == 'supplier':
+        sid = data.get('supplier_id')
+        supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+    elif target_type == 'guide':
+        from intranet.models import Guide
+        gid = data.get('guide_id')
+        target_guide = Guide.objects.filter(pk=gid).first() if gid else None
+    elif target_type == 'dh':
+        from intranet.models import DestinationHost
+        dhid = data.get('dh_id')
+        target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
+    elif target_type == 'user':
+        uid = data.get('user_id')
+        target_user = User.objects.filter(pk=uid).first() if uid else None
+    elif target_type == 'entity':
+        eid = data.get('entity_id')
+        target_entity = FeedbackEntity.objects.filter(pk=eid).first() if eid else None
+    trip = None
+    if data.get('trip_file'):
+        from intranet.models import Trip
+        trip = Trip.objects.filter(tourplanId__iexact=data['trip_file'].strip()).first()
+    try:
+        cost = float(data.get('cost') or 0)
+    except (ValueError, TypeError):
+        cost = 0
+    fb = Feedback.objects.create(
+        user=request.user,
+        trip=trip,
+        supplier=supplier,
+        target_user=target_user,
+        target_guide=target_guide,
+        target_dh=target_dh,
+        target_entity=target_entity,
+        sentiment=data.get('sentiment', 'neutral'),
+        status=data.get('status', 'abierto'),
+        type=data.get('type', 'Otro'),
+        brief_summary=(data.get('brief_summary') or '')[:120],
+        content=data.get('content', ''),
+        solution=data.get('solution', ''),
+        cost=cost,
+        source='manual',
+    )
+    return JsonResponse({'ok': True, 'id': fb.id})
 
 
 @login_required

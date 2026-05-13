@@ -33,6 +33,11 @@
     
     </div>
 
+    <div id="drilldown-banner" class="alert alert-info d-none d-flex align-items-center justify-content-between py-2 mt-2" role="alert">
+        <span><i class="fas fa-filter me-2"></i><span id="drilldown-banner-text">Mostrando resultado filtrado desde estadísticas</span></span>
+        <a href="/entries" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+    </div>
+
     {% if message %}
         <div>{{ message }}</div>
     {% endif %}

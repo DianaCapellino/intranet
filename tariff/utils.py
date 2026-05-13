@@ -2,6 +2,98 @@ import math
 from django.db.models import Q
 
 
+_AMOUNT_QUERY = """
+    SELECT
+        BHD.FULL_REFERENCE AS tourplan_id,
+        CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount
+    FROM BHD
+    JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
+    WHERE BHD.FULL_REFERENCE = %s
+"""
+
+
+def fill_missing_amounts_from_tourplan():
+    """
+    Find Quote/Booking entries without an amount and try to fill from Tourplan.
+
+    Returns:
+        updated        - list of Entry objects that were updated
+        no_tourplan_id - list of Entry objects with no tourplanId (can't look up)
+        not_found      - list of Entry objects whose tourplanId wasn't found in Tourplan
+    """
+    from intranet.models import Entry, Trip
+    from intranet.utils import get_tourplan_connection
+
+    entries_no_amount = (
+        Entry.objects.filter(status__in=["Quote", "Booking"])
+        .filter(Q(amount__isnull=True) | Q(amount=0))
+        .select_related("trip")
+    )
+
+    no_tourplan_id = []
+    updated = []
+    not_found = []
+
+    try:
+        conn = get_tourplan_connection()
+    except Exception as e:
+        print(f"Error conectando a Tourplan: {e}")
+        return updated, no_tourplan_id, not_found
+
+    try:
+        cur = conn.cursor()
+        for entry in entries_no_amount:
+            tp_id = (entry.tourplanId or "").strip()
+            if not tp_id:
+                # Fall back to the trip's tourplanId
+                trip_tp_id = (entry.trip.tourplanId or "").strip() if entry.trip else ""
+                if not trip_tp_id:
+                    no_tourplan_id.append(entry)
+                    continue
+                tp_id = trip_tp_id
+
+            cur.execute(_AMOUNT_QUERY, (tp_id,))
+            row = cur.fetchone()
+
+            if not row:
+                not_found.append(entry)
+                continue
+
+            amount_val = row.get("amount")
+            if not amount_val:
+                not_found.append(entry)
+                continue
+
+            try:
+                amount = int(float(amount_val))
+            except (ValueError, TypeError):
+                not_found.append(entry)
+                continue
+
+            entry.amount = amount
+            entry.save(update_fields=["amount"])
+
+            if entry.trip and not entry.trip.amount:
+                entry.trip.amount = amount
+                entry.trip.save(update_fields=["amount"])
+
+            updated.append(entry)
+    finally:
+        conn.close()
+
+    print(f"Actualizados: {len(updated)}")
+    print(f"Sin tourplanId: {len(no_tourplan_id)}")
+    if no_tourplan_id:
+        for e in no_tourplan_id:
+            print(f"  - {e.trip.name if e.trip else '?'} ({e.status})")
+    print(f"No encontrados en Tourplan: {len(not_found)}")
+    if not_found:
+        for e in not_found:
+            print(f"  - {e.trip.name if e.trip else '?'} ({e.status}) tourplanId={e.tourplanId!r}")
+
+    return updated, no_tourplan_id, not_found
+
+
 MARGIN_INFO_MAP = {
     0.89: "Low",
     0.85: "Regular",

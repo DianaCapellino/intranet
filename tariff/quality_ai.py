@@ -421,6 +421,34 @@ def _safe_json_loads(raw):
     raise ValueError(f"No se pudo parsear JSON de la respuesta IA. Primeros 300 chars: {preview!r}")
 
 
+def _decode_ai_text(s):
+    """
+    Decode literal \\uXXXX / \\n / \\r / \\t / \\" sequences that Claude sometimes
+    emits doubly-escaped inside JSON string values.  After json.loads() these appear
+    as literal backslash sequences in the Python string instead of the real chars.
+    """
+    if not isinstance(s, str):
+        return s
+    s = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), s)
+    s = s.replace('\\r\\n', '\n').replace('\\r', '\n').replace('\\n', '\n')
+    s = s.replace('\\t', '\t').replace('\\"', '"')
+    return s
+
+
+def _decode_ai_analysis(analysis):
+    """Walk analysis dict and decode doubly-escaped text in known string fields."""
+    if not isinstance(analysis, dict):
+        return analysis
+    for field in ('verbatim', 'trip_file_id'):
+        if field in analysis:
+            analysis[field] = _decode_ai_text(analysis[field])
+    for t in analysis.get('targets', []):
+        for field in ('content', 'brief_summary', 'solution', 'name'):
+            if field in t:
+                t[field] = _decode_ai_text(t[field])
+    return analysis
+
+
 def process_inbox_item_with_ai(item):
     load_dotenv(override=True)
     api_key = os.environ.get('EXPO_PUBLIC_ANTHROPIC_API_KEY')
@@ -468,6 +496,7 @@ def process_inbox_item_with_ai(item):
     raw = re.sub(r'\s*```$', '', raw)
 
     analysis = _safe_json_loads(raw)
+    _decode_ai_analysis(analysis)
 
     # --- Override / validate trip_file_id ---
     if matched_trip and matched_trip.tourplanId:
@@ -676,6 +705,7 @@ def _names_overlap(a, b):
 
 def _resolve_guide_for_target(suggested_name, trip, destination_hint=None):
     from intranet.models import Guide
+    from tariff.models import Location
 
     def _name_matches(g, name):
         if not name:
@@ -685,49 +715,56 @@ def _resolve_guide_for_target(suggested_name, trip, destination_hint=None):
         words = [w for w in name.split() if len(w) > 2]
         return bool(words and all(w.lower() in g.name.lower() for w in words))
 
-    # 1. If we have a destination hint, try name matching scoped to that location first
+    # 1. Destination hint provided → resolve to a known Location and scope entirely to it.
+    #    Guides with the same name exist in different destinations, so location must match.
     if destination_hint:
         dest_norm = _norm(destination_hint)
-        location_qs = Guide.objects.filter(location__name__icontains=destination_hint)
-        if not location_qs.exists():
-            # Try accent-normalized match on location name
-            for g in Guide.objects.select_related('location').all():
-                loc_name = g.location.name if g.location else ''
-                if dest_norm and dest_norm in _norm(loc_name):
-                    location_qs = Guide.objects.filter(pk=g.pk) | location_qs
-        for g in location_qs:
-            if _name_matches(g, suggested_name):
-                return g
+        location = None
+        for loc in Location.objects.all():
+            if dest_norm in _norm(loc.name) or _norm(loc.name) in dest_norm:
+                location = loc
+                break
 
-    # 2. Global exact match
+        if location:
+            # Exact name match within this location
+            if suggested_name:
+                g = Guide.objects.filter(name__iexact=suggested_name, location=location).first()
+                if g:
+                    return g
+                # Partial word match within this location
+                words = [w for w in suggested_name.split() if len(w) > 2]
+                if words:
+                    for g in Guide.objects.filter(location=location).select_related('location'):
+                        if all(w.lower() in g.name.lower() for w in words):
+                            return g
+                # Not found in this location → create guide here (same name can exist in other locations)
+                guide, _ = Guide.objects.get_or_create(name=suggested_name, location=location)
+                return guide
+            return None
+        # Destination hint given but doesn't match any known Location → fall through to global match
+
+    # 2. No destination (or unrecognised destination): global name match
     if suggested_name:
         g = Guide.objects.filter(name__iexact=suggested_name).first()
         if g:
             return g
-        # Partial word match — if destination_hint, prefer same-location result
         words = [w for w in suggested_name.split() if len(w) > 2]
         if words:
             candidates = []
             for g in Guide.objects.select_related('location').all():
                 if all(w.lower() in g.name.lower() for w in words):
-                    # Score higher if location matches destination hint
-                    loc_name = g.location.name if g.location else ''
-                    score = 1
-                    if destination_hint and _norm(destination_hint) in _norm(loc_name):
-                        score = 2
-                    candidates.append((score, g))
+                    candidates.append(g)
             if candidates:
-                candidates.sort(key=lambda x: -x[0])
-                return candidates[0][1]
+                return candidates[0]
 
-    # 3. Cross-reference with Trip.guide CharField
+    # 3. Cross-reference with Trip.guide CharField (Buenos Aires guide field)
     trip_name = (trip.guide or '').strip() if trip else ''
     if not trip_name:
         return None
     g = Guide.objects.filter(name__iexact=trip_name).first()
     if g:
         return g
-    # Names overlap → create from Trip's definitive name
+    # Names overlap → create from Trip's definitive name (no location = BA default)
     if _names_overlap(suggested_name, trip_name) or not suggested_name:
         guide, _ = Guide.objects.get_or_create(name=trip_name)
         return guide
@@ -952,42 +989,26 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             ref_parts.append('Viaje: ' + ' | '.join(trip_parts))
         trip_ref = ' – '.join(ref_parts)
 
+        # ── Resolve target object ──────────────────────────────────────────
         if target_type == 'supplier':
             sid = t.get('supplier_id')
             supplier = Supplier.objects.filter(pk=sid).first() if sid else None
-
-            # Deduplication: if same trip + supplier already has a feedback, update it
-            if trip and supplier:
-                existing_fb = Feedback.objects.filter(trip=trip, supplier=supplier).order_by('-creation_date').first()
-                if existing_fb:
-                    date_str = creation_date.strftime('%d/%m/%Y') if hasattr(creation_date, 'strftime') else str(creation_date)
-                    subject_tag = f' [{item.email_subject}]' if item.email_subject else ''
-                    note = f"\n\n[{date_str}{subject_tag}] {content}"
-                    existing_fb.content = (existing_fb.content or '') + note
-                    if solution and not existing_fb.solution:
-                        existing_fb.solution = solution
-                    if cost and not existing_fb.cost:
-                        existing_fb.cost = cost
-                    update_fields = ['content']
-                    if solution and not existing_fb.solution:
-                        update_fields.append('solution')
-                    if cost and not existing_fb.cost:
-                        update_fields.append('cost')
-                    existing_fb.save(update_fields=update_fields)
-                    created.append(existing_fb)
-                    continue
+            dedup_filter = {'supplier': supplier} if supplier else None
 
         elif target_type == 'user':
             uid = t.get('user_id')
             target_user = User.objects.filter(pk=uid).first() if uid else None
+            dedup_filter = {'target_user': target_user} if target_user else None
 
         elif target_type == 'guide':
             gid = t.get('guide_id')
             target_guide = Guide.objects.filter(pk=gid).first() if gid else None
+            dedup_filter = {'target_guide': target_guide} if target_guide else None
 
         elif target_type == 'dh':
             dhid = t.get('dh_id')
             target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
+            dedup_filter = {'target_dh': target_dh} if target_dh else None
 
         elif target_type == 'aliwen_team':
             seller, operator = get_trip_staff(trip_file_id)
@@ -1016,6 +1037,28 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             entity = FeedbackEntity.objects.filter(pk=eid).first() if eid else None
             if not entity:
                 entity = get_or_create_entity('Servicio no registrado')
+            dedup_filter = {'target_entity': entity} if entity else None
+
+        # ── Deduplication: same trip + same target → append, don't create ──
+        if trip and dedup_filter:
+            existing_fb = Feedback.objects.filter(trip=trip, **dedup_filter).order_by('-creation_date').first()
+            if existing_fb:
+                date_str = creation_date.strftime('%d/%m/%Y') if hasattr(creation_date, 'strftime') else str(creation_date)
+                subject_tag = f' [{item.email_subject}]' if item.email_subject else ''
+                note = f"\n\n[{date_str}{subject_tag}] {content}"
+                existing_fb.content = (existing_fb.content or '') + note
+                from django.utils import timezone
+                existing_fb.last_modification_date = timezone.now()
+                update_fields = ['content', 'last_modification_date']
+                if solution and not existing_fb.solution:
+                    existing_fb.solution = solution
+                    update_fields.append('solution')
+                if cost and not existing_fb.cost:
+                    existing_fb.cost = cost
+                    update_fields.append('cost')
+                existing_fb.save(update_fields=update_fields)
+                created.append(existing_fb)
+                continue
 
         content_with_ref = f"[{trip_ref}]\n{content}" if trip_ref else content
         fb = Feedback.objects.create(

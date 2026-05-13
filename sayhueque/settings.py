@@ -178,6 +178,7 @@ CACHE_MIDDLEWARE_SECONDS = 36000
 # Tourplan SQL Server connection
 TOURPLAN_DB = {
     "SERVER":   os.environ.get("TP_DB_SERVER",   "NX-DB04"),
+    "PORT":     int(os.environ.get("TP_DB_PORT",  "1433")),
     "DATABASE": os.environ.get("TP_DB_DATABASE", "LA-SAYHUE"),
     "UID":      os.environ.get("TP_DB_UID",      ""),
     "PWD":      os.environ.get("TP_DB_PWD",      ""),

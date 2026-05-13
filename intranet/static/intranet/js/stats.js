@@ -31,6 +31,40 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadingEl.classList.add('d-none');
         }
 
+        // Drill-down DataTable (visible when user_filter or client_filter is in URL)
+        const drillUser = filters.user_filter;
+        const drillClient = filters.client_filter;
+        if (drillUser || drillClient) {
+            const drillSection = document.getElementById('section-drilldown');
+            const drillTitle = document.getElementById('drilldown-title');
+            if (drillSection && drillTitle) {
+                drillSection.classList.remove('d-none');
+                const label = drillUser ? `Entradas — ${drillUser}` : `Entradas — ${drillClient}`;
+                drillTitle.textContent = `📋 Detalle: ${label}`;
+                const dtParams = Object.assign({}, filters, { type: 'entries' });
+                new DataTable('#drilldown-table', {
+                    processing: true,
+                    serverSide: true,
+                    ajax: { url: '/stats/data/', type: 'GET', data: d => Object.assign(d, dtParams) },
+                    columns: [
+                        { title: 'Fecha', data: 'starting_date' },
+                        { title: 'Respuesta', data: 'closing_date' },
+                        { title: 'Viaje', data: 'trip' },
+                        { title: 'Status', data: 'status' },
+                        { title: 'Monto', data: 'amount' },
+                        { title: 'Cliente', data: 'client' },
+                        { title: 'Cot. por', data: 'user_creator' },
+                        { title: 'Trab. por', data: 'user_working' },
+                        { title: 'Fecha Viaje', data: 'travelling_date' },
+                    ],
+                    language: { url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json' },
+                    lengthMenu: [[25, 50, -1], [25, 50, 'Todos']],
+                    order: [[0, 'asc']]
+                });
+                drillSection.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
         // Buttons listeners
         const exportPdf = document.querySelector('.btn-export');
         if (exportPdf) {
@@ -83,6 +117,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (contentEl) {
             contentEl.style.display = 'block';
             loadingEl.classList.add('d-none');
+        }
+
+        // Drill-down DataTable (visible when vr_filter, op_filter or client_filter is in URL)
+        const drillVR = filters.vr_filter;
+        const drillOP = filters.op_filter;
+        const drillClient = filters.client_filter;
+        if (drillVR || drillOP || drillClient) {
+            const drillSection = document.getElementById('section-drilldown');
+            const drillTitle = document.getElementById('drilldown-title');
+            if (drillSection && drillTitle) {
+                drillSection.classList.remove('d-none');
+                const label = drillVR ? `VR: ${drillVR}` : drillOP ? `OP: ${drillOP}` : `Cliente: ${drillClient}`;
+                drillTitle.textContent = `📋 Detalle viajes — ${label}`;
+                const dtParams = Object.assign({}, filters, { type: 'trips' });
+                new DataTable('#drilldown-table', {
+                    processing: true,
+                    serverSide: true,
+                    ajax: { url: '/stats/data/', type: 'GET', data: d => Object.assign(d, dtParams) },
+                    columns: [
+                        { title: 'Viaje', data: 'name' },
+                        { title: 'Cliente', data: 'client' },
+                        { title: 'Contacto', data: 'contact' },
+                        { title: 'Referencia', data: 'reference' },
+                        { title: 'Fecha Viaje', data: 'travelling_date' },
+                        { title: 'Monto', data: 'amount' },
+                        { title: 'Dificultad', data: 'difficulty' },
+                        { title: 'VR', data: 'responsable_user' },
+                        { title: 'OP', data: 'operations_user' },
+                    ],
+                    language: { url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json' },
+                    lengthMenu: [[25, 50, -1], [25, 50, 'Todos']],
+                    order: [[4, 'asc']]
+                });
+                drillSection.scrollIntoView({ behavior: 'smooth' });
+            }
         }
 
         // Buttons listeners
@@ -148,6 +217,30 @@ let operatorTripsData = {};
 let clientTripsData = {};
 let chartsClientsTrips = {};
 
+// ==================== MONTHLY BREAKDOWN ====================
+let monthlyBreakdownEntries = [];
+let monthlyBreakdownTrips   = [];
+let monthlyByVendorEntries  = {};
+let monthlyByClientEntries  = {};
+let monthlyByVrTrips        = {};
+let monthlyByOperatorTrips  = {};
+let monthlyByClientTrips    = {};
+
+
+// drill-down link helper — builds URL with current period params + specific filter
+// showAll: if true, appends show_all=1 (for entries page to include closed/sent entries)
+// statusFilter: if set, appends status_filter=<value> (e.g. "Booking" for trips stats)
+function buildDrillDownUrl(basePath, filterKey, filterValue, showAll = false, statusFilter = "") {
+    const current = new URLSearchParams(window.location.search);
+    const out = new URLSearchParams();
+    ['date_from', 'date_to', 'month', 'year', 'week', 'season', 'filter'].forEach(k => {
+        if (current.has(k)) out.set(k, current.get(k));
+    });
+    out.set(filterKey, filterValue);
+    if (showAll) out.set('show_all', '1');
+    if (statusFilter) out.set('status_filter', statusFilter);
+    return `${basePath}?${out.toString()}`;
+}
 
 // extraer helper
 function toDateOnly(raw) {
@@ -179,6 +272,9 @@ async function generatePresentationEntriesData(filters = {}) {
         window.summarySpeed = result.summary_speed?.summary || {};
 
         window.summaryClients = result.clients || {};
+        monthlyBreakdownEntries = result.monthly_breakdown || [];
+        monthlyByVendorEntries  = result.monthly_by_vendor || {};
+        monthlyByClientEntries  = result.monthly_by_client || {};
 
         // ⚠️ Asignar a la variable que usa renderReport Quotes
         // Normalizar el objeto y asegurarnos que los montos sean números
@@ -395,6 +491,10 @@ async function generatePresentationTripsData(filters = {}) {
         window.vendorTripsData = result.trips_by_responsable || {};
         window.operatorTripsData = result.trips_by_operator || {};
         window.clientTripsData = result.clients || {};
+        monthlyBreakdownTrips   = result.monthly_breakdown || [];
+        monthlyByVrTrips        = result.monthly_by_vr || {};
+        monthlyByOperatorTrips  = result.monthly_by_operator || {};
+        monthlyByClientTrips    = result.monthly_by_client || {};
 
         // ⚠️ Asignar a la variable que usa renderReport Quotes
         // Normalizar el objeto y asegurarnos que los montos sean números
@@ -525,28 +625,31 @@ async function loadSection(sectionName) {
         switch(sectionName) {
             case 'general':
                 renderSummaryTables();
+                renderMonthlyBreakdown('entries');
                 sectionsLoaded.general = true;
                 break;
                 
             case 'vendor':
                 renderVendorTableQuote();
                 renderVendorTableBooking();
+                renderMonthlyByVendorEntries();
                 renderChartsQuotes();
                 renderChartsBookings();
                 renderInsightsQuotes();
                 renderInsightsBookings();
                 sectionsLoaded.vendor = true;
                 break;
-                
+
             case 'speed':
                 renderResponseSpeed();
                 renderResponseSpeedVendor("speed-total");
                 renderChartsSpeed();
                 sectionsLoaded.speed = true;
                 break;
-                
+
             case 'client':
                 renderClients();
+                renderMonthlyByClientEntries();
                 renderChartsClients();
                 sectionsLoaded.client = true;
                 break;
@@ -580,23 +683,27 @@ async function loadSectionTrip(sectionName) {
         switch(sectionName) {
             case 'general':
                 renderSummaryTrips();
+                renderMonthlyBreakdown('trips');
                 sectionsLoadedTrips.general = true;
                 break;
                 
             case 'user':
                 renderVendorTrips();
                 renderOperatorTrips();
+                renderMonthlyByVrTrips();
+                renderMonthlyByOperatorTrips();
                 renderChartsTripsVendors();
                 renderChartsTripsOperators();
                 renderInsightsTripsVendors();
                 renderInsightsTripsOperators();
                 sectionsLoadedTrips.user = true;
                 break;
-                
+
             case 'client':
                 renderTripsClients();
+                renderMonthlyByClientTrips();
                 renderChartsTripsClients();
-                sectionsLoaded.client = true;
+                sectionsLoadedTrips.client = true;
                 break;
         }
         
@@ -616,26 +723,316 @@ async function exportSectionToPDF(sectionId) {
     }
 
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('p', 'mm', 'a4');
 
     try {
+        // ── Capture chart-box positions BEFORE html2canvas (layout is untouched here) ──
+        const PAD_CSS = 12; // padding in CSS px around each protected block
+        const sectionRectPre = section.getBoundingClientRect();
+        const rawBlocks = [];
+        section.querySelectorAll('.chart-box').forEach(el => {
+            const r = el.getBoundingClientRect();
+            rawBlocks.push({
+                cssTop:    r.top    - sectionRectPre.top - PAD_CSS,
+                cssBottom: r.bottom - sectionRectPre.top + PAD_CSS,
+            });
+        });
+
         const canvas = await html2canvas(section, {
             scale: 2,
             logging: false,
-            useCORS: true
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            windowWidth: section.scrollWidth,
+            ignoreElements: (el) => {
+                const cl = el.classList;
+                if (cl.contains('dt-layout-row') && !cl.contains('dt-layout-table')) return true;
+                if (cl.contains('dt-search') || cl.contains('dt-buttons') ||
+                    cl.contains('dt-length') || cl.contains('dt-paging') ||
+                    cl.contains('dt-info')) return true;
+                if (el.tagName === 'DIV' && cl.contains('mb-3') &&
+                    el.querySelector('[onclick*="exportSectionToPDF"],[onclick*="window.print"]')) return true;
+                return false;
+            },
         });
 
-        const imgData = canvas.toDataURL('image/png');
-        const imgWidth = 190;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageW = pdf.internal.pageSize.getWidth();   // 210
+        const pageH = pdf.internal.pageSize.getHeight();  // 297
+        const margin = 10;
+        const contentW = pageW - 2 * margin;  // 190
+        const contentH = pageH - 2 * margin;  // 277
 
-        pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+        const pxPerMm  = canvas.width / contentW;
+        const slicePx  = Math.floor(contentH * pxPerMm);
+
+        // Convert pre-captured CSS positions → canvas pixels using actual rendered ratio
+        const cssToCanvas  = canvas.height / section.scrollHeight;
+        const protectedBlocks = rawBlocks.map(({ cssTop, cssBottom }) => ({
+            top:    Math.max(0,            Math.floor(cssTop    * cssToCanvas)),
+            bottom: Math.min(canvas.height, Math.ceil(cssBottom * cssToCanvas)),
+        }));
+
+        // ── Find a safe cut: avoid slicing inside any protected block ──
+        function safeCut(prevY, ideal) {
+            const MIN_PAGE = slicePx * 0.25;
+            for (const { top, bottom } of protectedBlocks) {
+                if (ideal > top && ideal < bottom) {
+                    if (top > prevY && (top - prevY) >= MIN_PAGE) {
+                        return top;    // cut just before the block
+                    }
+                    return bottom;     // block too close to page start → push past it
+                }
+            }
+            return ideal;
+        }
+
+        // ── Build page slices ──
+        const slices = [];
+        let prevY = 0;
+        while (prevY < canvas.height) {
+            const ideal = prevY + slicePx;
+            if (ideal >= canvas.height) {
+                slices.push({ srcY: prevY, srcH: canvas.height - prevY });
+                break;
+            }
+            const cutY = safeCut(prevY, ideal);
+            slices.push({ srcY: prevY, srcH: cutY - prevY });
+            prevY = cutY;
+        }
+
+        // ── Render one PDF page per slice ──
+        for (let i = 0; i < slices.length; i++) {
+            if (i > 0) pdf.addPage();
+            const { srcY, srcH } = slices[i];
+
+            const slice = document.createElement('canvas');
+            slice.width  = canvas.width;
+            slice.height = srcH;
+            slice.getContext('2d').drawImage(
+                canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH
+            );
+
+            const sliceH_mm = srcH / pxPerMm;
+            pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, contentW, sliceH_mm);
+        }
+
         pdf.save(`estadisticas-${sectionId}-${new Date().toISOString().split('T')[0]}.pdf`);
 
     } catch (error) {
         console.error('Error generando PDF:', error);
         alert('Error al generar el PDF');
     }
+}
+
+
+// ==================== MONTHLY BREAKDOWN ====================
+function renderMonthlyBreakdown(type) {
+    const data = type === 'trips' ? monthlyBreakdownTrips : monthlyBreakdownEntries;
+    const containerId = type === 'trips' ? 'monthly-breakdown-trips' : 'monthly-breakdown-entries';
+    const chartId     = type === 'trips' ? 'chartMonthlyTrips'       : 'chartMonthlyEntries';
+
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!data || data.length < 2) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const labels  = data.map(r => r.label);
+    const fmt     = v => `USD ${(+v || 0).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
+
+    // ── Table ──
+    const tbodyId = containerId + '-tbody';
+    const tbody = document.getElementById(tbodyId);
+    if (tbody) {
+        tbody.innerHTML = '';
+        data.forEach(r => {
+            const tr = document.createElement('tr');
+            if (type === 'entries') {
+                tr.innerHTML = `
+                    <td>${r.label}</td>
+                    <td>${r.quotes_count}</td>
+                    <td>${fmt(r.quotes_amount)}</td>
+                    <td>${r.bookings_count}</td>
+                    <td>${fmt(r.bookings_amount)}</td>
+                    <td>${r.active_vendors}</td>
+                `;
+            } else {
+                tr.innerHTML = `
+                    <td>${r.label}</td>
+                    <td>${r.bookings_count}</td>
+                    <td>${fmt(r.bookings_amount)}</td>
+                    <td>${(r.avg_rent || 0).toFixed(1)} %</td>
+                    <td>${r.cancellations_count}</td>
+                `;
+            }
+            tbody.appendChild(tr);
+        });
+    }
+
+    // ── Chart ──
+    const canvas = document.getElementById(chartId);
+    if (!canvas) return;
+
+    // destroy previous instance if exists
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+
+    const datasets = type === 'entries'
+        ? [
+            { label: 'Quotes (cant.)',    data: data.map(r => r.quotes_count),    type: 'bar',  yAxisID: 'yCount', backgroundColor: 'rgba(99,179,237,0.6)' },
+            { label: 'Bookings (cant.)',   data: data.map(r => r.bookings_count),  type: 'bar',  yAxisID: 'yCount', backgroundColor: 'rgba(72,187,120,0.6)' },
+            { label: 'Fact. Bookings',     data: data.map(r => r.bookings_amount), type: 'line', yAxisID: 'yAmount', borderColor: 'rgba(237,137,54,1)', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4 },
+          ]
+        : [
+            { label: 'Bookings (cant.)',   data: data.map(r => r.bookings_count),  type: 'bar',  yAxisID: 'yCount', backgroundColor: 'rgba(72,187,120,0.6)' },
+            { label: 'Facturación',        data: data.map(r => r.bookings_amount), type: 'line', yAxisID: 'yAmount', borderColor: 'rgba(237,137,54,1)', backgroundColor: 'transparent', tension: 0.3, pointRadius: 4 },
+            { label: 'Cancelaciones',      data: data.map(r => r.cancellations_count), type: 'bar', yAxisID: 'yCount', backgroundColor: 'rgba(252,129,129,0.6)' },
+          ];
+
+    new Chart(canvas, {
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                yCount:  { type: 'linear', position: 'left',  title: { display: true, text: 'Cantidad' }, beginAtZero: true },
+                yAmount: { type: 'linear', position: 'right', title: { display: true, text: 'USD' },      beginAtZero: true, grid: { drawOnChartArea: false } },
+            },
+        },
+    });
+}
+
+
+// ==================== MONTHLY BY VENDOR/CLIENT/VR/OPERATOR ====================
+
+const PALETTE = [
+    '#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
+    '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac',
+    '#d37295','#fabfd2','#8cd17d','#b6992d','#499894',
+];
+
+function _buildMultiLineChart(canvasId, labels, datasets) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+    new Chart(canvas, {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                x: { stacked: false },
+                y: { beginAtZero: true, title: { display: true, text: 'Cantidad' } },
+            },
+        },
+    });
+}
+
+function _buildMonthlyMultiDatasets(dataByKey, field, colorOffset) {
+    const allMonths = new Set();
+    Object.values(dataByKey).forEach(rows => rows.forEach(r => allMonths.add(r.month_key)));
+    const sortedMonths = [...allMonths].sort();
+    const labels = sortedMonths.map(mk => {
+        const firstMatch = Object.values(dataByKey).flatMap(r => r).find(r => r.month_key === mk);
+        return firstMatch ? firstMatch.label : mk;
+    });
+    const datasets = Object.entries(dataByKey).map(([name, rows], idx) => {
+        const color = PALETTE[(idx + colorOffset) % PALETTE.length];
+        return {
+            label: name,
+            data: sortedMonths.map(mk => {
+                const row = rows.find(r => r.month_key === mk);
+                return row ? (row[field] || 0) : 0;
+            }),
+            backgroundColor: color,
+            borderColor: color,
+            borderWidth: 1,
+        };
+    });
+    return { labels, datasets };
+}
+
+function renderMonthlyByVendorEntries() {
+    const container = document.getElementById('monthly-by-vendor-entries');
+    if (!container) return;
+    if (!monthlyByVendorEntries || !Object.keys(monthlyByVendorEntries).length) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const { labels, datasets: dsQ } = _buildMonthlyMultiDatasets(monthlyByVendorEntries, 'quotes_count', 0);
+    const { datasets: dsB } = _buildMonthlyMultiDatasets(monthlyByVendorEntries, 'bookings_count', 0);
+    _buildMultiLineChart('chartMonthlyVendorQuotes', labels, dsQ);
+    _buildMultiLineChart('chartMonthlyVendorBookings', labels, dsB);
+}
+
+function renderMonthlyByClientEntries() {
+    const container = document.getElementById('monthly-by-client-entries');
+    if (!container) return;
+    if (!monthlyByClientEntries || !Object.keys(monthlyByClientEntries).length) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const { labels, datasets: dsQ } = _buildMonthlyMultiDatasets(monthlyByClientEntries, 'quotes_count', 3);
+    const { datasets: dsB } = _buildMonthlyMultiDatasets(monthlyByClientEntries, 'bookings_count', 3);
+    _buildMultiLineChart('chartMonthlyClientQuotes', labels, dsQ);
+    _buildMultiLineChart('chartMonthlyClientBookings', labels, dsB);
+}
+
+function renderMonthlyByVrTrips() {
+    const container = document.getElementById('monthly-by-vr-trips');
+    if (!container) return;
+    if (!monthlyByVrTrips || !Object.keys(monthlyByVrTrips).length) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const { labels, datasets: dsCount } = _buildMonthlyMultiDatasets(monthlyByVrTrips, 'bookings_count', 0);
+    const { datasets: dsAmount } = _buildMonthlyMultiDatasets(monthlyByVrTrips, 'bookings_amount', 0);
+    _buildMultiLineChart('chartMonthlyVrCount', labels, dsCount);
+    _buildMultiLineChart('chartMonthlyVrAmount', labels, dsAmount);
+}
+
+function renderMonthlyByOperatorTrips() {
+    const container = document.getElementById('monthly-by-operator-trips');
+    if (!container) return;
+    if (!monthlyByOperatorTrips || !Object.keys(monthlyByOperatorTrips).length) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const { labels, datasets: dsCount } = _buildMonthlyMultiDatasets(monthlyByOperatorTrips, 'bookings_count', 5);
+    const { datasets: dsAmount } = _buildMonthlyMultiDatasets(monthlyByOperatorTrips, 'bookings_amount', 5);
+    _buildMultiLineChart('chartMonthlyOperatorCount', labels, dsCount);
+    _buildMultiLineChart('chartMonthlyOperatorAmount', labels, dsAmount);
+}
+
+function renderMonthlyByClientTrips() {
+    const container = document.getElementById('monthly-by-client-trips');
+    if (!container) return;
+    if (!monthlyByClientTrips || !Object.keys(monthlyByClientTrips).length) {
+        container.classList.add('d-none');
+        return;
+    }
+    container.classList.remove('d-none');
+
+    const { labels, datasets: dsCount } = _buildMonthlyMultiDatasets(monthlyByClientTrips, 'bookings_count', 3);
+    const { datasets: dsAmount } = _buildMonthlyMultiDatasets(monthlyByClientTrips, 'bookings_amount', 3);
+    _buildMultiLineChart('chartMonthlyClientTripsCount', labels, dsCount);
+    _buildMultiLineChart('chartMonthlyClientTripsAmount', labels, dsAmount);
 }
 
 
@@ -840,9 +1237,10 @@ function renderVendorTableQuote() {
         // 2. Definir el estilo de celda (background-color con !important)
         // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
         const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+        const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Quote');
 
         row.innerHTML = `
-            <td style="${cellStyle}">${vendor}</td>
+            <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td style="${cellStyle}">${vals.total}</td>
             <td style="${cellStyle}">${vals.a}</td>
             <td style="${cellStyle}">${vals.audleyA}</td>
@@ -916,9 +1314,10 @@ function renderVendorTableBooking() {
         // 2. Definir el estilo de celda (background-color con !important)
         // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
         const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+        const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Booking');
 
         row.innerHTML = `
-            <td style="${cellStyle}">${vendor}</td>
+            <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td style="${cellStyle}">${vals.total}</td>
             <td style="${cellStyle}">${vals.first}</td>
             <td style="${cellStyle}">${vals.audleyFirst}</td>
@@ -991,6 +1390,7 @@ function renderResponseSpeedVendor(speed_type) {
             // 2. Definir el estilo de celda (background-color con !important)
             // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
             const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true);
 
             const percTotalSameDay = vals.totalTotal > 0 ? ((vals.totalSameDay / vals.totalTotal) * 100).toFixed(2) : 0;
             const percTotalOneDay = vals.totalTotal > 0 ? ((vals.totalOneDay / vals.totalTotal) * 100).toFixed(2) : 0;
@@ -1001,7 +1401,7 @@ function renderResponseSpeedVendor(speed_type) {
             const percTotalMoreDays = vals.totalTotal > 0 ? ((vals.totalMoreDays / vals.totalTotal) * 100).toFixed(2) : 0;
 
             row.innerHTML = `
-                <td style="${cellStyle}">${vendor}</td>
+                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
                 <td style="${cellStyle}">${vals.totalTotal}</td>
                 <td style="${cellStyle}">${parseFloat(percTotalSameDay || 0, 10)}%</td>
                 <td style="${cellStyle}">${parseFloat(percTotalOneDay || 0, 10)}%</td>
@@ -1035,6 +1435,7 @@ function renderResponseSpeedVendor(speed_type) {
             // 2. Definir el estilo de celda (background-color con !important)
             // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
             const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Quote');
 
             const percSameDay = vals.quotesTotal > 0 ? ((vals.quotesSameDay / vals.quotesTotal) * 100).toFixed(2) : 0;
             const percOneDay = vals.quotesTotal > 0 ? ((vals.quotesOneDay / vals.quotesTotal) * 100).toFixed(2) : 0;
@@ -1045,7 +1446,7 @@ function renderResponseSpeedVendor(speed_type) {
             const percMoreDays = vals.quotesTotal > 0 ? ((vals.quotesMoreDays / vals.quotesTotal) * 100).toFixed(2) : 0;
 
             row.innerHTML = `
-                <td style="${cellStyle}">${vendor}</td>
+                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
                 <td style="${cellStyle}">${vals.quotesTotal}</td>
                 <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
                 <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
@@ -1079,6 +1480,7 @@ function renderResponseSpeedVendor(speed_type) {
             // 2. Definir el estilo de celda (background-color con !important)
             // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
             const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Booking');
 
             const percSameDay = vals.bookingsTotal > 0 ? ((vals.bookingsSameDay / vals.bookingsTotal) * 100).toFixed(2) : 0;
             const percOneDay = vals.bookingsTotal > 0 ? ((vals.bookingsOneDay / vals.bookingsTotal) * 100).toFixed(2) : 0;
@@ -1089,7 +1491,7 @@ function renderResponseSpeedVendor(speed_type) {
             const percMoreDays = vals.bookingsTotal > 0 ? ((vals.bookingsMoreDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
 
             row.innerHTML = `
-                <td style="${cellStyle}">${vendor}</td>
+                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
                 <td style="${cellStyle}">${vals.bookingsTotal}</td>
                 <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
                 <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
@@ -1123,6 +1525,7 @@ function renderResponseSpeedVendor(speed_type) {
             // 2. Definir el estilo de celda (background-color con !important)
             // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
             const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Final');
 
             const percSameDay = vals.finalsTotal > 0 ? ((vals.finalsSameDay / vals.finalsTotal) * 100).toFixed(2) : 0;
             const percOneDay = vals.finalsTotal > 0 ? ((vals.finalsOneDay / vals.finalsTotal) * 100).toFixed(2) : 0;
@@ -1133,7 +1536,7 @@ function renderResponseSpeedVendor(speed_type) {
             const percMoreDays = vals.finalsTotal > 0 ? ((vals.finalsMoreDays / vals.finalsTotal) * 100).toFixed(2) : 0;
 
             row.innerHTML = `
-                <td style="${cellStyle}">${vendor}</td>
+                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
                 <td style="${cellStyle}">${vals.finalsTotal}</td>
                 <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
                 <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
@@ -1365,9 +1768,10 @@ function renderClients() {
             ? ((bookings / quotes) * 100).toFixed(2)
             : "n/a";
         const row = document.createElement('tr');
+        const drillUrl = buildDrillDownUrl('/entries', 'client_filter', client, true);
 
         row.innerHTML = `
-            <td>${client}</td>
+            <td>${client} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td>${vals.quotesCount}</td>
             <td>${percQuotesCount}%</td>
             <td>USD ${vals.quotesAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
@@ -1919,9 +2323,10 @@ function renderVendorTrips() {
         // 2. Definir el estilo de celda (background-color con !important)
         // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
         const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+        const drillUrl = buildDrillDownUrl('/trips', 'vr_filter', vendor, false, 'Booking');
 
         row.innerHTML = `
-            <td style="${cellStyle}">${vendor}</td>
+            <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td style="${cellStyle}">${vals.total}</td>
             <td style="${cellStyle}">USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
             <td style="${cellStyle}">${percTotal}%</td>
@@ -1998,9 +2403,10 @@ function renderOperatorTrips() {
         // 2. Definir el estilo de celda (background-color con !important)
         // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
         const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
+        const drillUrl = buildDrillDownUrl('/trips', 'op_filter', operator, false, 'Booking');
 
         row.innerHTML = `
-            <td style="${cellStyle}">${operator}</td>
+            <td style="${cellStyle}">${operator} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td style="${cellStyle}">${vals.total}</td>
             <td style="${cellStyle}">USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
             <td style="${cellStyle}">${percTotal}%</td>
@@ -2284,9 +2690,10 @@ function renderTripsClients() {
         const averagePerTrip = totalBookingsCount > 0 ? (vals.amountTotal / vals.total).toFixed(2) : 0;
 
         const row = document.createElement('tr');
+        const drillUrl = buildDrillDownUrl('/trips', 'client_filter', client, false, 'Booking');
 
         row.innerHTML = `
-            <td>${client}</td>
+            <td>${client} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
             <td>${vals.total}</td>
             <td>${percBookingsCount}%</td>
             <td>USD ${vals.amountTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
