@@ -185,12 +185,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         });
     };
-
+    
     var calendarEl = document.getElementById('calendar');
     if (calendarEl) {
         var calendar = new FullCalendar.Calendar(calendarEl, {
-            initialView: 'dayGridMonth',
+            initialView: 'multiMonthYear',
             events: '/holidays/json',
+            headerToolbar: {
+              left: 'prev,next today',
+              center: 'title',
+              right: 'multiMonthYear,dayGridMonth,timeGridWeek'
+            },
+            multiMonthMaxColumns: 3,  // columnas de meses (3 = 4 filas de 3)
         });
         calendar.render();
     };

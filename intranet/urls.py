@@ -55,12 +55,13 @@ urlpatterns = [
     path("contacts/json", views.json_contacts, name="json_contacts"),
     path("users/json", views.json_users, name="json_users"),
     path("entries/json", views.json_entries, name="json_entries"),
+    path("entries/<int:entry_id>/progress", views.update_entry_progress, name="update_entry_progress"),
     path("holidays/json", views.json_holidays, name="json_holidays"),
     path("holidays/holiday/create", views.create_holiday, name="create_holiday"),
     path("holidays/holiday/<int:holiday_id>/delete", views.delete_holiday, name="delete_holiday"),
+    path("holidays/holiday/<int:holiday_id>/edit", views.edit_holiday, name="edit_holiday"),
     path("holidays/absence/create", views.create_absence, name="create_absence"),
     path("holidays/absence/<int:absence_id>/delete", views.delete_absence, name="delete_absence"),
-    path("holidays/sync_arg", views.sync_arg_holidays, name="sync_arg_holidays"),
 
     # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),

@@ -65,38 +65,51 @@ def update_timingStatus(entry):
 
 
 def get_working_days(from_date, to_date):
-
     # Normalize strings
     if isinstance(from_date, str):
         from_date = datetime.fromisoformat(from_date)
     if isinstance(to_date, str):
         to_date = datetime.fromisoformat(to_date)
-
     # Normalize datetime → date
     if hasattr(from_date, "date"):
         from_date = from_date.date()
     if hasattr(to_date, "date"):
         to_date = to_date.date()
-
-    # Check if the order is correct
     if from_date > to_date:
         from_date, to_date = to_date, from_date
 
-    # Get the quantity of holidays
+    # Diferencia en días corridos menos feriados (uso: antigüedad de cotizaciones)
     n_holidays = Holidays.objects.filter(
         workable=False,
         date_from__range=(from_date, to_date)
     ).count()
 
-    working_days = (to_date - from_date).days - n_holidays
-    return working_days
+    return (to_date - from_date).days - n_holidays
 
 
 _ABSENCE_TYPES_REDUCE_WORK = frozenset({
     'Vacaciones', 'Beneficio Vacaciones', 'Compensatorios',
-    'Cumpleaños', 'Cumpleaños en baja', 'Exámenes/Día de Estudio',
-    'Sin goce de sueldo', 'Viernes OFF alta',
+    'Enfermedad', 'Exámenes/Día de Estudio',
+    'Sin goce de sueldo', 'Viernes OFF alta', 'Viernes OFF',
 })
+
+
+def _holiday_weekday_set(from_date, to_date):
+    """Set of weekday dates that are feriados or días no laborables within [from_date, to_date]."""
+    qs = Holidays.objects.filter(
+        type_holidays__in=['Feriado', 'Día no laborable'],
+        date_from__lte=to_date,
+        date_to__gte=from_date,
+    )
+    days = set()
+    for h in qs:
+        d = max(h.date_from, from_date)
+        end = min(h.date_to, to_date)
+        while d <= end:
+            if d.weekday() < 5:
+                days.add(d)
+            d += timedelta(days=1)
+    return days
 
 
 def _days_overlap(records, from_date, to_date):
@@ -110,8 +123,22 @@ def _days_overlap(records, from_date, to_date):
     return total
 
 
-def get_working_days_worker(from_date, to_date, worker):
-    # Normalize inputs (same logic as get_working_days)
+def _days_overlap_habil(records, from_date, to_date, holiday_days):
+    """Sum hábil days (Mon-Fri, non-holiday) covered by records within [from_date, to_date]."""
+    total = 0
+    for r in records:
+        start = max(r.date_from, from_date)
+        end = min(r.date_to, to_date)
+        d = start
+        while d <= end:
+            if d.weekday() < 5 and d not in holiday_days:
+                total += 1
+            d += timedelta(days=1)
+    return total
+
+
+def count_workable_days(from_date, to_date):
+    """Días hábiles: Mon-Fri excluding all feriados and días no laborables (any work_level)."""
     if isinstance(from_date, str):
         from_date = datetime.fromisoformat(from_date)
     if isinstance(to_date, str):
@@ -123,9 +150,36 @@ def get_working_days_worker(from_date, to_date, worker):
     if from_date > to_date:
         from_date, to_date = to_date, from_date
 
-    working_days = get_working_days(from_date, to_date)
+    holiday_days = _holiday_weekday_set(from_date, to_date)
+    total = 0
+    current = from_date
+    while current <= to_date:
+        if current.weekday() < 5 and current not in holiday_days:
+            total += 1
+        current += timedelta(days=1)
+    return total
 
-    # Days this person worked on a company holiday (Feriado trabajado absence type)
+
+def get_working_days_worker(from_date, to_date, worker):
+    if isinstance(from_date, str):
+        from_date = datetime.fromisoformat(from_date)
+    if isinstance(to_date, str):
+        to_date = datetime.fromisoformat(to_date)
+    if hasattr(from_date, "date"):
+        from_date = from_date.date()
+    if hasattr(to_date, "date"):
+        to_date = to_date.date()
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+
+    holiday_days = _holiday_weekday_set(from_date, to_date)
+
+    working_days = sum(
+        1 for i in range((to_date - from_date).days + 1)
+        if (from_date + timedelta(i)).weekday() < 5
+        and (from_date + timedelta(i)) not in holiday_days
+    )
+
     worked_holiday_records = Absence.objects.filter(
         absence_user=worker,
         type_absence='Feriado trabajado',
@@ -134,14 +188,21 @@ def get_working_days_worker(from_date, to_date, worker):
     )
     worked_holiday_days = _days_overlap(worked_holiday_records, from_date, to_date)
 
-    # Absence days that reduce working count
+    worked_holiday_half_records = Absence.objects.filter(
+        absence_user=worker,
+        type_absence='Feriado trabajado 1/2',
+        date_from__lte=to_date,
+        date_to__gte=from_date,
+    )
+    worked_holiday_days += _days_overlap(worked_holiday_half_records, from_date, to_date) * 0.5
+
     absence_records = Absence.objects.filter(
         absence_user=worker,
         type_absence__in=_ABSENCE_TYPES_REDUCE_WORK,
         date_from__lte=to_date,
         date_to__gte=from_date,
     )
-    absence_days = _days_overlap(absence_records, from_date, to_date)
+    absence_days = _days_overlap_habil(absence_records, from_date, to_date, holiday_days)
 
     return working_days + worked_holiday_days - absence_days
 

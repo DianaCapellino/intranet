@@ -99,7 +99,7 @@ DIFFICULTY_OPTIONS = [
 TYPE_HOLIDAYS = [
     ("Feriado", "Se trabaja equipo reducido"),
     ("Fin de semana", "No se trabaja"),
-    ("Día no laborable", "Se trabaja medio día"),
+    ("Día no laborable", "Se trabaja medio día o día completo"),
 ]
 
 TYPE_ABSENCE = [
@@ -108,12 +108,20 @@ TYPE_ABSENCE = [
     ("Compensatorios", "Compensatorios"),
     ("Cumpleaños", "Cumpleaños"),
     ("Cumpleaños en baja", "Cumpleaños en baja"),
+    ("Enfermedad", "Enfermedad"),
     ("Exámenes/Día de Estudio", "Exámenes/Día de Estudio"),
     ("FAM/Trabajando fuera ofi", "FAM/Trabajando fuera ofi"),
     ("Feriado trabajado", "Feriado trabajado"),
+    ("Feriado trabajado 1/2", "Feriado trabajado 1/2"),
     ("Semana home", "Semana home"),
     ("Sin goce de sueldo", "Sin goce de sueldo"),
-    ("Viernes OFF alta", "Viernes OFF alta"),
+    ("Viernes OFF", "Viernes OFF"),
+]
+
+WORK_LEVEL_OPTIONS = [
+    ('none', 'No se trabaja'),
+    ('half', 'Medio día'),
+    ('full', 'Día completo'),
 ]
 
 TIMING_STATUS = [
@@ -355,6 +363,8 @@ class Holidays(models.Model):
     type_holidays = models.CharField(max_length=64, choices=TYPE_HOLIDAYS)
     workable = models.BooleanField(default=False)
     working_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="working_users", null=True, blank=True)
+    work_level = models.CharField(max_length=8, choices=WORK_LEVEL_OPTIONS, default='none')
+    min_workers = models.PositiveSmallIntegerField(null=True, blank=True)
 
 
 class Absence(models.Model):

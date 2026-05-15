@@ -6,18 +6,13 @@
 
   <!-- Header -->
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h5 class="mb-0">Calendario de días laborables</h5>
-    <div class="d-flex gap-2 align-items-center flex-wrap">
-      <div class="input-group input-group-sm" style="width:auto">
-        <input type="number" id="syncYear" class="form-control" style="width:80px"
-               value="{{ current_year }}" min="2000" max="2050">
-        <button class="btn btn-outline-secondary" id="btnSyncArg" title="Importar feriados nacionales desde nolaborables.com.ar">
-          Sincronizar feriados argentinos
-        </button>
-      </div>
-      <button class="btn btn-sm btn-primary" id="btnOpenAdd">
-        + Agregar evento
-      </button>
+    <h5 class="mb-0">Roster y Vacaciones</h5>
+    <div class="d-flex gap-2 align-items-center">
+      <input type="number" id="yearSelector" class="form-control form-control-sm"
+             style="width:80px" value="{{ current_year }}" min="2000" max="2050">
+      <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">Actualizar</button>
+      <button class="btn btn-sm btn-outline-secondary" id="btnUsers" data-bs-toggle="modal" data-bs-target="#modalUsers">Usuarios</button>
+      <button class="btn btn-sm btn-primary" id="btnGestion">Gestionar Feriados y Cumpleaños</button>
     </div>
   </div>
 
@@ -28,69 +23,77 @@
     </div>
   </div>
 
-  <!-- Calendar -->
-  <div id="calendar"></div>
+  <!-- Warning: feriados sin asignar -->
+  <div id="calWarning" class="alert alert-warning py-2 small mb-2" style="display:none">
+    ⚠️ Hay feriados sin asignar. Revisá en <strong>Gestionar Feriados y Cumpleaños</strong>.
+  </div>
+
+  <!-- Warning: feriado trabajado en cumpleaños -->
+  <div id="bdayFeriadoWarning" class="alert alert-danger py-2 small mb-2" style="display:none"></div>
+
+  <!-- Grid -->
+  <div id="calendarGrid"></div>
 
 </div>
 
-<!-- ── Modal: Add event ─────────────────────────────────────────────────────── -->
+<!-- ── Modal: Usuarios visibles ────────────────────────────────────────────── -->
+<div class="modal fade" id="modalUsers" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Usuarios visibles</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-2">
+        <div class="d-flex gap-2 mb-2">
+          <button class="btn btn-xs btn-outline-secondary btn-sm" id="btnCheckAll">Todos</button>
+          <button class="btn btn-xs btn-outline-secondary btn-sm" id="btnCheckNone">Ninguno</button>
+        </div>
+        <div id="userCheckList" class="d-flex flex-column gap-1">
+          {% for u in staff_users %}
+          <div class="form-check">
+            <input class="form-check-input user-vis-check" type="checkbox"
+                   id="uchk_{{ u.id }}" value="{{ u.id }}" checked>
+            <label class="form-check-label small" for="uchk_{{ u.id }}">
+              {{ u.username }} {{ u.other_name }}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-primary" id="btnApplyUsers">Aplicar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add absence (personal) ────────────────────────────────────────── -->
 <div class="modal fade" id="modalAdd" tabindex="-1" aria-labelledby="modalAddLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h6 class="modal-title" id="modalAddLabel">Agregar evento</h6>
+        <h6 class="modal-title" id="modalAddLabel">Agregar ausencia</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-
-        <!-- Event kind toggle -->
-        <div class="mb-3">
-          <div class="btn-group w-100" role="group" id="eventTypeGroup">
-            <button type="button" class="btn btn-sm btn-primary active" data-etype="absence">
-              Ausencia / Evento personal
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-primary" data-etype="holiday">
-              Feriado / Día especial
-            </button>
-          </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Persona</label>
+          <select class="form-select form-select-sm" id="absUser">
+            {% for u in staff_users %}
+            <option value="{{ u.id }}">{{ u.username }}{% if u.other_name %} — {{ u.other_name }}{% endif %}</option>
+            {% endfor %}
+          </select>
         </div>
-
-        <!-- Absence fields -->
-        <div id="absenceFields">
-          <div class="mb-2">
-            <label class="form-label small mb-1">Persona</label>
-            <select class="form-select form-select-sm" id="absUser">
-              {% for u in staff_users %}
-              <option value="{{ u.id }}">{{ u.get_full_name|default:u.username }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-2">
-            <label class="form-label small mb-1">Tipo</label>
-            <select class="form-select form-select-sm" id="absType">
-              {% for val, label in absence_types %}
-              <option value="{{ val }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Tipo</label>
+          <select class="form-select form-select-sm" id="absType">
+            {% for val, label in absence_types %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </div>
-
-        <!-- Holiday fields -->
-        <div id="holidayFields" style="display:none">
-          <div class="mb-2">
-            <label class="form-label small mb-1">Nombre</label>
-            <input type="text" class="form-control form-control-sm" id="holName" placeholder="Ej: Día de la Independencia">
-          </div>
-          <div class="mb-2">
-            <label class="form-label small mb-1">Tipo</label>
-            <select class="form-select form-select-sm" id="holType">
-              <option value="Feriado">Feriado</option>
-              <option value="Día no laborable">Día no laborable</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Date range (shared) -->
         <div class="row g-2 mt-1">
           <div class="col">
             <label class="form-label small mb-1">Desde</label>
@@ -101,11 +104,115 @@
             <input type="date" class="form-control form-control-sm" id="addDateTo">
           </div>
         </div>
-
       </div>
       <div class="modal-footer py-2">
         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
         <button type="button" class="btn btn-sm btn-primary" id="btnSaveEvent">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Month — días especiales ────────────────────────────────────────── -->
+<div class="modal fade" id="modalMonth" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="monthModalTitle">Días especiales</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="monthEventsList" class="mb-3"></div>
+        <hr class="my-2">
+        <p class="small fw-semibold mb-2">Agregar día especial</p>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Nombre</label>
+          <input type="text" class="form-control form-control-sm" id="mHolName" placeholder="Ej: Día de la Independencia">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Tipo</label>
+          <select class="form-select form-select-sm" id="mHolType">
+            <option value="Feriado">Feriado</option>
+            <option value="Día no laborable">Día no laborable</option>
+          </select>
+        </div>
+        <div class="mb-2" id="mWorkLevelField" style="display:none">
+          <label class="form-label small mb-1">Nivel de trabajo</label>
+          <select class="form-select form-select-sm" id="mHolWorkLevel">
+            <option value="none">No se trabaja</option>
+            <option value="half">Medio día</option>
+            <option value="full">Día completo</option>
+          </select>
+        </div>
+        <div class="mb-2" id="mMinWorkersField" style="display:none">
+          <label class="form-label small mb-1">Mín. personas a trabajar</label>
+          <input type="number" class="form-control form-control-sm" id="mHolMinWorkers"
+                 min="1" placeholder="Ej: 2" style="max-width:100px">
+        </div>
+        <div class="mb-2" id="mAssignAllField" style="display:none">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="mAssignAll">
+            <label class="form-check-label small" for="mAssignAll">Asignar a todos los usuarios</label>
+          </div>
+        </div>
+        <div class="row g-2">
+          <div class="col">
+            <label class="form-label small mb-1">Desde</label>
+            <input type="date" class="form-control form-control-sm" id="mHolDateFrom">
+          </div>
+          <div class="col">
+            <label class="form-label small mb-1">Hasta</label>
+            <input type="date" class="form-control form-control-sm" id="mHolDateTo">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-sm btn-primary" id="btnSaveMonthEvent">Agregar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Gestionar Feriados y Cumpleaños ─────────────────────────────── -->
+<div class="modal fade" id="modalGestion" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Gestionar Feriados y Cumpleaños — <span id="gestionYear"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <ul class="nav nav-tabs px-3 pt-2 border-bottom" id="gestionTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-feriados-btn" data-bs-toggle="tab"
+                    data-bs-target="#tabFeriados" type="button" role="tab">Feriados y No laborables</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-cumple-btn" data-bs-toggle="tab"
+                    data-bs-target="#tabCumpleanos" type="button" role="tab">Cumpleaños</button>
+          </li>
+        </ul>
+        <div class="tab-content p-3">
+          <div class="tab-pane fade show active" id="tabFeriados" role="tabpanel">
+            <div id="feriadoWarning" class="alert alert-warning py-2 small" style="display:none"></div>
+            <div class="d-flex justify-content-end mb-2">
+              <button class="btn btn-sm btn-outline-secondary" id="btnCopyFeriados">Copiar configuración al año siguiente →</button>
+            </div>
+            <div id="feriadoSummary"></div>
+            <div id="feriadoList"></div>
+          </div>
+          <div class="tab-pane fade" id="tabCumpleanos" role="tabpanel">
+            <div id="cumpleanosWarning" class="alert alert-warning py-2 small mb-2" style="display:none"></div>
+            <div class="d-flex justify-content-end mb-2">
+              <button class="btn btn-sm btn-outline-secondary" id="btnCopyCumpleanos">Copiar cumpleaños al año siguiente →</button>
+            </div>
+            <div id="cumpleanosList"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button>
       </div>
     </div>
   </div>
@@ -128,216 +235,461 @@
   </div>
 </div>
 
+<style>
+.cal-wrap      { overflow-x: auto; }
+.cal-month     { margin-bottom: 6px; }
+.cal-table     { border-collapse: collapse; white-space: nowrap; font-size: 0.7rem; }
+.cal-table td  { border: 1px solid #dee2e6; padding: 0; text-align: center; height: 22px; min-width: 36px; max-width: 36px; }
+.cal-name      { position: sticky; left: 0; z-index: 1; min-width: 100px !important; max-width: 100px !important;
+                 padding: 1px 6px !important; text-align: left !important;
+                 overflow: hidden; text-overflow: ellipsis; border-right: 2px solid #adb5bd !important; }
+.cal-hdr-month { background: #343a40 !important; color: #fff; font-weight: 700; z-index: 2 !important; }
+.cal-hdr-num   { background: #495057 !important; color: #e9ecef; font-size: 0.65rem; }
+.cal-hdr-day   { background: #495057 !important; color: #adb5bd; font-size: 0.6rem; }
+.cal-we        { background: #e9ecef !important; color: #adb5bd; cursor: default; }
+.cal-day-cell  { cursor: pointer; }
+.cal-day-cell:hover { filter: brightness(85%); }
+.cal-group-sep td  { border-top: 2px solid #6c757d !important; }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if user.userType != "Cliente" %}
 <script>
-// ── Color / label maps ────────────────────────────────────────────────────────
+// ── Staff users injected from server ─────────────────────────────────────────
+const STAFF_USERS = [
+  {% for u in staff_users %}{id:{{u.id}},name:"{{u.username}}",otherName:"{{u.other_name}}",userType:"{{u.userType}}"},
+  {% endfor %}
+];
+
+// ── Color maps ────────────────────────────────────────────────────────────────
 const HOLIDAY_COLORS = {
-  'Feriado':          '#E74C3C',
+  'Feriado':          '#87CEEB',
   'Fin de semana':    '#BDBDBD',
-  'Día no laborable': '#E67E22',
+  'Día no laborable': '#F0F0F0',
 };
 const ABSENCE_COLORS = {
-  'Vacaciones':               '#27AE60',
-  'Beneficio Vacaciones':     '#82E0AA',
-  'Compensatorios':           '#9B59B6',
-  'Cumpleaños':               '#FF69B4',
-  'Cumpleaños en baja':       '#F1948A',
-  'Exámenes/Día de Estudio':  '#3498DB',
-  'FAM/Trabajando fuera ofi': '#F39C12',
-  'Feriado trabajado':        '#C0392B',
-  'Semana home':              '#1ABC9C',
-  'Sin goce de sueldo':       '#7F8C8D',
-  'Viernes OFF alta':         '#85C1E9',
+  'Beneficio Vacaciones':     '#FFB3C1',
+  'Compensatorios':           '#ADD8E6',
+  'Cumpleaños':               '#FF1744',
+  'Cumpleaños en baja':       '#90EE90',
+  'Enfermedad':               '#FF6D00',
+  'Exámenes/Día de Estudio':  '#A8E6A3',
+  'FAM/Trabajando fuera ofi': '#00E5FF',
+  'Feriado trabajado':        '#1A237E',
+  'Feriado trabajado 1/2':    '#3949AB',
+  'Semana home':              '#827717',
+  'Sin goce de sueldo':       '#5D1919',
+  'Vacaciones':               '#FF00FF',
+  'Viernes OFF':         '#FFD600',
 };
 const ALL_COLORS = Object.assign({}, HOLIDAY_COLORS, ABSENCE_COLORS);
 
+// ── Abbreviations ─────────────────────────────────────────────────────────────
+const TYPE_ABBREV = {
+  'Vacaciones':           'V',
+  'Compensatorios':       'C',
+  'Semana home':          'H',
+  'Exámenes/Día de Estudio': 'E',
+  'Feriado trabajado':    'F',
+  'Feriado trabajado 1/2':'1/2',
+};
+
+const MONTHS_ES  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const DAYS_SHORT = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
 // ── Legend ────────────────────────────────────────────────────────────────────
-const legendContainer = document.getElementById('legendContainer');
-for (const [label, color] of Object.entries(ALL_COLORS)) {
-  const div = document.createElement('div');
-  div.className = 'd-flex align-items-center gap-1';
-  div.innerHTML =
-    `<span style="width:13px;height:13px;border-radius:3px;background:${color};flex-shrink:0;display:inline-block"></span>`
-    + `<small>${label}</small>`;
-  legendContainer.appendChild(div);
+(function () {
+  const c = document.getElementById('legendContainer');
+  for (const [label, color] of Object.entries(ALL_COLORS)) {
+    const ab = TYPE_ABBREV[label] ? ` (${TYPE_ABBREV[label]})` : '';
+    const item = document.createElement('div');
+    item.className = 'd-flex align-items-center gap-1';
+    item.innerHTML =
+      `<span style="width:13px;height:13px;border-radius:3px;background:${color};flex-shrink:0;display:inline-block"></span>`
+      + `<small>${label}${ab}</small>`;
+    c.appendChild(item);
+  }
+})();
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+let year = parseInt(document.getElementById('yearSelector').value);
+let eventsCache = [];
+
+async function loadAndRender() {
+  document.getElementById('calendarGrid').innerHTML =
+    '<div class="text-muted py-4 text-center">Cargando…</div>';
+  const resp = await fetch(`/holidays/json?start=${year}-01-01&end=${year + 1}-01-01`);
+  eventsCache = await resp.json();
+  renderGrid(eventsCache, year);
+  updateCalendarWarning();
+  updateBirthdayWarning();
 }
 
-// ── FullCalendar ──────────────────────────────────────────────────────────────
-const calendarEl = document.getElementById('calendar');
-const calendar = new FullCalendar.Calendar(calendarEl, {
-  initialView: 'multiMonthYear',
-  multiMonthMaxColumns: 4,
-  headerToolbar: {
-    left:   'prev,next today',
-    center: 'title',
-    right:  'multiMonthYear,dayGridMonth',
-  },
-  views: {
-    multiMonthYear: { buttonText: 'Año completo' },
-    dayGridMonth:   { buttonText: 'Mes' },
-  },
-  height: 'auto',
-  events: '/holidays/json',
-  eventDidMount(info) {
-    info.el.title = info.event.title;
-  },
-  dateClick(info) {
-    openAddModal(info.dateStr);
-  },
-  eventClick(info) {
-    openDetailModal(info.event);
-    info.jsEvent.stopPropagation();
-  },
+// ── Build day-lookup maps ─────────────────────────────────────────────────────
+function buildMaps(events) {
+  const personal = {};  // uid  -> dateStr -> {color, abbrev, id, type}
+  const company  = {};  // dateStr -> {color, type, id}
+
+  for (const ev of events) {
+    const p  = ev.extendedProps || {};
+    const s  = new Date(ev.start + 'T00:00:00');
+    const e  = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      const ds = fmtDate(d);
+      if (p.eventType === 'absence' && p.user_id) {
+        if (!personal[p.user_id]) personal[p.user_id] = {};
+        const isBday    = p.type_absence === 'Cumpleaños' || p.type_absence === 'Cumpleaños en baja';
+        const existing  = personal[p.user_id][ds];
+        const existBday = existing && (existing.type === 'Cumpleaños' || existing.type === 'Cumpleaños en baja');
+        // Birthday always wins; never overwrite a birthday with another event type
+        if (!existBday || isBday) {
+          personal[p.user_id][ds] = {
+            color:  ev.backgroundColor,
+            abbrev: TYPE_ABBREV[p.type_absence] || '',
+            id:     ev.id,
+            type:   p.type_absence,
+          };
+        }
+      } else if (p.eventType === 'holiday') {
+        company[ds] = { color: ev.backgroundColor, type: p.type_holidays, id: ev.id, work_level: p.work_level || 'none', name: ev.title || '' };
+      }
+    }
+  }
+  return { personal, company };
+}
+
+function fmtDate(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+
+// ── Render grid ───────────────────────────────────────────────────────────────
+function renderGrid(events, yr) {
+  const { personal, company } = buildMaps(events);
+  const container = document.getElementById('calendarGrid');
+  container.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cal-wrap';
+
+  for (let mo = 0; mo < 12; mo++) {
+    const days    = new Date(yr, mo + 1, 0).getDate();
+    const shortYr = String(yr).slice(2);
+
+    const monthDiv = document.createElement('div');
+    monthDiv.className = 'cal-month';
+
+    const tbl = document.createElement('table');
+    tbl.className = 'cal-table';
+
+    // ── Row 1: month label + day numbers ──
+    const rNum = tbl.insertRow();
+
+    const tdMonth = rNum.insertCell();
+    tdMonth.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
+    tdMonth.className = 'cal-name cal-hdr-month';
+
+    for (let d = 1; d <= days; d++) {
+      const isWE = isWeekend(yr, mo, d);
+      const td = rNum.insertCell();
+      td.textContent = d;
+      td.className = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
+      if (!isWE) {
+        td.style.cursor = 'pointer';
+        td.title = 'Gestionar días especiales';
+        td.addEventListener('click', () => openMonthModal(yr, mo, d));
+      }
+    }
+
+    // ── Row 2: day abbreviations ──
+    const rDay = tbl.insertRow();
+
+    const tdEmpty = rDay.insertCell();
+    tdEmpty.className = 'cal-name cal-hdr-day';
+
+    for (let d = 1; d <= days; d++) {
+      const dow  = new Date(yr, mo, d).getDay();
+      const isWE = dow === 0 || dow === 6;
+      const td   = rDay.insertCell();
+      td.textContent = DAYS_SHORT[dow];
+      td.className = 'cal-hdr-day' + (isWE ? ' cal-we' : '');
+    }
+
+    // ── Person rows ──
+    let prevType = null;
+    for (const person of getVisibleStaff()) {
+      const tr = tbl.insertRow();
+      if (prevType !== null && person.userType !== prevType) {
+        tr.classList.add('cal-group-sep');
+      }
+      prevType = person.userType;
+
+      const tdName = tr.insertCell();
+      const firstName = person.otherName ? person.otherName.split(' ')[0] : '';
+      tdName.textContent = person.name + (firstName ? ' ' + firstName : '');
+      tdName.className   = 'cal-name';
+      tdName.style.background = '#fff';
+      tdName.title = person.name + (person.otherName ? ' — ' + person.otherName : '');
+
+      for (let d = 1; d <= days; d++) {
+        const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
+        const isWE = isWeekend(yr, mo, d);
+        const td   = tr.insertCell();
+
+        const pEv = personal[person.id]?.[ds];
+        const cEv = company[ds];
+
+        if (pEv) {
+          styleCell(td, pEv.color, pEv.abbrev, pEv.id, pEv.type, person, ds);
+        } else if (cEv && cEv.type !== 'Fin de semana') {
+          const abbrev = cEv.work_level === 'half' ? '1/2' : '';
+          styleCell(td, cEv.color, abbrev, cEv.id, cEv.type, person, ds);
+          td.title = cEv.name && cEv.name !== cEv.type ? `${cEv.name} (${cEv.type})` : cEv.type;
+        } else if (isWE) {
+          td.className = 'cal-we';
+        } else {
+          td.className = 'cal-day-cell';
+          td.dataset.date  = ds;
+          td.dataset.uid   = person.id;
+          td.dataset.uname = person.name + (person.otherName ? ' ' + person.otherName : '');
+          td.addEventListener('click', handleCellClick);
+        }
+      }
+    }
+
+    monthDiv.appendChild(tbl);
+    wrap.appendChild(monthDiv);
+  }
+
+  container.appendChild(wrap);
+}
+
+function isWeekend(yr, mo, d) {
+  const dow = new Date(yr, mo, d).getDay();
+  return dow === 0 || dow === 6;
+}
+
+function isLight(hex) {
+  try {
+    const h = hex.replace('#','');
+    const r = parseInt(h.slice(0,2),16)/255;
+    const g = parseInt(h.slice(2,4),16)/255;
+    const b = parseInt(h.slice(4,6),16)/255;
+    return (0.2126*r + 0.7152*g + 0.0722*b) > 0.5;
+  } catch { return true; }
+}
+
+function styleCell(td, color, abbrev, eventId, type, person, dateStr) {
+  td.className        = 'cal-day-cell';
+  td.style.background = color;
+  td.style.color      = isLight(color) ? '#333' : '#fff';
+  td.textContent      = abbrev;
+  td.title            = type;
+  td.dataset.date     = dateStr;
+  td.dataset.evid     = eventId;
+  td.dataset.evtype   = type;
+  td.dataset.uid      = person.id;
+  td.dataset.uname    = person.name + (person.otherName ? ' ' + person.otherName : '');
+  td.addEventListener('click', handleCellClick);
+}
+
+// ── Cell click ────────────────────────────────────────────────────────────────
+function handleCellClick(e) {
+  const td = e.currentTarget;
+  const evid = td.dataset.evid || '';
+  if (evid.startsWith('a_')) {
+    // Personal absence event — show detail + delete
+    openDetailForCell(td);
+  } else {
+    // Empty cell or company event — add personal absence for this person
+    prefillAddModal(td.dataset.date, td.dataset.uid);
+    bsModalAdd.show();
+  }
+}
+
+// ── Year controls ─────────────────────────────────────────────────────────────
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  year = parseInt(document.getElementById('yearSelector').value);
+  loadAndRender();
 });
-calendar.render();
+document.getElementById('yearSelector').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { year = parseInt(e.target.value); loadAndRender(); }
+});
 
-// ── Add modal ─────────────────────────────────────────────────────────────────
-let currentEventType = 'absence';
-const modalAddEl   = document.getElementById('modalAdd');
-const modalDetailEl = document.getElementById('modalDetail');
-const bsModalAdd    = new bootstrap.Modal(modalAddEl);
-const bsModalDetail = new bootstrap.Modal(modalDetailEl);
+// ── Detail modal ──────────────────────────────────────────────────────────────
+const bsModalAdd    = new bootstrap.Modal(document.getElementById('modalAdd'));
+const bsModalDetail = new bootstrap.Modal(document.getElementById('modalDetail'));
 
-document.getElementById('btnOpenAdd').addEventListener('click', () => openAddModal(''));
+function openDetailForCell(td) {
+  document.getElementById('detailTitle').textContent = td.dataset.uname || 'Evento';
+  document.getElementById('detailBody').innerHTML =
+    `<p class="mb-1"><strong>Tipo:</strong> ${td.dataset.evtype}</p>`
+    + `<p class="mb-0"><strong>Fecha:</strong> ${td.dataset.date || '—'}</p>`;
+  const evid = td.dataset.evid;
+  document.getElementById('btnDeleteEvent').dataset.evid = evid;
+  document.getElementById('btnDeleteEvent').style.display = '';
+  bsModalDetail.show();
+}
 
-document.querySelectorAll('#eventTypeGroup button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#eventTypeGroup button').forEach(b => {
-      b.classList.remove('active', 'btn-primary');
-      b.classList.add('btn-outline-primary');
-    });
-    btn.classList.remove('btn-outline-primary');
-    btn.classList.add('active', 'btn-primary');
-    currentEventType = btn.dataset.etype;
-    document.getElementById('absenceFields').style.display = currentEventType === 'absence' ? '' : 'none';
-    document.getElementById('holidayFields').style.display = currentEventType === 'holiday' ? '' : 'none';
+document.getElementById('btnDeleteEvent').addEventListener('click', async function () {
+  if (!confirm('¿Eliminar este evento?')) return;
+  const [, id] = this.dataset.evid.split('_');
+  const resp = await fetch(`/holidays/absence/${id}/delete`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCookie('csrftoken') },
   });
+  if (resp.ok) { bsModalDetail.hide(); loadAndRender(); }
+  else alert('Error al eliminar');
 });
 
-function openAddModal(dateStr) {
+// ── Add modal (personal absences only) — opened from cell clicks only ────────
+
+function prefillAddModal(dateStr, userId) {
   document.getElementById('addDateFrom').value = dateStr;
   document.getElementById('addDateTo').value   = dateStr;
-  bsModalAdd.show();
+  if (userId) {
+    for (const opt of document.getElementById('absUser').options) {
+      opt.selected = (opt.value == userId);
+    }
+  }
 }
 
 document.getElementById('btnSaveEvent').addEventListener('click', async () => {
   const dateFrom = document.getElementById('addDateFrom').value;
   const dateTo   = document.getElementById('addDateTo').value || dateFrom;
   if (!dateFrom) { alert('Ingresá la fecha'); return; }
-
-  let url, body;
-  if (currentEventType === 'absence') {
-    url  = '/holidays/absence/create';
-    body = {
-      absence_user_id: document.getElementById('absUser').value,
-      type_absence:    document.getElementById('absType').value,
-      date_from: dateFrom,
-      date_to:   dateTo,
-    };
-  } else {
-    url  = '/holidays/holiday/create';
-    body = {
-      name:          document.getElementById('holName').value,
-      type_holidays: document.getElementById('holType').value,
-      date_from: dateFrom,
-      date_to:   dateTo,
-      workable:  false,
-    };
-  }
-
-  const resp = await fetch(url, {
+  const resp = await fetch('/holidays/absence/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      absence_user_id: document.getElementById('absUser').value,
+      type_absence:    document.getElementById('absType').value,
+      date_from: dateFrom, date_to: dateTo,
+    }),
   });
-  if (resp.ok) {
-    bsModalAdd.hide();
-    calendar.refetchEvents();
-  } else {
-    alert('Error al guardar el evento');
-  }
+  if (resp.ok) { bsModalAdd.hide(); loadAndRender(); }
+  else alert('Error al guardar');
 });
 
-// ── Detail / delete modal ─────────────────────────────────────────────────────
-let currentDetailEvent = null;
+// ── Month modal (company holidays) ───────────────────────────────────────────
+const bsModalMonth = new bootstrap.Modal(document.getElementById('modalMonth'));
 
-function fmt(dateStr) {
-  // dateStr is ISO date from FullCalendar; end is exclusive so subtract 1 day for display
-  if (!dateStr) return '—';
-  return dateStr.slice(0, 10);
-}
-
-function fmtEndDisplay(endStr) {
-  // FullCalendar end is exclusive — subtract 1 day for human display
-  if (!endStr) return '—';
-  const d = new Date(endStr);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function openDetailModal(event) {
-  currentDetailEvent = event;
-  const props = event.extendedProps;
-  document.getElementById('detailTitle').textContent = event.title;
-
-  const startDisp = fmt(event.startStr);
-  const endDisp   = event.endStr ? fmtEndDisplay(event.endStr) : startDisp;
-  const range     = startDisp === endDisp ? startDisp : `${startDisp} → ${endDisp}`;
-
-  const typeLabel = props.type_absence || props.type_holidays || '—';
-  document.getElementById('detailBody').innerHTML =
-    `<p class="mb-1"><strong>Tipo:</strong> ${typeLabel}</p>`
-    + `<p class="mb-0"><strong>Fecha:</strong> ${range}</p>`;
-
-  // Weekends can't be deleted individually
-  document.getElementById('btnDeleteEvent').style.display =
-    props.type_holidays === 'Fin de semana' ? 'none' : '';
-
-  bsModalDetail.show();
-}
-
-document.getElementById('btnDeleteEvent').addEventListener('click', async () => {
-  if (!currentDetailEvent) return;
-  if (!confirm('¿Eliminar este evento?')) return;
-
-  const rawId      = currentDetailEvent.id; // 'h_5' or 'a_12'
-  const [kind, id] = rawId.split('_');
-  const url        = kind === 'h'
-    ? `/holidays/holiday/${id}/delete`
-    : `/holidays/absence/${id}/delete`;
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'X-CSRFToken': getCookie('csrftoken') },
-  });
-  if (resp.ok) {
-    bsModalDetail.hide();
-    calendar.refetchEvents();
-  } else {
-    alert('Error al eliminar');
-  }
+document.getElementById('mHolType').addEventListener('change', () => {
+  document.getElementById('mWorkLevelField').style.display = '';
+  syncMinWorkersField();
 });
+document.getElementById('mHolWorkLevel').addEventListener('change', syncMinWorkersField);
 
-// ── Sync Argentine holidays ───────────────────────────────────────────────────
-document.getElementById('btnSyncArg').addEventListener('click', async () => {
-  const year = document.getElementById('syncYear').value;
-  const btn  = document.getElementById('btnSyncArg');
-  btn.disabled    = true;
-  btn.textContent = 'Sincronizando…';
-  try {
-    const resp = await fetch(`/holidays/sync_arg?year=${year}`, {
-      headers: { 'X-CSRFToken': getCookie('csrftoken') },
+function syncMinWorkersField() {
+  const wl      = document.getElementById('mHolWorkLevel').value;
+  const visible = wl === 'full' || wl === 'half';
+  document.getElementById('mMinWorkersField').style.display = visible ? '' : 'none';
+  document.getElementById('mAssignAllField').style.display  = visible ? '' : 'none';
+}
+
+function openMonthModal(yr, mo, day) {
+  const label = `${MONTHS_ES[mo]}-${String(yr).slice(2)}`;
+  document.getElementById('monthModalTitle').textContent = `Días especiales — ${label}`;
+
+  const p2 = n => String(n).padStart(2, '0');
+  const dateStr = `${yr}-${p2(mo + 1)}-${p2(day)}`;
+  document.getElementById('mHolDateFrom').value = dateStr;
+  document.getElementById('mHolDateTo').value   = dateStr;
+  document.getElementById('mHolName').value     = '';
+  document.getElementById('mHolType').value       = 'Feriado';
+  document.getElementById('mHolWorkLevel').value    = 'none';
+  document.getElementById('mHolMinWorkers').value   = '';
+  document.getElementById('mAssignAll').checked     = false;
+  document.getElementById('mWorkLevelField').style.display   = '';
+  document.getElementById('mMinWorkersField').style.display  = 'none';
+  document.getElementById('mAssignAllField').style.display   = 'none';
+
+  // Filter company holidays that overlap this month (excluding weekends)
+  const moStart = new Date(yr, mo, 1);
+  const moEnd   = new Date(yr, mo + 1, 0);  // last day of month
+  const monthEvs = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    if (p.eventType !== 'holiday' || p.type_holidays === 'Fin de semana') return false;
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    return s <= moEnd && e > moStart;
+  });
+
+  const list = document.getElementById('monthEventsList');
+  if (monthEvs.length === 0) {
+    list.innerHTML = '<p class="text-muted small mb-0">No hay días especiales en este mes.</p>';
+  } else {
+    list.innerHTML = monthEvs.map(ev => {
+      const p      = ev.extendedProps;
+      const wl     = p.work_level === 'half' ? ' · medio día' : p.work_level === 'full' ? ' · día completo' : '';
+      const sDate  = new Date(ev.start + 'T00:00:00');
+      const eDate  = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(sDate.getTime() + 86400000);
+      eDate.setDate(eDate.getDate() - 1);
+      const dayRange = sDate.getDate() === eDate.getDate()
+        ? `${sDate.getDate()}`
+        : `${sDate.getDate()}–${eDate.getDate()}`;
+      const name   = ev.title && ev.title !== p.type_holidays ? `${ev.title} (${p.type_holidays})` : p.type_holidays;
+      const lbl    = `${dayRange} — ${name}${wl}`;
+      const hid    = ev.id.replace('h_', '');
+      return `<div class="d-flex justify-content-between align-items-center small py-1 border-bottom gap-2">
+        <span><span style="width:10px;height:10px;border-radius:2px;background:${ev.backgroundColor};display:inline-block;margin-right:5px;flex-shrink:0"></span>${lbl}</span>
+        <button class="btn btn-sm btn-outline-danger py-0 px-1 lh-1" data-del-hol="${hid}">✕</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-del-hol]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este día especial?')) return;
+        const r = await fetch(`/holidays/holiday/${btn.dataset.delHol}/delete`, {
+          method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        });
+        if (r.ok) { bsModalMonth.hide(); loadAndRender(); }
+        else alert('Error al eliminar');
+      });
     });
-    const data = await resp.json();
-    if (resp.ok) {
-      alert(`Feriados ${year}: ${data.created} importados, ${data.skipped} ya existían.`);
-      calendar.refetchEvents();
-    } else {
-      alert(`Error: ${data.error}`);
-    }
-  } finally {
-    btn.disabled    = false;
-    btn.textContent = 'Sincronizar feriados argentinos';
   }
+
+  bsModalMonth.show();
+}
+
+document.getElementById('btnSaveMonthEvent').addEventListener('click', async () => {
+  const dateFrom  = document.getElementById('mHolDateFrom').value;
+  const dateTo    = document.getElementById('mHolDateTo').value || dateFrom;
+  if (!dateFrom) { alert('Ingresá la fecha'); return; }
+  const workLevel = document.getElementById('mHolWorkLevel').value;
+  const assignAll = document.getElementById('mAssignAll').checked;
+
+  const resp = await fetch('/holidays/holiday/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+    body: JSON.stringify({
+      name:          document.getElementById('mHolName').value,
+      type_holidays: document.getElementById('mHolType').value,
+      date_from: dateFrom, date_to: dateTo, workable: false,
+      work_level:   workLevel,
+      min_workers:  parseInt(document.getElementById('mHolMinWorkers').value) || null,
+    }),
+  });
+  if (!resp.ok) { alert('Error al guardar'); return; }
+
+  if (assignAll && (workLevel === 'full' || workLevel === 'half')) {
+    const absType = workLevel === 'half' ? 'Feriado trabajado 1/2' : 'Feriado trabajado';
+    for (const u of getVisibleStaff()) {
+      await fetch('/holidays/absence/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({
+          absence_user_id: u.id, type_absence: absType,
+          date_from: dateFrom, date_to: dateTo,
+        }),
+      });
+    }
+  }
+
+  bsModalMonth.hide();
+  loadAndRender();
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -345,6 +697,672 @@ function getCookie(name) {
   const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
   return m ? m[2] : null;
 }
+
+// ── Visible users (persisted in localStorage) ────────────────────────────────
+const LS_KEY = 'holidays_visible_users';
+let visibleUserIds = loadVisibleUsers();
+
+function loadVisibleUsers() {
+  try {
+    const stored = localStorage.getItem(LS_KEY);
+    if (stored) return new Set(JSON.parse(stored));
+  } catch {}
+  // default: all visible
+  return new Set(STAFF_USERS.map(u => String(u.id)));
+}
+
+function saveVisibleUsers() {
+  localStorage.setItem(LS_KEY, JSON.stringify([...visibleUserIds]));
+}
+
+function getVisibleStaff() {
+  return STAFF_USERS.filter(u => visibleUserIds.has(String(u.id)));
+}
+
+// Sync checkboxes to current state when modal opens
+document.getElementById('modalUsers').addEventListener('show.bs.modal', () => {
+  document.querySelectorAll('.user-vis-check').forEach(cb => {
+    cb.checked = visibleUserIds.has(cb.value);
+  });
+});
+
+document.getElementById('btnCheckAll').addEventListener('click', () => {
+  document.querySelectorAll('.user-vis-check').forEach(cb => { cb.checked = true; });
+});
+document.getElementById('btnCheckNone').addEventListener('click', () => {
+  document.querySelectorAll('.user-vis-check').forEach(cb => { cb.checked = false; });
+});
+
+document.getElementById('btnApplyUsers').addEventListener('click', () => {
+  visibleUserIds = new Set();
+  document.querySelectorAll('.user-vis-check:checked').forEach(cb => {
+    visibleUserIds.add(cb.value);
+  });
+  saveVisibleUsers();
+  bootstrap.Modal.getInstance(document.getElementById('modalUsers')).hide();
+  loadAndRender();
+});
+
+// ── Calendar warning ─────────────────────────────────────────────────────────
+function updateCalendarWarning() {
+  const feriados = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.eventType === 'holiday' && p.type_holidays === 'Feriado' &&
+           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+  });
+  const incomplete = feriados.some(f => {
+    const p = f.extendedProps;
+    if (p.work_level === 'none') return false;
+    if (!p.min_workers) return false;
+    const ventasAssigned = getAssignedToFeriado(f).filter(a => {
+      const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+      return u && u.userType === 'Ventas';
+    });
+    return ventasAssigned.length < p.min_workers;
+  });
+  document.getElementById('calWarning').style.display = incomplete ? '' : 'none';
+}
+
+// ── Birthday / feriado trabajado conflict warning ────────────────────────────
+function updateBirthdayWarning() {
+  const birthdays = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.eventType === 'absence' &&
+           (p.type_absence === 'Cumpleaños' || p.type_absence === 'Cumpleaños en baja') &&
+           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+  });
+
+  const conflicts = [];
+
+  birthdays.forEach(bday => {
+    const uid      = bday.extendedProps.user_id;
+    const bdayDate = new Date(bday.start + 'T00:00:00');
+
+    // Period: birthday through the following Sunday (same-week Sunday if not already Sunday)
+    const daysToSun = (7 - bdayDate.getDay()) % 7;
+    const periodEnd = new Date(bdayDate);
+    periodEnd.setDate(periodEnd.getDate() + daysToSun);
+
+    const pStart = bdayDate.getTime();
+    const pEnd   = periodEnd.getTime() + 86400000; // exclusive
+
+    const hasConflict = eventsCache.some(ev => {
+      const p = ev.extendedProps || {};
+      if (p.eventType !== 'absence' || p.user_id !== uid) return false;
+      if (p.type_absence !== 'Feriado trabajado' && p.type_absence !== 'Feriado trabajado 1/2') return false;
+      const evS = new Date(ev.start + 'T00:00:00').getTime();
+      const evE = ev.end ? new Date(ev.end + 'T00:00:00').getTime() : evS + 86400000;
+      return evS < pEnd && evE > pStart;
+    });
+
+    if (hasConflict) {
+      const u = STAFF_USERS.find(u => u.id === uid);
+      conflicts.push(u ? u.name : `#${uid}`);
+    }
+  });
+
+  const el = document.getElementById('bdayFeriadoWarning');
+  if (conflicts.length > 0) {
+    el.style.display = '';
+    el.innerHTML = `⚠️ <strong>${conflicts.join(', ')}</strong>: tiene(n) "Feriado trabajado" asignado en su cumpleaños o período compensatorio (hasta el domingo siguiente).`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── Gestion modal ─────────────────────────────────────────────────────────────
+const bsModalGestion = new bootstrap.Modal(document.getElementById('modalGestion'));
+
+function openGestionModal() {
+  document.getElementById('gestionYear').textContent = year;
+  buildFeriadoTab();
+  // Birthday tab: async fetch, show placeholder while loading
+  document.getElementById('cumpleanosWarning').style.display = 'none';
+  document.getElementById('cumpleanosList').innerHTML =
+    '<div class="text-muted text-center py-3 small">Cargando…</div>';
+  bsModalGestion.show();
+  buildCumpleanosTab();
+}
+
+document.getElementById('btnGestion').addEventListener('click', openGestionModal);
+
+// helpers
+function getAssignedToFeriado(f) {
+  const fs = new Date(f.start + 'T00:00:00').getTime();
+  const fe = new Date(f.end   + 'T00:00:00').getTime();
+  return eventsCache.filter(a => {
+    const p = a.extendedProps || {};
+    if (p.eventType !== 'absence') return false;
+    if (p.type_absence !== 'Feriado trabajado' && p.type_absence !== 'Feriado trabajado 1/2') return false;
+    const as = new Date(a.start + 'T00:00:00').getTime();
+    const ae = a.end ? new Date(a.end + 'T00:00:00').getTime() : as + 86400000;
+    return fs < ae && as < fe;
+  });
+}
+
+function feriadoDateLabel(f) {
+  const fEndExcl = new Date(f.end + 'T00:00:00');
+  fEndExcl.setDate(fEndExcl.getDate() - 1);
+  const s = new Date(f.start + 'T00:00:00');
+  if (f.start === fmtDate(fEndExcl))
+    return `${s.getDate()} ${MONTHS_ES[s.getMonth()]}`;
+  return `${s.getDate()} ${MONTHS_ES[s.getMonth()]} – ${fEndExcl.getDate()} ${MONTHS_ES[fEndExcl.getMonth()]}`;
+}
+
+// ── Tab 1: Feriados ───────────────────────────────────────────────────────────
+function buildFeriadoTab() {
+  const allSpecial = eventsCache
+    .filter(ev => {
+      const p = ev.extendedProps || {};
+      return p.eventType === 'holiday' &&
+             (p.type_holidays === 'Feriado' || p.type_holidays === 'Día no laborable') &&
+             new Date(ev.start + 'T00:00:00').getFullYear() === year;
+    })
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  // Only feriados are used for assignment/warning/summary
+  const feriados = allSpecial.filter(ev => ev.extendedProps.type_holidays === 'Feriado');
+
+  const feriadoData = feriados.map(f => {
+    const assigned = getAssignedToFeriado(f);
+    const assignedVentas = assigned.filter(a => {
+      const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+      return u && u.userType === 'Ventas';
+    });
+    return { f, assigned, assignedVentas };
+  });
+
+  // Warning: only Ventas count vs min_workers
+  const incomplete = feriadoData.filter(({ f, assignedVentas }) => {
+    const p = f.extendedProps;
+    return p.work_level !== 'none' && p.min_workers && assignedVentas.length < p.min_workers;
+  });
+  const warnEl = document.getElementById('feriadoWarning');
+  warnEl.style.display = incomplete.length > 0 ? '' : 'none';
+  warnEl.innerHTML = incomplete.length > 0
+    ? `⚠️ <strong>${incomplete.length}</strong> feriado(s) con asignaciones incompletas.` : '';
+
+  // Per-user summary using Map to preserve Internal → Ventas → Operaciones order
+  const staff = getVisibleStaff();
+  const summaryMap = new Map();
+  staff.forEach(u => summaryMap.set(u.id, { u, total: 0, baja: 0, alta: 0 }));
+  feriadoData.forEach(({ f, assigned }) => {
+    const mo = new Date(f.start + 'T00:00:00').getMonth();
+    const isBaja = mo >= 4 && mo <= 7;
+    assigned.forEach(a => {
+      const s = summaryMap.get(a.extendedProps.user_id);
+      if (s) { s.total++; if (isBaja) s.baja++; else s.alta++; }
+    });
+  });
+
+  let sumHtml = `<div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered small mb-0">
+      <thead class="table-dark"><tr>
+        <th>Usuario</th>
+        <th class="text-center">Total</th>
+        <th class="text-center">T. Baja<br><span class="fw-normal">(May–Ago)</span></th>
+        <th class="text-center">T. Alta</th>
+      </tr></thead><tbody>`;
+  let prevType = null;
+  summaryMap.forEach(s => {
+    const sepStyle = (prevType !== null && s.u.userType !== prevType)
+      ? ' style="border-top:2px solid #6c757d"' : '';
+    prevType = s.u.userType;
+    const fn = s.u.otherName ? ' ' + s.u.otherName.split(' ')[0] : '';
+    sumHtml += `<tr${sepStyle}>
+      <td>${s.u.name}${fn}</td>
+      <td class="text-center">${s.total}</td>
+      <td class="text-center">${s.baja}</td>
+      <td class="text-center">${s.alta}</td>
+    </tr>`;
+  });
+  sumHtml += `</tbody></table></div>`;
+  document.getElementById('feriadoSummary').innerHTML = sumHtml;
+
+  // Full list (feriados + días no laborables)
+  if (allSpecial.length === 0) {
+    document.getElementById('feriadoList').innerHTML =
+      '<p class="text-muted small">No hay días especiales cargados para este año.</p>';
+    return;
+  }
+
+  const ventasOpts = staff
+    .filter(u => u.userType === 'Ventas')
+    .map(u => `<option value="${u.id}">${u.name}${u.otherName ? ' ' + u.otherName.split(' ')[0] : ''}</option>`)
+    .join('');
+  const allOpts = staff
+    .map(u => `<option value="${u.id}">${u.name}${u.otherName ? ' ' + u.otherName.split(' ')[0] : ''}</option>`)
+    .join('');
+
+  // Build a lookup from feriado id → {assigned, assignedVentas} for the list
+  const feriadoDataMap = new Map(feriadoData.map(d => [d.f.id, d]));
+
+  let listHtml = '';
+  allSpecial.forEach(f => {
+    const isFeriado = f.extendedProps.type_holidays === 'Feriado';
+    const { assigned = [], assignedVentas = [] } = feriadoDataMap.get(f.id) || {};
+    const p         = f.extendedProps;
+    const hid       = f.id.replace('h_', '');
+    const name      = f.title || p.type_holidays;
+    const dateLabel = feriadoDateLabel(f);
+    const fEndExcl  = new Date(f.end + 'T00:00:00');
+    fEndExcl.setDate(fEndExcl.getDate() - 1);
+    const fEndDate  = fmtDate(fEndExcl);
+    const noWork    = p.work_level === 'none';
+
+    // Assignment UI only for feriados
+    const badgesHtml = isFeriado
+      ? (assigned.length === 0
+          ? '<span class="text-muted small fst-italic">Sin asignaciones</span>'
+          : assigned.map(a => {
+              const u    = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+              const half = a.extendedProps.type_absence === 'Feriado trabajado 1/2';
+              const aid  = a.id.replace('a_', '');
+              return `<span class="badge text-bg-secondary">${u ? u.name : '?'} ${half ? '½' : '●'} <span style="cursor:pointer" data-del-abs="${aid}">✕</span></span>`;
+            }).join(' '))
+      : '';
+
+    const ventasMissing = (isFeriado && !noWork) ? Math.max(0, (p.min_workers || 0) - assignedVentas.length) : 0;
+    let requiredSlotsHtml = '';
+    for (let i = 0; i < ventasMissing; i++) {
+      requiredSlotsHtml += `<div class="d-flex gap-2 align-items-center flex-wrap mb-1">
+        <span class="badge text-bg-warning small">Requerido</span>
+        <select class="form-select form-select-sm" style="width:auto;max-width:150px" id="fs_v_${hid}_${i}">
+          <option value="">— Vendedor —</option>${ventasOpts}
+        </select>
+        <select class="form-select form-select-sm" style="width:auto" id="fs_vt_${hid}_${i}">
+          <option value="Feriado trabajado">Día completo</option>
+          <option value="Feriado trabajado 1/2">Medio día</option>
+        </select>
+        <button class="btn btn-sm btn-outline-danger py-0"
+          data-assign-req="${hid}" data-req-idx="${i}" data-f-from="${f.start}" data-f-to="${fEndDate}">+ Asignar</button>
+      </div>`;
+    }
+
+    const extraRowHtml = (isFeriado && !noWork) ? `<div class="d-flex gap-2 align-items-center flex-wrap mt-1">
+      <span class="badge text-bg-secondary small">Extra</span>
+      <select class="form-select form-select-sm" style="width:auto;max-width:150px" id="fs_u_${hid}">
+        <option value="">— Persona —</option>${allOpts}
+      </select>
+      <select class="form-select form-select-sm" style="width:auto" id="fs_t_${hid}">
+        <option value="Feriado trabajado">Día completo</option>
+        <option value="Feriado trabajado 1/2">Medio día</option>
+      </select>
+      <button class="btn btn-sm btn-outline-primary py-0"
+        data-assign-f="${hid}" data-f-from="${f.start}" data-f-to="${fEndDate}">+ Asignar</button>
+    </div>` : '';
+
+    const safeName = (f.title || '').replace(/"/g, '&quot;');
+    const typeBadge = isFeriado
+      ? '<span class="badge text-bg-info text-dark">Feriado</span>'
+      : '<span class="badge text-bg-light border">No laborable</span>';
+    listHtml += `<div class="card mb-2 border-0 bg-light">
+      <div class="card-body py-2 px-3">
+        <div class="mb-1 d-flex align-items-center flex-wrap gap-2">
+          <span class="fw-semibold small">${name}</span>
+          <span class="text-muted small">${dateLabel}</span>
+          ${typeBadge}
+          ${p.work_level === 'half' ? '<span class="badge text-bg-warning">Medio día</span>' :
+            p.work_level === 'full' ? '<span class="badge text-bg-success">Día completo</span>' :
+            '<span class="badge text-bg-secondary">No se trabaja</span>'}
+          <button class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:0.7rem"
+                  data-edit-feriado="${hid}">✏ Editar</button>
+          ${(isFeriado && !noWork) ? `
+            <span class="d-flex align-items-center gap-1 ms-auto">
+              <span class="small text-muted">${assignedVentas.length} vendedor(es) /</span>
+              <input type="number" min="0" class="form-control form-control-sm py-0"
+                     style="width:55px;height:22px;font-size:0.75rem"
+                     id="fw_min_${hid}" value="${p.min_workers || ''}">
+              <button class="btn btn-sm btn-outline-secondary py-0" style="height:22px;font-size:0.7rem"
+                      data-save-min="${hid}">✓</button>
+              ${p.min_workers && assignedVentas.length < p.min_workers
+                ? `<span class="badge text-bg-danger">Faltan ${p.min_workers - assignedVentas.length}</span>` : ''}
+            </span>` : ''}
+        </div>
+        <div id="fedit_${hid}" class="bg-white rounded border p-2 mb-2" style="display:none">
+          <div class="row g-2 mb-2">
+            <div class="col">
+              <input type="text" class="form-control form-control-sm" id="fedit_name_${hid}"
+                     value="${safeName}" placeholder="Nombre">
+            </div>
+            <div class="col-auto">
+              <select class="form-select form-select-sm" id="fedit_wl_${hid}">
+                <option value="none"${p.work_level==='none'?' selected':''}>No se trabaja</option>
+                <option value="half"${p.work_level==='half'?' selected':''}>Medio día</option>
+                <option value="full"${p.work_level==='full'?' selected':''}>Día completo</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-auto">
+              <label class="form-label small mb-1">Desde</label>
+              <input type="date" class="form-control form-control-sm" id="fedit_from_${hid}" value="${f.start}">
+            </div>
+            <div class="col-auto">
+              <label class="form-label small mb-1">Hasta</label>
+              <input type="date" class="form-control form-control-sm" id="fedit_to_${hid}" value="${fEndDate}">
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary py-0" data-save-edit="${hid}">Guardar</button>
+            <button class="btn btn-sm btn-outline-secondary py-0" data-cancel-edit="${hid}">Cancelar</button>
+          </div>
+        </div>
+        ${badgesHtml ? `<div class="mb-2 d-flex flex-wrap gap-1">${badgesHtml}</div>` : ''}
+        ${requiredSlotsHtml}
+        ${extraRowHtml}
+      </div>
+    </div>`;
+  });
+
+  const listEl = document.getElementById('feriadoList');
+  listEl.innerHTML = listHtml;
+
+  listEl.querySelectorAll('[data-edit-feriado]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const form = document.getElementById(`fedit_${btn.dataset.editFeriado}`);
+      form.style.display = form.style.display === 'none' ? '' : 'none';
+    });
+  });
+
+  listEl.querySelectorAll('[data-cancel-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(`fedit_${btn.dataset.cancelEdit}`).style.display = 'none';
+    });
+  });
+
+  listEl.querySelectorAll('[data-save-edit]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const hid  = btn.dataset.saveEdit;
+      const name = document.getElementById(`fedit_name_${hid}`).value;
+      const wl   = document.getElementById(`fedit_wl_${hid}`).value;
+      const from = document.getElementById(`fedit_from_${hid}`).value;
+      const to   = document.getElementById(`fedit_to_${hid}`).value || from;
+      if (!from) { alert('Ingresá la fecha de inicio'); return; }
+      const r = await fetch(`/holidays/holiday/${hid}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ name, work_level: wl, date_from: from, date_to: to }),
+      });
+      if (r.ok) { await loadAndRender(); buildFeriadoTab(); }
+      else alert('Error al guardar');
+    });
+  });
+
+  listEl.querySelectorAll('[data-del-abs]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('¿Quitar asignación?')) return;
+      const r = await fetch(`/holidays/absence/${el.dataset.delAbs}/delete`, {
+        method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      });
+      if (r.ok) { await loadAndRender(); buildFeriadoTab(); }
+      else alert('Error al eliminar');
+    });
+  });
+
+  listEl.querySelectorAll('[data-assign-req]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const hid  = btn.dataset.assignReq;
+      const idx  = btn.dataset.reqIdx;
+      const uid  = document.getElementById(`fs_v_${hid}_${idx}`).value;
+      const type = document.getElementById(`fs_vt_${hid}_${idx}`).value;
+      if (!uid) { alert('Seleccioná un vendedor'); return; }
+      const r = await fetch('/holidays/absence/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({
+          absence_user_id: uid, type_absence: type,
+          date_from: btn.dataset.fFrom, date_to: btn.dataset.fTo,
+        }),
+      });
+      if (r.ok) { await loadAndRender(); buildFeriadoTab(); }
+      else alert('Error al guardar');
+    });
+  });
+
+  listEl.querySelectorAll('[data-assign-f]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const hid  = btn.dataset.assignF;
+      const uid  = document.getElementById(`fs_u_${hid}`).value;
+      const type = document.getElementById(`fs_t_${hid}`).value;
+      if (!uid) { alert('Seleccioná una persona'); return; }
+      const r = await fetch('/holidays/absence/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({
+          absence_user_id: uid, type_absence: type,
+          date_from: btn.dataset.fFrom, date_to: btn.dataset.fTo,
+        }),
+      });
+      if (r.ok) { await loadAndRender(); buildFeriadoTab(); }
+      else alert('Error al guardar');
+    });
+  });
+
+  listEl.querySelectorAll('[data-save-min]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const hid = btn.dataset.saveMin;
+      const val = parseInt(document.getElementById(`fw_min_${hid}`).value) || null;
+      const r = await fetch(`/holidays/holiday/${hid}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ min_workers: val }),
+      });
+      if (r.ok) { await loadAndRender(); buildFeriadoTab(); }
+      else alert('Error al guardar');
+    });
+  });
+}
+
+// ── Tab 2: Cumpleaños ────────────────────────────────────────────────────────
+async function buildCumpleanosTab() {
+  const bdayAbs = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.eventType === 'absence' && p.type_absence === 'Cumpleaños' &&
+           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+  });
+
+  const staff = getVisibleStaff();
+
+  const bdayMap = {};
+  staff.forEach(u => { bdayMap[u.id] = null; });
+  bdayAbs.forEach(a => {
+    const uid = a.extendedProps.user_id;
+    if (bdayMap[uid] !== undefined) bdayMap[uid] = a;
+  });
+
+  const missing = staff.filter(u => !bdayMap[u.id]);
+  const warnEl  = document.getElementById('cumpleanosWarning');
+  warnEl.style.display = missing.length > 0 ? '' : 'none';
+  warnEl.innerHTML = missing.length > 0
+    ? `⚠️ <strong>${missing.length}</strong> usuario(s) sin cumpleaños asignado en ${year}.` : '';
+
+  let html = `<div class="table-responsive">
+    <table class="table table-sm small mb-0 align-middle">
+      <thead class="table-dark"><tr>
+        <th>Usuario</th>
+        <th class="text-center">Cumpleaños ${year}</th>
+      </tr></thead><tbody>`;
+
+  staff.forEach(u => {
+    const fn   = u.otherName ? ' ' + u.otherName.split(' ')[0] : '';
+    const name = u.name + fn;
+    const bday = bdayMap[u.id];
+    let cell;
+    if (bday) {
+      const d   = new Date(bday.start + 'T00:00:00');
+      const lbl = `${d.getDate()} ${MONTHS_ES[d.getMonth()]}`;
+      const bid = bday.id.replace('a_', '');
+      cell = `<td class="text-center">
+        <span class="badge text-bg-success" style="white-space:nowrap">${lbl}
+          <span style="cursor:pointer" data-del-bday="${bid}">✕</span>
+        </span></td>`;
+    } else {
+      cell = `<td class="text-center p-1">
+        <div class="d-flex align-items-center justify-content-center gap-1 flex-wrap">
+          <input type="date" class="form-control form-control-sm p-0 text-center"
+                 id="bday_${u.id}" min="${year}-01-01" max="${year}-12-31"
+                 style="width:120px;font-size:0.7rem">
+          <button class="btn btn-outline-primary py-0 px-1"
+                  style="font-size:0.65rem"
+                  data-assign-bday="${u.id}">+ Asignar</button>
+        </div>
+      </td>`;
+    }
+    html += `<tr><td style="white-space:nowrap">${name}</td>${cell}</tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  const listEl = document.getElementById('cumpleanosList');
+  listEl.innerHTML = html;
+
+  listEl.querySelectorAll('[data-del-bday]').forEach(span => {
+    span.addEventListener('click', async () => {
+      if (!confirm('¿Quitar cumpleaños?')) return;
+      const r = await fetch(`/holidays/absence/${span.dataset.delBday}/delete`, {
+        method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      });
+      if (r.ok) { await loadAndRender(); buildCumpleanosTab(); }
+      else alert('Error al eliminar');
+    });
+  });
+
+  listEl.querySelectorAll('[data-assign-bday]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const uid     = btn.dataset.assignBday;
+      const dateStr = document.getElementById(`bday_${uid}`)?.value;
+      if (!dateStr) { alert('Ingresá la fecha'); return; }
+      if (bdayMap[parseInt(uid)]) {
+        alert(`Este usuario ya tiene cumpleaños asignado en ${year}`); return;
+      }
+      const r = await fetch('/holidays/absence/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({
+          absence_user_id: uid, type_absence: 'Cumpleaños',
+          date_from: dateStr, date_to: dateStr,
+        }),
+      });
+      if (r.ok) { await loadAndRender(); buildCumpleanosTab(); }
+      else alert('Error al guardar');
+    });
+  });
+}
+
+// ── Copy to next year ─────────────────────────────────────────────────────────
+function shiftDateYear(dateStr, targetYear) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${targetYear}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+document.getElementById('btnCopyFeriados').addEventListener('click', async () => {
+  const nextYear = year + 1;
+
+  const feriados = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.eventType === 'holiday' && p.type_holidays === 'Feriado' &&
+           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+  });
+
+  if (feriados.length === 0) {
+    alert('No hay feriados en este año para copiar.'); return;
+  }
+
+  const resp = await fetch(`/holidays/json?start=${nextYear}-01-01&end=${nextYear + 1}-01-01`);
+  const nextEvs = await resp.json();
+  const existingStarts = new Set(
+    nextEvs.filter(ev => (ev.extendedProps || {}).type_holidays === 'Feriado').map(ev => ev.start)
+  );
+
+  const toCreate = feriados.filter(f => !existingStarts.has(shiftDateYear(f.start, nextYear)));
+  const skipped  = feriados.length - toCreate.length;
+
+  if (toCreate.length === 0) {
+    alert(`Todos los feriados ya existen en ${nextYear}.`); return;
+  }
+
+  const msg = `Se copiarán ${toCreate.length} feriado(s) al año ${nextYear}` +
+    (skipped > 0 ? ` (${skipped} ya existen y se omitirán)` : '') + '. ¿Continuar?';
+  if (!confirm(msg)) return;
+
+  let errors = 0;
+  for (const f of toCreate) {
+    const p       = f.extendedProps;
+    const endExcl = new Date(f.end + 'T00:00:00');
+    endExcl.setDate(endExcl.getDate() - 1);
+    const r = await fetch('/holidays/holiday/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+      body: JSON.stringify({
+        name:          f.title || '',
+        type_holidays: 'Feriado',
+        date_from:     shiftDateYear(f.start, nextYear),
+        date_to:       shiftDateYear(fmtDate(endExcl), nextYear),
+        workable:      false,
+        work_level:    p.work_level || 'none',
+        min_workers:   p.min_workers || null,
+      }),
+    });
+    if (!r.ok) errors++;
+  }
+
+  if (errors > 0) alert(`${errors} error(es) al copiar.`);
+  else { await loadAndRender(); buildFeriadoTab(); }
+});
+
+document.getElementById('btnCopyCumpleanos').addEventListener('click', async () => {
+  const nextYear = year + 1;
+
+  const bdayAbs = eventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.eventType === 'absence' && p.type_absence === 'Cumpleaños' &&
+           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+  });
+
+  if (bdayAbs.length === 0) {
+    alert('No hay cumpleaños asignados en este año para copiar.'); return;
+  }
+
+  const resp = await fetch(`/holidays/json?start=${nextYear}-01-01&end=${nextYear + 1}-01-01`);
+  const nextEvs = await resp.json();
+  const existingUids = new Set(
+    nextEvs
+      .filter(ev => { const p = ev.extendedProps || {}; return p.type_absence === 'Cumpleaños'; })
+      .map(ev => ev.extendedProps.user_id)
+  );
+
+  const toCreate = bdayAbs.filter(a => !existingUids.has(a.extendedProps.user_id));
+  const skipped  = bdayAbs.length - toCreate.length;
+
+  if (toCreate.length === 0) {
+    alert(`Todos los cumpleaños ya existen en ${nextYear}.`); return;
+  }
+
+  const msg = `Se copiarán ${toCreate.length} cumpleaños al año ${nextYear}` +
+    (skipped > 0 ? ` (${skipped} ya existen y se omitirán)` : '') + '. ¿Continuar?';
+  if (!confirm(msg)) return;
+
+  let errors = 0;
+  for (const a of toCreate) {
+    const newDate = shiftDateYear(a.start, nextYear);
+    const r = await fetch('/holidays/absence/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+      body: JSON.stringify({
+        absence_user_id: a.extendedProps.user_id,
+        type_absence:    'Cumpleaños',
+        date_from: newDate, date_to: newDate,
+      }),
+    });
+    if (!r.ok) errors++;
+  }
+
+  if (errors > 0) alert(`${errors} error(es) al copiar.`);
+  else { await loadAndRender(); buildCumpleanosTab(); }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadAndRender();
 </script>
 {% endif %}
 {% endblock %}

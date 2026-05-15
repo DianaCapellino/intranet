@@ -42,7 +42,7 @@
                     </div>
                     <div class="row">
                         <div class="mb-3 col">
-                            <select class="form-select" aria-label="client" name="client">
+                            <select class="form-select" aria-label="client" name="client" id="newTripClient">
                                 <option selected value="">Cliente</option>
                                 {% for client in clients %}
                                     {% if client.isActivated and client.department == request.user.department %}
@@ -50,14 +50,24 @@
                                     {% endif %}
                                 {% endfor %}
                             </select>
-                        </div>                    
+                        </div>
                         <div class="mb-3 col">
-                            <select class="form-select" aria-label="contact" name="contact">
+                            <select class="form-select" aria-label="contact" name="contact" id="newTripContact">
                                 <option selected value="0">Contacto</option>
-                                {% for contact in contacts %}
-                                <option value="{{ contact.id }}">{{ contact.name }}</option>
-                                {% endfor %}
                             </select>
+                            <div class="mt-1">
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" id="newTripToggleNewContact">
+                                    <i class="fa-solid fa-plus me-1"></i>Crear nuevo contacto
+                                </button>
+                            </div>
+                            <div id="newTripNewContactFields" class="mt-2 p-2 border rounded bg-light d-none">
+                                <div class="mb-2">
+                                    <input type="text" class="form-control form-control-sm" name="new_contact_name" id="newContactName" placeholder="Nombre del contacto">
+                                </div>
+                                <div>
+                                    <input type="email" class="form-control form-control-sm" name="new_contact_email" id="newContactEmail" placeholder="Email del contacto">
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="row">
@@ -665,6 +675,62 @@
     if (newDiv)  newDiv.className  = "d-block";
     if (listDiv) listDiv.className = "d-none";
     if (btn)     btn.className     = "d-none";
+  }
+
+  // Dynamic contacts per client
+  const clientSel  = document.getElementById('newTripClient');
+  const contactSel = document.getElementById('newTripContact');
+  const toggleBtn  = document.getElementById('newTripToggleNewContact');
+  const newFields  = document.getElementById('newTripNewContactFields');
+  const nameInp    = document.getElementById('newContactName');
+  const emailInp   = document.getElementById('newContactEmail');
+
+  function resetNewContactFields() {
+    if (newFields) newFields.classList.add('d-none');
+    if (nameInp)  nameInp.value  = '';
+    if (emailInp) emailInp.value = '';
+  }
+
+  async function loadContacts(clientId) {
+    if (contactSel) {
+      contactSel.innerHTML = '<option value="0">Contacto</option>';
+    }
+    resetNewContactFields();
+    if (!clientId) return;
+    try {
+      const res  = await fetch(`/contacts/json?client_id=${clientId}`);
+      const data = await res.json();
+      (data.contacts || []).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value       = c.id;
+        opt.textContent = c.name;
+        contactSel.appendChild(opt);
+      });
+    } catch(e) { /* ignore */ }
+  }
+
+  if (clientSel) {
+    clientSel.addEventListener('change', () => loadContacts(clientSel.value));
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const hidden = newFields.classList.toggle('d-none');
+      if (!hidden) {
+        // switched to new-contact mode: clear select, set to 0
+        if (contactSel) contactSel.value = '0';
+        nameInp.focus();
+      } else {
+        resetNewContactFields();
+      }
+    });
+  }
+
+  // When user picks an existing contact, hide the new-contact form
+  if (contactSel) {
+    contactSel.addEventListener('change', () => {
+      if (contactSel.value !== '0') resetNewContactFields();
+    });
   }
 </script>
 

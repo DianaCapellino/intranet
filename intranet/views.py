@@ -30,7 +30,7 @@ from django.db.models.functions import Coalesce, TruncMonth
 from django.core.paginator import Paginator
 from collections import OrderedDict
 from django.views.decorators.http import require_GET
-from .utils import get_working_days, get_working_days_worker
+from .utils import get_working_days, get_working_days_worker, count_workable_days
 from collections import defaultdict
 
 
@@ -834,8 +834,23 @@ def create_trip(request):
                         return render(request, "intranet/trips.html",
                                     get_return_page("trips", "error", request.user))
 
-            # Get the contact from the contact ID of the form
-            if contact_form == "0" or contact_form == "Contacto" or not contact_form:
+            # Get the contact from the contact ID of the form (or create inline)
+            new_contact_name  = request.POST.get("new_contact_name", "").strip()
+            new_contact_email = request.POST.get("new_contact_email", "").strip()
+            if new_contact_name and client_form and client_form not in ("0", "Cliente"):
+                try:
+                    _client_for_contact = Client.objects.get(id=client_form)
+                except Client.DoesNotExist:
+                    _client_for_contact = None
+                if _client_for_contact:
+                    contact = ClientContact.objects.create(
+                        name=new_contact_name,
+                        email=new_contact_email or 'quote@aliwenincoming.com.ar',
+                        client=_client_for_contact,
+                    )
+                else:
+                    contact = ClientContact.objects.get(name="Sin Contacto")
+            elif contact_form == "0" or contact_form == "Contacto" or not contact_form:
                 contact = ClientContact.objects.get(name="Sin Contacto")
             else:
                 try:
@@ -1590,33 +1605,47 @@ def stats_trips_report(request):
 
 
 _HOLIDAY_COLORS = {
-    'Feriado': '#E74C3C',
+    'Feriado': '#87CEEB',
     'Fin de semana': '#BDBDBD',
-    'Día no laborable': '#E67E22',
+    'Día no laborable': '#F0F0F0',
 }
 
 _ABSENCE_COLORS = {
-    'Vacaciones': '#27AE60',
-    'Beneficio Vacaciones': '#82E0AA',
-    'Compensatorios': '#9B59B6',
-    'Cumpleaños': '#FF69B4',
-    'Cumpleaños en baja': '#F1948A',
-    'Exámenes/Día de Estudio': '#3498DB',
-    'FAM/Trabajando fuera ofi': '#F39C12',
-    'Feriado trabajado': '#C0392B',
-    'Semana home': '#1ABC9C',
-    'Sin goce de sueldo': '#7F8C8D',
-    'Viernes OFF alta': '#85C1E9',
+    'Beneficio Vacaciones': '#FFB3C1',
+    'Compensatorios': '#ADD8E6',
+    'Cumpleaños': '#FF1744',
+    'Cumpleaños en baja': '#90EE90',
+    'Enfermedad': '#FF6D00',
+    'Exámenes/Día de Estudio': '#A8E6A3',
+    'FAM/Trabajando fuera ofi': '#00E5FF',
+    'Feriado trabajado': '#1A237E',
+    'Feriado trabajado 1/2': '#3949AB',
+    'Semana home': '#827717',
+    'Sin goce de sueldo': '#5D1919',
+    'Vacaciones': '#FF00FF',
+    'Viernes OFF alta': '#FFD600',
+    'Viernes OFF': '#FFD600',
 }
 
 
 @login_required
 def holidays(request):
+    from django.db.models import Case, When, Value, IntegerField
     staff_users = (
         User.objects
-        .filter(isActivated=True)
-        .exclude(userType='Cliente')
-        .order_by('first_name', 'last_name', 'username')
+        .filter(
+            isActivated=True,
+            department=request.user.department,
+            userType__in=['Internal', 'Ventas', 'Operaciones'],
+        )
+        .annotate(_order=Case(
+            When(userType='Internal', then=Value(0)),
+            When(userType='Ventas',   then=Value(1)),
+            When(userType='Operaciones', then=Value(2)),
+            default=Value(3),
+            output_field=IntegerField(),
+        ))
+        .order_by('_order', 'username')
     )
     return render(request, "intranet/holidays.html", {
         'staff_users': staff_users,
@@ -1683,6 +1712,8 @@ def json_holidays(request):
                 'eventType': 'holiday',
                 'type_holidays': event.type_holidays,
                 'workable': event.workable,
+                'work_level': event.work_level,
+                'min_workers': event.min_workers,
             },
         })
 
@@ -1729,8 +1760,51 @@ def create_holiday(request):
         date_to=date_to,
         workable=data.get('workable', False),
         working_user=working_user,
+        work_level=data.get('work_level', 'none'),
+        min_workers=data.get('min_workers') or None,
     )
     return JsonResponse({'id': h.id, 'success': True})
+
+
+@login_required
+@csrf_exempt
+def edit_holiday(request, holiday_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        h = Holidays.objects.get(pk=holiday_id)
+    except Holidays.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    old_from = h.date_from
+    old_to   = h.date_to
+    update_fields = []
+    if 'min_workers' in data:
+        val = data['min_workers']
+        h.min_workers = int(val) if val else None
+        update_fields.append('min_workers')
+    if 'name' in data:
+        h.name = data['name'] or None
+        update_fields.append('name')
+    if 'work_level' in data:
+        h.work_level = data['work_level']
+        update_fields.append('work_level')
+    if 'date_from' in data:
+        h.date_from = data['date_from']
+        update_fields.append('date_from')
+    if 'date_to' in data:
+        h.date_to = data['date_to']
+        update_fields.append('date_to')
+    if update_fields:
+        h.save(update_fields=update_fields)
+    # If dates changed, shift associated Feriado trabajado absences
+    if 'date_from' in data or 'date_to' in data:
+        Absence.objects.filter(
+            type_absence__in=['Feriado trabajado', 'Feriado trabajado 1/2'],
+            date_from=old_from,
+            date_to=old_to,
+        ).update(date_from=h.date_from, date_to=h.date_to)
+    return JsonResponse({'success': True})
 
 
 @login_required
@@ -1775,41 +1849,6 @@ def delete_absence(request, absence_id):
         return JsonResponse({'success': True})
     except Absence.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
-
-
-@login_required
-def sync_arg_holidays(request):
-    import urllib.request as _urlreq
-    year = request.GET.get('year', str(date.today().year))
-    url = f"https://nolaborables.com.ar/api/v2/feriados/{year}"
-    try:
-        with _urlreq.urlopen(url, timeout=10) as resp:
-            holidays_data = json.loads(resp.read().decode('utf-8'))
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-    created = skipped = 0
-    for h in holidays_data:
-        day = h.get('dia')
-        month = h.get('mes')
-        name = (h.get('motivo') or h.get('nombre') or '').strip()
-        if not day or not month:
-            continue
-        try:
-            event_date = date(int(year), int(month), int(day))
-        except ValueError:
-            continue
-        _, was_created = Holidays.objects.get_or_create(
-            date_from=event_date,
-            type_holidays='Feriado',
-            defaults={'date_to': event_date, 'name': name, 'workable': False},
-        )
-        if was_created:
-            created += 1
-        else:
-            skipped += 1
-
-    return JsonResponse({'created': created, 'skipped': skipped})
 
 
 @login_required
@@ -2293,10 +2332,12 @@ def jsoncontact(request, contact_id):
 
 @login_required
 @csrf_exempt
-def json_contacts(_request):
-
-    # Get the list of the contacts
-    contacts = list(ClientContact.objects.values())
+def json_contacts(request):
+    client_id = request.GET.get('client_id')
+    qs = ClientContact.objects.all()
+    if client_id:
+        qs = qs.filter(client_id=client_id)
+    contacts = list(qs.values('id', 'name', 'email', 'client_id'))
     data = {'contacts': contacts}
     return JsonResponse(data)
 
@@ -2409,6 +2450,45 @@ def json_pendings(request):
     data = get_pendings(request.user.department)
 
     return JsonResponse(data, safe=False)
+
+_PROGRESS_OPTIONS = [
+    "0 - No comenzado",
+    "1 - Analizado",
+    "2 - Contactados proveedores",
+    "3 - Enviado Status",
+    "4 - Falta respuesta proveedor/cliente",
+    "5 - Finalizado",
+]
+
+
+def _progress_select_html(entry_id, current):
+    opts = "".join(
+        f'<option value="{v}"{"selected" if v == current else ""}>{v}</option>'
+        for v in _PROGRESS_OPTIONS
+    )
+    return (
+        f'<select class="form-select form-select-sm progress-inline border-0 px-1" '
+        f'data-entry-id="{entry_id}" '
+        f'style="min-width:130px;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:none">'
+        f'{opts}</select>'
+    )
+
+
+@login_required
+@csrf_exempt
+def update_entry_progress(request, entry_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method not allowed'}, status=405)
+    data = json.loads(request.body)
+    progress = data.get('progress', '')
+    try:
+        entry = Entry.objects.get(pk=entry_id, trip__department=request.user.department)
+        entry.progress = progress
+        entry.save(update_fields=['progress'])
+        return JsonResponse({'success': True})
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'not found'}, status=404)
+
 
 @login_required
 @csrf_exempt
@@ -2605,7 +2685,7 @@ def entries_data(request):
             "client_reference": entry.trip.client_reference if entry.trip else "",
             "user_creator": _user_pill(entry.user_creator),
             "user_working": _user_pill(entry.user_working),
-            "progress": entry.progress,
+            "progress": _progress_select_html(entry.id, entry.progress),
             "importance": entry.importance,
             "difficulty": entry.trip.difficulty,
             "note": entry.note or "n/a",
@@ -3373,7 +3453,7 @@ def stats_presentation_entries(request):
     this_season_perc_quotes   = _pct(this_season_amount_quotes,   total_amount_quotes)
     next_season_perc_quotes   = _pct(next_season_amount_quotes,   total_amount_quotes)
 
-    days = max(get_working_days(d_from, d_to), 1)
+    days = max(count_workable_days(d_from, d_to), 1)
     average_quotes_quantity = round(total_count_quotes / days, 2)
     average_quotes_amount   = round(total_amount_quotes / days, 2)
     average_difficulty = round(

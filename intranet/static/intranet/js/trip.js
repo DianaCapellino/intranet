@@ -325,6 +325,31 @@ function create_datatable (type) {
             entriesTable.ajax.reload();
         });
 
+        // Inline progress update — delegated so it works after DataTables redraws
+        $('#entries').on('change', '.progress-inline', function () {
+            const $sel = $(this);
+            const entryId = $sel.data('entry-id');
+            const progress = $sel.val();
+            const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+
+            fetch(`/entries/${entryId}/progress`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ progress }),
+            }).then(resp => {
+                if (resp.ok) {
+                    $sel.addClass('border-success');
+                    setTimeout(() => $sel.removeClass('border-success'), 1400);
+                } else {
+                    $sel.addClass('border-danger');
+                    setTimeout(() => $sel.removeClass('border-danger'), 1400);
+                }
+            }).catch(() => {
+                $sel.addClass('border-danger');
+                setTimeout(() => $sel.removeClass('border-danger'), 1400);
+            });
+        });
+
     } else if (type == ("trips")){
         new DataTable(`#${type}`, {
             layout: {
