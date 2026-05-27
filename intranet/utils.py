@@ -1,7 +1,8 @@
 import re
 from html import unescape
 from datetime import datetime, date, timedelta
-from .models import Entry, Holidays, Trip, Absence
+from .models import Entry, Holidays, Trip, Absence, NotificationPreference
+from django.urls import reverse
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
@@ -574,6 +575,13 @@ def build_tariff_client_news_context(client, date_from=None):
     icons_base_url = f"{site_url}/{static_url}/intranet/images/"
     logo_url = f"{icons_base_url}logo.png"
 
+    pref, _ = NotificationPreference.objects.get_or_create(
+        user=client,
+        notification_type='tariff_client',
+        defaults={'is_active': True},
+    )
+    unsubscribe_url = site_url + reverse('notification_unsubscribe', kwargs={'token': pref.unsubscribe_token})
+
     subject = f"Aliwen Incoming – Rate Update"
     template = "emails/tariff_client_news.html"
     context = {
@@ -582,6 +590,7 @@ def build_tariff_client_news_context(client, date_from=None):
         "locations": locations,
         "logo_url": logo_url,
         "icons_base_url": icons_base_url,
+        "unsubscribe_url": unsubscribe_url,
     }
 
     return subject, to_emails, template, context

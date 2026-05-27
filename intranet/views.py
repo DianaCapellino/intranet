@@ -2199,6 +2199,53 @@ def import_full_moons(request):
 
 @login_required
 @csrf_exempt
+def copy_special_entries(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    data = json.loads(request.body)
+    source_year = int(data.get('source_year'))
+    target_year = int(data.get('target_year'))
+
+    source_entries = ExternalCalendarEntry.objects.select_related('location').filter(
+        category__in=['other', 'not_recommended'],
+        date_from__year=source_year,
+    )
+
+    existing = set(
+        (e.name, e.category, e.location_id, e.date_from.month, e.date_from.day)
+        for e in ExternalCalendarEntry.objects.filter(
+            category__in=['other', 'not_recommended'],
+            date_from__year=target_year,
+        )
+    )
+
+    def _shift(d):
+        try:
+            return d.replace(year=target_year)
+        except ValueError:
+            return d.replace(year=target_year, day=28)
+
+    created = 0
+    for entry in source_entries:
+        key = (entry.name, entry.category, entry.location_id, entry.date_from.month, entry.date_from.day)
+        if key in existing:
+            continue
+        ExternalCalendarEntry.objects.create(
+            date_from=_shift(entry.date_from),
+            date_to=_shift(entry.date_to),
+            name=entry.name,
+            category=entry.category,
+            location=entry.location,
+            notes=entry.notes,
+        )
+        existing.add(key)
+        created += 1
+
+    return JsonResponse({'created': created, 'source_year': source_year, 'target_year': target_year})
+
+
+@login_required
+@csrf_exempt
 def jsontrips(_request):
 
     # Get the list of the trips

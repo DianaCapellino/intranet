@@ -10,6 +10,7 @@
       <input type="number" id="yearSelector" class="form-control form-control-sm"
              style="width:80px" value="{{ current_year }}" min="2000" max="2050">
       <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">{% if is_client %}Refresh{% else %}Actualizar{% endif %}</button>
+      <button class="btn btn-sm btn-outline-secondary" id="btnExportExtPDF">Export PDF</button>
       {% if not is_client %}
       <button class="btn btn-sm btn-outline-secondary" id="btnCumpleanos"
               data-bs-toggle="modal" data-bs-target="#modalCumpleanos">Cumpleaños</button>
@@ -88,7 +89,35 @@
 </div>
 {% endif %}
 
+<!-- ── Hidden PDF container ───────────────────────────────────────────────── -->
+<div id="ext-pdf-wrap" style="display:none; position:fixed; left:-9999px; top:0; background:#fff; width:794px; padding:20px; box-sizing:border-box; font-family:Arial,sans-serif; font-size:11px;">
+  <div id="ext-pdf-page-1" class="ext-pdf-page"></div>
+  <div id="ext-pdf-page-2" class="ext-pdf-page" style="margin-top:20px"></div>
+</div>
+
 <style>
+/* ── PDF calendar styles ───────────────────────────────────────────────────── */
+.ext-pdf-page        { display:block; }
+.ext-pdf-hdr         { display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:12px; border-bottom:2px solid #343a40; padding-bottom:10px; }
+.ext-pdf-logo        { height:70px; width:auto; }
+.ext-pdf-title       { font-size:17px; font-weight:900; color:#343a40; letter-spacing:0.8px; text-transform:uppercase; text-align:center; }
+.ext-pdf-months-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.ext-pdf-month       { border:1px solid #ccc; overflow:hidden; }
+.ext-pdf-mhdr        { background:#343a40; color:#fff; text-align:center; font-weight:700; font-size:12px; padding:5px 0; }
+.ext-pdf-cal         { width:100%; border-collapse:collapse; }
+.ext-pdf-cal th      { background:#e9ecef; text-align:center; font-size:9px; padding:2px 0; border:1px solid #dee2e6; font-weight:600; }
+.ext-pdf-cal td      { text-align:center; border:1px solid #dee2e6; height:34px; vertical-align:top; padding:2px 1px; width:14.28%; }
+.ext-pdf-daynum      { display:block; font-size:10px; line-height:1.3; }
+.ext-pdf-dots        { display:flex; flex-wrap:wrap; justify-content:center; gap:2px; padding:1px 0; }
+.ext-pdf-dot         { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.ext-pdf-we          { background:#f5f5f5; }
+.ext-pdf-legend      { padding:5px 6px; border-top:1px solid #dee2e6; font-size:9px; min-height:10px; }
+.ext-pdf-leg-item    { display:flex; align-items:flex-start; gap:5px; margin-bottom:3px; line-height:1.3; }
+.ext-pdf-leg-dot     { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:2px; }
+.ext-pdf-leg-name    { font-weight:700; }
+.ext-pdf-leg-dates   { color:#555; }
+.ext-pdf-leg-notes   { font-style:italic; color:#c84b00; }
+
 .cal-wrap      { overflow-x: auto; }
 .cal-month     { margin-bottom: 6px; }
 .cal-table     { border-collapse: collapse; white-space: nowrap; font-size: 0.7rem; }
@@ -515,5 +544,134 @@ function renderExtGrid(events, yr) {
 {% if is_client %}
 loadExtAndRender();
 {% endif %}
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+const PDF_MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+const PDF_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function buildPDFMonth(yr, mo, events) {
+  const days     = new Date(yr, mo + 1, 0).getDate();
+  const firstDow = new Date(yr, mo, 1).getDay();
+  const dayEvMap = {};
+  for (const ev of events) {
+    const p = ev.extendedProps || {};
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      if (d.getFullYear() !== yr || d.getMonth() !== mo) continue;
+      const day = d.getDate();
+      if (!dayEvMap[day]) dayEvMap[day] = [];
+      const key = p.entry_id != null ? `id_${p.entry_id}` : ev.id;
+      if (!dayEvMap[day].find(x => {
+        const xp = x.extendedProps || {};
+        return (xp.entry_id != null ? `id_${xp.entry_id}` : x.id) === key;
+      })) dayEvMap[day].push(ev);
+    }
+  }
+  let gridHTML = `<table class="ext-pdf-cal"><thead><tr>`;
+  for (const d of PDF_DAYS) gridHTML += `<th>${d}</th>`;
+  gridHTML += `</tr></thead><tbody>`;
+  for (let week = 0; week < 6; week++) {
+    if (week * 7 - firstDow + 1 > days) break;
+    gridHTML += '<tr>';
+    for (let dow = 0; dow < 7; dow++) {
+      const dayNum = week * 7 + dow - firstDow + 1;
+      if (dayNum < 1 || dayNum > days) {
+        gridHTML += '<td class="ext-pdf-we"></td>';
+      } else {
+        const isWE = dow === 0 || dow === 6;
+        const dots = (dayEvMap[dayNum] || []).map(ev =>
+          `<span class="ext-pdf-dot" style="background:${ev.backgroundColor}"></span>`
+        ).join('');
+        gridHTML += `<td class="${isWE ? 'ext-pdf-we' : ''}">
+          <span class="ext-pdf-daynum">${dayNum}</span>
+          ${dots ? `<div class="ext-pdf-dots">${dots}</div>` : ''}
+        </td>`;
+      }
+    }
+    gridHTML += '</tr>';
+  }
+  gridHTML += '</tbody></table>';
+  const seenKeys = new Set();
+  const legendEvs = [];
+  for (let d = 1; d <= days; d++)
+    for (const ev of (dayEvMap[d] || [])) {
+      const p   = ev.extendedProps || {};
+      const key = p.entry_id != null ? `id_${p.entry_id}` : ev.id;
+      if (!seenKeys.has(key)) { seenKeys.add(key); legendEvs.push(ev); }
+    }
+  let legendHTML = '<div class="ext-pdf-legend">';
+  for (const ev of legendEvs) {
+    const p      = ev.extendedProps || {};
+    const s      = new Date(ev.start + 'T00:00:00');
+    const eExcl  = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    const eIncl  = new Date(eExcl.getTime() - 86400000);
+    const clipS  = s.getMonth() < mo ? 1 : s.getDate();
+    const clipE  = eIncl.getMonth() > mo ? days : eIncl.getDate();
+    const dateStr = clipS === clipE ? `${clipS}` : `${clipS}–${clipE}`;
+    const name   = p.name || ev.title;
+    const notes  = p.notes || '';
+    const isLocSpecific = p.location_id != null &&
+                          (p.category === 'not_recommended' || p.category === 'other');
+    const locName = isLocSpecific ? (LOCATIONS.find(l => l.id === p.location_id)?.name || '') : '';
+    const fullName = locName ? `${locName} - ${name}` : name;
+    const bodyHTML = isLocSpecific
+      ? `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? ` - <span class="ext-pdf-leg-notes">${notes}</span>` : ''}`
+      : `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? `<br><span class="ext-pdf-leg-notes">${notes}</span>` : ''}`;
+    legendHTML += `<div class="ext-pdf-leg-item">
+      <span class="ext-pdf-leg-dot" style="background:${ev.backgroundColor}"></span>
+      <div>${bodyHTML}</div>
+    </div>`;
+  }
+  legendHTML += '</div>';
+  return `<div class="ext-pdf-month">
+    <div class="ext-pdf-mhdr">${PDF_MONTHS[mo]} ${yr}</div>
+    ${gridHTML}${legendHTML}
+  </div>`;
+}
+
+async function exportExtCalendarPDF() {
+  if (extEventsCache.length === 0) await loadExtAndRender();
+  const btn = document.getElementById('btnExportExtPDF');
+  btn.disabled    = true;
+  btn.textContent = '{% if is_client %}Generating…{% else %}Generando…{% endif %}';
+  try {
+    const wrap = document.getElementById('ext-pdf-wrap');
+    wrap.style.display = 'block';
+    const pdfHeaderHTML = `<div class="ext-pdf-hdr">
+      <img src="/static/intranet/images/logo2.png" class="ext-pdf-logo" alt="Aliwen">
+      <div class="ext-pdf-title">ARGENTINA &ndash; SPECIAL DATES TO HAVE IN MIND</div>
+    </div>`;
+    for (let half = 0; half < 2; half++) {
+      const pageEl = document.getElementById(`ext-pdf-page-${half + 1}`);
+      let monthsHTML = '';
+      for (let i = 0; i < 6; i++)
+        monthsHTML += buildPDFMonth(year, half * 6 + i, extEventsCache);
+      pageEl.innerHTML = pdfHeaderHTML + `<div class="ext-pdf-months-grid">${monthsHTML}</div>`;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    for (let half = 0; half < 2; half++) {
+      const pageEl  = document.getElementById(`ext-pdf-page-${half + 1}`);
+      const canvas  = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: '#fff' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const ratio   = Math.min(pageW / canvas.width, pageH / canvas.height) * 0.97;
+      const iw = canvas.width  * ratio;
+      const ih = canvas.height * ratio;
+      if (half > 0) doc.addPage();
+      doc.addImage(imgData, 'JPEG', (pageW - iw) / 2, (pageH - ih) / 2, iw, ih);
+    }
+    doc.save(`Argentina Special Dates ${year}.pdf`);
+  } finally {
+    document.getElementById('ext-pdf-wrap').style.display = 'none';
+    btn.disabled    = false;
+    btn.textContent = 'Export PDF';
+  }
+}
+
+document.getElementById('btnExportExtPDF').addEventListener('click', exportExtCalendarPDF);
 </script>
 {% endblock %}

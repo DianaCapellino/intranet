@@ -32,7 +32,7 @@ def index(request):
     pending_suppliers = []
     if request.user.userType != "Cliente":
         from django.db.models import Count
-        pending_suppliers = (
+        pending_suppliers = sorted(
             Supplier.objects
             .filter(supplier_products__rate_products__group_rate__is_revised=False)
             .annotate(pending_count=Count(
@@ -40,8 +40,12 @@ def index(request):
                 filter=Q(supplier_products__rate_products__group_rate__is_revised=False)
             ))
             .select_related('group__location')
-            .distinct()
-            .order_by('group__location__order', 'group__location__name', 'name')
+            .distinct(),
+            key=lambda s: (
+                s.group.location.order if s.group and s.group.location else 9999,
+                s.group.location.name  if s.group and s.group.location else '',
+                s.name,
+            )
         )
 
     return render(request, "tariff/tariff.html", {

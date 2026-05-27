@@ -71,6 +71,7 @@ urlpatterns = [
     path("external-calendar/entry/<int:entry_id>/delete", views.delete_external_entry, name="delete_external_entry"),
     path("external-calendar/full-moons/import", views.import_full_moons, name="import_full_moons"),
     path("external-calendar/long-weekends/import", views.import_long_weekends, name="import_long_weekends"),
+    path("external-calendar/special-entries/copy", views.copy_special_entries, name="copy_special_entries"),
 
     # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),
