@@ -648,28 +648,32 @@ def modify_supplier_rates(request, supplier_id):
             calculate_margins(line.tpl)
     else:
         for line in rate_lines:
-            bases_map = {str(i): None for i in range(1, 7)}
+            NA_COLS = ["SIB"] + [str(i) for i in range(1, 7)]
+            bases_map = {col: None for col in NA_COLS}
 
             for rate in line.line_rates.all():
                 if rate.column_options in bases_map:
                     bases_map[rate.column_options] = rate
 
             line.bases = []
-            for i in range(1, 7):
-                rate = bases_map[str(i)]
+            for col in NA_COLS:
+                rate = bases_map[col]
                 calculate_margins(rate)
+
+                # For cost-per-pax calculation SIB is always per-person; use pax=1
+                pax_for_calc = 1 if col == "SIB" else int(col)
 
                 cost_items_list = []
                 fixed_costs_list = []
                 if rate:
                     for ci in rate.cost_items.all():
                         ci.cost_per_pax = _cost_per_pax(
-                            ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, i
+                            ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, pax_for_calc
                         )
                         cost_items_list.append(ci)
                     for frc in rate.rates_with_fixed.all():
                         frc.cost_per_pax = _cost_per_pax(
-                            frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, i
+                            frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, pax_for_calc
                         )
                         fixed_costs_list.append(frc)
 
@@ -692,8 +696,9 @@ def modify_supplier_rates(request, supplier_id):
                     suggested_sell = round(effective_cost / (1 - margin_ai / 100))
 
                 line.bases.append({
-                    "pax": i,
+                    "pax": col,
                     "rate": rate,
+                    "rate_line_id": line.id,
                     "cost_items": cost_items_list,
                     "fixed_costs": fixed_costs_list,
                     "has_items": has_items,
@@ -1354,7 +1359,7 @@ def create_rate_block(request):
                 if product.group.type_service == "AC":
                     columns = ["SGL", "DBL", "TPL"]
                 else:
-                    columns = ["1", "2", "3", "4", "5", "6"]
+                    columns = ["SIB", "1", "2", "3", "4", "5", "6"]
 
                 # Crear Rates para cada columna
                 for column_type in columns:
@@ -1736,6 +1741,128 @@ def update_rate_cost(request):
     Rate.objects.filter(pk=rate_id).update(cost=cost)
     return JsonResponse({'ok': True})
 
+
+
+@login_required
+def reorder_suppliers(request):
+    """Bulk-update supplier order.
+    Accepts {groups: {group_id: [id, ...]}} — assigns order = index * 10 within each group.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    groups = data.get('groups', {})
+    if not groups:
+        return JsonResponse({'error': 'No groups provided'}, status=400)
+    for ids in groups.values():
+        for i, supplier_id in enumerate(ids):
+            Supplier.objects.filter(pk=supplier_id).update(order=(i + 1) * 10)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def auto_sort_suppliers(request):
+    """Return quality+price sorted order for each group in a location.
+    Sorts by HOTEL_QUALITY_OPTIONS rank ASC, then November DBL price DESC.
+    Returns {groups: {gid: [ids]}, prices: {sid: price}}.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    location_id = data.get('location_id')
+
+    quality_rank = {v: i for i, (v, _) in enumerate(HOTEL_QUALITY_OPTIONS)}
+    nov_15 = date(date.today().year, 11, 15)
+
+    groups = SupplierGroup.objects.filter(
+        location_id=location_id, type_service="AC"
+    ).order_by('order').prefetch_related('group_products')
+
+    # Fetch November DBL prices for all suppliers in this location in one query
+    nov_rates = (
+        Rate.objects
+        .filter(
+            rate_line__group__product__supplier__group__location_id=location_id,
+            rate_line__group__product__supplier__group__type_service="AC",
+            column_options='DBL',
+            rate_line__date_from__lte=nov_15,
+            rate_line__date_to__gte=nov_15,
+        )
+        .values('rate_line__group__product__supplier_id', 'sell')
+        .order_by('rate_line__group__product__supplier_id', '-sell')
+    )
+    prices = {}
+    for r in nov_rates:
+        sid = r['rate_line__group__product__supplier_id']
+        if sid not in prices:
+            prices[sid] = float(r['sell']) if r['sell'] else 0.0
+
+    result_groups = {}
+    for group in groups:
+        suppliers = list(group.group_products.all())
+        suppliers.sort(key=lambda s: (
+            quality_rank.get(s.hotel_quality, 999),
+            -(prices.get(s.id, 0.0)),
+        ))
+        result_groups[str(group.id)] = [s.id for s in suppliers]
+
+    return JsonResponse({'ok': True, 'groups': result_groups, 'prices': {str(k): v for k, v in prices.items()}})
+
+
+@login_required
+def delete_single_rate(request):
+    """Delete a single Rate object (one pax column) from a RateLine."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    rate_id = data.get('rate_id')
+    try:
+        rate = Rate.objects.get(pk=rate_id)
+    except Rate.DoesNotExist:
+        return JsonResponse({'error': 'Tarifa no encontrada'}, status=404)
+    rate.delete()
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def create_missing_rate(request):
+    """Create a single Rate for an existing RateLine + column_options when none exists."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    rate_line_id = data.get('rate_line_id')
+    column_options = data.get('column_options')
+    cost = data.get('cost', 0)
+    try:
+        rate_line = RateLine.objects.select_related('group__product__supplier').get(pk=rate_line_id)
+    except RateLine.DoesNotExist:
+        return JsonResponse({'error': 'RateLine no encontrada'}, status=404)
+    if Rate.objects.filter(rate_line=rate_line, column_options=column_options).exists():
+        return JsonResponse({'error': 'Ya existe una tarifa para esta columna'}, status=400)
+    supplier = rate_line.group.product.supplier
+    margin = float(supplier.margin) if supplier.margin else 0.8
+    import math as _math
+    cost_f = float(cost) if cost else 0.0
+    sell = _math.ceil(cost_f / margin) if cost_f and margin else 0
+    rate = Rate.objects.create(
+        rate_line=rate_line,
+        cost=cost_f,
+        margin=margin,
+        sell=sell,
+        sell_tourplan=sell,
+        column_options=column_options,
+        has_rate=True,
+        has_items=False,
+    )
+    return JsonResponse({'ok': True, 'rate_id': rate.id, 'sell': sell})
 
 
 @login_required

@@ -5,6 +5,7 @@ from datetime import timedelta
 from django import forms
 from multiselectfield import MultiSelectField
 from colorfield.fields import ColorField
+import uuid
 
 STATUS_OPTIONS = [
     ("Quote", "Quote"),
@@ -62,6 +63,7 @@ TRIP_TYPES = [
 USER_TYPES = [
     ("Ventas", "Ventas"),
     ("Operaciones", "Operaciones"),
+    ("Manager", "Manager"),
     ("DH", "DH"),
     ("Internal", "Internal"),
     ("Cliente", "Cliente"),
@@ -141,6 +143,8 @@ class User(AbstractUser):
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
     tariff_news = models.BooleanField(default=True)
+    show_in_calendar = models.BooleanField(default=True)
+    show_in_client_team = models.BooleanField(default=True)
     client = models.ForeignKey(
         'Client',
         null=True, blank=True,
@@ -374,6 +378,30 @@ class Absence(models.Model):
     type_absence = models.CharField(max_length=64, choices=TYPE_ABSENCE, default="Vacaciones")
 
 
+EXT_CALENDAR_CATEGORIES = [
+    ('holiday',          'Holiday'),
+    ('long_weekend',     'Long Weekend'),
+    ('other',            'Other special dates'),
+    ('full_moon',        'Full Moon'),
+    ('not_recommended',  'Not recommended'),
+]
+
+class ExternalCalendarEntry(models.Model):
+    date_from = models.DateField()
+    date_to   = models.DateField()
+    name      = models.CharField(max_length=128, blank=True)
+    notes     = models.TextField(blank=True)
+    category  = models.CharField(max_length=20, choices=EXT_CALENDAR_CATEGORIES, default='holiday')
+    location  = models.ForeignKey(
+        'tariff.Location', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='calendar_entries'
+    )
+
+    def __str__(self):
+        loc = self.location.name if self.location else 'All'
+        return f"{self.date_from} – {self.date_to} [{self.category}] {self.name} ({loc})"
+
+
 class CsvFileTourplanFiles (models.Model):
     file_name = models.FileField(upload_to="csvFiles")
     uploaded_time = models.DateTimeField(auto_now_add=True)
@@ -474,22 +502,79 @@ class StatsByClient (models.Model):
 
 
 def get_working_days(from_date, to_date):
-    
-    # Normalize the dates
     if hasattr(from_date, "date"):
         from_date = from_date.date()
     if hasattr(to_date, "date"):
         to_date = to_date.date()
-
-    # Check if the order is correct
     if from_date > to_date:
         from_date, to_date = to_date, from_date
 
-    # Get the quantity of holidays
-    n_holidays = Holidays.objects.filter(
-        workable=False,
-        date_from__range=(from_date, to_date)
-    ).count()
+    # Count weekdays (Mon–Fri) in [from_date, to_date)
+    total = 0
+    d = from_date
+    while d < to_date:
+        if d.weekday() < 5:
+            total += 1
+        d += timedelta(days=1)
 
-    working_days = (to_date - from_date).days - n_holidays
-    return working_days
+    # Subtract non-working holidays that fall on weekdays within the range
+    non_working = Holidays.objects.filter(
+        workable=False,
+        date_from__lt=to_date,
+        date_to__gte=from_date,
+    )
+    for h in non_working:
+        d = max(h.date_from, from_date)
+        end = min(h.date_to, to_date - timedelta(days=1))
+        while d <= end:
+            if d.weekday() < 5:
+                total -= 1
+            d += timedelta(days=1)
+
+    return max(0, total)
+
+NOTIFICATION_TYPES = [
+    ('tariff_client', 'Tariff Updates – Clients'),
+    ('tariff_team', 'Tariff Updates – Team (Internal)'),
+    ('margin_warning', 'Margin Warnings (Sellers)'),
+    ('margin_manager', 'Margin Report (Manager)'),
+    ('weekly_roster', 'Weekly Roster'),
+    ('holiday_reminder', 'Holiday Reminder'),
+]
+
+# Types whose base recipient list is auto-derived from user type queries
+NOTIFICATION_AUTO_TYPES = {'margin_warning', 'weekly_roster', 'holiday_reminder'}
+
+
+class NotificationPreference(models.Model):
+    OPT_OUT_BY = [
+        ('admin', 'Admin'),
+        ('self', 'Self'),
+    ]
+
+    user = models.ForeignKey(
+        'User',
+        on_delete=models.CASCADE,
+        related_name='notification_prefs',
+    )
+    notification_type = models.CharField(max_length=40, choices=NOTIFICATION_TYPES)
+    is_active = models.BooleanField(default=True)
+    opt_out_by = models.CharField(max_length=10, choices=OPT_OUT_BY, blank=True, default='')
+    unsubscribe_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('user', 'notification_type')]
+        ordering = ['notification_type', 'user__username']
+
+    def __str__(self):
+        status = 'active' if self.is_active else 'opted-out'
+        return f"{self.user.username} / {self.notification_type} ({status})"
+
+    def get_email(self):
+        return self.user.email
+
+    def get_display_name(self):
+        return self.user.other_name or self.user.username

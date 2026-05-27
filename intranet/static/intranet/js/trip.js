@@ -207,6 +207,8 @@ function create_datatable (type) {
             if ($userSelect) $userSelect.closest("div").style.display = "none";
         }
 
+        const _isClient = window.ENTRIES_IS_CLIENT === true;
+
         let entriesTable = $('#entries').DataTable({
             processing: true,
             serverSide: true,
@@ -228,73 +230,101 @@ function create_datatable (type) {
                 }
             },
             columns: [
-                { data: "starting_date" },
-                { data: "closing_date" },
-                { data: "trip" },
-                { data: "type" },
-                { data: "status" },
-                { data: "amount" },
-                { data: "client" },
-                { data: "contact" },
-                { data: "client_reference" },
-                { data: "user_creator" },
-                { data: "user_working" },
-                { data: "progress" },
-                { data: "importance" },
-                { data: "difficulty" },
-                { data: "note" },
-                { data: "travelling_date" },
-                { data: "acciones", orderable: false }
+                { data: "starting_date" },   // 0
+                { data: "closing_date" },    // 1
+                { data: "trip" },            // 2
+                { data: "type" },            // 3
+                { data: "status" },          // 4
+                { data: "amount" },          // 5
+                { data: "client" },          // 6
+                { data: "contact" },         // 7
+                { data: "client_reference" },// 8
+                { data: "user_creator" },    // 9
+                { data: "user_working" },    // 10
+                { data: "progress" },        // 11
+                { data: "importance" },      // 12
+                { data: "difficulty" },      // 13
+                { data: "note" },            // 14
+                { data: "travelling_date" }, // 15
+                { data: "acciones", orderable: false } // 16
             ],
             layout: {
-                topStart: {
+                topStart: _isClient ? {
+                        buttons: [
+                            {
+                                extend: 'excelHtml5',
+                                text: '<i class="fa fa-file-excel"></i>',
+                                titleAttr: 'Export to Excel',
+                                className: 'btn btn-dark m-1',
+                                exportOptions: { columns: ':visible' }
+                            },
+                            {
+                                extend: 'print',
+                                text: '<i class="fa fa-print"></i>',
+                                titleAttr: 'Print',
+                                className: 'btn btn-dark m-1',
+                                exportOptions: { columns: ':visible' }
+                            },
+                            {
+                                extend: 'colvis',
+                                text: 'Columns',
+                                titleAttr: 'Columns',
+                                className: 'btn btn-dark m-1',
+                                columns: ':not(.no-colvis)',
+                                exportOptions: { columns: ':visible' }
+                            }
+                        ]
+                    } : {
                     buttons: [
                         {
                           extend: 'excelHtml5',
                           text: '<i class="fa fa-file-excel"></i>',
                           titleAttr: 'Exportar a Excel',
                           className: 'btn btn-dark m-1',
-                          exportOptions: {
-                            columns: ':visible'
-                          }
+                          exportOptions: { columns: ':visible' }
                         },
                         {
                             extend: 'print',
                             text: '<i class="fa fa-print"></i>',
                             titleAttr: 'Imprimir',
                             className: 'btn btn-dark m-1',
-                            exportOptions: {
-                              columns: ':visible'
-                            }
+                            exportOptions: { columns: ':visible' }
                         },
                         {
                             extend: 'colvis',
                             text: 'Gestionar Columnas',
                             titleAttr: 'Columnas',
                             className: 'btn btn-dark m-1',
-                            exportOptions: {
-                              columns: ':visible'
-                            }
+                            exportOptions: { columns: ':visible' }
                         }
                     ]
                 }
             },
-            lengthMenu: [ [30, 20, -1], [30, 20, "Todos"] ],
-            columnDefs: [
+            lengthMenu: _isClient
+                ? [ [30, 20, -1], [30, 20, "All"] ]
+                : [ [30, 20, -1], [30, 20, "Todos"] ],
+            columnDefs: _isClient ? [
+                // Hidden and excluded from colvis: Type, Client, Quoted by,
+                // Priority, Difficulty, More info
+                { visible: false, className: 'no-colvis', targets: [3, 6, 9, 12, 13, 14] },
+                // Date of Travel: hidden by default but toggleable via colvis
+                { visible: false, targets: [15] },
+                { width: '20%', targets: [2] },
+                { orderable: false, targets: [16] }
+            ] : [
                 { orderable: false, targets: -1 },
-                { width: '20%', target: 2 },
-                { width: '2px', target: 13 },
-                { visible: false, targets: [5, 8, 12, 13, 14]}
+                { width: '20%', targets: [2] },
+                { width: '2px', targets: [13] },
+                { visible: false, targets: [5, 8, 12, 13, 14] }
             ],
             order: [[0, "desc"]],
-              // callback que corre cada vez que DataTables crea un <tr>
             createdRow: function(row, data) {
                 try {
                     row.id = `row-entries-${data.id}`;
                     row.dataset.entryId = data.id;
                 } catch (e) { console.warn("createdRow error", e); }
             },
-            language: {
+            language: _isClient ? {} : {
                 url: "https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json"
             }
         });

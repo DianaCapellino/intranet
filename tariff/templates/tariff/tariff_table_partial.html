@@ -27,22 +27,79 @@
 .acc-chevron { transition: transform 0.2s; display: inline-block; }
 .acc-group-body.acc-collapsed { display: none; }
 
-.locked-row td { background-color: #f3f4f6 !important; }
-.locked-row { border-left: 3px solid #dc2626 !important; }
-.rate-cell-locked { color: #dc2626 !important; }
-.rate-lock-toggle:hover { opacity: 0.75; }
 </style>
 
 {% if rate_lines %}
 
 <div class="mb-3 d-flex align-items-center gap-2 justify-content-end">
+    {% if tariff_type != "acc" %}
+    <div class="me-auto d-flex align-items-center gap-3" style="font-size:0.78rem; color:#555;">
+        <span class="d-flex align-items-center gap-1">
+            <svg width="16" height="16" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12.0234 2.5C12.4377 2.5 12.7734 2.83579 12.7734 3.25V4.75C12.7734 5.16421 12.4377 5.5 12.0234 5.5C11.6092 5.5 11.2734 5.16421 11.2734 4.75V3.25C11.2734 2.83579 11.6092 2.5 12.0234 2.5Z" fill="#323544"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M6.52344 12.5C6.52344 9.46243 8.98587 7 12.0234 7C15.061 7 17.5234 9.46243 17.5234 12.5C17.5234 15.5376 15.061 18 12.0234 18C8.98587 18 6.52344 15.5376 6.52344 12.5ZM12.0234 8.5C9.8143 8.5 8.02344 10.2909 8.02344 12.5C8.02344 14.7091 9.8143 16.5 12.0234 16.5C14.2326 16.5 16.0234 14.7091 16.0234 12.5C16.0234 10.2909 14.2326 8.5 12.0234 8.5Z" fill="#323544"/>
+                <path d="M19.0948 6.49127C19.3877 6.19837 19.3877 5.7235 19.0948 5.43061C18.8019 5.13771 18.327 5.13771 18.0341 5.43061L16.9735 6.49127C16.6806 6.78416 16.6806 7.25903 16.9735 7.55193C17.2664 7.84482 17.7412 7.84482 18.0341 7.55193L19.0948 6.49127Z" fill="#323544"/>
+                <path d="M22.0234 12.5C22.0234 12.9142 21.6877 13.25 21.2734 13.25H19.7734C19.3592 13.25 19.0234 12.9142 19.0234 12.5C19.0234 12.0858 19.3592 11.75 19.7734 11.75H21.2734C21.6877 11.75 22.0234 12.0858 22.0234 12.5Z" fill="#323544"/>
+                <path d="M18.0341 19.5694C18.327 19.8623 18.8019 19.8623 19.0948 19.5694C19.3877 19.2765 19.3877 18.8016 19.0948 18.5087L18.0341 17.4481C17.7412 17.1552 17.2664 17.1552 16.9735 17.4481C16.6806 17.741 16.6806 18.2158 16.9735 18.5087L18.0341 19.5694Z" fill="#323544"/>
+                <path d="M12.0234 19.5C12.4377 19.5 12.7734 19.8358 12.7734 20.25V21.75C12.7734 22.1642 12.4377 22.5 12.0234 22.5C11.6092 22.5 11.2734 22.1642 11.2734 21.75V20.25C11.2734 19.8358 11.6092 19.5 12.0234 19.5Z" fill="#323544"/>
+                <path d="M7.0733 18.5147C7.36619 18.2218 7.36619 17.7469 7.0733 17.454C6.78041 17.1612 6.30553 17.1612 6.01264 17.454L4.95198 18.5147C4.65909 18.8076 4.65909 19.2825 4.95198 19.5754C5.24487 19.8683 5.71975 19.8683 6.01264 19.5754L7.0733 18.5147Z" fill="#323544"/>
+                <path d="M5.02344 12.5C5.02344 12.9142 4.68765 13.25 4.27344 13.25H2.77344C2.35922 13.25 2.02344 12.9142 2.02344 12.5C2.02344 12.0858 2.35922 11.75 2.77344 11.75H4.27344C4.68765 11.75 5.02344 12.0858 5.02344 12.5Z" fill="#323544"/>
+                <path d="M6.01264 7.54596C6.30553 7.83885 6.78041 7.83885 7.0733 7.54596C7.36619 7.25306 7.36619 6.77819 7.0733 6.4853L6.01264 5.42463C5.71975 5.13174 5.24487 5.13174 4.95198 5.42463C4.65909 5.71753 4.65909 6.1924 4.95198 6.48529L6.01264 7.54596Z" fill="#323544"/>
+            </svg>
+            Morning
+        </span>
+        <span class="d-flex align-items-center gap-1">
+            <svg width="16" height="16" viewBox="0 0 24 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2.625C12.4142 2.625 12.75 2.96079 12.75 3.375V4.875C12.75 5.28921 12.4142 5.625 12 5.625C11.5858 5.625 11.25 5.28921 11.25 4.875V3.375C11.25 2.96079 11.5858 2.625 12 2.625Z" fill="#323544"/>
+                <path d="M6.5 12.625C6.5 9.58743 8.96243 7.125 12 7.125C15.0376 7.125 17.5 9.58743 17.5 12.625C17.5 15.6626 15.0376 18.125 12 18.125C8.96243 18.125 6.5 15.6626 6.5 12.625Z" fill="#323544"/>
+                <path d="M19.0713 6.61627C19.3642 6.32337 19.3642 5.8485 19.0713 5.55561C18.7785 5.26271 18.3036 5.26271 18.0107 5.55561L16.95 6.61627C16.6571 6.90916 16.6571 7.38403 16.95 7.67693C17.2429 7.96982 17.7178 7.96982 18.0107 7.67693L19.0713 6.61627Z" fill="#323544"/>
+                <path d="M22 12.625C22 13.0392 21.6642 13.375 21.25 13.375H19.75C19.3358 13.375 19 13.0392 19 12.625C19 12.2108 19.3358 11.875 19.75 11.875H21.25C21.6642 11.875 22 12.2108 22 12.625Z" fill="#323544"/>
+                <path d="M18.0107 19.6944C18.3036 19.9873 18.7785 19.9873 19.0713 19.6944C19.3642 19.4015 19.3642 18.9266 19.0713 18.6337L18.0107 17.5731C17.7178 17.2802 17.2429 17.2802 16.95 17.5731C16.6571 17.866 16.6571 18.3408 16.95 18.6337L18.0107 19.6944Z" fill="#323544"/>
+                <path d="M12 19.625C12.4142 19.625 12.75 19.9608 12.75 20.375V21.875C12.75 22.2892 12.4142 22.625 12 22.625C11.5858 22.625 11.25 22.2892 11.25 21.875V20.375C11.25 19.9608 11.5858 19.625 12 19.625Z" fill="#323544"/>
+                <path d="M7.04986 18.6397C7.34275 18.3468 7.34275 17.8719 7.04986 17.579C6.75697 17.2862 6.28209 17.2862 5.9892 17.579L4.92854 18.6397C4.63565 18.9326 4.63565 19.4075 4.92854 19.7004C5.22143 19.9933 5.69631 19.9933 5.9892 19.7004L7.04986 18.6397Z" fill="#323544"/>
+                <path d="M5 12.625C5 13.0392 4.66421 13.375 4.25 13.375H2.75C2.33579 13.375 2 13.0392 2 12.625C2 12.2108 2.33579 11.875 2.75 11.875H4.25C4.66421 11.875 5 12.2108 5 12.625Z" fill="#323544"/>
+                <path d="M5.9892 7.67096C6.28209 7.96385 6.75697 7.96385 7.04986 7.67096C7.34275 7.37806 7.34275 6.90319 7.04986 6.6103L5.9892 5.54963C5.69631 5.25674 5.22143 5.25674 4.92854 5.54963C4.63565 5.84253 4.63565 6.3174 4.92854 6.61029L5.9892 7.67096Z" fill="#323544"/>
+            </svg>
+            Afternoon
+        </span>
+        <span class="d-flex align-items-center gap-1">
+            <svg width="16" height="16" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12.0234 2.5C12.4377 2.5 12.7734 2.83579 12.7734 3.25V4.75C12.7734 5.16421 12.4377 5.5 12.0234 5.5C11.6092 5.5 11.2734 5.16421 11.2734 4.75V3.25C11.2734 2.83579 11.6092 2.5 12.0234 2.5Z" fill="#323544"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M6.52344 12.5C6.52344 9.46243 8.98587 7 12.0234 7C15.061 7 17.5234 9.46243 17.5234 12.5C17.5234 15.5376 15.061 18 12.0234 18C8.98587 18 6.52344 15.5376 6.52344 12.5ZM12.0234 8.5C9.8143 8.5 8.02344 10.2909 8.02344 12.5C8.02344 14.7091 9.8143 16.5 12.0234 16.5C14.2326 16.5 16.0234 14.7091 16.0234 12.5C16.0234 10.2909 14.2326 8.5 12.0234 8.5Z" fill="#323544"/>
+                <path d="M19.0948 6.49127C19.3877 6.19837 19.3877 5.7235 19.0948 5.43061C18.8019 5.13771 18.327 5.13771 18.0341 5.43061L16.9735 6.49127C16.6806 6.78416 16.6806 7.25903 16.9735 7.55193C17.2664 7.84482 17.7412 7.84482 18.0341 7.55193L19.0948 6.49127Z" fill="#323544"/>
+                <path d="M22.0234 12.5C22.0234 12.9142 21.6877 13.25 21.2734 13.25H19.7734C19.3592 13.25 19.0234 12.9142 19.0234 12.5C19.0234 12.0858 19.3592 11.75 19.7734 11.75H21.2734C21.6877 11.75 22.0234 12.0858 22.0234 12.5Z" fill="#323544"/>
+                <path d="M18.0341 19.5694C18.327 19.8623 18.8019 19.8623 19.0948 19.5694C19.3877 19.2765 19.3877 18.8016 19.0948 18.5087L18.0341 17.4481C17.7412 17.1552 17.2664 17.1552 16.9735 17.4481C16.6806 17.741 16.6806 18.2158 16.9735 18.5087L18.0341 19.5694Z" fill="#323544"/>
+                <path d="M12.0234 19.5C12.4377 19.5 12.7734 19.8358 12.7734 20.25V21.75C12.7734 22.1642 12.4377 22.5 12.0234 22.5C11.6092 22.5 11.2734 22.1642 11.2734 21.75V20.25C11.2734 19.8358 11.6092 19.5 12.0234 19.5Z" fill="#323544"/>
+                <path d="M7.0733 18.5147C7.36619 18.2218 7.36619 17.7469 7.0733 17.454C6.78041 17.1612 6.30553 17.1612 6.01264 17.454L4.95198 18.5147C4.65909 18.8076 4.65909 19.2825 4.95198 19.5754C5.24487 19.8683 5.71975 19.8683 6.01264 19.5754L7.0733 18.5147Z" fill="#323544"/>
+                <path d="M5.02344 12.5C5.02344 12.9142 4.68765 13.25 4.27344 13.25H2.77344C2.35922 13.25 2.02344 12.9142 2.02344 12.5C2.02344 12.0858 2.35922 11.75 2.77344 11.75H4.27344C4.68765 11.75 5.02344 12.0858 5.02344 12.5Z" fill="#323544"/>
+                <path d="M6.01264 7.54596C6.30553 7.83885 6.78041 7.83885 7.0733 7.54596C7.36619 7.25306 7.36619 6.77819 7.0733 6.4853L6.01264 5.42463C5.71975 5.13174 5.24487 5.13174 4.95198 5.42463C4.65909 5.71753 4.65909 6.1924 4.95198 6.48529L6.01264 7.54596Z" fill="#323544"/>
+            </svg>
+            <svg width="16" height="16" viewBox="0 0 24 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2.625C12.4142 2.625 12.75 2.96079 12.75 3.375V4.875C12.75 5.28921 12.4142 5.625 12 5.625C11.5858 5.625 11.25 5.28921 11.25 4.875V3.375C11.25 2.96079 11.5858 2.625 12 2.625Z" fill="#323544"/>
+                <path d="M6.5 12.625C6.5 9.58743 8.96243 7.125 12 7.125C15.0376 7.125 17.5 9.58743 17.5 12.625C17.5 15.6626 15.0376 18.125 12 18.125C8.96243 18.125 6.5 15.6626 6.5 12.625Z" fill="#323544"/>
+                <path d="M19.0713 6.61627C19.3642 6.32337 19.3642 5.8485 19.0713 5.55561C18.7785 5.26271 18.3036 5.26271 18.0107 5.55561L16.95 6.61627C16.6571 6.90916 16.6571 7.38403 16.95 7.67693C17.2429 7.96982 17.7178 7.96982 18.0107 7.67693L19.0713 6.61627Z" fill="#323544"/>
+                <path d="M22 12.625C22 13.0392 21.6642 13.375 21.25 13.375H19.75C19.3358 13.375 19 13.0392 19 12.625C19 12.2108 19.3358 11.875 19.75 11.875H21.25C21.6642 11.875 22 12.2108 22 12.625Z" fill="#323544"/>
+                <path d="M18.0107 19.6944C18.3036 19.9873 18.7785 19.9873 19.0713 19.6944C19.3642 19.4015 19.3642 18.9266 19.0713 18.6337L18.0107 17.5731C17.7178 17.2802 17.2429 17.2802 16.95 17.5731C16.6571 17.866 16.6571 18.3408 16.95 18.6337L18.0107 19.6944Z" fill="#323544"/>
+                <path d="M12 19.625C12.4142 19.625 12.75 19.9608 12.75 20.375V21.875C12.75 22.2892 12.4142 22.625 12 22.625C11.5858 22.625 11.25 22.2892 11.25 21.875V20.375C11.25 19.9608 11.5858 19.625 12 19.625Z" fill="#323544"/>
+                <path d="M7.04986 18.6397C7.34275 18.3468 7.34275 17.8719 7.04986 17.579C6.75697 17.2862 6.28209 17.2862 5.9892 17.579L4.92854 18.6397C4.63565 18.9326 4.63565 19.4075 4.92854 19.7004C5.22143 19.9933 5.69631 19.9933 5.9892 19.7004L7.04986 18.6397Z" fill="#323544"/>
+                <path d="M5 12.625C5 13.0392 4.66421 13.375 4.25 13.375H2.75C2.33579 13.375 2 13.0392 2 12.625C2 12.2108 2.33579 11.875 2.75 11.875H4.25C4.66421 11.875 5 12.2108 5 12.625Z" fill="#323544"/>
+                <path d="M5.9892 7.67096C6.28209 7.96385 6.75697 7.96385 7.04986 7.67096C7.34275 7.37806 7.34275 6.90319 7.04986 6.6103L5.9892 5.54963C5.69631 5.25674 5.22143 5.25674 4.92854 5.54963C4.63565 5.84253 4.63565 6.3174 4.92854 6.61029L5.9892 7.67096Z" fill="#323544"/>
+            </svg>
+            Morning/Afternoon
+        </span>
+        <span class="d-flex align-items-center gap-1">
+            <i class="fa-solid fa-moon" style="font-size:0.85rem;"></i>
+            Evening
+        </span>
+    </div>
+    {% endif %}
     {% if tariff_type == "acc" %}
     <div class="input-group input-group-sm" style="max-width:280px;">
         <span class="input-group-text bg-white border-end-0">
             <i class="fa-solid fa-magnifying-glass text-muted"></i>
         </span>
         <input type="text" id="acc-search" class="form-control border-start-0"
-               placeholder="Buscar hotel…" oninput="filterHotels(this.value)">
+               placeholder="{% if is_client %}Search accommodation…{% else %}Buscar hotel…{% endif %}" oninput="filterHotels(this.value)">
         <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('acc-search').value='';filterHotels('');" title="Limpiar">
             <i class="fa-solid fa-xmark"></i>
         </button>
@@ -53,7 +110,7 @@
             <i class="fa-solid fa-magnifying-glass text-muted"></i>
         </span>
         <input type="text" id="svs-search" class="form-control border-start-0"
-               placeholder="Buscar servicio…" oninput="filterServices(this.value)">
+               placeholder="{% if is_client %}Search service…{% else %}Buscar servicio…{% endif %}" oninput="filterServices(this.value)">
         <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('svs-search').value='';filterServices('');" title="Limpiar">
             <i class="fa-solid fa-xmark"></i>
         </button>
@@ -191,38 +248,6 @@ function markUnrevised(lineId, btn) {
     });
 }
 
-document.addEventListener('click', function(e) {
-    const toggle = e.target.closest('.rate-lock-toggle');
-    if (!toggle) return;
-    const rateId = toggle.dataset.rateId;
-    const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
-    fetch("{% url 'toggle_rate_lock' %}", {
-        method: 'POST',
-        headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
-        body: JSON.stringify({rate_id: rateId}),
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (!data.ok) return;
-        const td = toggle.closest('td');
-        const row = toggle.closest('tr');
-        const locked = data.locked;
-        td.classList.toggle('rate-cell-locked', locked);
-        toggle.title = locked ? 'Desbloquear base' : 'Bloquear base';
-        let lockIcon = toggle.querySelector('.fa-lock');
-        if (locked && !lockIcon) {
-            const i = document.createElement('i');
-            i.className = 'fa-solid fa-lock ms-1';
-            i.style.fontSize = '0.7rem';
-            toggle.appendChild(i);
-        } else if (!locked && lockIcon) {
-            lockIcon.remove();
-        }
-        // Update row locked-row class based on whether any cell in the row is still locked
-        const anyLocked = row.querySelectorAll('.rate-cell-locked').length > 0;
-        row.classList.toggle('locked-row', anyLocked);
-    });
-});
 </script>
 
 <div id="tariff-content">
@@ -328,9 +353,7 @@ document.addEventListener('click', function(e) {
                         </div>
                     {% endif %}
                     <div class="text-center">
-                        {% if request.user.userType != "Cliente" %}
-                            <button class="btn btn btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}">MORE INFORMATION</button>
-                        {% endif %}
+                        <button class="btn btn btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}">MORE INFORMATION</button>
                         {# === ProductGroup (desayuno / otros) === #}
                         {% regroup supplier_block.list by group.product.group.id as product_groups %}
                     </div>
@@ -387,7 +410,6 @@ document.addEventListener('click', function(e) {
                                         <tr class="border-bottom
                                             {% if not is_client and line.provisional_columns %} provisional-row{% endif %}
                                             {% if not line.is_revised %} revised-row{% endif %}
-                                            {% if line.locked_columns %} locked-row{% endif %}
                                         ">
                                             <td class="ps-3 py-2 border-0">
                                                 <div class="fw-bold text-secondary" style="font-size:0.85rem;">
@@ -426,15 +448,8 @@ document.addEventListener('click', function(e) {
                                                 {% endif %}
                                             </td>
 
-                                            <td class="text-center fw-bold border-0{% if 'SGL' in line.locked_columns %} rate-cell-locked{% endif %}">
-                                                {% if request.user.isAdmin and line.rate_ids_by_column.SGL %}
-                                                    <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column.SGL }}" title="{% if 'SGL' in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
-                                                        {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
-                                                        {% if 'SGL' in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
-                                                    </span>
-                                                {% else %}
-                                                    {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
-                                                {% endif %}
+                                            <td class="text-center fw-bold border-0">
+                                                {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
                                             </td>
                                             {% if show_costs %}
                                             <td class="text-center border-0 cost-col text-muted small">
@@ -442,15 +457,8 @@ document.addEventListener('click', function(e) {
                                             </td>
                                             {% endif %}
 
-                                            <td class="text-center fw-bold border-0{% if 'DBL' in line.locked_columns %} rate-cell-locked{% endif %}">
-                                                {% if request.user.isAdmin and line.rate_ids_by_column.DBL %}
-                                                    <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column.DBL }}" title="{% if 'DBL' in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
-                                                        {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
-                                                        {% if 'DBL' in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
-                                                    </span>
-                                                {% else %}
-                                                    {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
-                                                {% endif %}
+                                            <td class="text-center fw-bold border-0">
+                                                {{ line.rates_by_column.DBL|divided:2|default:"N/A" }}
                                             </td>
                                             {% if show_costs %}
                                             <td class="text-center border-0 cost-col text-muted small">
@@ -508,6 +516,7 @@ document.addEventListener('click', function(e) {
                                         <img src="{% static 'tariff/' %}{{ supplier.pic3_url }}" width="230px">
                                     </div>
                                     {% endif %}
+                                    {% if request.user.userType != "Cliente" %}
                                     {% if supplier.interests %}
                                         <hr>
                                         <h5 class="mb-2">
@@ -627,11 +636,13 @@ document.addEventListener('click', function(e) {
                                             {% endif %}
                                         </div>
                                     </div>
+                                    {% endif %}{# /not Cliente — rankings/interests block #}
                                     {% if supplier.description %}
                                     <br>
                                         <h4>Description</h4>
                                         <p>{{ supplier.description|linebreaks }}</p>
                                     {% endif %}
+                                    {% if request.user.userType != "Cliente" %}
                                     <h4>Notes</h4>
                                     {% if supplier.prepayment %}
                                         <div class="d-flex align-items-center m-3">
@@ -663,6 +674,7 @@ document.addEventListener('click', function(e) {
                                             <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
                                         </div>
                                     {% endif %}
+                                    {% endif %}{# /not Cliente — notes block #}
                                     {% if request.user.userType != "Cliente" %}
                                         <hr>
                                         <div class="d-flex justify-content-between">
@@ -767,6 +779,8 @@ document.addEventListener('click', function(e) {
             <tr class="text-muted small bg-light border-bottom border-primary">
                 <th class="ps-3 border-0" style="width:45%;">Service</th>
                 <th class="border-0" style="width:20%;">Validity</th>
+                <th class="text-center border-0">SIB</th>
+                {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo SIB</th>{% endif %}
                 <th class="text-center border-0">1 Pax</th>
                 {% if show_costs %}<th class="text-center border-0 cost-col text-muted small">Costo 1</th>{% endif %}
                 <th class="text-center border-0">2 Pax</th>
@@ -784,7 +798,7 @@ document.addEventListener('click', function(e) {
         <tbody>
 
         {% for line in pg.list %}
-            <tr class="svs-row border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if not line.is_revised %} revised-row{% endif %}{% if line.locked_columns %} locked-row{% endif %}"
+            <tr class="svs-row border-bottom{% if not is_client and line.provisional_columns %} provisional-row{% endif %}{% if not line.is_revised %} revised-row{% endif %}"
                 data-service="{{ line.group.product.name|lower }}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
@@ -884,18 +898,15 @@ document.addEventListener('click', function(e) {
                     {% endif %}
                 </td>
 
-                {% for col in "1,2,3,4,5,6"|split:"," %}
-                <td class="text-center fw-bold{% if col in line.locked_columns %} rate-cell-locked{% endif %}">
-                    {% if request.user.isAdmin and line.rate_ids_by_column|dict_get:col %}
-                        <span class="rate-lock-toggle" data-rate-id="{{ line.rate_ids_by_column|dict_get:col }}" title="{% if col in line.locked_columns %}Desbloquear base{% else %}Bloquear base{% endif %}" style="cursor:pointer;">
-                            {{ line.rates_by_column|dict_get:col|default:"N/A" }}
-                            {% if col in line.locked_columns %}<i class="fa-solid fa-lock ms-1" style="font-size:0.7rem;"></i>{% endif %}
-                        </span>
-                    {% else %}
-                        {{ line.rates_by_column|dict_get:col|default:"N/A" }}
-                    {% endif %}
+                <td class="text-center fw-bold">
+                    {% if line.rate_ids_by_column|has_key:"SIB" %}{{ line.rates_by_column.SIB|default:"N/A" }}{% endif %}
                 </td>
-                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column|dict_get:col|default:"—" }}</td>{% endif %}
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{{ line.costs_by_column.SIB|default:"—" }}</td>{% endif %}
+                {% for col in "1,2,3,4,5,6"|split:"," %}
+                <td class="text-center fw-bold">
+                    {% if line.rates_by_column.SIB %}{% elif line.rate_ids_by_column|has_key:col %}{{ line.rates_by_column|dict_get:col|default:"N/A" }}{% endif %}
+                </td>
+                {% if show_costs %}<td class="text-center cost-col text-muted small">{% if not line.rates_by_column.SIB %}{{ line.costs_by_column|dict_get:col|default:"—" }}{% endif %}</td>{% endif %}
                 {% endfor %}
             </tr>
         {% endfor %}

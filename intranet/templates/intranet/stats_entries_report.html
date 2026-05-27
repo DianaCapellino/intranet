@@ -67,46 +67,145 @@
                 
                 <div class="collapse mt-3" id="section-general">
                     <div class="card card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-4">
-                            <div class="m-3" id="working-days"></div>
-                            <div class="mb-3">
-                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-general')">
-                                    <i class="fas fa-file-pdf"></i> Exportar PDF
-                                </button>
-                                <button class="btn btn-primary" onclick="window.print()">
-                                    <i class="fas fa-print"></i> Imprimir
-                                </button>
+
+                        <!-- Export buttons -->
+                        <div class="d-flex justify-content-end mb-3" data-html2canvas-ignore="true">
+                            <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-general')">
+                                <i class="fas fa-file-pdf"></i> Exportar PDF
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fas fa-print"></i> Imprimir
+                            </button>
+                        </div>
+
+                        <!-- KPI cards row -->
+                        <div class="row g-3 mb-3 text-center">
+                            <div class="col-6 col-md-3">
+                                <div class="card h-100" style="border-color:#1565c0 !important;">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Cotizaciones (A)</div>
+                                        <div class="display-5 fw-bold" style="color:#1565c0;" id="kpi-quotes">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="card border-secondary h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Cambios (B, C…)</div>
+                                        <div class="display-5 fw-bold text-secondary" id="kpi-changes">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="card border-success h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Confirmaciones (1)</div>
+                                        <div class="display-5 fw-bold text-success" id="kpi-bookings">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="card border-danger h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Cancelaciones</div>
+                                        <div class="display-5 fw-bold text-danger" id="kpi-cancellations">—</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="row">
+
+                        <!-- Highlighted metrics row -->
+                        <div class="row g-3 mb-4 text-center">
+                            <div class="col-6">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Dificultad</div>
+                                        <div class="fs-3 fw-semibold" id="kpi-difficulty">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Conversión General</div>
+                                        <div class="fs-3 fw-semibold" id="kpi-conversion">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- By trip type tables -->
+                        <h5 class="mb-3">Por tipo de viaje</h5>
+                        <div class="row mb-4">
                             <div class="col-lg-6">
-                                <h3>📋 Cotizaciones (A)</h3>
-                                <table class="table table-bordered table-striped" id="summary-table-quotes">
-                                    <thead>
+                                <h6 class="text-muted">Cotizaciones (A)</h6>
+                                <table class="table table-bordered table-striped table-sm" id="summary-table-quotes">
+                                    <thead class="table-secondary">
                                         <tr>
-                                            <th>COTIZACIONES</th>
-                                            <th>Cantidad</th>
-                                            <th>Facturación</th>
-                                            <th>% (monto)</th>
+                                            <th>Tipo</th>
+                                            <th class="text-end">Cantidad</th>
+                                            <th class="text-end">Facturación</th>
+                                            <th class="text-end">% (monto)</th>
                                         </tr>
                                     </thead>
                                     <tbody id="summary-quotes-tbody"></tbody>
                                 </table>
                             </div>
-                            
                             <div class="col-lg-6">
-                                <h3>📋 Reservas (1)</h3>
-                                <table class="table table-bordered table-striped" id="summary-table-bookings">
-                                    <thead>
+                                <h6 class="text-muted">Reservas (1)</h6>
+                                <table class="table table-bordered table-striped table-sm" id="summary-table-bookings">
+                                    <thead class="table-secondary">
                                         <tr>
-                                            <th>RESERVAS</th>
-                                            <th>Cantidad</th>
-                                            <th>Facturación</th>
-                                            <th>% (monto)</th>
+                                            <th>Tipo</th>
+                                            <th class="text-end">Cantidad</th>
+                                            <th class="text-end">Facturación</th>
+                                            <th class="text-end">% (monto)</th>
                                         </tr>
                                     </thead>
                                     <tbody id="summary-bookings-tbody"></tbody>
                                 </table>
+                            </div>
+                        </div>
+
+                        <!-- By travelling season tables -->
+                        <h5 class="mb-3">Por fecha de viaje (temporada)</h5>
+                        <div class="row mb-4">
+                            <div class="col-lg-6">
+                                <h6 class="text-muted">Cotizaciones (A)</h6>
+                                <table class="table table-bordered table-striped table-sm">
+                                    <thead class="table-secondary">
+                                        <tr>
+                                            <th>Temporada</th>
+                                            <th class="text-end">Cantidad</th>
+                                            <th class="text-end">Facturación</th>
+                                            <th class="text-end">% (monto)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summary-quotes-seasons-tbody"></tbody>
+                                </table>
+                            </div>
+                            <div class="col-lg-6">
+                                <h6 class="text-muted">Reservas (1)</h6>
+                                <table class="table table-bordered table-striped table-sm">
+                                    <thead class="table-secondary">
+                                        <tr>
+                                            <th>Temporada</th>
+                                            <th class="text-end">Cantidad</th>
+                                            <th class="text-end">Facturación</th>
+                                            <th class="text-end">% (monto)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summary-bookings-seasons-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Detail metrics -->
+                        <div class="row mt-3">
+                            <div class="col-md-4">
+                                <div class="small text-muted" id="working-days"></div>
                             </div>
                         </div>
 
@@ -118,7 +217,7 @@
                                     <div class="col" id="cancellations-amount"></div>
                                 </div>
                             </div>
-                            
+
                             <div class="col-md-6">
                                 <h4>Conversión</h4>
                                 <div class="row">
@@ -130,15 +229,15 @@
 
                         <div class="mt-4">
                             <h4 class="d-inline">Dificultad de viajes (cotizaciones)</h4>
-                            <i class="fas fa-question-circle text-primary ms-1" 
-                               data-bs-toggle="tooltip" 
+                            <i class="fas fa-question-circle text-primary ms-1"
+                               data-bs-toggle="tooltip"
                                data-bs-html="true"
                                title="1 – Muy Fácil – 1 solo destino / cruceristas simples
 2 – Fácil – 2 destinos
 3 – Moderado – 3 destinos o 2 con dificultades
 4 – Complejo – 4 destinos o más
 5 – Muy Complejo" – Itinerarios con destinos no conocidos o muy largos></i>
-                            
+
                             <div class="row mt-3">
                                 <div class="col" id="average-difficulty"></div>
                                 <div class="col" id="difficulty-1"></div>
@@ -325,7 +424,7 @@
                         <div class="d-flex justify-content-between align-items-center mb-4">
                             <h3>📋 Resumen General de Rapidez de Respuesta</h3>
                             <div class="mb-3">
-                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-speed')">
+                                <button class="btn btn-primary me-2" onclick="exportSpeedPDF()">
                                     <i class="fas fa-file-pdf"></i> Exportar PDF
                                 </button>
                                 <button class="btn btn-primary" onclick="window.print()">
@@ -333,6 +432,67 @@
                                 </button>
                             </div>
                         </div>
+                        <!-- Speed KPI cards row 1: subtotals -->
+                        <div class="row g-3 mb-2 text-center">
+                            <div class="col-12 col-md-4">
+                                <div class="card h-100" style="border-color:#1565c0 !important;">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Cotizaciones FITs respondidas ≤1 día</div>
+                                        <div class="display-5 fw-bold" style="color:#1565c0;" id="kpi-speed-quotes-pct">—</div>
+                                        <div class="text-muted mt-1" id="kpi-speed-quotes-count">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="card border-success h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Reservas respondidas ≤3 días</div>
+                                        <div class="display-5 fw-bold text-success" id="kpi-speed-bookings-pct">—</div>
+                                        <div class="text-muted mt-1" id="kpi-speed-bookings-count">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="card border-warning h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Final Itineraries respondidos ≤4 días</div>
+                                        <div class="display-5 fw-bold text-warning" id="kpi-speed-finals-pct">—</div>
+                                        <div class="text-muted mt-1" id="kpi-speed-finals-count">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Speed KPI cards row 2: averages -->
+                        <div class="row g-3 mb-4 text-center">
+                            <div class="col-12 col-md-4">
+                                <div class="card h-100" style="border-color:#1565c0 !important;">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Cotizaciones FITs</div>
+                                        <div class="display-5 fw-bold" style="color:#1565c0;" id="kpi-speed-quotes-avg">—</div>
+                                        <div class="text-muted mt-1" style="font-size:0.85rem;">días</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="card border-success h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Reservas</div>
+                                        <div class="display-5 fw-bold text-success" id="kpi-speed-bookings-avg">—</div>
+                                        <div class="text-muted mt-1" style="font-size:0.85rem;">días</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="card border-warning h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Final Itineraries</div>
+                                        <div class="display-5 fw-bold text-warning" id="kpi-speed-finals-avg">—</div>
+                                        <div class="text-muted mt-1" style="font-size:0.85rem;">días</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <table class="table table-bordered table-striped" id="summary-speed-table">
                             <thead>
                                 <tr>
@@ -358,30 +518,40 @@
                             <canvas id="chartSpeedCanvas" height="100"></canvas>
                         </div>
                         <h3>Por vendedor</h3>
-                        <div class="d-flex justify-content-between align-items-center mb-4">
+                        <p class="text-muted small mb-2" id="speed-vendor-note">
+                            <i class="fas fa-circle-info me-1"></i>
+                            <strong>Cotizaciones</strong> incluye únicamente viajes de tipo <strong>FIT's y Grupos</strong>.
+                            Los vendedores sin entradas en la categoría seleccionada no se muestran.
+                        </p>
+                        <div class="d-flex justify-content-between align-items-center mb-4" id="speed-buttons-row" data-html2canvas-ignore="true">
                             <button class="btn btn-lg btn-primary w-100 m-3 disabled speed-type" id="speed-total">Total</button>
                             <button class="btn btn-lg btn-primary w-100 m-3 speed-type" id="speed-quotes"">Cotizaciones</button>
                             <button class="btn btn-lg btn-primary w-100 m-3 speed-type" id="speed-bookings"">Reservas</button>
                             <button class="btn btn-lg btn-primary w-100 m-3 speed-type" id="speed-finals"">Final Itineraries</button>
                         </div>
-                        <h3 class="mt-5" id="speed-title">📋 Rapidez de Rapidez de Respuesta - Por vendedor - TOTAL</h3>
-                        <table class="table table-striped" id="vendor-speed-table">
-                            <thead>
-                                <tr>
-                                    <th>Vendedor</th>
-                                    <th>Total</th>
-                                    <th>0</th>
-                                    <th>1</th>
-                                    <th>2</th>
-                                    <th>3</th>
-                                    <th>4</th>
-                                    <th>5</th>
-                                    <th>+5</th>
-                                    <th>Promedio</th>
-                                </tr>
-                            </thead>
-                            <tbody id="vendor-speed-total-tbody"></tbody>
-                        </table>
+                        <div id="vendor-speed-table-wrap">
+                            <h3 class="mt-5" id="speed-title">📋 Rapidez de Rapidez de Respuesta - Por vendedor - TOTAL</h3>
+                            <table class="table table-striped" id="vendor-speed-table">
+                                <thead>
+                                    <tr>
+                                        <th>Vendedor</th>
+                                        <th>Total</th>
+                                        <th>0</th>
+                                        <th>1</th>
+                                        <th>2</th>
+                                        <th>3</th>
+                                        <th>4</th>
+                                        <th>5</th>
+                                        <th>+5</th>
+                                        <th title="Sin contestar">SC</th>
+                                        <th>Promedio</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vendor-speed-total-tbody"></tbody>
+                            </table>
+                            <div id="vendor-speed-average-display" class="mb-3"></div>
+                        </div>
+                        <div id="speed-all-vendor-tables" style="display:none;"></div>
                     </div>
                 </div>
             </div>

@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder
 
 
 class Command(BaseCommand):
@@ -39,6 +39,7 @@ class Command(BaseCommand):
 
         today = date.today()
         is_wednesday = today.weekday() == 2
+        is_monday = today.weekday() == 0
         is_first_wednesday = is_wednesday and today.day <= 7
 
         # Quality inbox — every day
@@ -63,3 +64,14 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Mail de rentabilidad enviado a manager"))
         elif is_wednesday:
             self.stdout.write(f"Miércoles {today.day}, no es el primero del mes, se omite el mail al manager.")
+        if is_monday:  # Monday - warnings for Marisol
+            from intranet.utils import send_weekly_roster
+            send_weekly_roster()
+
+        # Holiday reminder — every day, fires only when a holiday starts in exactly 7 days
+        self.stdout.write("-" * 30)
+        self.stdout.write("Verificando recordatorio de feriado...")
+        try:
+            send_holiday_reminder()
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error al enviar recordatorio de feriado: {exc}"))

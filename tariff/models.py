@@ -34,6 +34,7 @@ NA_OPTIONS = [
     ("4", "4"),
     ("5", "5"),
     ("6", "6"),
+    ("SIB", "SIB"),
 ]
 
 ATTRACTIONS = [
@@ -82,20 +83,24 @@ SUSTENTABILITY_RANKING_OPTIONS = [
 ]
 
 HOTEL_QUALITY_OPTIONS = [
-    ("3***", "3***"),
-    ("3*** Superior", "3*** Superior"),
-    ("4****", "4****"),
+    ("5***** Luxury", "5***** Luxury"),
+    ("5***** Superior", "5***** Superior"),
+    ("5***** Standard", "5***** Standard"),
     ("4**** Superior", "4**** Superior"),
-    ("5*****", "5*****"),
-    ("5***** Lux", "5***** Lux"),
-    ("Estancia", "Estancia"),
-    ("Boutique 4****", "Boutique 4****"),
-    ("Boutique 5*****", "Boutique 5*****"),
+    ("4**** Standard", "4**** Standard"),
+    ("3*** Superior", "3*** Superior"),
+    ("3*** Standard", "3*** Standard"),
     ("Boutique Luxury", "Boutique Luxury"),
-    ("Glamping", "Glamping"),
-    ("Winery Standard", "Winery Standard"),
-    ("Winery Superior", "Winery Superior"),
+    ("Boutique Superior", "Boutique Superior"),
+    ("Boutique Standard", "Boutique Standard"),
     ("Winery Luxury", "Winery Luxury"),
+    ("Winery Superior", "Winery Superior"),
+    ("Winery Standard", "Winery Standard"),
+    ("Estancia Luxury", "Estancia Luxury"),
+    ("Estancia Superior", "Estancia Superior"),
+    ("Estancia Standard", "Estancia Standard"),
+    ("Glamping Superior", "Glamping Superior"),
+    ("Glamping Standard", "Glamping Standard"),
 ]
 
 STATUS = [

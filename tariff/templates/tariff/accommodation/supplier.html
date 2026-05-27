@@ -208,9 +208,14 @@
                     </select>
                 </div>
                 <div id="new_supplier_container">
-                    <div>
-                        {% if user.isAdmin %}<button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Agregar nuevo destino"><i class="fa-solid fa-plus"></i></button>{% endif %}
-                        <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="left" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+                    <div class="d-flex gap-2">
+                        {% if user.isAdmin %}
+                        <button type="button" id="new_supplier_btn" class="btn btn-dark btn-lg" title="Agregar nuevo proveedor"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" class="btn btn-outline-dark btn-lg" data-bs-toggle="offcanvas" data-bs-target="#reorderOffcanvas" title="Reordenar hoteles">
+                            <i class="fa-solid fa-arrow-up-wide-short"></i>
+                        </button>
+                        {% endif %}
+                        <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
                     </div>
                 </div>
             </div>
@@ -602,6 +607,305 @@ High – 0.82 - Tarifas especiales negociadas
                     }
                 });
         }, 400);
+    });
+})();
+</script>
+
+{# ═══════════════════ OFFCANVAS: Reordenar hoteles ═══════════════════ #}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="reorderOffcanvas" style="width:460px;">
+    <div class="offcanvas-header border-bottom py-2">
+        <h5 class="offcanvas-title fw-semibold mb-0">
+            <i class="fa-solid fa-arrow-up-wide-short me-2"></i>Reordenar hoteles
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+
+    <div class="px-3 pt-3 pb-2 border-bottom d-flex align-items-end gap-2">
+        <div class="flex-grow-1">
+            <label class="form-label small text-muted mb-1">Destino</label>
+            <select id="reorder-location-select" class="form-select form-select-sm">
+                <option value="">— Seleccionar destino —</option>
+            </select>
+        </div>
+        <button id="reorder-auto-btn" class="btn btn-sm btn-outline-primary" disabled
+                title="Ordena por categoría (3★ → 5★) y luego por tarifa de noviembre de mayor a menor">
+            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Auto-ordenar
+        </button>
+    </div>
+
+    <div id="reorder-list-wrap" class="flex-grow-1 overflow-auto p-3">
+        <p class="text-muted small text-center mt-4" id="reorder-placeholder">
+            Seleccioná un destino para ordenar sus hoteles.
+        </p>
+        <div id="reorder-groups-container"></div>
+    </div>
+
+    <div class="p-3 border-top d-flex gap-2 align-items-center">
+        <small id="reorder-status" class="text-muted"></small>
+        <button id="reorder-save-btn" class="btn btn-sm btn-dark ms-auto" disabled>
+            <i class="fa-solid fa-floppy-disk me-1"></i>Guardar orden
+        </button>
+    </div>
+</div>
+
+<style>
+.reorder-group-header {
+    background: #212529; color: #fff;
+    font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    padding: .35rem .75rem; border-radius: 4px; margin-bottom: 2px; margin-top: 10px;
+}
+.reorder-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; border: 1px solid #dee2e6; border-radius: 4px;
+    background: #fff; margin-bottom: 2px; font-size: .85rem;
+}
+.reorder-item:hover { background: #f8f9fa; }
+.reorder-grip { color: #adb5bd; cursor: grab; flex-shrink: 0; }
+.reorder-grip:active { cursor: grabbing; }
+.reorder-name { flex-grow: 1; }
+.reorder-price { font-size: .78rem; color: #198754; font-weight: 600; white-space: nowrap; }
+.reorder-price.no-rate { color: #adb5bd; }
+.quality-badge {
+    font-size: .68rem; padding: 2px 5px; border-radius: 3px; white-space: nowrap; flex-shrink: 0;
+}
+.sortable-ghost { opacity: .4; background: #cfe2ff !important; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+(function () {
+    // ── Static data from template ────────────────────────────────────────────
+    const CSRF = '{{ csrf_token }}';
+    const SUPPLIERS = [
+        {% for s in suppliers %}
+        { id: {{ s.id }}, name: "{{ s.name|escapejs }}", order: {{ s.order }},
+          locationId: {{ s.group.location.id }}, locationName: "{{ s.group.location.name|escapejs }}",
+          groupId: {{ s.group.id }}, groupName: "{{ s.group.name|escapejs }}",
+          quality: "{{ s.hotel_quality|default:''|escapejs }}" },
+        {% endfor %}
+    ];
+    // Group metadata (order matters for display)
+    const GROUPS = [
+        {% for g in supplier_groups %}
+        { id: {{ g.id }}, name: "{{ g.name|escapejs }}", locationId: {{ g.location.id }}, order: {{ g.order }} },
+        {% endfor %}
+    ];
+
+    // ── Quality badge colours ────────────────────────────────────────────────
+    const QUALITY_COLORS = {
+        '3***':            ['#6c757d','#fff'],
+        '3*** Superior':   ['#5c636a','#fff'],
+        '4****':           ['#0d6efd','#fff'],
+        '4**** Superior':  ['#0a58ca','#fff'],
+        '5*****':          ['#ffc107','#000'],
+        '5***** Lux':      ['#fd7e14','#fff'],
+        'Estancia':        ['#198754','#fff'],
+        'Boutique 4****':  ['#6610f2','#fff'],
+        'Boutique 5*****': ['#520dc2','#fff'],
+        'Boutique Luxury': ['#3d0a91','#fff'],
+        'Glamping':        ['#20c997','#000'],
+        'Winery Standard': ['#795548','#fff'],
+        'Winery Superior': ['#5d4037','#fff'],
+        'Winery Luxury':   ['#3e2723','#fff'],
+    };
+    function qualityBadge(q) {
+        if (!q) return '';
+        const [bg, fg] = QUALITY_COLORS[q] || ['#6c757d','#fff'];
+        return `<span class="quality-badge" style="background:${bg};color:${fg};">${q}</span>`;
+    }
+
+    // ── Prices (populated by auto-sort or kept empty) ─────────────────────────
+    let prices = {};
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let sortableInstances = [];
+    let dirty = false;
+    let currentLocationId = null;
+
+    // ── DOM refs ──────────────────────────────────────────────────────────────
+    const locSelect    = document.getElementById('reorder-location-select');
+    const groupsWrap   = document.getElementById('reorder-groups-container');
+    const placeholder  = document.getElementById('reorder-placeholder');
+    const saveBtn      = document.getElementById('reorder-save-btn');
+    const autoBtn      = document.getElementById('reorder-auto-btn');
+    const statusEl     = document.getElementById('reorder-status');
+
+    // ── Populate location select ──────────────────────────────────────────────
+    const seenLoc = new Set();
+    [...SUPPLIERS].sort((a,b) => a.locationName.localeCompare(b.locationName))
+        .forEach(s => {
+            if (!seenLoc.has(s.locationId)) {
+                seenLoc.add(s.locationId);
+                const o = document.createElement('option');
+                o.value = s.locationId; o.textContent = s.locationName;
+                locSelect.appendChild(o);
+            }
+        });
+
+    // Sync with main location filter
+    const mainFilter = document.getElementById('location_filter_select');
+    if (mainFilter && mainFilter.value && mainFilter.value !== 'all') {
+        locSelect.value = mainFilter.value;
+    }
+
+    // ── Render groups for a location ─────────────────────────────────────────
+    function renderGroups(locationId, overrideOrder) {
+        // overrideOrder: {groupId: [ids]} from auto-sort
+        sortableInstances.forEach(s => s.destroy());
+        sortableInstances = [];
+        groupsWrap.innerHTML = '';
+        placeholder.classList.add('d-none');
+
+        const locGroups = GROUPS
+            .filter(g => g.locationId == locationId)
+            .sort((a, b) => a.order - b.order);
+
+        locGroups.forEach(group => {
+            let items;
+            if (overrideOrder && overrideOrder[group.id]) {
+                items = overrideOrder[group.id].map(id => SUPPLIERS.find(s => s.id === id)).filter(Boolean);
+            } else {
+                items = SUPPLIERS
+                    .filter(s => s.groupId === group.id)
+                    .sort((a, b) => a.order - b.order);
+            }
+            if (!items.length) return;
+
+            const header = document.createElement('div');
+            header.className = 'reorder-group-header';
+            header.textContent = group.name;
+            groupsWrap.appendChild(header);
+
+            const ul = document.createElement('ul');
+            ul.className = 'list-unstyled mb-0 reorder-group-list';
+            ul.dataset.groupId = group.id;
+
+            items.forEach((s, i) => {
+                ul.appendChild(makeItem(s, i));
+            });
+            groupsWrap.appendChild(ul);
+
+            const inst = Sortable.create(ul, {
+                animation: 150,
+                handle: '.reorder-grip',
+                ghostClass: 'sortable-ghost',
+                group: 'same-location', // allows drag between groups in same location
+                onEnd() { dirty = true; statusEl.textContent = 'Cambios sin guardar'; },
+            });
+            sortableInstances.push(inst);
+        });
+
+        saveBtn.disabled = false;
+        autoBtn.disabled = false;
+        dirty = false;
+        statusEl.textContent = '';
+    }
+
+    function makeItem(s, i) {
+        const li = document.createElement('li');
+        li.className = 'reorder-item';
+        li.dataset.id = s.id;
+        const p = prices[s.id];
+        const priceHtml = p != null
+            ? `<span class="reorder-price">$${p.toLocaleString('es-AR', {maximumFractionDigits:0})}</span>`
+            : `<span class="reorder-price no-rate">sin tarifa nov.</span>`;
+        li.innerHTML = `
+            <i class="fa-solid fa-grip-vertical reorder-grip"></i>
+            <span class="reorder-name">${s.name}</span>
+            ${qualityBadge(s.quality)}
+            ${priceHtml}`;
+        return li;
+    }
+
+    locSelect.addEventListener('change', function () {
+        if (!this.value) return;
+        currentLocationId = this.value;
+        prices = {};
+        renderGroups(this.value, null);
+    });
+    if (locSelect.value) { currentLocationId = locSelect.value; renderGroups(locSelect.value, null); }
+
+    // ── Auto-sort ─────────────────────────────────────────────────────────────
+    autoBtn.addEventListener('click', function () {
+        if (!currentLocationId) return;
+        autoBtn.disabled = true;
+        autoBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+        fetch("{% url 'auto_sort_suppliers' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify({ location_id: parseInt(currentLocationId) }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            autoBtn.disabled = false;
+            autoBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles me-1"></i>Auto-ordenar';
+            if (!data.ok) { alert(data.error || 'Error'); return; }
+            // prices: {"sid": price}
+            prices = {};
+            for (const [k, v] of Object.entries(data.prices || {})) prices[parseInt(k)] = v;
+            // overrideOrder: {"gid": [ids]}
+            const override = {};
+            for (const [k, v] of Object.entries(data.groups || {})) override[parseInt(k)] = v;
+            renderGroups(currentLocationId, override);
+            dirty = true;
+            statusEl.textContent = 'Orden automático aplicado — revisá y guardá';
+        })
+        .catch(() => {
+            autoBtn.disabled = false;
+            autoBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles me-1"></i>Auto-ordenar';
+            alert('Error al obtener el orden automático');
+        });
+    });
+
+    // ── Save ──────────────────────────────────────────────────────────────────
+    saveBtn.addEventListener('click', function () {
+        const groups = {};
+        groupsWrap.querySelectorAll('.reorder-group-list').forEach(ul => {
+            const gid = ul.dataset.groupId;
+            groups[gid] = Array.from(ul.querySelectorAll('li')).map(li => parseInt(li.dataset.id));
+        });
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando…';
+        fetch("{% url 'reorder_suppliers' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify({ groups }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                // Update in-memory order values and main table
+                for (const [gid, ids] of Object.entries(groups)) {
+                    ids.forEach((id, i) => {
+                        const s = SUPPLIERS.find(x => x.id === id);
+                        if (s) s.order = (i + 1) * 10;
+                        const cell = document.getElementById(`supplier-order${id}`);
+                        if (cell) cell.textContent = (i + 1) * 10;
+                    });
+                }
+                dirty = false;
+                statusEl.textContent = '';
+                saveBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Guardado';
+                setTimeout(() => {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar orden';
+                }, 1800);
+            } else {
+                alert(data.error || 'Error al guardar');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar orden';
+            }
+        })
+        .catch(() => {
+            alert('Error al guardar');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar orden';
+        });
+    });
+
+    // ── Warn on close with unsaved changes ────────────────────────────────────
+    document.getElementById('reorderOffcanvas').addEventListener('hide.bs.offcanvas', function (e) {
+        if (dirty && !confirm('¿Cerrar sin guardar los cambios de orden?')) e.preventDefault();
     });
 })();
 </script>

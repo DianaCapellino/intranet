@@ -5,16 +5,38 @@
 <div class="container-fluid py-3">
 
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h5 class="mb-0">Roster y Vacaciones</h5>
+  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h5 class="mb-0">Calendario</h5>
     <div class="d-flex gap-2 align-items-center">
       <input type="number" id="yearSelector" class="form-control form-control-sm"
              style="width:80px" value="{{ current_year }}" min="2000" max="2050">
       <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">Actualizar</button>
-      <button class="btn btn-sm btn-outline-secondary" id="btnUsers" data-bs-toggle="modal" data-bs-target="#modalUsers">Usuarios</button>
-      <button class="btn btn-sm btn-primary" id="btnGestion">Gestionar Feriados y Cumpleaños</button>
+      <div id="headerButtonsInterno" class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="btnUsers" data-bs-toggle="modal" data-bs-target="#modalUsers">Usuarios</button>
+        <button class="btn btn-sm btn-primary" id="btnGestion">Gestionar Feriados y Cumpleaños</button>
+      </div>
+      <div id="headerButtonsExterno" class="d-flex gap-2" style="display:none">
+        <button class="btn btn-sm btn-outline-secondary" id="btnExportExtPDF">Export PDF</button>
+        <button class="btn btn-sm btn-primary" id="btnGestionExterno">Gestionar Externo</button>
+      </div>
     </div>
   </div>
+
+  <!-- Main calendar tabs -->
+  <ul class="nav nav-tabs mb-3" id="mainCalTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-interno-btn" data-bs-toggle="tab"
+              data-bs-target="#tabInterno" type="button" role="tab">Interno</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-externo-btn" data-bs-toggle="tab"
+              data-bs-target="#tabExterno" type="button" role="tab">Externo</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+  <div class="tab-pane fade show active" id="tabInterno" role="tabpanel">
 
   <!-- Color legend -->
   <div class="card mb-3">
@@ -33,6 +55,24 @@
 
   <!-- Grid -->
   <div id="calendarGrid"></div>
+
+  </div><!-- /tabInterno -->
+
+  <div class="tab-pane fade" id="tabExterno" role="tabpanel">
+
+  <!-- Ext color legend -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex flex-wrap gap-3" id="extLegendContainer"></div>
+    </div>
+  </div>
+
+  <!-- Ext grid -->
+  <div id="extCalendarGrid"></div>
+
+  </div><!-- /tabExterno -->
+
+  </div><!-- /tab-content -->
 
 </div>
 
@@ -235,7 +275,122 @@
   </div>
 </div>
 
+<!-- ── Modal: Add/Edit external entry ────────────────────────────────────── -->
+<div class="modal fade" id="modalExtEntry" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="extEntryLabel">Agregar entrada</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small mb-1">Nombre</label>
+          <input type="text" class="form-control form-control-sm" id="extEntryName" placeholder="Ej: Año Nuevo">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Categoría</label>
+          <select class="form-select form-select-sm" id="extEntryCategory">
+            {% for val, label in ext_categories %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Destino (vacío = todos)</label>
+          <select class="form-select form-select-sm" id="extEntryLocId">
+            <option value="">Todos los destinos</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col">
+            <label class="form-label small mb-1">Desde</label>
+            <input type="date" class="form-control form-control-sm" id="extEntryDateFrom">
+          </div>
+          <div class="col">
+            <label class="form-label small mb-1">Hasta</label>
+            <input type="date" class="form-control form-control-sm" id="extEntryDateTo">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Notas (aparecen al hacer hover)</label>
+          <textarea class="form-control form-control-sm" id="extEntryNotes" rows="2"
+                    placeholder="Ej: It is not recommended to offer Iguazu during this weekend"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-danger me-auto" id="btnDeleteExtEntry" style="display:none">Eliminar</button>
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-primary" id="btnSaveExtEntry">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Gestionar calendario externo ────────────────────────────────── -->
+<div class="modal fade" id="modalExtManage" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Calendario Externo — <span id="extManageYear"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="p-3 border-bottom d-flex gap-2 align-items-center flex-wrap">
+          <button class="btn btn-sm btn-outline-primary" id="btnNewExtEntry">+ Agregar entrada</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btnImportFullMoons">
+            🌕 Lunas llenas <span id="importFullMoonsYear"></span>
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" id="btnImportLongWeekends">
+            📅 Long Weekends <span id="importLongWeekendsYear"></span>
+          </button>
+          <span id="importExtMsg" class="small" style="display:none"></span>
+        </div>
+        <div class="p-3" id="extManageList"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Hidden PDF container ───────────────────────────────────────────────── -->
+<div id="ext-pdf-wrap" style="display:none; position:fixed; left:-9999px; top:0; background:#fff; width:794px; padding:20px; box-sizing:border-box; font-family:Arial,sans-serif; font-size:11px;">
+  <div id="ext-pdf-page-1" class="ext-pdf-page"></div>
+  <div id="ext-pdf-page-2" class="ext-pdf-page" style="margin-top:20px"></div>
+</div>
+
 <style>
+/* ── PDF calendar styles ───────────────────────────────────────────────────── */
+.ext-pdf-page        { display:block; }
+.ext-pdf-hdr         { display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:12px; border-bottom:2px solid #343a40; padding-bottom:10px; }
+.ext-pdf-logo        { height:70px; width:auto; }
+.ext-pdf-title       { font-size:17px; font-weight:900; color:#343a40; letter-spacing:0.8px; text-transform:uppercase; text-align:center; }
+.ext-pdf-months-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.ext-pdf-month       { border:1px solid #ccc; overflow:hidden; }
+.ext-pdf-mhdr        { background:#343a40; color:#fff; text-align:center; font-weight:700;
+                       font-size:12px; padding:5px 0; }
+.ext-pdf-cal         { width:100%; border-collapse:collapse; }
+.ext-pdf-cal th      { background:#e9ecef; text-align:center; font-size:9px; padding:2px 0;
+                       border:1px solid #dee2e6; font-weight:600; }
+.ext-pdf-cal td      { text-align:center; border:1px solid #dee2e6; height:34px;
+                       vertical-align:top; padding:2px 1px; width:14.28%; }
+.ext-pdf-daynum      { display:block; font-size:10px; line-height:1.3; }
+.ext-pdf-dots        { display:flex; flex-wrap:wrap; justify-content:center; gap:2px; padding:1px 0; }
+.ext-pdf-dot         { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.ext-pdf-we          { background:#f5f5f5; }
+.ext-pdf-legend      { padding:5px 6px; border-top:1px solid #dee2e6; font-size:9px; min-height:10px; }
+.ext-pdf-leg-item    { display:flex; align-items:flex-start; gap:5px; margin-bottom:3px; line-height:1.3; }
+.ext-pdf-leg-dot     { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:2px; }
+.ext-pdf-leg-name    { font-weight:700; }
+.ext-pdf-leg-dates   { color:#555; }
+.ext-pdf-leg-notes   { font-style:italic; color:#c84b00; }
+
+/* ── Calendar grid styles ─────────────────────────────────────────────────── */
 .cal-wrap      { overflow-x: auto; }
 .cal-month     { margin-bottom: 6px; }
 .cal-table     { border-collapse: collapse; white-space: nowrap; font-size: 0.7rem; }
@@ -247,9 +402,11 @@
 .cal-hdr-num   { background: #495057 !important; color: #e9ecef; font-size: 0.65rem; }
 .cal-hdr-day   { background: #495057 !important; color: #adb5bd; font-size: 0.6rem; }
 .cal-we        { background: #e9ecef !important; color: #adb5bd; cursor: default; }
-.cal-day-cell  { cursor: pointer; }
-.cal-day-cell:hover { filter: brightness(85%); }
+.cal-day-cell  { cursor: pointer; background: #fff; }
+.cal-day-cell:hover { filter: brightness(80%) !important; }
 .cal-group-sep td  { border-top: 2px solid #6c757d !important; }
+.cal-person-row:hover td.cal-name { background: #dbe9ff !important; }
+.cal-person-row:hover td.cal-day-cell { filter: brightness(90%); }
 </style>
 {% endif %}
 {% endblock %}
@@ -259,7 +416,7 @@
 <script>
 // ── Staff users injected from server ─────────────────────────────────────────
 const STAFF_USERS = [
-  {% for u in staff_users %}{id:{{u.id}},name:"{{u.username}}",otherName:"{{u.other_name}}",userType:"{{u.userType}}"},
+  {% for u in staff_users %}{id:{{u.id}},name:"{{u.username}}",otherName:"{{u.other_name}}",userType:"{{u.userType}}",showInCalendar:{{u.show_in_calendar|yesno:"true,false"}}},
   {% endfor %}
 ];
 
@@ -422,6 +579,7 @@ function renderGrid(events, yr) {
     let prevType = null;
     for (const person of getVisibleStaff()) {
       const tr = tbl.insertRow();
+      tr.className = 'cal-person-row';
       if (prevType !== null && person.userType !== prevType) {
         tr.classList.add('cal-group-sep');
       }
@@ -698,21 +856,18 @@ function getCookie(name) {
   return m ? m[2] : null;
 }
 
-// ── Visible users (persisted in localStorage) ────────────────────────────────
-const LS_KEY = 'holidays_visible_users';
-let visibleUserIds = loadVisibleUsers();
+// ── Visible users (server-side, shared across all users) ─────────────────────
+let visibleUserIds = new Set(
+  STAFF_USERS.filter(u => u.showInCalendar).map(u => String(u.id))
+);
 
-function loadVisibleUsers() {
-  try {
-    const stored = localStorage.getItem(LS_KEY);
-    if (stored) return new Set(JSON.parse(stored));
-  } catch {}
-  // default: all visible
-  return new Set(STAFF_USERS.map(u => String(u.id)));
-}
-
-function saveVisibleUsers() {
-  localStorage.setItem(LS_KEY, JSON.stringify([...visibleUserIds]));
+async function saveVisibleUsers() {
+  const ids = [...visibleUserIds].map(Number);
+  await fetch('/holidays/calendar-visibility', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+    body: JSON.stringify({ visible_ids: ids }),
+  });
 }
 
 function getVisibleStaff() {
@@ -733,12 +888,12 @@ document.getElementById('btnCheckNone').addEventListener('click', () => {
   document.querySelectorAll('.user-vis-check').forEach(cb => { cb.checked = false; });
 });
 
-document.getElementById('btnApplyUsers').addEventListener('click', () => {
+document.getElementById('btnApplyUsers').addEventListener('click', async () => {
   visibleUserIds = new Set();
   document.querySelectorAll('.user-vis-check:checked').forEach(cb => {
     visibleUserIds.add(cb.value);
   });
-  saveVisibleUsers();
+  await saveVisibleUsers();
   bootstrap.Modal.getInstance(document.getElementById('modalUsers')).hide();
   loadAndRender();
 });
@@ -1363,6 +1518,520 @@ document.getElementById('btnCopyCumpleanos').addEventListener('click', async () 
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadAndRender();
+</script>
+
+<!-- ── External calendar JS ─────────────────────────────────────────────── -->
+<script>
+const LOCATIONS = [
+  {% for loc in locations %}{id:{{loc.id}},name:"{{loc.name|escapejs}}"},
+  {% endfor %}
+];
+const EXT_CAT_COLORS = {
+  'holiday':         '#87CEEB',
+  'long_weekend':    '#FFD700',
+  'other':           '#C8E6C9',
+  'full_moon':       '#E1D5F7',
+  'not_recommended': '#FFAB91',
+};
+const EXT_CAT_LABELS = {
+  'holiday':         'Holiday',
+  'long_weekend':    'Long Weekend',
+  'other':           'Other special dates',
+  'full_moon':       'Full Moon',
+  'not_recommended': 'Not recommended',
+};
+
+// ── Ext legend ────────────────────────────────────────────────────────────────
+(function () {
+  const c = document.getElementById('extLegendContainer');
+  for (const [key, label] of Object.entries(EXT_CAT_LABELS)) {
+    const item = document.createElement('div');
+    item.className = 'd-flex align-items-center gap-1';
+    item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    c.appendChild(item);
+  }
+})();
+
+let extEventsCache = [];
+
+async function loadExtAndRender() {
+  document.getElementById('extCalendarGrid').innerHTML =
+    '<div class="text-muted py-4 text-center">Cargando…</div>';
+  const resp = await fetch(`/external-calendar/json?start=${year}-01-01&end=${year + 1}-01-01`);
+  extEventsCache = await resp.json();
+  renderExtGrid(extEventsCache, year);
+}
+
+function buildExtMaps(events) {
+  const perLocation = {};
+  const allLocs     = {};
+  for (const ev of events) {
+    const p = ev.extendedProps || {};
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      const ds   = fmtDate(d);
+      const info = {
+        color:       ev.backgroundColor,
+        name:        ev.title,
+        notes:       p.notes || '',
+        category:    p.category,
+        entry_id:    p.entry_id,
+        location_id: p.location_id,
+        source:      p.source || 'external',
+      };
+      if (p.location_id == null) {
+        if (!allLocs[ds]) allLocs[ds] = info;
+      } else {
+        if (!perLocation[p.location_id]) perLocation[p.location_id] = {};
+        if (!perLocation[p.location_id][ds]) perLocation[p.location_id][ds] = info;
+      }
+    }
+  }
+  return { perLocation, allLocs };
+}
+
+function renderExtGrid(events, yr) {
+  const { perLocation, allLocs } = buildExtMaps(events);
+  const container = document.getElementById('extCalendarGrid');
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'cal-wrap';
+  for (let mo = 0; mo < 12; mo++) {
+    const days    = new Date(yr, mo + 1, 0).getDate();
+    const shortYr = String(yr).slice(2);
+    const monthDiv = document.createElement('div');
+    monthDiv.className = 'cal-month';
+    const tbl = document.createElement('table');
+    tbl.className = 'cal-table';
+    // Header row: month + day numbers
+    const rNum = tbl.insertRow();
+    const tdM  = rNum.insertCell();
+    tdM.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
+    tdM.className   = 'cal-name cal-hdr-month';
+    for (let d = 1; d <= days; d++) {
+      const isWE = isWeekend(yr, mo, d);
+      const td   = rNum.insertCell();
+      td.textContent = d;
+      td.className   = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
+    }
+    // Day-name row
+    const rDay = tbl.insertRow();
+    rDay.insertCell().className = 'cal-name cal-hdr-day';
+    for (let d = 1; d <= days; d++) {
+      const dow  = new Date(yr, mo, d).getDay();
+      const isWE = dow === 0 || dow === 6;
+      const td   = rDay.insertCell();
+      td.textContent = DAYS_SHORT[dow];
+      td.className   = 'cal-hdr-day' + (isWE ? ' cal-we' : '');
+    }
+    // Location rows
+    for (const loc of LOCATIONS) {
+      const tr = tbl.insertRow();
+      tr.className = 'cal-person-row';
+      const tdName = tr.insertCell();
+      tdName.textContent     = loc.name;
+      tdName.className       = 'cal-name';
+      tdName.style.background = '#fff';
+      for (let d = 1; d <= days; d++) {
+        const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
+        const isWE = isWeekend(yr, mo, d);
+        const td   = tr.insertCell();
+        const locEv = perLocation[loc.id]?.[ds];
+        const allEv = allLocs[ds];
+        const ev    = locEv || allEv;
+        if (ev) {
+          td.className        = 'cal-day-cell';
+          td.style.background = ev.color;
+          td.style.color      = isLight(ev.color) ? '#333' : '#fff';
+          td.title            = ev.name + (ev.notes ? '\n' + ev.notes : '') + (ev.source === 'internal' ? ' ★' : '');
+          if (ev.source !== 'internal' && ev.entry_id) {
+            td.style.cursor     = 'pointer';
+            td.dataset.entryid  = ev.entry_id;
+            td.dataset.date     = ds;
+            td.dataset.evname   = ev.name;
+            td.dataset.evcat    = ev.category;
+            td.dataset.evlocid  = ev.location_id != null ? ev.location_id : '';
+            td.addEventListener('click', handleExtCellClickEdit);
+          }
+        } else if (isWE) {
+          td.className = 'cal-we';
+        } else {
+          td.className    = 'cal-day-cell';
+          td.style.cursor = 'pointer';
+          td.dataset.date   = ds;
+          td.dataset.locid  = loc.id;
+          td.addEventListener('click', handleExtCellClickAdd);
+        }
+      }
+    }
+    monthDiv.appendChild(tbl);
+    wrap.appendChild(monthDiv);
+  }
+  container.appendChild(wrap);
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.getElementById('tab-externo-btn').addEventListener('shown.bs.tab', () => {
+  document.getElementById('headerButtonsInterno').style.display = 'none';
+  document.getElementById('headerButtonsExterno').style.display = '';
+  if (extEventsCache.length === 0) loadExtAndRender();
+});
+document.getElementById('tab-interno-btn').addEventListener('shown.bs.tab', () => {
+  document.getElementById('headerButtonsInterno').style.display = '';
+  document.getElementById('headerButtonsExterno').style.display = 'none';
+});
+
+// Also reload ext grid when year changes (if active)
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  extEventsCache = [];
+  if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
+});
+document.getElementById('yearSelector').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    extEventsCache = [];
+    if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
+  }
+});
+
+// ── Ext entry modal ───────────────────────────────────────────────────────────
+const bsModalExtEntry  = new bootstrap.Modal(document.getElementById('modalExtEntry'));
+const bsModalExtManage = new bootstrap.Modal(document.getElementById('modalExtManage'));
+let extEditingId = null;
+
+function openExtEntryModal(mode, data = {}) {
+  extEditingId = mode === 'edit' ? data.entry_id : null;
+  document.getElementById('extEntryLabel').textContent  = mode === 'edit' ? 'Editar entrada' : 'Agregar entrada';
+  document.getElementById('extEntryName').value         = data.name || '';
+  document.getElementById('extEntryNotes').value        = data.notes || '';
+  document.getElementById('extEntryCategory').value     = data.category || 'holiday';
+  document.getElementById('extEntryLocId').value        = data.location_id != null ? data.location_id : '';
+  document.getElementById('extEntryDateFrom').value     = data.date_from || '';
+  document.getElementById('extEntryDateTo').value       = data.date_to || data.date_from || '';
+  document.getElementById('btnDeleteExtEntry').style.display = mode === 'edit' ? '' : 'none';
+  bsModalExtEntry.show();
+}
+
+function handleExtCellClickAdd(e) {
+  const td = e.currentTarget;
+  openExtEntryModal('add', { date_from: td.dataset.date, date_to: td.dataset.date,
+                             location_id: td.dataset.locid ? parseInt(td.dataset.locid) : null });
+}
+
+function handleExtCellClickEdit(e) {
+  const td  = e.currentTarget;
+  const eid = parseInt(td.dataset.entryid);
+  const ev  = extEventsCache.find(ev => (ev.extendedProps || {}).entry_id === eid);
+  const endExcl = ev?.end ? new Date(ev.end + 'T00:00:00') : null;
+  if (endExcl) endExcl.setDate(endExcl.getDate() - 1);
+  const evP = ev?.extendedProps || {};
+  openExtEntryModal('edit', {
+    entry_id:    eid,
+    name:        evP.name || td.dataset.evname,
+    notes:       evP.notes || '',
+    category:    td.dataset.evcat,
+    location_id: td.dataset.evlocid ? parseInt(td.dataset.evlocid) : null,
+    date_from:   ev?.start || td.dataset.date,
+    date_to:     endExcl ? fmtDate(endExcl) : (ev?.start || td.dataset.date),
+  });
+}
+
+document.getElementById('btnSaveExtEntry').addEventListener('click', async () => {
+  const name      = document.getElementById('extEntryName').value.trim();
+  const notes     = document.getElementById('extEntryNotes').value.trim();
+  const category  = document.getElementById('extEntryCategory').value;
+  const locVal    = document.getElementById('extEntryLocId').value;
+  const dateFrom  = document.getElementById('extEntryDateFrom').value;
+  const dateTo    = document.getElementById('extEntryDateTo').value || dateFrom;
+  if (!dateFrom) { alert('Ingresá la fecha de inicio'); return; }
+  const payload   = { name, notes, category, location_id: locVal ? parseInt(locVal) : null, date_from: dateFrom, date_to: dateTo };
+  const url       = extEditingId
+    ? `/external-calendar/entry/${extEditingId}/edit`
+    : '/external-calendar/entry/create';
+  const resp = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+    body:    JSON.stringify(payload),
+  });
+  if (resp.ok) {
+    bsModalExtEntry.hide();
+    extEventsCache = [];
+    loadExtAndRender();
+    if (document.getElementById('modalExtManage').classList.contains('show')) buildExtManageList();
+  } else { alert('Error al guardar'); }
+});
+
+document.getElementById('btnDeleteExtEntry').addEventListener('click', async () => {
+  if (!extEditingId || !confirm('¿Eliminar esta entrada?')) return;
+  const r = await fetch(`/external-calendar/entry/${extEditingId}/delete`, {
+    method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
+  });
+  if (r.ok) {
+    bsModalExtEntry.hide();
+    extEventsCache = [];
+    loadExtAndRender();
+    if (document.getElementById('modalExtManage').classList.contains('show')) buildExtManageList();
+  } else { alert('Error al eliminar'); }
+});
+
+// ── Gestionar ext modal ───────────────────────────────────────────────────────
+document.getElementById('btnGestionExterno').addEventListener('click', () => {
+  document.getElementById('extManageYear').textContent      = year;
+  document.getElementById('importFullMoonsYear').textContent    = year;
+  document.getElementById('importLongWeekendsYear').textContent = year;
+  document.getElementById('importExtMsg').style.display = 'none';
+  buildExtManageList();
+  bsModalExtManage.show();
+});
+
+async function runExtImport(url, btnId) {
+  const btn = document.getElementById(btnId);
+  const msg = document.getElementById('importExtMsg');
+  btn.disabled = true;
+  msg.style.display = 'none';
+  try {
+    const resp = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+      body:    JSON.stringify({ year }),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      msg.textContent   = data.created > 0
+        ? `✓ ${data.created} entrada(s) importada(s) para ${data.year}`
+        : `No hay entradas nuevas para ${data.year}`;
+      msg.className     = data.created > 0 ? 'small text-success' : 'small text-muted';
+      msg.style.display = '';
+      extEventsCache    = [];
+      loadExtAndRender();
+      buildExtManageList();
+    } else {
+      alert('Error al importar');
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnImportFullMoons').addEventListener('click', () =>
+  runExtImport('/external-calendar/full-moons/import', 'btnImportFullMoons'));
+
+document.getElementById('btnImportLongWeekends').addEventListener('click', () =>
+  runExtImport('/external-calendar/long-weekends/import', 'btnImportLongWeekends'));
+
+document.getElementById('btnNewExtEntry').addEventListener('click', () => {
+  openExtEntryModal('add', {});
+});
+
+function buildExtManageList() {
+  const entries = extEventsCache.filter(ev => {
+    const p = ev.extendedProps || {};
+    return p.source !== 'internal';
+  }).sort((a, b) => a.start.localeCompare(b.start));
+
+  const listEl = document.getElementById('extManageList');
+  if (entries.length === 0) {
+    listEl.innerHTML = '<p class="text-muted small">No hay entradas externas cargadas.</p>';
+    return;
+  }
+
+  listEl.innerHTML = entries.map(ev => {
+    const p   = ev.extendedProps || {};
+    const loc = p.location_id != null ? LOCATIONS.find(l => l.id === p.location_id) : null;
+    const endExcl = ev.end ? new Date(ev.end + 'T00:00:00') : null;
+    if (endExcl) endExcl.setDate(endExcl.getDate() - 1);
+    const dateLabel = (endExcl && ev.start !== fmtDate(endExcl))
+      ? `${ev.start} – ${fmtDate(endExcl)}` : ev.start;
+    const catLabel = EXT_CAT_LABELS[p.category] || p.category;
+    return `<div class="d-flex align-items-center gap-2 py-1 border-bottom flex-wrap small">
+      <span style="width:10px;height:10px;border-radius:2px;background:${ev.backgroundColor};display:inline-block;flex-shrink:0"></span>
+      <span class="fw-semibold" style="min-width:110px">${ev.title}</span>
+      <span class="badge text-bg-secondary">${catLabel}</span>
+      <span class="text-muted">${loc ? loc.name : 'Todos'}</span>
+      <span class="text-muted">${dateLabel}</span>
+      <div class="ms-auto d-flex gap-1">
+        <button class="btn btn-sm btn-outline-secondary py-0 px-1" data-edit-ext="${p.entry_id}">✏</button>
+        <button class="btn btn-sm btn-outline-danger py-0 px-1" data-del-ext="${p.entry_id}">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('[data-edit-ext]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const eid = parseInt(btn.dataset.editExt);
+      const ev  = extEventsCache.find(ev => (ev.extendedProps || {}).entry_id === eid);
+      if (!ev) return;
+      const p = ev.extendedProps || {};
+      const endExcl = ev.end ? new Date(ev.end + 'T00:00:00') : null;
+      if (endExcl) endExcl.setDate(endExcl.getDate() - 1);
+      openExtEntryModal('edit', {
+        entry_id:    eid,
+        name:        p.name || ev.title,
+        notes:       p.notes || '',
+        category:    p.category,
+        location_id: p.location_id,
+        date_from:   ev.start,
+        date_to:     endExcl ? fmtDate(endExcl) : ev.start,
+      });
+    });
+  });
+
+  listEl.querySelectorAll('[data-del-ext]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar esta entrada?')) return;
+      const r = await fetch(`/external-calendar/entry/${btn.dataset.delExt}/delete`, {
+        method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      });
+      if (r.ok) { extEventsCache = []; loadExtAndRender(); buildExtManageList(); }
+      else alert('Error al eliminar');
+    });
+  });
+}
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+const PDF_MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+const PDF_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function buildPDFMonth(yr, mo, events) {
+  const days     = new Date(yr, mo + 1, 0).getDate();
+  const firstDow = new Date(yr, mo, 1).getDay();
+
+  // Per-day event list for this month (dedup by entry_id or title)
+  const dayEvMap = {};
+  for (const ev of events) {
+    const p = ev.extendedProps || {};
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      if (d.getFullYear() !== yr || d.getMonth() !== mo) continue;
+      const day = d.getDate();
+      if (!dayEvMap[day]) dayEvMap[day] = [];
+      const key = p.entry_id != null ? `id_${p.entry_id}` : ev.id;
+      if (!dayEvMap[day].find(x => {
+        const xp = x.extendedProps || {};
+        return (xp.entry_id != null ? `id_${xp.entry_id}` : x.id) === key;
+      })) {
+        dayEvMap[day].push(ev);
+      }
+    }
+  }
+
+  // Grid
+  let gridHTML = `<table class="ext-pdf-cal"><thead><tr>`;
+  for (const d of PDF_DAYS) gridHTML += `<th>${d}</th>`;
+  gridHTML += `</tr></thead><tbody>`;
+  for (let week = 0; week < 6; week++) {
+    const rowStart = week * 7 - firstDow + 1;
+    if (rowStart > days) break;
+    gridHTML += '<tr>';
+    for (let dow = 0; dow < 7; dow++) {
+      const dayNum = week * 7 + dow - firstDow + 1;
+      if (dayNum < 1 || dayNum > days) {
+        gridHTML += '<td class="ext-pdf-we"></td>';
+      } else {
+        const isWE = dow === 0 || dow === 6;
+        const evs  = dayEvMap[dayNum] || [];
+        const dots = evs.map(ev =>
+          `<span class="ext-pdf-dot" style="background:${ev.backgroundColor}"></span>`
+        ).join('');
+        gridHTML += `<td class="${isWE ? 'ext-pdf-we' : ''}">
+          <span class="ext-pdf-daynum">${dayNum}</span>
+          ${dots ? `<div class="ext-pdf-dots">${dots}</div>` : ''}
+        </td>`;
+      }
+    }
+    gridHTML += '</tr>';
+  }
+  gridHTML += '</tbody></table>';
+
+  // Legend: unique events in start-date order
+  const seenKeys = new Set();
+  const legendEvs = [];
+  for (let d = 1; d <= days; d++) {
+    for (const ev of (dayEvMap[d] || [])) {
+      const p   = ev.extendedProps || {};
+      const key = p.entry_id != null ? `id_${p.entry_id}` : ev.id;
+      if (!seenKeys.has(key)) { seenKeys.add(key); legendEvs.push(ev); }
+    }
+  }
+
+  let legendHTML = '<div class="ext-pdf-legend">';
+  for (const ev of legendEvs) {
+    const p      = ev.extendedProps || {};
+    const s      = new Date(ev.start + 'T00:00:00');
+    const eExcl  = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    const eIncl  = new Date(eExcl.getTime() - 86400000);
+    const clipS  = s.getMonth() < mo ? 1 : s.getDate();
+    const clipE  = eIncl.getMonth() > mo ? days : eIncl.getDate();
+    const dateStr = clipS === clipE ? `${clipS}` : `${clipS}–${clipE}`;
+    const name   = p.name || ev.title;
+    const notes  = p.notes || '';
+    const isLocSpecific = p.location_id != null &&
+                          (p.category === 'not_recommended' || p.category === 'other');
+    const locName = isLocSpecific
+      ? (LOCATIONS.find(l => l.id === p.location_id)?.name || '')
+      : '';
+    const fullName = locName ? `${locName} - ${name}` : name;
+    const bodyHTML = isLocSpecific
+      ? `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? `<span class="ext-pdf-leg-sep"> - </span><span class="ext-pdf-leg-notes">${notes}</span>` : ''}`
+      : `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? `<br><span class="ext-pdf-leg-notes">${notes}</span>` : ''}`;
+    legendHTML += `<div class="ext-pdf-leg-item">
+      <span class="ext-pdf-leg-dot" style="background:${ev.backgroundColor}"></span>
+      <div>${bodyHTML}</div>
+    </div>`;
+  }
+  legendHTML += '</div>';
+
+  return `<div class="ext-pdf-month">
+    <div class="ext-pdf-mhdr">${PDF_MONTHS[mo]} ${yr}</div>
+    ${gridHTML}${legendHTML}
+  </div>`;
+}
+
+async function exportExtCalendarPDF() {
+  if (extEventsCache.length === 0) { await loadExtAndRender(); }
+  const btn = document.getElementById('btnExportExtPDF');
+  btn.disabled    = true;
+  btn.textContent = 'Generando…';
+  try {
+    const wrap = document.getElementById('ext-pdf-wrap');
+    wrap.style.display = 'block';
+    const pdfHeaderHTML = `<div class="ext-pdf-hdr">
+      <img src="/static/intranet/images/logo2.png" class="ext-pdf-logo" alt="Aliwen">
+      <div class="ext-pdf-title">ARGENTINA &ndash; SPECIAL DATES TO HAVE IN MIND</div>
+    </div>`;
+    for (let half = 0; half < 2; half++) {
+      const pageEl = document.getElementById(`ext-pdf-page-${half + 1}`);
+      let monthsHTML = '';
+      for (let i = 0; i < 6; i++) {
+        monthsHTML += buildPDFMonth(year, half * 6 + i, extEventsCache);
+      }
+      pageEl.innerHTML = pdfHeaderHTML + `<div class="ext-pdf-months-grid">${monthsHTML}</div>`;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    for (let half = 0; half < 2; half++) {
+      const pageEl  = document.getElementById(`ext-pdf-page-${half + 1}`);
+      const canvas  = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: '#fff' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const ratio   = Math.min(pageW / canvas.width, pageH / canvas.height) * 0.97;
+      const iw = canvas.width  * ratio;
+      const ih = canvas.height * ratio;
+      if (half > 0) doc.addPage();
+      doc.addImage(imgData, 'JPEG', (pageW - iw) / 2, (pageH - ih) / 2, iw, ih);
+    }
+    doc.save(`calendar-${year}.pdf`);
+  } finally {
+    document.getElementById('ext-pdf-wrap').style.display = 'none';
+    btn.disabled    = false;
+    btn.textContent = 'Export PDF';
+  }
+}
+
+document.getElementById('btnExportExtPDF').addEventListener('click', exportExtCalendarPDF);
 </script>
 {% endif %}
 {% endblock %}

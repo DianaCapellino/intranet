@@ -148,10 +148,46 @@
             border-bottom: 1px solid #efefef;
         }
 
-        .col-service  { width: 28%; }
+        .col-service  { width: 32%; }
         .col-timing   { width: 8%; color: #777; font-size: 7.5pt; text-align: center; }
         .col-validity { width: 18%; color: #666; font-size: 7.5pt; }
-        .col-pax      { width: 7.67%; text-align: center; font-weight: bold; }
+        .col-pax      { width: 8.4%; text-align: center; font-weight: bold; }
+
+        /* ── General Conditions ── */
+        .general-conditions {
+            font-family: Arial, Helvetica, sans-serif;
+            margin-top: 28px;
+            padding-top: 14px;
+            border-top: 1.5px solid #1a1a1a;
+        }
+        .general-conditions h2 {
+            font-size: 11pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 0 0 6px 0;
+            color: #1a1a1a;
+        }
+        .general-conditions h3 {
+            font-size: 9pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 10px 0 4px 0;
+            color: #1a1a1a;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 2px;
+        }
+        .general-conditions p, .general-conditions li {
+            font-size: 7.5pt;
+            color: #333;
+            line-height: 1.5;
+            margin: 0 0 4px 0;
+        }
+        .general-conditions ul {
+            padding-left: 14px;
+            margin: 0 0 6px 0;
+        }
 
         .separator-row td {
             height: 4px;
@@ -214,9 +250,9 @@
 <!-- Screen-only toolbar -->
 <div class="print-toolbar">
     <button class="btn-print" onclick="window.print()">
-        &#x1F4C4;&nbsp; Imprimir / Guardar PDF
+        &#x1F4C4;&nbsp; {% if request.user.userType == "Cliente" %}Print / Save PDF{% else %}Imprimir / Guardar PDF{% endif %}
     </button>
-    <a class="btn-back" href="javascript:history.back()">&#8592; Volver</a>
+    <button class="btn-back" onclick="window.close()">&#8592; {% if request.user.userType == "Cliente" %}Back{% else %}Volver{% endif %}</button>
 </div>
 
 {% regroup rate_lines by group.product.supplier.group.location.id as location_groups %}
@@ -263,12 +299,11 @@
                         <th class="col-service">Service</th>
                         <th class="col-timing">Timing</th>
                         <th class="col-validity">Validity</th>
+                        <th class="col-pax">SIB</th>
                         <th class="col-pax">1 pax</th>
                         <th class="col-pax">2 pax</th>
                         <th class="col-pax">3 pax</th>
                         <th class="col-pax">4 pax</th>
-                        <th class="col-pax">5 pax</th>
-                        <th class="col-pax">6 pax</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -290,16 +325,15 @@
                             <td class="col-validity">
                                 {{ line.date_from|date:"d M Y" }} – {{ line.date_to|date:"d M Y" }}
                             </td>
+                            <td class="col-pax">{{ line.rates_by_column.SIB|default:"–" }}</td>
                             <td class="col-pax">{{ line.rates_by_column.1|default:"–" }}</td>
                             <td class="col-pax">{{ line.rates_by_column.2|default:"–" }}</td>
                             <td class="col-pax">{{ line.rates_by_column.3|default:"–" }}</td>
                             <td class="col-pax">{{ line.rates_by_column.4|default:"–" }}</td>
-                            <td class="col-pax">{{ line.rates_by_column.5|default:"–" }}</td>
-                            <td class="col-pax">{{ line.rates_by_column.6|default:"–" }}</td>
                         </tr>
                         {% endif %}
                         {% endfor %}
-                        <tr class="separator-row"><td colspan="9"></td></tr>
+                        <tr class="separator-row"><td colspan="8"></td></tr>
                     {% endfor %}
                 {% endfor %}
 
@@ -312,6 +346,11 @@
     {% endfor %}{# supplier_blocks #}
 
     <div class="pdf-footer">All prices are per person, in US dollars (USD), inclusive of taxes.</div>
+
+    {% if forloop.last %}
+    {% include "tariff/pdf_general_conditions.html" %}
+    {% endif %}
+
 </div>
 {% endfor %}{# location_groups #}
 </body>

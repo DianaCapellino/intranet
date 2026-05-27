@@ -261,7 +261,7 @@
                                                         <td class="rate-cell fw-bold"
                                                             data-rate="{{ base.rate.id }}"
                                                             data-field="cost"
-                                                            data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                            data-rate-type="{% if base.pax == 'SIB' %}sib{% elif base.pax == '1' or base.pax == 1 %}one{% elif base.pax == '2' or base.pax == 2 %}two{% elif base.pax == '3' or base.pax == 3 %}three{% elif base.pax == '4' or base.pax == 4 %}four{% elif base.pax == '5' or base.pax == 5 %}five{% elif base.pax == '6' or base.pax == 6 %}six{% endif %}">
                                                             {{ base.rate.cost|default:"N/A" }}
                                                         </td>
                                                         {% endif %}
@@ -272,17 +272,36 @@
                                                         <td class="rate-cell"
                                                             data-rate="{{ base.rate.id }}"
                                                             data-field="sell"
-                                                            data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                            data-rate-type="{% if base.pax == 'SIB' %}sib{% elif base.pax == '1' or base.pax == 1 %}one{% elif base.pax == '2' or base.pax == 2 %}two{% elif base.pax == '3' or base.pax == 3 %}three{% elif base.pax == '4' or base.pax == 4 %}four{% elif base.pax == '5' or base.pax == 5 %}five{% elif base.pax == '6' or base.pax == 6 %}six{% endif %}">
                                                             {{ base.rate.sell|default:"N/A" }}
                                                         </td>
-                                                        <td class="margin-cell" data-rate-type="{% if base.pax == 1 %}one{% elif base.pax == 2 %}two{% elif base.pax == 3 %}three{% elif base.pax == 4 %}four{% elif base.pax == 5 %}five{% elif base.pax == 6 %}six{% endif %}">
+                                                        <td class="margin-cell" data-rate-type="{% if base.pax == 'SIB' %}sib{% elif base.pax == '1' or base.pax == 1 %}one{% elif base.pax == '2' or base.pax == 2 %}two{% elif base.pax == '3' or base.pax == 3 %}three{% elif base.pax == '4' or base.pax == 4 %}four{% elif base.pax == '5' or base.pax == 5 %}five{% elif base.pax == '6' or base.pax == 6 %}six{% endif %}">
                                                             {{ base.margin_ai|floatformat:1 }}%
                                                         </td>
                                                         <td class="suggested-sell-cell text-success fw-semibold">
                                                             {% if base.suggested_sell %}{{ base.suggested_sell }}{% endif %}
                                                         </td>
+                                                        <td>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 delete-single-rate-btn"
+                                                                    data-rate-id="{{ base.rate.id }}"
+                                                                    title="Eliminar esta tarifa">
+                                                                <i class="fa-solid fa-trash" style="font-size:0.7rem;"></i>
+                                                            </button>
+                                                        </td>
                                                     {% else %}
-                                                        <td colspan="6" class="text-muted">Sin tarifa</td>
+                                                        <td colspan="6" class="p-1">
+                                                            <div class="d-flex align-items-center gap-2 create-missing-rate-form"
+                                                                 data-rate-line-id="{{ base.rate_line_id }}"
+                                                                 data-column="{{ base.pax }}">
+                                                                <span class="text-muted small">Sin tarifa</span>
+                                                                <input type="number" min="0" step="0.01" placeholder="Costo"
+                                                                       class="form-control form-control-sm missing-rate-cost-input"
+                                                                       style="width:90px;">
+                                                                <button type="button" class="btn btn-sm btn-outline-success create-missing-rate-btn" title="Crear tarifa">
+                                                                    <i class="fa-solid fa-plus"></i>
+                                                                </button>
+                                                            </div>
+                                                        </td>
                                                     {% endif %}
                                                 </tr>
 
@@ -300,7 +319,7 @@
                                                         data-increase="{{ ci.increase|default:0 }}"
                                                         data-usd="{{ ci.usd|yesno:'true,false' }}"
                                                         data-exchange="{{ ci.exchange }}"
-                                                        data-pax="{{ base.pax }}">
+                                                        data-pax="{% if base.pax == 'SIB' %}1{% else %}{{ base.pax }}{% endif %}">
                                                         <td class="text-end text-muted pe-1">↳</td>
                                                         <td>
                                                             <i class="fa-solid fa-tag me-1 text-warning"></i>
@@ -376,7 +395,7 @@
                                                                 </div>
                                                                 <button class="btn btn-sm btn-success save-ci-btn"
                                                                         data-ci-id="{{ ci.id }}"
-                                                                        data-pax="{{ base.pax }}">
+                                                                        data-pax="{% if base.pax == 'SIB' %}1{% else %}{{ base.pax }}{% endif %}">
                                                                     <i class="fa-solid fa-check"></i>
                                                                 </button>
                                                                 <button class="btn btn-sm btn-secondary cancel-ci-btn"
@@ -392,7 +411,7 @@
                                                     <tr class="table-info frc-cost-row" style="font-size:0.82em;"
                                                         data-frc-id="{{ frc.id }}"
                                                         data-rate-id="{{ base.rate.id }}"
-                                                        data-pax="{{ base.pax }}">
+                                                        data-pax="{% if base.pax == 'SIB' %}1{% else %}{{ base.pax }}{% endif %}">
                                                         <td class="text-end text-muted pe-1">↳</td>
                                                         <td>
                                                             <i class="fa-solid fa-bookmark me-1 text-info"></i>
@@ -481,6 +500,11 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">Aplicar a bases</label>
                         <div class="d-flex gap-3 flex-wrap" id="baseCheckboxes">
+                            <div class="form-check">
+                                <input class="form-check-input base-check" type="checkbox"
+                                       id="baseSIB" value="SIB" checked>
+                                <label class="form-check-label" for="baseSIB">SIB</label>
+                            </div>
                             {% for i in "123456" %}
                             <div class="form-check">
                                 <input class="form-check-input base-check" type="checkbox"
@@ -1270,6 +1294,39 @@ async function postJSON(url, body) {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
 }
+
+// ─── Delete single rate ───────────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.delete-single-rate-btn');
+    if (!btn) return;
+    if (!confirm('¿Eliminar esta tarifa? Esta acción no se puede deshacer.')) return;
+    const rateId = parseInt(btn.dataset.rateId);
+    btn.disabled = true;
+    postJSON("{% url 'delete_single_rate' %}", {rate_id: rateId})
+    .then(data => {
+        if (data.ok) location.reload();
+        else { alert(data.error || 'Error al eliminar'); btn.disabled = false; }
+    })
+    .catch(() => { alert('Error al eliminar'); btn.disabled = false; });
+});
+
+// ─── Create missing rate ──────────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.create-missing-rate-btn');
+    if (!btn) return;
+    const form = btn.closest('.create-missing-rate-form');
+    const rateLineId = parseInt(form.dataset.rateLineId);
+    const column = form.dataset.column;
+    const costInput = form.querySelector('.missing-rate-cost-input');
+    const cost = parseFloat(costInput.value) || 0;
+    btn.disabled = true;
+    postJSON("{% url 'create_missing_rate' %}", {rate_line_id: rateLineId, column_options: column, cost: cost})
+    .then(data => {
+        if (data.ok) location.reload();
+        else { alert(data.error || 'Error al crear tarifa'); btn.disabled = false; }
+    })
+    .catch(() => { alert('Error al crear tarifa'); btn.disabled = false; });
+});
 
 // ─── Lock/unlock base ─────────────────────────────────────────────────────────
 document.addEventListener('click', function(e) {

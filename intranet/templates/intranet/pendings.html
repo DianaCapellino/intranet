@@ -1,15 +1,14 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
+<script>window.ENTRIES_IS_CLIENT = {% if user.userType == "Cliente" %}true{% else %}false{% endif %};</script>
+
 <div id="entry_list">
+    {% if user.userType != "Cliente" %}
     <br>
     <div class="d-flex align-items-center justify-content-between">
         <div>
-            {% if user.userType != "Cliente" %}
-                <h2 class="d-inline">Pendientes</h2>
-            {% else %}
-            <h2 class="d-inline">Entries</h2>
-            {% endif %}
+            <h2 class="d-inline">Pendientes</h2>
             <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
         </div>
         <div>
@@ -30,19 +29,28 @@
             <div class="col bg-info d-flex align-items-center justify-content-center">Vencido</div>
             <div class="col bg-danger text-center">Muy vencido</div>
         </div>
-    
     </div>
+    <br>
+    {% endif %}
 
     <div id="drilldown-banner" class="alert alert-info d-none d-flex align-items-center justify-content-between py-2 mt-2" role="alert">
         <span><i class="fas fa-filter me-2"></i><span id="drilldown-banner-text">Mostrando resultado filtrado desde estadísticas</span></span>
-        <a href="/entries" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+        <a href="/entries" class="btn btn-sm btn-outline-secondary">{% if user.userType == "Cliente" %}View all{% else %}Ver todos{% endif %}</a>
     </div>
 
-    {% if message %}
-        <div>{{ message }}</div>
+    {% if user.userType == "Cliente" %}
+    <div class="d-flex align-items-center justify-content-center gap-3 mb-2">
+        <h1 class="mb-0">ENTRIES</h1>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-toggle="modal" data-bs-target="#referencesModal"
+                style="font-size:0.78rem;">
+            <i class="fa-solid fa-circle-info me-1"></i>References
+        </button>
+    </div>
     {% endif %}
 
-    <br>
+    {% if message %}<div>{{ message }}</div>{% endif %}
+
     <div class="row">
         {% csrf_token %}
         <div class="col-12">
@@ -79,23 +87,200 @@
                                 <th>Amount</th>
                                 <th>Client</th>
                                 <th>Contact</th>
-                                <th>Reference</th>
+                                <th>Client reference</th>
                                 <th>Quoted by</th>
                                 <th>Worked by</th>
                                 <th>Progress</th>
                                 <th>Priority</th>
                                 <th>Difficulty</th>
                                 <th>More info</th>
-                                <th>Trip date</th>
+                                <th>Date of Travel</th>
                                 <th>Actions</th>
                             </tr>
                         {% endif %}
                     </thead>
-                    
+
                 </table>
             </div>
         </div>
     </div>
 </div>
+
+{% if user.userType == "Cliente" %}
+<!-- References modal (client) -->
+<div class="modal fade" id="referencesModal" tabindex="-1" aria-labelledby="referencesModalLabel">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="referencesModalLabel">
+                    <i class="fa-solid fa-circle-info me-2"></i>References
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+
+                <!-- Team -->
+                <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px; font-size:0.75rem; color:#555;">
+                    Our Team
+                </h6>
+                <div class="row g-3 mb-4">
+                    <!-- Sales -->
+                    <div class="col-md-6">
+                        <div class="fw-semibold mb-2" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:#1a1a1a; border-bottom:1px solid #ddd; padding-bottom:4px;">
+                            Sales
+                        </div>
+                        <div class="d-flex flex-column gap-2">
+                        {% for u in users %}
+                            {% if u.isActivated and u.show_in_client_team and u.department == request.user.department and u.userType == "Ventas" %}
+                            <div class="d-flex align-items-center gap-2 p-2 rounded bg-light"
+                                 style="border: 1px solid #dee2e6; border-left: 4px solid {{ u.color }};">
+                                <div>
+                                    <div class="fw-semibold" style="font-size:0.88rem;">{{ u.other_name }} <span class="text-muted fw-normal" style="font-size:0.78rem;">({{ u.username }})</span></div>
+                                    {% if u.email %}<a href="mailto:{{ u.email }}" class="text-muted" style="font-size:0.78rem;">{{ u.email }}</a>{% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                        </div>
+                    </div>
+                    <!-- Operations -->
+                    <div class="col-md-6">
+                        <div class="fw-semibold mb-2" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:#1a1a1a; border-bottom:1px solid #ddd; padding-bottom:4px;">
+                            Operations
+                        </div>
+                        <div class="d-flex flex-column gap-2">
+                        {% for u in users %}
+                            {% if u.isActivated and u.show_in_client_team and u.department == request.user.department and u.userType == "Operaciones" %}
+                            <div class="d-flex align-items-center gap-2 p-2 rounded bg-light"
+                                 style="border: 1px solid #dee2e6; border-left: 4px solid {{ u.color }};">
+                                <div>
+                                    <div class="fw-semibold" style="font-size:0.88rem;">{{ u.other_name }} <span class="text-muted fw-normal" style="font-size:0.78rem;">({{ u.username }})</span></div>
+                                    {% if u.email %}<a href="mailto:{{ u.email }}" class="text-muted" style="font-size:0.78rem;">{{ u.email }}</a>{% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Progress legend -->
+                <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px; font-size:0.75rem; color:#555;">
+                    Progress Status
+                </h6>
+                <div class="d-flex flex-column gap-2">
+                    {% for pill, label in progress_legend %}
+                    <div class="d-flex align-items-center gap-3">
+                        {{ pill|safe }}
+                        <span class="text-muted small">{{ label }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Email inquiry modal (client) -->
+<div class="modal fade" id="clientInquiryModal" tabindex="-1" aria-labelledby="clientInquiryModalLabel">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clientInquiryModalLabel">
+                    <i class="fa-solid fa-envelope me-2"></i>Contact us about this quote
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" id="inquiry-subject-display"></p>
+                <label class="form-label fw-semibold">Your message</label>
+                <textarea id="inquiry-message" class="form-control" rows="5"
+                          placeholder="Write your question or comment here…"></textarea>
+                <div id="inquiry-feedback" class="mt-2 small"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-dark" id="inquiry-send-btn">
+                    <i class="fa-solid fa-paper-plane me-1"></i>Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+(function () {
+    let _currentEntryId = null;
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.client-entry-email-btn');
+        if (!btn) return;
+
+        _currentEntryId = btn.dataset.entryId;
+        const ref      = btn.dataset.ref  || '—';
+        const trip     = btn.dataset.trip || '—';
+        const st       = btn.dataset.status || '';
+        const label    = st.toLowerCase().startsWith('quote') ? 'quote'
+                       : st.toLowerCase().startsWith('booking') ? 'booking'
+                       : 'itinerary';
+
+        document.getElementById('clientInquiryModalLabel').innerHTML =
+            `<i class="fa-solid fa-envelope me-2"></i>Contact us about this ${label}`;
+        document.getElementById('inquiry-subject-display').textContent =
+            `Ref: ${ref} – Trip: ${trip}`;
+        document.getElementById('inquiry-message').value = '';
+        document.getElementById('inquiry-feedback').textContent = '';
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('clientInquiryModal')).show();
+    });
+
+    document.getElementById('inquiry-send-btn').addEventListener('click', function () {
+        const message = document.getElementById('inquiry-message').value.trim();
+        if (!message) {
+            document.getElementById('inquiry-feedback').textContent = 'Please write a message before sending.';
+            document.getElementById('inquiry-feedback').className = 'mt-2 small text-danger';
+            return;
+        }
+
+        const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+        const sendBtn = this;
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+
+        fetch('/entries/client-inquiry/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify({ entry_id: _currentEntryId, message }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('inquiry-feedback').textContent = 'Message sent successfully!';
+                document.getElementById('inquiry-feedback').className = 'mt-2 small text-success';
+                setTimeout(() => {
+                    bootstrap.Modal.getOrCreateInstance(document.getElementById('clientInquiryModal')).hide();
+                }, 1200);
+            } else {
+                throw new Error(data.error || 'Unknown error');
+            }
+        })
+        .catch(err => {
+            document.getElementById('inquiry-feedback').textContent = 'Failed to send. Please try again.';
+            document.getElementById('inquiry-feedback').className = 'mt-2 small text-danger';
+        })
+        .finally(() => {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Send';
+        });
+    });
+})();
+</script>
+{% endblock extra_js %}
+{% endif %}
+
 <br>
 {% endblock %}

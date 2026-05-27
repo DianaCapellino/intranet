@@ -1,0 +1,408 @@
+{% load i18n %}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting"/>
+  <title>Aliwen – Roster Semanal</title>
+  <style type="text/css">
+    body { margin: 0 !important; padding: 0 !important; background-color: #EDEAE5 !important; }
+    table { border-collapse: collapse !important; }
+    img   { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    a     { text-decoration: none; }
+
+    @media screen and (max-width: 600px) {
+      .email-wrapper { width: 100% !important; }
+      .pad-sides     { padding-left: 24px !important; padding-right: 24px !important; }
+      .greeting      { font-size: 18px !important; }
+    }
+
+    u + #body a { color: inherit !important; text-decoration: none !important; }
+  </style>
+</head>
+<body id="body" style="margin:0;padding:0;background-color:#EDEAE5;">
+
+<!-- ░░ OUTER WRAPPER ░░ -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#EDEAE5;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <!-- ░░ EMAIL CARD ░░ -->
+      <table role="presentation" class="email-wrapper" width="640" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:640px;background-color:#ffffff;">
+
+
+        <!-- ══ HEADER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:36px 48px 28px;text-align:center;" class="pad-sides">
+            <img src="{{ logo_url }}"
+                 alt="Aliwen Incoming" height="40"
+                 style="display:inline-block;height:40px;margin:0 auto 18px;" />
+            <table role="presentation" width="48" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 18px;">
+              <tr>
+                <td height="2" style="background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+              </tr>
+            </table>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:10px;
+                      letter-spacing:0.2em;text-transform:uppercase;color:#d7998b;">
+              Destination Management Company &nbsp;&middot;&nbsp; Argentina
+            </p>
+          </td>
+        </tr>
+
+        <!-- ══ EYEBROW BANNER ════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#D88775;padding:11px 48px;text-align:center;" class="pad-sides">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">
+              Roster Semanal &nbsp;&middot;&nbsp; {{ today }}
+            </p>
+          </td>
+        </tr>
+
+        <!-- ══ INTRO ══════════════════════════════════════════ -->
+        <tr>
+          <td style="padding:44px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <h1 class="greeting"
+                style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                       font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
+              Hola <span style="color:#D88775;">{{ recipient_name }}</span>!
+            </h1>
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0;">
+              Acá está el resumen de programación para las próximas dos semanas.
+            </p>
+          </td>
+        </tr>
+
+
+        <!-- ══════════════════════════════════════════════════
+             SEMANA 1 – ESTA SEMANA
+             ══════════════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#F5F0EB;padding:14px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;
+                      font-weight:bold;color:#1C1C1C;">
+              Esta semana &nbsp;<span style="color:#D88775;">·</span>&nbsp;
+              <span style="font-weight:normal;font-size:13px;color:#7A6E68;">{{ this_week.label }}</span>
+            </p>
+          </td>
+        </tr>
+
+        {% if this_week.holidays %}
+        <!-- Feriados esta semana -->
+        <tr>
+          <td style="padding:24px 48px 16px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Feriados
+            </p>
+            {% for h in this_week.holidays %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:10px;border-left:3px solid #D88775;background-color:#FFF4F2;">
+              <tr>
+                <td style="padding:10px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ h.name }}</strong>
+                  <span style="color:#999;font-size:12px;margin-left:8px;">{{ h.days|join:", " }}</span>
+                  {% if h.workers %}
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+                    {% for w in h.workers %}
+                    <tr>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#3A6B35;
+                                 padding:4px 10px;background-color:#F0FAF0;border-left:2px solid #7FBD77;">
+                        &#10003; {{ w.name }}
+                        {% if w.half %}
+                        <span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;
+                                     border-radius:10px;background:#FFF3CD;color:#856404;margin-left:6px;">½ día</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </table>
+                  {% else %}
+                  <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#999;font-style:italic;">
+                    Nadie registrado trabajando este feriado.
+                  </p>
+                  {% endif %}
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if this_week.absences %}
+        <!-- Ausencias esta semana -->
+        <tr>
+          <td style="padding:16px 48px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Ausencias
+            </p>
+            {% for a in this_week.absences %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #C8A300;background-color:#FFFBEE;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ a.name }}</strong>
+                  <span style="color:#6B5700;font-size:12px;margin-left:6px;">{{ a.type }}</span>
+                  <span style="color:#999;font-size:12px;">
+                    &nbsp;·&nbsp;{% if a.single_day %}{{ a.date_from }}{% else %}{{ a.date_from }} – {{ a.date_to }}{% endif %}
+                  </span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if this_week.home %}
+        <!-- Home esta semana -->
+        <tr>
+          <td style="padding:16px 48px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Home / Fuera de oficina
+            </p>
+            {% for h in this_week.home %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #5B8DB8;background-color:#EEF5FB;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ h.name }}</strong>
+                  <span style="color:#2B5F8A;font-size:12px;margin-left:6px;">{{ h.type }}</span>
+                  <span style="color:#999;font-size:12px;">
+                    &nbsp;·&nbsp;{% if h.single_day %}{{ h.date_from }}{% else %}{{ h.date_from }} – {{ h.date_to }}{% endif %}
+                  </span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if this_week.birthdays %}
+        <!-- Cumpleaños esta semana -->
+        <tr>
+          <td style="padding:16px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Cumpleaños
+            </p>
+            {% for b in this_week.birthdays %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #9B8EC4;background-color:#F7F3FF;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  &#127874; <strong>{{ b.name }}</strong>
+                  <span style="color:#999;font-size:12px;margin-left:6px;">{{ b.date }}</span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <!-- divisor si no hubo cumpleaños (última fila de la semana) -->
+        <tr><td style="border-bottom:1px solid #D9CFC6;font-size:0;line-height:0;">&nbsp;</td></tr>
+        {% endif %}
+
+
+        <!-- ══════════════════════════════════════════════════
+             SEMANA 2 – SEMANA SIGUIENTE
+             ══════════════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#F5F0EB;padding:14px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;
+                      font-weight:bold;color:#1C1C1C;">
+              Semana siguiente &nbsp;<span style="color:#D88775;">·</span>&nbsp;
+              <span style="font-weight:normal;font-size:13px;color:#7A6E68;">{{ next_week.label }}</span>
+            </p>
+          </td>
+        </tr>
+
+        {% if next_week.holidays %}
+        <!-- Feriados semana siguiente -->
+        <tr>
+          <td style="padding:24px 48px 16px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Feriados
+            </p>
+            {% for h in next_week.holidays %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:10px;border-left:3px solid #D88775;background-color:#FFF4F2;">
+              <tr>
+                <td style="padding:10px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ h.name }}</strong>
+                  <span style="color:#999;font-size:12px;margin-left:8px;">{{ h.days|join:", " }}</span>
+                  {% if h.workers %}
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+                    {% for w in h.workers %}
+                    <tr>
+                      <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#3A6B35;
+                                 padding:4px 10px;background-color:#F0FAF0;border-left:2px solid #7FBD77;">
+                        &#10003; {{ w.name }}
+                        {% if w.half %}
+                        <span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;
+                                     border-radius:10px;background:#FFF3CD;color:#856404;margin-left:6px;">½ día</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </table>
+                  {% else %}
+                  <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#999;font-style:italic;">
+                    Nadie registrado trabajando este feriado.
+                  </p>
+                  {% endif %}
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if next_week.absences %}
+        <!-- Ausencias semana siguiente -->
+        <tr>
+          <td style="padding:16px 48px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Ausencias
+            </p>
+            {% for a in next_week.absences %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #C8A300;background-color:#FFFBEE;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ a.name }}</strong>
+                  <span style="color:#6B5700;font-size:12px;margin-left:6px;">{{ a.type }}</span>
+                  <span style="color:#999;font-size:12px;">
+                    &nbsp;·&nbsp;{% if a.single_day %}{{ a.date_from }}{% else %}{{ a.date_from }} – {{ a.date_to }}{% endif %}
+                  </span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if next_week.home %}
+        <!-- Home semana siguiente -->
+        <tr>
+          <td style="padding:16px 48px;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Home / Fuera de oficina
+            </p>
+            {% for h in next_week.home %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #5B8DB8;background-color:#EEF5FB;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  <strong>{{ h.name }}</strong>
+                  <span style="color:#2B5F8A;font-size:12px;margin-left:6px;">{{ h.type }}</span>
+                  <span style="color:#999;font-size:12px;">
+                    &nbsp;·&nbsp;{% if h.single_day %}{{ h.date_from }}{% else %}{{ h.date_from }} – {{ h.date_to }}{% endif %}
+                  </span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if next_week.birthdays %}
+        <!-- Cumpleaños semana siguiente -->
+        <tr>
+          <td style="padding:16px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
+            <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
+              Cumpleaños
+            </p>
+            {% for b in next_week.birthdays %}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:6px;border-left:3px solid #9B8EC4;background-color:#F7F3FF;">
+              <tr>
+                <td style="padding:8px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
+                  &#127874; <strong>{{ b.name }}</strong>
+                  <span style="color:#999;font-size:12px;margin-left:6px;">{{ b.date }}</span>
+                </td>
+              </tr>
+            </table>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td style="border-bottom:1px solid #D9CFC6;font-size:0;line-height:0;">&nbsp;</td></tr>
+        {% endif %}
+
+
+        <!-- ══ FOOTER ═════════════════════════════════════════ -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
+            <img src="{{ logo_url }}"
+                 alt="Aliwen" height="26"
+                 style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 14px;">
+              <tr>
+                <td style="padding:0 6px;">
+                  <a href="https://www.instagram.com/aliwen_incoming/">
+                    <img src="{{ icons_base_url }}Instagram.svg" alt="Instagram" width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.linkedin.com/company/argentinaaliwenincoming">
+                    <img src="{{ icons_base_url }}LinkedIn.svg" alt="LinkedIn" width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.facebook.com/ArgentinaAliwenIncoming">
+                    <img src="{{ icons_base_url }}Facebook.svg" alt="Facebook" width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+                <td style="padding:0 6px;">
+                  <a href="https://www.youtube.com/@AliwenDMC-y6h">
+                    <img src="{{ icons_base_url }}YouTube.svg" alt="YouTube" width="24" height="24"
+                         style="display:block;width:24px;height:24px;opacity:0.75;" />
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      color:#666666;line-height:1.6;margin:0;">
+              &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
+              E.V.T. - Leg 11320
+            </p>
+          </td>
+        </tr>
+
+      </table><!-- /EMAIL CARD -->
+    </td>
+  </tr>
+</table><!-- /OUTER WRAPPER -->
+
+</body>
+</html>

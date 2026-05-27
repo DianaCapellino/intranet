@@ -65,6 +65,10 @@ urlpatterns = [
     path('modify/supplier/<int:supplier_id>/bulk-update-exchange/', modify.bulk_update_exchange, name='bulk_update_exchange'),
     path('modify/rate/update-cost/', modify.update_rate_cost, name='update_rate_cost'),
     path('modify/rate/toggle-lock/', modify.toggle_rate_lock, name='toggle_rate_lock'),
+    path('modify/rate/create-missing/', modify.create_missing_rate, name='create_missing_rate'),
+    path('modify/rate/delete-single/', modify.delete_single_rate, name='delete_single_rate'),
+    path('modify/suppliers/reorder/', modify.reorder_suppliers, name='reorder_suppliers'),
+    path('modify/suppliers/auto-sort/', modify.auto_sort_suppliers, name='auto_sort_suppliers'),
 
     path("pdf/select/", tariff.pdf_select, name="pdf_select"),
     path("pdf/view/", tariff.pdf_view, name="pdf_view"),
@@ -72,8 +76,11 @@ urlpatterns = [
     path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
     path("tp/apply-changes/",  tariff.apply_changes,   name="apply_changes"),
     path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),
+    path("tp/review/",          tariff.tp_mod_review,   name="tp_mod_review"),
     path("tp/toggle-update-tp/", tariff.toggle_supplier_update_tp, name="toggle_supplier_update_tp"),
     path("tp/upload-services/",  tariff.tp_mod_list_services,      name="tp_mod_list_services"),
+    path("tp/sync-db-accommodation/", tariff.sync_tariff_from_db_accommodation, name="sync_tariff_from_db_accommodation"),
+    path("tp/sync-db-services/",      tariff.sync_tariff_from_db_services,      name="sync_tariff_from_db_services"),
     path("rateline/<int:line_id>/mark-revised/",   tariff.mark_rate_line_revised,   name="mark_rate_line_revised"),
     path("rateline/<int:line_id>/mark-unrevised/", tariff.mark_rate_line_unrevised, name="mark_rate_line_unrevised"),
 ]

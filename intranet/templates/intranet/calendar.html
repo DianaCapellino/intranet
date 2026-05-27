@@ -1,0 +1,519 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container-fluid py-3">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h5 class="mb-0">{% if is_client %}Calendar{% else %}Calendario{% endif %}</h5>
+    <div class="d-flex gap-2 align-items-center">
+      <input type="number" id="yearSelector" class="form-control form-control-sm"
+             style="width:80px" value="{{ current_year }}" min="2000" max="2050">
+      <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">{% if is_client %}Refresh{% else %}Actualizar{% endif %}</button>
+      {% if not is_client %}
+      <button class="btn btn-sm btn-outline-secondary" id="btnCumpleanos"
+              data-bs-toggle="modal" data-bs-target="#modalCumpleanos">Cumpleaños</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not is_client %}
+  <!-- Tabs for non-clients -->
+  <ul class="nav nav-tabs mb-3" id="mainCalTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-interno-btn" data-bs-toggle="tab"
+              data-bs-target="#tabInterno" type="button" role="tab">Interno</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-externo-btn" data-bs-toggle="tab"
+              data-bs-target="#tabExterno" type="button" role="tab">Externo</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+  <div class="tab-pane fade show active" id="tabInterno" role="tabpanel">
+  <!-- Interno color legend -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex flex-wrap gap-3" id="legendContainer"></div>
+    </div>
+  </div>
+  <!-- Interno grid -->
+  <div id="calendarGrid"></div>
+  </div><!-- /tabInterno -->
+
+  <div class="tab-pane fade" id="tabExterno" role="tabpanel">
+  <!-- Externo color legend -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex flex-wrap gap-3" id="extLegendContainer"></div>
+    </div>
+  </div>
+  <!-- Externo grid -->
+  <div id="extCalendarGrid"></div>
+  </div><!-- /tabExterno -->
+
+  </div><!-- /tab-content -->
+
+  {% else %}
+  <!-- Client view: Externo only -->
+  <div class="card mb-3">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex flex-wrap gap-3" id="extLegendContainer"></div>
+    </div>
+  </div>
+  <div id="extCalendarGrid"></div>
+  {% endif %}
+
+</div>
+
+{% if not is_client %}
+<!-- ── Modal: Cumpleaños (read-only) ────────────────────────────────────────── -->
+<div class="modal fade" id="modalCumpleanos" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Cumpleaños — <span id="cumpleanosYear"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="cumpleanosList" class="p-3"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.cal-wrap      { overflow-x: auto; }
+.cal-month     { margin-bottom: 6px; }
+.cal-table     { border-collapse: collapse; white-space: nowrap; font-size: 0.7rem; }
+.cal-table td  { border: 1px solid #dee2e6; padding: 0; text-align: center; height: 22px; min-width: 36px; max-width: 36px; }
+.cal-name      { position: sticky; left: 0; z-index: 1; min-width: 100px !important; max-width: 100px !important;
+                 padding: 1px 6px !important; text-align: left !important;
+                 overflow: hidden; text-overflow: ellipsis; border-right: 2px solid #adb5bd !important; }
+.cal-hdr-month { background: #343a40 !important; color: #fff; font-weight: 700; z-index: 2 !important; }
+.cal-hdr-num   { background: #495057 !important; color: #e9ecef; font-size: 0.65rem; }
+.cal-hdr-day   { background: #495057 !important; color: #adb5bd; font-size: 0.6rem; }
+.cal-we        { background: #e9ecef !important; color: #adb5bd; }
+.cal-day-cell  { cursor: default; background: #fff; }
+.cal-group-sep td  { border-top: 2px solid #6c757d !important; }
+.cal-person-row:hover td.cal-name { background: #dbe9ff !important; }
+.cal-person-row:hover td.cal-day-cell { filter: brightness(90%); }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+{% if not is_client %}
+<script>
+// ── Interno calendar (staff users) ────────────────────────────────────────────
+const STAFF_USERS = [
+  {% for u in staff_users %}{id:{{u.id}},name:"{{u.username}}",otherName:"{{u.other_name}}",userType:"{{u.userType}}",showInCalendar:{{u.show_in_calendar|yesno:"true,false"}}},
+  {% endfor %}
+];
+
+const HOLIDAY_COLORS = {
+  'Feriado':          '#87CEEB',
+  'Fin de semana':    '#BDBDBD',
+  'Día no laborable': '#F0F0F0',
+};
+const ABSENCE_COLORS = {
+  'Beneficio Vacaciones':     '#FFB3C1',
+  'Compensatorios':           '#ADD8E6',
+  'Cumpleaños':               '#FF1744',
+  'Cumpleaños en baja':       '#90EE90',
+  'Enfermedad':               '#FF6D00',
+  'Exámenes/Día de Estudio':  '#A8E6A3',
+  'FAM/Trabajando fuera ofi': '#00E5FF',
+  'Feriado trabajado':        '#1A237E',
+  'Feriado trabajado 1/2':    '#3949AB',
+  'Semana home':              '#827717',
+  'Sin goce de sueldo':       '#5D1919',
+  'Vacaciones':               '#FF00FF',
+  'Viernes OFF':              '#FFD600',
+};
+const ALL_COLORS = Object.assign({}, HOLIDAY_COLORS, ABSENCE_COLORS);
+
+const TYPE_ABBREV = {
+  'Vacaciones':              'V',
+  'Compensatorios':          'C',
+  'Semana home':             'H',
+  'Exámenes/Día de Estudio': 'E',
+  'Feriado trabajado':       'F',
+  'Feriado trabajado 1/2':   '1/2',
+};
+
+const MONTHS_ES   = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const MONTHS_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DAYS_SHORT  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+(function () {
+  const c = document.getElementById('legendContainer');
+  for (const [label, color] of Object.entries(ALL_COLORS)) {
+    const ab   = TYPE_ABBREV[label] ? ` (${TYPE_ABBREV[label]})` : '';
+    const item = document.createElement('div');
+    item.className = 'd-flex align-items-center gap-1';
+    item.innerHTML =
+      `<span style="width:13px;height:13px;border-radius:3px;background:${color};flex-shrink:0;display:inline-block"></span>`
+      + `<small>${label}${ab}</small>`;
+    c.appendChild(item);
+  }
+})();
+
+let year = parseInt(document.getElementById('yearSelector').value);
+let eventsCache = [];
+
+async function loadAndRender() {
+  document.getElementById('calendarGrid').innerHTML =
+    '<div class="text-muted py-4 text-center">Cargando…</div>';
+  const resp = await fetch(`/holidays/json?start=${year}-01-01&end=${year + 1}-01-01`);
+  eventsCache = await resp.json();
+  renderGrid(eventsCache, year);
+}
+
+function buildMaps(events) {
+  const personal = {};
+  const company  = {};
+  for (const ev of events) {
+    const p = ev.extendedProps || {};
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      const ds = fmtDate(d);
+      if (p.eventType === 'absence' && p.user_id) {
+        if (!personal[p.user_id]) personal[p.user_id] = {};
+        const isBday   = p.type_absence === 'Cumpleaños' || p.type_absence === 'Cumpleaños en baja';
+        const existing = personal[p.user_id][ds];
+        const existBday = existing && (existing.type === 'Cumpleaños' || existing.type === 'Cumpleaños en baja');
+        if (!existBday || isBday) {
+          personal[p.user_id][ds] = { color: ev.backgroundColor, abbrev: TYPE_ABBREV[p.type_absence] || '', id: ev.id, type: p.type_absence };
+        }
+      } else if (p.eventType === 'holiday') {
+        company[ds] = { color: ev.backgroundColor, type: p.type_holidays, id: ev.id, work_level: p.work_level || 'none', name: ev.title || '' };
+      }
+    }
+  }
+  return { personal, company };
+}
+
+function fmtDate(d)  { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function pad(n)      { return String(n).padStart(2, '0'); }
+function isWeekend(yr, mo, d) { const dow = new Date(yr, mo, d).getDay(); return dow === 0 || dow === 6; }
+function isLight(hex) {
+  try {
+    const h = hex.replace('#','');
+    const r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
+    return (0.2126*r + 0.7152*g + 0.0722*b) > 0.5;
+  } catch { return true; }
+}
+
+function renderGrid(events, yr) {
+  const { personal, company } = buildMaps(events);
+  const container = document.getElementById('calendarGrid');
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'cal-wrap';
+  for (let mo = 0; mo < 12; mo++) {
+    const days    = new Date(yr, mo + 1, 0).getDate();
+    const shortYr = String(yr).slice(2);
+    const monthDiv = document.createElement('div');
+    monthDiv.className = 'cal-month';
+    const tbl = document.createElement('table');
+    tbl.className = 'cal-table';
+    const rNum = tbl.insertRow();
+    const tdMonth = rNum.insertCell();
+    tdMonth.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
+    tdMonth.className = 'cal-name cal-hdr-month';
+    for (let d = 1; d <= days; d++) {
+      const isWE = isWeekend(yr, mo, d);
+      const td = rNum.insertCell();
+      td.textContent = d;
+      td.className = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
+    }
+    const rDay = tbl.insertRow();
+    rDay.insertCell().className = 'cal-name cal-hdr-day';
+    for (let d = 1; d <= days; d++) {
+      const dow  = new Date(yr, mo, d).getDay();
+      const isWE = dow === 0 || dow === 6;
+      const td   = rDay.insertCell();
+      td.textContent = DAYS_SHORT[dow];
+      td.className = 'cal-hdr-day' + (isWE ? ' cal-we' : '');
+    }
+    let prevType = null;
+    for (const person of getVisibleStaff()) {
+      const tr = tbl.insertRow();
+      tr.className = 'cal-person-row';
+      if (prevType !== null && person.userType !== prevType) tr.classList.add('cal-group-sep');
+      prevType = person.userType;
+      const tdName = tr.insertCell();
+      const firstName = person.otherName ? person.otherName.split(' ')[0] : '';
+      tdName.textContent   = person.name + (firstName ? ' ' + firstName : '');
+      tdName.className     = 'cal-name';
+      tdName.style.background = '#fff';
+      tdName.title         = person.name + (person.otherName ? ' — ' + person.otherName : '');
+      for (let d = 1; d <= days; d++) {
+        const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
+        const isWE = isWeekend(yr, mo, d);
+        const td   = tr.insertCell();
+        const pEv  = personal[person.id]?.[ds];
+        const cEv  = company[ds];
+        if (pEv) {
+          styleCell(td, pEv.color, pEv.abbrev, pEv.type);
+        } else if (cEv && cEv.type !== 'Fin de semana') {
+          const abbrev = cEv.work_level === 'half' ? '1/2' : '';
+          styleCell(td, cEv.color, abbrev, cEv.type);
+          td.title = cEv.name && cEv.name !== cEv.type ? `${cEv.name} (${cEv.type})` : cEv.type;
+        } else if (isWE) {
+          td.className = 'cal-we';
+        } else {
+          td.className = 'cal-day-cell';
+        }
+      }
+    }
+    monthDiv.appendChild(tbl);
+    wrap.appendChild(monthDiv);
+  }
+  container.appendChild(wrap);
+}
+
+function styleCell(td, color, abbrev, type) {
+  td.className        = 'cal-day-cell';
+  td.style.background = color;
+  td.style.color      = isLight(color) ? '#333' : '#fff';
+  td.textContent      = abbrev;
+  td.title            = type;
+}
+
+function getVisibleStaff() {
+  return STAFF_USERS.filter(u => u.showInCalendar);
+}
+
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  year = parseInt(document.getElementById('yearSelector').value);
+  loadAndRender();
+  extEventsCache = [];
+  if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
+});
+document.getElementById('yearSelector').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    year = parseInt(e.target.value);
+    loadAndRender();
+    extEventsCache = [];
+    if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
+  }
+});
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.getElementById('tab-externo-btn').addEventListener('shown.bs.tab', () => {
+  if (extEventsCache.length === 0) loadExtAndRender();
+});
+
+// ── Cumpleaños modal (read-only) ──────────────────────────────────────────────
+document.getElementById('modalCumpleanos').addEventListener('show.bs.modal', () => {
+  document.getElementById('cumpleanosYear').textContent = year;
+  buildBirthdayList();
+});
+
+function buildBirthdayList() {
+  const bdayAbs = eventsCache
+    .filter(ev => {
+      const p = ev.extendedProps || {};
+      return p.eventType === 'absence' && p.type_absence === 'Cumpleaños' &&
+             new Date(ev.start + 'T00:00:00').getFullYear() === year;
+    })
+    .sort((a, b) => a.start.localeCompare(b.start));
+
+  const listEl = document.getElementById('cumpleanosList');
+  if (bdayAbs.length === 0) {
+    listEl.innerHTML = '<p class="text-muted small mb-0">No hay cumpleaños cargados para este año.</p>';
+    return;
+  }
+  const byMonth = {};
+  bdayAbs.forEach(a => {
+    const d  = new Date(a.start + 'T00:00:00');
+    const mo = d.getMonth();
+    if (!byMonth[mo]) byMonth[mo] = [];
+    const uid  = a.extendedProps.user_id;
+    const u    = STAFF_USERS.find(u => u.id === uid);
+    const name = u ? (u.name + (u.otherName ? ' ' + u.otherName : '')) : `#${uid}`;
+    byMonth[mo].push({ day: d.getDate(), name });
+  });
+  let html = '';
+  for (const mo of Object.keys(byMonth).sort((a,b) => a-b)) {
+    html += `<p class="fw-semibold small mb-1 mt-2">${MONTHS_FULL[mo]}</p><ul class="list-unstyled mb-0 ps-2">`;
+    byMonth[mo].forEach(b => {
+      html += `<li class="small py-1 border-bottom d-flex align-items-center gap-2">
+        <span class="badge rounded-circle text-bg-danger" style="width:22px;height:22px;font-size:.7rem;display:inline-flex;align-items:center;justify-content:center">${b.day}</span>
+        ${b.name}</li>`;
+    });
+    html += `</ul>`;
+  }
+  listEl.innerHTML = html;
+}
+
+loadAndRender();
+</script>
+{% endif %}
+
+<!-- ── External calendar (shared: non-clients + clients) ─────────────────── -->
+<script>
+const LOCATIONS = [
+  {% for loc in locations %}{id:{{loc.id}},name:"{{loc.name|escapejs}}"},
+  {% endfor %}
+];
+const LOADING_MSG = '{% if is_client %}Loading…{% else %}Cargando…{% endif %}';
+
+const EXT_CAT_COLORS = {
+  'holiday':         '#87CEEB',
+  'long_weekend':    '#FFD700',
+  'other':           '#C8E6C9',
+  'full_moon':       '#E1D5F7',
+  'not_recommended': '#FFAB91',
+};
+const EXT_CAT_LABELS = {
+  'holiday':         'Holiday',
+  'long_weekend':    'Long Weekend',
+  'other':           'Other special dates',
+  'full_moon':       'Full Moon',
+  'not_recommended': 'Not recommended',
+};
+
+{% if is_client %}
+// Client: define helpers (not defined above)
+let year = parseInt(document.getElementById('yearSelector').value);
+function fmtDate(d)  { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function pad(n)      { return String(n).padStart(2, '0'); }
+function isWeekend(yr, mo, d) { const dow = new Date(yr, mo, d).getDay(); return dow === 0 || dow === 6; }
+function isLight(hex) {
+  try {
+    const h = hex.replace('#','');
+    const r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
+    return (0.2126*r + 0.7152*g + 0.0722*b) > 0.5;
+  } catch { return true; }
+}
+const MONTHS_ES  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const DAYS_SHORT = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+document.getElementById('btnRefresh').addEventListener('click', () => {
+  year = parseInt(document.getElementById('yearSelector').value);
+  extEventsCache = [];
+  loadExtAndRender();
+});
+document.getElementById('yearSelector').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { year = parseInt(e.target.value); extEventsCache = []; loadExtAndRender(); }
+});
+{% endif %}
+
+// ── Ext legend ────────────────────────────────────────────────────────────────
+(function () {
+  const c = document.getElementById('extLegendContainer');
+  for (const [key, label] of Object.entries(EXT_CAT_LABELS)) {
+    const item = document.createElement('div');
+    item.className = 'd-flex align-items-center gap-1';
+    item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    c.appendChild(item);
+  }
+})();
+
+let extEventsCache = [];
+
+async function loadExtAndRender() {
+  document.getElementById('extCalendarGrid').innerHTML =
+    `<div class="text-muted py-4 text-center">${LOADING_MSG}</div>`;
+  const resp = await fetch(`/external-calendar/json?start=${year}-01-01&end=${year + 1}-01-01`);
+  extEventsCache = await resp.json();
+  renderExtGrid(extEventsCache, year);
+}
+
+function buildExtMaps(events) {
+  const perLocation = {};
+  const allLocs     = {};
+  for (const ev of events) {
+    const p = ev.extendedProps || {};
+    const s = new Date(ev.start + 'T00:00:00');
+    const e = ev.end ? new Date(ev.end + 'T00:00:00') : new Date(s.getTime() + 86400000);
+    for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
+      const ds   = fmtDate(d);
+      const info = { color: ev.backgroundColor, name: ev.title, notes: p.notes || '', category: p.category, source: p.source || 'external' };
+      if (p.location_id == null) {
+        if (!allLocs[ds]) allLocs[ds] = info;
+      } else {
+        if (!perLocation[p.location_id]) perLocation[p.location_id] = {};
+        if (!perLocation[p.location_id][ds]) perLocation[p.location_id][ds] = info;
+      }
+    }
+  }
+  return { perLocation, allLocs };
+}
+
+function renderExtGrid(events, yr) {
+  const { perLocation, allLocs } = buildExtMaps(events);
+  const container = document.getElementById('extCalendarGrid');
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'cal-wrap';
+  for (let mo = 0; mo < 12; mo++) {
+    const days    = new Date(yr, mo + 1, 0).getDate();
+    const shortYr = String(yr).slice(2);
+    const monthDiv = document.createElement('div');
+    monthDiv.className = 'cal-month';
+    const tbl = document.createElement('table');
+    tbl.className = 'cal-table';
+    const rNum = tbl.insertRow();
+    const tdM  = rNum.insertCell();
+    tdM.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
+    tdM.className   = 'cal-name cal-hdr-month';
+    for (let d = 1; d <= days; d++) {
+      const isWE = isWeekend(yr, mo, d);
+      const td   = rNum.insertCell();
+      td.textContent = d;
+      td.className   = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
+    }
+    const rDay = tbl.insertRow();
+    rDay.insertCell().className = 'cal-name cal-hdr-day';
+    for (let d = 1; d <= days; d++) {
+      const dow  = new Date(yr, mo, d).getDay();
+      const isWE = dow === 0 || dow === 6;
+      const td   = rDay.insertCell();
+      td.textContent = DAYS_SHORT[dow];
+      td.className   = 'cal-hdr-day' + (isWE ? ' cal-we' : '');
+    }
+    for (const loc of LOCATIONS) {
+      const tr = tbl.insertRow();
+      tr.className = 'cal-person-row';
+      const tdName = tr.insertCell();
+      tdName.textContent      = loc.name;
+      tdName.className        = 'cal-name';
+      tdName.style.background = '#fff';
+      for (let d = 1; d <= days; d++) {
+        const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
+        const isWE = isWeekend(yr, mo, d);
+        const td   = tr.insertCell();
+        const ev   = perLocation[loc.id]?.[ds] || allLocs[ds];
+        if (ev) {
+          td.className        = 'cal-day-cell';
+          td.style.background = ev.color;
+          td.style.color      = isLight(ev.color) ? '#333' : '#fff';
+          td.title            = ev.name + (ev.notes ? '\n' + ev.notes : '') + (ev.source === 'internal' ? ' ★' : '');
+        } else if (isWE) {
+          td.className = 'cal-we';
+        } else {
+          td.className = 'cal-day-cell';
+        }
+      }
+    }
+    monthDiv.appendChild(tbl);
+    wrap.appendChild(monthDiv);
+  }
+  container.appendChild(wrap);
+}
+
+{% if is_client %}
+loadExtAndRender();
+{% endif %}
+</script>
+{% endblock %}

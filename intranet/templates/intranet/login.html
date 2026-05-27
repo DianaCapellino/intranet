@@ -11,20 +11,18 @@
     <br>
     <br>
     <div class="container">
-        <div class="text-center">
-            <form class="rw-3 text-center" action="{% url 'login' %}" method="post">
-                {% csrf_token %}
-                <div class="form-login">
-                    <div class="mb-3">
-                        <input autofocus class="form-control-sm" type="text" name="username" placeholder="Username">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control-sm" type="password" name="password" placeholder="Password">
-                    </div class="mb-3">
-                    <input class="btn btn-dark" type="submit" value="Ingresar">
-                </div>
-            </form>
-        </div>
+        <form action="{% url 'login' %}" method="post" style="max-width:200px;" class="mx-auto">
+            {% csrf_token %}
+            <div class="mb-3">
+                <input autofocus class="form-control form-control-sm" type="text" name="username" placeholder="Username">
+            </div>
+            <div class="mb-3">
+                <input class="form-control form-control-sm" type="password" name="password" placeholder="Password">
+            </div>
+            <div class="text-center">
+                <input class="btn btn-dark" type="submit" value="Ingresar">
+            </div>
+        </form>
     </div>
     <br>
 

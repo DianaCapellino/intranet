@@ -104,6 +104,7 @@
                         <th>Administrador</th>
                         <th>Visible</th>
                         <th>Activado</th>
+                        <th>Our Team</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -129,6 +130,17 @@
                         {% else %}
                             <td>No</td>
                         {% endif %}
+                        <td>
+                            {% if user.userType == "Ventas" or user.userType == "Operaciones" %}
+                                {% if user.show_in_client_team %}
+                                    <i class="fa-solid fa-check text-success"></i>
+                                {% else %}
+                                    <i class="fa-solid fa-xmark text-danger"></i>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <div class="justify-content-around d-flex">
                                 <i class="fa-solid fa-pencil" width="1px"" id="pencil-user-{{user.id}}" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowUserPencil{{ user.id }}"></i>
@@ -207,7 +219,17 @@
                                                             <label class="form-check-label" for="modify_isActive{{user.id}}">
                                                             Activado
                                                             </label>
-                                                        </div>                                                        
+                                                        </div>
+                                                        <div class="form-check-sm mb-3 col modify-team-wrap-{{ user.id }}{% if user.userType != 'Ventas' and user.userType != 'Operaciones' %} d-none{% endif %}">
+                                                            {% if user.show_in_client_team %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_teamVisible{{user.id}}" name="show_in_client_team" checked>
+                                                            {% else %}
+                                                                <input class="form-check-input" type="checkbox" id="modify_teamVisible{{user.id}}" name="show_in_client_team">
+                                                            {% endif %}
+                                                            <label class="form-check-label" for="modify_teamVisible{{user.id}}">
+                                                            Our Team
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                     <div class="row">
                                                         <div class="mb-3 col">
@@ -321,13 +343,17 @@ document.querySelectorAll('.modify-user-type').forEach(function (sel) {
     const uid        = sel.dataset.uid;
     const adminWrap  = document.querySelector('.modify-admin-wrap-' + uid);
     const clientRow  = document.querySelector('.modify-client-row-' + uid);
+    const teamWrap   = document.querySelector('.modify-team-wrap-' + uid);
     if (!adminWrap || !clientRow) return;
 
     function toggle() {
-        const isCliente = sel.value === 'Cliente';
+        const isCliente  = sel.value === 'Cliente';
+        const isTeam     = sel.value === 'Ventas' || sel.value === 'Operaciones';
         adminWrap.classList.toggle('d-none', isCliente);
         clientRow.classList.toggle('d-none', !isCliente);
+        if (teamWrap) teamWrap.classList.toggle('d-none', !isTeam);
         if (isCliente) adminWrap.querySelector('input[type=checkbox]').checked = false;
+        if (!isTeam && teamWrap) teamWrap.querySelector('input[type=checkbox]').checked = false;
     }
     sel.addEventListener('change', toggle);
     toggle();

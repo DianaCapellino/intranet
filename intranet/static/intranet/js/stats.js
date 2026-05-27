@@ -273,6 +273,10 @@ async function generatePresentationEntriesData(filters = {}) {
 
         window.summaryTableQuotes = result.summary_table_quotes || {};
         window.summaryTableBookings = result.summary_table_bookings || {};
+        window.byTypeQuotes = result.by_type_quotes || [];
+        window.byTypeBookings = result.by_type_bookings || [];
+        window.bySeasonQuotes = result.by_season_quotes || [];
+        window.bySeasonBookings = result.by_season_bookings || [];
 
         window.vendorSpeedData = result.response_speed?.vendors || {};
         window.summarySpeed = result.summary_speed?.summary || {};
@@ -355,8 +359,9 @@ async function generatePresentationEntriesData(filters = {}) {
             const totalFourDays = parseInt(vals.total.four_days || 0, 10) || 0;
             const totalFiveDays = parseInt(vals.total.five_days || 0, 10) || 0;
             const totalMoreDays = parseInt(vals.total.more_days || 0, 10) || 0;
+            const totalUnanswered = parseInt(vals.total.unanswered || 0, 10) || 0;
             const totalAverageDays = parseFloat(vals.total.average || 0, 10) || 0;
-            
+
             const quotesTotal = parseInt(vals.quotes.total || 0, 10) || 0;
             const quotesSameDay = parseInt(vals.quotes.same_day || 0, 10) || 0;
             const quotesOneDay = parseInt(vals.quotes.one_day || 0, 10) || 0;
@@ -365,6 +370,7 @@ async function generatePresentationEntriesData(filters = {}) {
             const quotesFourDays = parseInt(vals.quotes.four_days || 0, 10) || 0;
             const quotesFiveDays = parseInt(vals.quotes.five_days || 0, 10) || 0;
             const quotesMoreDays = parseInt(vals.quotes.more_days || 0, 10) || 0;
+            const quotesUnanswered = parseInt(vals.quotes.unanswered || 0, 10) || 0;
             const quotesAverageDays = parseFloat(vals.quotes.average || 0, 10) || 0;
 
             const bookingsTotal = parseInt(vals.bookings.total || 0, 10) || 0;
@@ -375,6 +381,7 @@ async function generatePresentationEntriesData(filters = {}) {
             const bookingsFourDays = parseInt(vals.bookings.four_days || 0, 10) || 0;
             const bookingsFiveDays = parseInt(vals.bookings.five_days || 0, 10) || 0;
             const bookingsMoreDays = parseInt(vals.bookings.more_days || 0, 10) || 0;
+            const bookingsUnanswered = parseInt(vals.bookings.unanswered || 0, 10) || 0;
             const bookingsAverageDays = parseFloat(vals.bookings.average || 0, 10) || 0;
 
             const finalsTotal = parseInt(vals.finals.total || 0, 10) || 0;
@@ -385,47 +392,20 @@ async function generatePresentationEntriesData(filters = {}) {
             const finalsFourDays = parseInt(vals.finals.four_days || 0, 10) || 0;
             const finalsFiveDays = parseInt(vals.finals.five_days || 0, 10) || 0;
             const finalsMoreDays = parseInt(vals.finals.more_days || 0, 10) || 0;
+            const finalsUnanswered = parseInt(vals.finals.unanswered || 0, 10) || 0;
             const finalsAverageDays = parseFloat(vals.finals.average || 0, 10) || 0;
             const color = vals.color;
 
             normalizedSpeed[vendor] = {
                 color,
-                totalTotal,
-                totalSameDay,
-                totalOneDay,
-                totalTwoDays,
-                totalThreeDays,
-                totalFourDays,
-                totalFiveDays,
-                totalMoreDays,
-                totalAverageDays,
-                quotesTotal,
-                quotesSameDay,
-                quotesOneDay,
-                quotesTwoDays,
-                quotesThreeDays,
-                quotesFourDays,
-                quotesFiveDays,
-                quotesMoreDays,
-                quotesAverageDays,
-                bookingsTotal,
-                bookingsSameDay,
-                bookingsOneDay,
-                bookingsTwoDays,
-                bookingsThreeDays,
-                bookingsFourDays,
-                bookingsFiveDays,
-                bookingsMoreDays,
-                bookingsAverageDays,
-                finalsTotal,
-                finalsSameDay,
-                finalsOneDay,
-                finalsTwoDays,
-                finalsThreeDays,
-                finalsFourDays,
-                finalsFiveDays,
-                finalsMoreDays,
-                finalsAverageDays
+                totalTotal, totalSameDay, totalOneDay, totalTwoDays, totalThreeDays,
+                totalFourDays, totalFiveDays, totalMoreDays, totalUnanswered, totalAverageDays,
+                quotesTotal, quotesSameDay, quotesOneDay, quotesTwoDays, quotesThreeDays,
+                quotesFourDays, quotesFiveDays, quotesMoreDays, quotesUnanswered, quotesAverageDays,
+                bookingsTotal, bookingsSameDay, bookingsOneDay, bookingsTwoDays, bookingsThreeDays,
+                bookingsFourDays, bookingsFiveDays, bookingsMoreDays, bookingsUnanswered, bookingsAverageDays,
+                finalsTotal, finalsSameDay, finalsOneDay, finalsTwoDays, finalsThreeDays,
+                finalsFourDays, finalsFiveDays, finalsMoreDays, finalsUnanswered, finalsAverageDays,
             };
         });
 
@@ -494,6 +474,7 @@ async function generatePresentationTripsData(filters = {}) {
 
         // Guardamos el objeto global para reutilizarlo
         window.summaryTableTrips = result.summary_table_trips || {};
+        window.byTypeTrips       = result.by_type_trips       || [];
         window.vendorTripsData = result.trips_by_responsable || {};
         window.operatorTripsData = result.trips_by_operator || {};
         window.clientTripsData = result.clients || {};
@@ -1043,163 +1024,67 @@ function renderMonthlyByClientTrips() {
 
 
 function renderSummaryTables() {
-    const data = window.summaryTableQuotes;
-    if (!data || !Object.keys(data).length) return;
-
-    const tbody = document.getElementById("summary-quotes-tbody");
-    if (!tbody) return;
-
-    tbody.innerHTML = `
-        <tr>
-            <td>Promedio x día:</td>
-            <td>${data.average_quotes_quantity}</td>
-            <td>USD ${data.average_quotes_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>-</td>
-        </tr>
-        <tr>
-            <td>Audley:</td>
-            <td>${data.audley_count_quotes}</td>
-            <td>USD ${data.audley_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.audley_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Individuales:</td>
-            <td>${data.individual_count_quotes}</td>
-            <td>USD ${data.individual_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.individual_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Grupos:</td>
-            <td>${data.group_count_quotes}</td>
-            <td>USD ${data.group_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.group_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>FAM clientes:</td>
-            <td>${data.fam_count_quotes}</td>
-            <td>USD ${data.fam_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.fam_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>${data.this_season_str}</td>
-            <td>${data.this_season_count_quotes}</td>
-            <td>USD ${data.this_season_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.this_season_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>${data.next_season_str}</td>
-            <td>${data.next_season_count_quotes}</td>
-            <td>USD ${data.next_season_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.next_season_perc_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Cambios:</td>
-            <td>${data.total_changes_quotes}</td>
-            <td>-</td>
-            <td>-</td>
-        </tr>
-        <tr>
-            <td><strong>TOTAL</strong></td>
-            <td><strong>${data.total_count_quotes}</strong></td>
-            <td><strong>USD ${data.total_amount_quotes.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong></td>
-            <td>-</td>
-        </tr>
-    `;
-
+    const data  = window.summaryTableQuotes;
     const dataB = window.summaryTableBookings;
+    if (!data || !Object.keys(data).length) return;
     if (!dataB || !Object.keys(dataB).length) return;
 
-    const tbody_bookings = document.getElementById("summary-bookings-tbody");
-    if (!tbody_bookings) return;
+    // ── KPI cards ─────────────────────────────────────────────────────────────
+    document.getElementById('kpi-quotes').textContent        = data.total_count_quotes;
+    document.getElementById('kpi-changes').textContent       = data.total_changes_quotes;
+    document.getElementById('kpi-bookings').textContent      = dataB.total_count_bookings;
+    document.getElementById('kpi-cancellations').textContent = dataB.cancellations_count;
+    document.getElementById('kpi-difficulty').textContent    =
+        data.average_difficulty.toLocaleString('es-AR', {minimumFractionDigits: 2}) + ' / 5';
+    document.getElementById('kpi-conversion').textContent    =
+        '% ' + dataB.conversion_perc.toLocaleString('es-AR', {minimumFractionDigits: 2});
 
-    tbody_bookings.innerHTML = `
-        <tr>
-            <td>Promedio x día:</td>
-            <td>${dataB.average_bookings_quantity}</td>
-            <td>USD ${dataB.average_bookings_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>-</td>
-        </tr>
-        <tr>
-            <td>Audley:</td>
-            <td>${dataB.audley_count_bookings}</td>
-            <td>USD ${dataB.audley_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.audley_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Individuales:</td>
-            <td>${dataB.individual_count_bookings}</td>
-            <td>USD ${dataB.individual_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.individual_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Grupos:</td>
-            <td>${dataB.group_count_bookings}</td>
-            <td>USD ${dataB.group_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.group_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>FAM clientes:</td>
-            <td>${dataB.fam_count_bookings}</td>
-            <td>USD ${dataB.fam_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.fam_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>${data.this_season_str}</td>
-            <td>${dataB.this_season_count_bookings}</td>
-            <td>USD ${dataB.this_season_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.this_season_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>${data.next_season_str}</td>
-            <td>${dataB.next_season_count_bookings}</td>
-            <td>USD ${dataB.next_season_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${dataB.next_season_perc_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Cambios:</td>
-            <td>${dataB.total_changes_bookings}</td>
-            <td>-</td>
-            <td>-</td>
-        </tr>
-        <tr>
-            <td><strong>TOTAL</strong></td>
-            <td><strong>${dataB.total_count_bookings}</strong></td>
-            <td><strong>USD ${dataB.total_amount_bookings.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong></td>
-            <td>-</td>
-        </tr>
-    `;
-    const working_days = document.getElementById('working-days');
-    working_days.innerHTML = `Días Laborables: ${data.working_days}`;
+    // ── Helper: render a breakdown table ────────────────────────────────────
+    function renderBreakdownTable(tbodyId, rows) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        tbody.innerHTML = rows.map(r => {
+            const isTotal = r.is_total;
+            const amtFmt  = 'USD ' + r.amount.toLocaleString('es-AR', {minimumFractionDigits: 2});
+            const percFmt = isTotal ? '—' : '% ' + r.perc.toLocaleString('es-AR', {minimumFractionDigits: 1});
+            return `<tr class="${isTotal ? 'table-dark fw-bold' : ''}">
+                <td>${r.label}</td>
+                <td class="text-end">${r.count}</td>
+                <td class="text-end">${amtFmt}</td>
+                <td class="text-end">${percFmt}</td>
+            </tr>`;
+        }).join('');
+    }
 
-    const average_difficulty = document.getElementById('average-difficulty');
-    average_difficulty.innerHTML = `Promedio: ${data.average_difficulty.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    // ── By trip type ─────────────────────────────────────────────────────────
+    renderBreakdownTable('summary-quotes-tbody',   window.byTypeQuotes   || []);
+    renderBreakdownTable('summary-bookings-tbody', window.byTypeBookings || []);
 
-    const difficulty_1 = document.getElementById('difficulty-1');
-    difficulty_1.innerHTML = `Muy fácil: ${data.difficulty_1}`;
+    // ── By travelling season ─────────────────────────────────────────────────
+    renderBreakdownTable('summary-quotes-seasons-tbody',   window.bySeasonQuotes   || []);
+    renderBreakdownTable('summary-bookings-seasons-tbody', window.bySeasonBookings || []);
 
-    const difficulty_2 = document.getElementById('difficulty-2');
-    difficulty_2.innerHTML = `Fácil: ${data.difficulty_2}`;
+    // ── Working days ─────────────────────────────────────────────────────────
+    document.getElementById('working-days').innerHTML = `Días Laborables: ${data.working_days}`;
 
-    const difficulty_3 = document.getElementById('difficulty-3');
-    difficulty_3.innerHTML = `Moderado: ${data.difficulty_3}`;
+    // ── Difficulty breakdown ─────────────────────────────────────────────────
+    document.getElementById('average-difficulty').innerHTML =
+        `Promedio: ${data.average_difficulty.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    document.getElementById('difficulty-1').innerHTML = `Muy fácil: ${data.difficulty_1}`;
+    document.getElementById('difficulty-2').innerHTML = `Fácil: ${data.difficulty_2}`;
+    document.getElementById('difficulty-3').innerHTML = `Moderado: ${data.difficulty_3}`;
+    document.getElementById('difficulty-4').innerHTML = `Complejo: ${data.difficulty_4}`;
+    document.getElementById('difficulty-5').innerHTML = `Muy complejo: ${data.difficulty_5}`;
 
-    const difficulty_4 = document.getElementById('difficulty-4');
-    difficulty_4.innerHTML = `Complejo: ${data.difficulty_4}`;
-
-    const difficulty_5 = document.getElementById('difficulty-5');
-    difficulty_5.innerHTML = `Muy complejo: ${data.difficulty_5}`;
-
-    const cancellations_count = document.getElementById('cancellations-count');
-    cancellations_count.innerHTML = `Cantidad: ${dataB.cancellations_count}`;
-
-    const cancellations_amount = document.getElementById('cancellations-amount');
-    cancellations_amount.innerHTML = `Monto: - USD ${dataB.cancellations_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
-
-    const conversion_perc = document.getElementById('conversion-perc');
-    conversion_perc.innerHTML = `General: % ${dataB.conversion_perc.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
-
-    const conversion_perc_audley = document.getElementById('conversion-perc-audley');
-    conversion_perc_audley.innerHTML = `Audley: % ${dataB.conversion_perc_audley.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    // ── Cancellations + Conversion ───────────────────────────────────────────
+    document.getElementById('cancellations-count').innerHTML  =
+        `Cantidad: ${dataB.cancellations_count}`;
+    document.getElementById('cancellations-amount').innerHTML =
+        `Monto: - USD ${dataB.cancellations_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    document.getElementById('conversion-perc').innerHTML      =
+        `General: % ${dataB.conversion_perc.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    document.getElementById('conversion-perc-audley').innerHTML =
+        `Audley: % ${dataB.conversion_perc_audley.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
 }
 
 
@@ -1361,204 +1246,323 @@ function renderVendorTableBooking() {
 
 function renderResponseSpeedVendor(speed_type) {
 
-    // 🔹 Primero: destruir DataTable si ya existe (antes de tocar las filas)
     if ($.fn.DataTable.isDataTable("#vendor-speed-table")) {
         $("#vendor-speed-table").DataTable().clear().destroy();
     }
 
     const tbody = document.getElementById('vendor-speed-total-tbody');
+    if (!tbody) { console.error("❌ No se encontró tbody."); return; }
+    tbody.innerHTML = '';
 
-    if (!tbody) {
-        console.error("❌ No se encontró tbody en el HTML.");
-        return;
+    const SUB = 'border-left:3px solid #6c757d !important;border-right:3px solid #6c757d !important;';
+    const scTh = `<th title="Sin contestar">SC</th>`;
+
+    const theadRow = document.querySelector('#vendor-speed-table thead tr');
+    if (theadRow) {
+        if (speed_type === 'speed-quotes') {
+            theadRow.innerHTML = `<th>Vendedor</th><th>Total</th><th>0</th><th>1</th><th title="Suma 0+1 días" style="${SUB}">≤1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>+5</th>${scTh}<th>Promedio</th>`;
+        } else if (speed_type === 'speed-bookings') {
+            theadRow.innerHTML = `<th>Vendedor</th><th>Total</th><th>0</th><th>1</th><th>2</th><th>3</th><th title="Suma 0+1+2+3 días" style="${SUB}">≤3</th><th>4</th><th>5</th><th>+5</th>${scTh}<th>Promedio</th>`;
+        } else if (speed_type === 'speed-finals') {
+            theadRow.innerHTML = `<th>Vendedor</th><th>Total</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th title="Suma 0+1+2+3+4 días" style="${SUB}">≤4</th><th>5</th><th>+5</th>${scTh}<th>Promedio</th>`;
+        } else {
+            theadRow.innerHTML = `<th>Vendedor</th><th>Total</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>+5</th>${scTh}<th>Promedio</th>`;
+        }
     }
 
-    tbody.innerHTML = '';
-    
-    if (speed_type == 'speed-total') {
+    function pct(n, d) { return d > 0 ? ((n / d) * 100).toFixed(2) : '0.00'; }
+    function showAvgCard(avg) {
+        const el = document.getElementById('vendor-speed-average-display');
+        if (!el) return;
+        el.innerHTML = avg === '-' ? '' : `<div class="d-inline-flex align-items-center gap-2 border rounded px-3 py-2 bg-light mt-1"><span class="text-muted small">Promedio empresa:</span><span class="fs-3 fw-bold ms-2">${avg} días</span></div>`;
+    }
+
+    if (speed_type === 'speed-total') {
+        const sum = {total:0,sd:0,od:0,td:0,th:0,fd:0,fv:0,md:0,un:0};
+        let wSum = 0, wResp = 0;
         Object.entries(vendorSpeedData).forEach(([vendor, vals]) => {
-
-            // Determinar color de fondo para el nombre del vendedor
-            const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
-
-            // Determinar color de texto (para asegurar contraste legible)
-            // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
-            // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
-            // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
-            const textColor = '#333333';
-
+            if (!vals.totalTotal) return;
+            sum.total+=vals.totalTotal; sum.sd+=vals.totalSameDay; sum.od+=vals.totalOneDay;
+            sum.td+=vals.totalTwoDays; sum.th+=vals.totalThreeDays; sum.fd+=vals.totalFourDays;
+            sum.fv+=vals.totalFiveDays; sum.md+=vals.totalMoreDays; sum.un+=vals.totalUnanswered;
+            const resp = vals.totalTotal - vals.totalUnanswered;
+            if (resp > 0) { wSum += resp * vals.totalAverageDays; wResp += resp; }
+            const cs = `background-color:${vals.color||'#FFF'} !important;color:#333;`;
             const row = document.createElement('tr');
-
-            // Esto cubre cualquier estilo general de la fila (ej. hover)
-            const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
-            row.setAttribute('style', rowStyle);
-
-            // 2. Definir el estilo de celda (background-color con !important)
-            // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
-            const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
-            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true);
-
-            const percTotalSameDay = vals.totalTotal > 0 ? ((vals.totalSameDay / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalOneDay = vals.totalTotal > 0 ? ((vals.totalOneDay / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalTwoDays = vals.totalTotal > 0 ? ((vals.totalTwoDays / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalThreeDays = vals.totalTotal > 0 ? ((vals.totalThreeDays / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalFourDays = vals.totalTotal > 0 ? ((vals.totalFourDays / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalFiveDays = vals.totalTotal > 0 ? ((vals.totalFiveDays / vals.totalTotal) * 100).toFixed(2) : 0;
-            const percTotalMoreDays = vals.totalTotal > 0 ? ((vals.totalMoreDays / vals.totalTotal) * 100).toFixed(2) : 0;
-
-            row.innerHTML = `
-                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
-                <td style="${cellStyle}">${vals.totalTotal}</td>
-                <td style="${cellStyle}">${parseFloat(percTotalSameDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalOneDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalTwoDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalThreeDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalFourDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalFiveDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTotalMoreDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${vals.totalAverageDays}</td>
-            `;
+            row.setAttribute('style', `background-color:${vals.color||'#FFF'} !important;color:#333;`);
+            const url = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true);
+            row.innerHTML = `<td style="${cs}">${vendor} <a href="${url}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
+                <td style="${cs}">${vals.totalTotal}</td>
+                <td style="${cs}">${pct(vals.totalSameDay,resp)}% (${vals.totalSameDay})</td>
+                <td style="${cs}">${pct(vals.totalOneDay,resp)}% (${vals.totalOneDay})</td>
+                <td style="${cs}">${pct(vals.totalTwoDays,resp)}% (${vals.totalTwoDays})</td>
+                <td style="${cs}">${pct(vals.totalThreeDays,resp)}% (${vals.totalThreeDays})</td>
+                <td style="${cs}">${pct(vals.totalFourDays,resp)}% (${vals.totalFourDays})</td>
+                <td style="${cs}">${pct(vals.totalFiveDays,resp)}% (${vals.totalFiveDays})</td>
+                <td style="${cs}">${pct(vals.totalMoreDays,resp)}% (${vals.totalMoreDays})</td>
+                <td style="${cs}" title="Sin contestar">${pct(vals.totalUnanswered,vals.totalTotal)}% (${vals.totalUnanswered})</td>
+                <td style="${cs}">${vals.totalAverageDays}</td>`;
             tbody.appendChild(row);
         });
-    } else if (speed_type == "speed-quotes") {
+        const res = sum.total - sum.un;
+        const avg = wResp > 0 ? (wSum / wResp).toFixed(2) : '-';
+        const totRow = document.createElement('tr');
+        totRow.className = 'fw-bold table-dark';
+        totRow.innerHTML = `<td>TOTAL</td><td>${sum.total}</td>
+            <td>${pct(sum.sd,res)}% (${sum.sd})</td><td>${pct(sum.od,res)}% (${sum.od})</td>
+            <td>${pct(sum.td,res)}% (${sum.td})</td><td>${pct(sum.th,res)}% (${sum.th})</td>
+            <td>${pct(sum.fd,res)}% (${sum.fd})</td><td>${pct(sum.fv,res)}% (${sum.fv})</td>
+            <td>${pct(sum.md,res)}% (${sum.md})</td>
+            <td title="Sin contestar">${pct(sum.un,sum.total)}% (${sum.un})</td><td>${avg}</td>`;
+        tbody.appendChild(totRow);
+        showAvgCard(avg);
+
+    } else if (speed_type === 'speed-quotes') {
+        const sum = {total:0,sd:0,od:0,td:0,th:0,fd:0,fv:0,md:0,un:0};
+        let wSum = 0, wResp = 0;
         Object.entries(vendorSpeedData).forEach(([vendor, vals]) => {
-
-            // Determinar color de fondo para el nombre del vendedor
-            const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
-
-            // Determinar color de texto (para asegurar contraste legible)
-            // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
-            // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
-            // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
-            const textColor = '#333333';
-
+            if (!vals.quotesTotal) return;
+            sum.total+=vals.quotesTotal; sum.sd+=vals.quotesSameDay; sum.od+=vals.quotesOneDay;
+            sum.td+=vals.quotesTwoDays; sum.th+=vals.quotesThreeDays; sum.fd+=vals.quotesFourDays;
+            sum.fv+=vals.quotesFiveDays; sum.md+=vals.quotesMoreDays; sum.un+=vals.quotesUnanswered;
+            const resp = vals.quotesTotal - vals.quotesUnanswered;
+            if (resp > 0) { wSum += resp * vals.quotesAverageDays; wResp += resp; }
+            const cs = `background-color:${vals.color||'#FFF'} !important;color:#333;`;
             const row = document.createElement('tr');
-
-            // Esto cubre cualquier estilo general de la fila (ej. hover)
-            const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
-            row.setAttribute('style', rowStyle);
-
-            // 2. Definir el estilo de celda (background-color con !important)
-            // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
-            const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
-            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Quote');
-
-            const percSameDay = vals.quotesTotal > 0 ? ((vals.quotesSameDay / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percOneDay = vals.quotesTotal > 0 ? ((vals.quotesOneDay / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percTwoDays = vals.quotesTotal > 0 ? ((vals.quotesTwoDays / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percThreeDays = vals.quotesTotal > 0 ? ((vals.quotesThreeDays / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percFourDays = vals.quotesTotal > 0 ? ((vals.quotesFourDays / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percFiveDays = vals.quotesTotal > 0 ? ((vals.quotesFiveDays / vals.quotesTotal) * 100).toFixed(2) : 0;
-            const percMoreDays = vals.quotesTotal > 0 ? ((vals.quotesMoreDays / vals.quotesTotal) * 100).toFixed(2) : 0;
-
-            row.innerHTML = `
-                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
-                <td style="${cellStyle}">${vals.quotesTotal}</td>
-                <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTwoDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percThreeDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFourDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFiveDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percMoreDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${vals.quotesAverageDays}</td>
-            `;
+            row.setAttribute('style', `background-color:${vals.color||'#FFF'} !important;color:#333;`);
+            const url = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Quote');
+            const sub1 = vals.quotesSameDay + vals.quotesOneDay;
+            row.innerHTML = `<td style="${cs}">${vendor} <a href="${url}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
+                <td style="${cs}">${vals.quotesTotal}</td>
+                <td style="${cs}">${pct(vals.quotesSameDay,resp)}% (${vals.quotesSameDay})</td>
+                <td style="${cs}">${pct(vals.quotesOneDay,resp)}% (${vals.quotesOneDay})</td>
+                <td style="${cs};${SUB}" title="Suma 0+1 días"><strong>${pct(sub1,resp)}% (${sub1})</strong></td>
+                <td style="${cs}">${pct(vals.quotesTwoDays,resp)}% (${vals.quotesTwoDays})</td>
+                <td style="${cs}">${pct(vals.quotesThreeDays,resp)}% (${vals.quotesThreeDays})</td>
+                <td style="${cs}">${pct(vals.quotesFourDays,resp)}% (${vals.quotesFourDays})</td>
+                <td style="${cs}">${pct(vals.quotesFiveDays,resp)}% (${vals.quotesFiveDays})</td>
+                <td style="${cs}">${pct(vals.quotesMoreDays,resp)}% (${vals.quotesMoreDays})</td>
+                <td style="${cs}" title="Sin contestar">${pct(vals.quotesUnanswered,vals.quotesTotal)}% (${vals.quotesUnanswered})</td>
+                <td style="${cs}">${vals.quotesAverageDays}</td>`;
             tbody.appendChild(row);
         });
-    } else if (speed_type == "speed-bookings") {
+        const res = sum.total - sum.un;
+        const sub1Tot = sum.sd + sum.od;
+        const avg = wResp > 0 ? (wSum / wResp).toFixed(2) : '-';
+        const totRow = document.createElement('tr');
+        totRow.className = 'fw-bold table-dark';
+        totRow.innerHTML = `<td>TOTAL</td><td>${sum.total}</td>
+            <td>${pct(sum.sd,res)}% (${sum.sd})</td><td>${pct(sum.od,res)}% (${sum.od})</td>
+            <td style="${SUB}" title="Suma 0+1 días"><strong>${pct(sub1Tot,res)}% (${sub1Tot})</strong></td>
+            <td>${pct(sum.td,res)}% (${sum.td})</td><td>${pct(sum.th,res)}% (${sum.th})</td>
+            <td>${pct(sum.fd,res)}% (${sum.fd})</td><td>${pct(sum.fv,res)}% (${sum.fv})</td>
+            <td>${pct(sum.md,res)}% (${sum.md})</td>
+            <td title="Sin contestar">${pct(sum.un,sum.total)}% (${sum.un})</td><td>${avg}</td>`;
+        tbody.appendChild(totRow);
+        showAvgCard(avg);
+
+    } else if (speed_type === 'speed-bookings') {
+        const sum = {total:0,sd:0,od:0,td:0,th:0,fd:0,fv:0,md:0,un:0};
+        let wSum = 0, wResp = 0;
         Object.entries(vendorSpeedData).forEach(([vendor, vals]) => {
-
-            // Determinar color de fondo para el nombre del vendedor
-            const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
-
-            // Determinar color de texto (para asegurar contraste legible)
-            // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
-            // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
-            // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
-            const textColor = '#333333';
-
+            if (!vals.bookingsTotal) return;
+            sum.total+=vals.bookingsTotal; sum.sd+=vals.bookingsSameDay; sum.od+=vals.bookingsOneDay;
+            sum.td+=vals.bookingsTwoDays; sum.th+=vals.bookingsThreeDays; sum.fd+=vals.bookingsFourDays;
+            sum.fv+=vals.bookingsFiveDays; sum.md+=vals.bookingsMoreDays; sum.un+=vals.bookingsUnanswered;
+            const resp = vals.bookingsTotal - vals.bookingsUnanswered;
+            if (resp > 0) { wSum += resp * vals.bookingsAverageDays; wResp += resp; }
+            const cs = `background-color:${vals.color||'#FFF'} !important;color:#333;`;
             const row = document.createElement('tr');
-
-            // Esto cubre cualquier estilo general de la fila (ej. hover)
-            const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
-            row.setAttribute('style', rowStyle);
-
-            // 2. Definir el estilo de celda (background-color con !important)
-            // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
-            const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
-            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Booking');
-
-            const percSameDay = vals.bookingsTotal > 0 ? ((vals.bookingsSameDay / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percOneDay = vals.bookingsTotal > 0 ? ((vals.bookingsOneDay / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percTwoDays = vals.bookingsTotal > 0 ? ((vals.bookingsTwoDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percThreeDays = vals.bookingsTotal > 0 ? ((vals.bookingsThreeDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percFourDays = vals.bookingsTotal > 0 ? ((vals.bookingsFourDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percFiveDays = vals.bookingsTotal > 0 ? ((vals.bookingsFiveDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
-            const percMoreDays = vals.bookingsTotal > 0 ? ((vals.bookingsMoreDays / vals.bookingsTotal) * 100).toFixed(2) : 0;
-
-            row.innerHTML = `
-                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
-                <td style="${cellStyle}">${vals.bookingsTotal}</td>
-                <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTwoDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percThreeDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFourDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFiveDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percMoreDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${vals.bookingsAverageDays}</td>
-            `;
+            row.setAttribute('style', `background-color:${vals.color||'#FFF'} !important;color:#333;`);
+            const url = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Booking');
+            const sub3 = vals.bookingsSameDay + vals.bookingsOneDay + vals.bookingsTwoDays + vals.bookingsThreeDays;
+            row.innerHTML = `<td style="${cs}">${vendor} <a href="${url}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
+                <td style="${cs}">${vals.bookingsTotal}</td>
+                <td style="${cs}">${pct(vals.bookingsSameDay,resp)}% (${vals.bookingsSameDay})</td>
+                <td style="${cs}">${pct(vals.bookingsOneDay,resp)}% (${vals.bookingsOneDay})</td>
+                <td style="${cs}">${pct(vals.bookingsTwoDays,resp)}% (${vals.bookingsTwoDays})</td>
+                <td style="${cs}">${pct(vals.bookingsThreeDays,resp)}% (${vals.bookingsThreeDays})</td>
+                <td style="${cs};${SUB}" title="Suma 0+1+2+3 días"><strong>${pct(sub3,resp)}% (${sub3})</strong></td>
+                <td style="${cs}">${pct(vals.bookingsFourDays,resp)}% (${vals.bookingsFourDays})</td>
+                <td style="${cs}">${pct(vals.bookingsFiveDays,resp)}% (${vals.bookingsFiveDays})</td>
+                <td style="${cs}">${pct(vals.bookingsMoreDays,resp)}% (${vals.bookingsMoreDays})</td>
+                <td style="${cs}" title="Sin contestar">${pct(vals.bookingsUnanswered,vals.bookingsTotal)}% (${vals.bookingsUnanswered})</td>
+                <td style="${cs}">${vals.bookingsAverageDays}</td>`;
             tbody.appendChild(row);
         });
+        const res = sum.total - sum.un;
+        const sub3Tot = sum.sd + sum.od + sum.td + sum.th;
+        const avg = wResp > 0 ? (wSum / wResp).toFixed(2) : '-';
+        const totRow = document.createElement('tr');
+        totRow.className = 'fw-bold table-dark';
+        totRow.innerHTML = `<td>TOTAL</td><td>${sum.total}</td>
+            <td>${pct(sum.sd,res)}% (${sum.sd})</td><td>${pct(sum.od,res)}% (${sum.od})</td>
+            <td>${pct(sum.td,res)}% (${sum.td})</td><td>${pct(sum.th,res)}% (${sum.th})</td>
+            <td style="${SUB}" title="Suma 0+1+2+3 días"><strong>${pct(sub3Tot,res)}% (${sub3Tot})</strong></td>
+            <td>${pct(sum.fd,res)}% (${sum.fd})</td><td>${pct(sum.fv,res)}% (${sum.fv})</td>
+            <td>${pct(sum.md,res)}% (${sum.md})</td>
+            <td title="Sin contestar">${pct(sum.un,sum.total)}% (${sum.un})</td><td>${avg}</td>`;
+        tbody.appendChild(totRow);
+        showAvgCard(avg);
+
     } else {
+        const sum = {total:0,sd:0,od:0,td:0,th:0,fd:0,fv:0,md:0,un:0};
+        let wSum = 0, wResp = 0;
         Object.entries(vendorSpeedData).forEach(([vendor, vals]) => {
-
-            // Determinar color de fondo para el nombre del vendedor
-            const color = vals.color || '#FFFFFF'; // Usar color del dato, default blanco
-
-            // Determinar color de texto (para asegurar contraste legible)
-            // Si el fondo es muy claro, usar texto negro; si es oscuro, usar blanco.
-            // Aquí simplificamos, asumiendo que los colores son generalmente pasteles y claros,
-            // por lo que el texto oscuro (#333) funciona bien. Si no es así, necesitarías una función de contraste.
-            const textColor = '#333333';
-
+            if (!vals.finalsTotal) return;
+            sum.total+=vals.finalsTotal; sum.sd+=vals.finalsSameDay; sum.od+=vals.finalsOneDay;
+            sum.td+=vals.finalsTwoDays; sum.th+=vals.finalsThreeDays; sum.fd+=vals.finalsFourDays;
+            sum.fv+=vals.finalsFiveDays; sum.md+=vals.finalsMoreDays; sum.un+=vals.finalsUnanswered;
+            const resp = vals.finalsTotal - vals.finalsUnanswered;
+            if (resp > 0) { wSum += resp * vals.finalsAverageDays; wResp += resp; }
+            const cs = `background-color:${vals.color||'#FFF'} !important;color:#333;`;
             const row = document.createElement('tr');
-
-            // Esto cubre cualquier estilo general de la fila (ej. hover)
-            const rowStyle = `background-color: ${color} !important; color: ${textColor};`;
-            row.setAttribute('style', rowStyle);
-
-            // 2. Definir el estilo de celda (background-color con !important)
-            // Esto es necesario para vencer a las reglas de DataTables/Bootstrap en las celdas <td>.
-            const cellStyle = `background-color: ${color} !important; color: ${textColor};`;
-            const drillUrl = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Final');
-
-            const percSameDay = vals.finalsTotal > 0 ? ((vals.finalsSameDay / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percOneDay = vals.finalsTotal > 0 ? ((vals.finalsOneDay / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percTwoDays = vals.finalsTotal > 0 ? ((vals.finalsTwoDays / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percThreeDays = vals.finalsTotal > 0 ? ((vals.finalsThreeDays / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percFourDays = vals.finalsTotal > 0 ? ((vals.finalsFourDays / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percFiveDays = vals.finalsTotal > 0 ? ((vals.finalsFiveDays / vals.finalsTotal) * 100).toFixed(2) : 0;
-            const percMoreDays = vals.finalsTotal > 0 ? ((vals.finalsMoreDays / vals.finalsTotal) * 100).toFixed(2) : 0;
-
-            row.innerHTML = `
-                <td style="${cellStyle}">${vendor} <a href="${drillUrl}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
-                <td style="${cellStyle}">${vals.finalsTotal}</td>
-                <td style="${cellStyle}">${parseFloat(percSameDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percOneDay || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percTwoDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percThreeDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFourDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percFiveDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${parseFloat(percMoreDays || 0, 10)}%</td>
-                <td style="${cellStyle}">${vals.finalsAverageDays}</td>
-            `;
+            row.setAttribute('style', `background-color:${vals.color||'#FFF'} !important;color:#333;`);
+            const url = buildDrillDownUrl('/entries', 'user_other_name_filter', vendor, true, 'Final');
+            const sub4 = vals.finalsSameDay + vals.finalsOneDay + vals.finalsTwoDays + vals.finalsThreeDays + vals.finalsFourDays;
+            row.innerHTML = `<td style="${cs}">${vendor} <a href="${url}" target="_blank" title="Ver detalle" style="color:inherit;opacity:0.65;margin-left:4px;"><i class="fas fa-arrow-up-right-from-square" style="font-size:0.75em;"></i></a></td>
+                <td style="${cs}">${vals.finalsTotal}</td>
+                <td style="${cs}">${pct(vals.finalsSameDay,resp)}% (${vals.finalsSameDay})</td>
+                <td style="${cs}">${pct(vals.finalsOneDay,resp)}% (${vals.finalsOneDay})</td>
+                <td style="${cs}">${pct(vals.finalsTwoDays,resp)}% (${vals.finalsTwoDays})</td>
+                <td style="${cs}">${pct(vals.finalsThreeDays,resp)}% (${vals.finalsThreeDays})</td>
+                <td style="${cs}">${pct(vals.finalsFourDays,resp)}% (${vals.finalsFourDays})</td>
+                <td style="${cs};${SUB}" title="Suma 0+1+2+3+4 días"><strong>${pct(sub4,resp)}% (${sub4})</strong></td>
+                <td style="${cs}">${pct(vals.finalsFiveDays,resp)}% (${vals.finalsFiveDays})</td>
+                <td style="${cs}">${pct(vals.finalsMoreDays,resp)}% (${vals.finalsMoreDays})</td>
+                <td style="${cs}" title="Sin contestar">${pct(vals.finalsUnanswered,vals.finalsTotal)}% (${vals.finalsUnanswered})</td>
+                <td style="${cs}">${vals.finalsAverageDays}</td>`;
             tbody.appendChild(row);
         });
-    };
+        const res = sum.total - sum.un;
+        const sub4Tot = sum.sd + sum.od + sum.td + sum.th + sum.fd;
+        const avg = wResp > 0 ? (wSum / wResp).toFixed(2) : '-';
+        const totRow = document.createElement('tr');
+        totRow.className = 'fw-bold table-dark';
+        totRow.innerHTML = `<td>TOTAL</td><td>${sum.total}</td>
+            <td>${pct(sum.sd,res)}% (${sum.sd})</td><td>${pct(sum.od,res)}% (${sum.od})</td>
+            <td>${pct(sum.td,res)}% (${sum.td})</td><td>${pct(sum.th,res)}% (${sum.th})</td>
+            <td>${pct(sum.fd,res)}% (${sum.fd})</td>
+            <td style="${SUB}" title="Suma 0+1+2+3+4 días"><strong>${pct(sub4Tot,res)}% (${sub4Tot})</strong></td>
+            <td>${pct(sum.fv,res)}% (${sum.fv})</td><td>${pct(sum.md,res)}% (${sum.md})</td>
+            <td title="Sin contestar">${pct(sum.un,sum.total)}% (${sum.un})</td><td>${avg}</td>`;
+        tbody.appendChild(totRow);
+        showAvgCard(avg);
+    }
 
-    // volver a crear el datatable (o regenerar su contenido)
     create_datatable_stats("vendor-speed-table");
+}
+
+function buildAllSpeedTablesHTML() {
+    const data = vendorSpeedData;
+    if (!data || !Object.keys(data).length) return '<p>No hay datos disponibles.</p>';
+
+    const SUB = 'border-left:3px solid #6c757d;border-right:3px solid #6c757d;';
+    function pct(n, d) { return d > 0 ? ((n / d) * 100).toFixed(2) : '0.00'; }
+    function speedCell(n, resp, cs) { return `<td style="${cs}">${pct(n,resp)}% (${n})</td>`; }
+    function subCell(n, resp, cs, title) { return `<td style="${cs}${SUB}" title="${title}"><strong>${pct(n,resp)}% (${n})</strong></td>`; }
+
+    function buildSection(cfg) {
+        const P = cfg.prefix;
+        const sum = {total:0,sd:0,od:0,td:0,th:0,fd:0,fv:0,md:0,un:0};
+        let wSum = 0, wResp = 0, rows = '';
+
+        Object.entries(data).forEach(([vendor, vals]) => {
+            const t=vals[`${P}Total`]||0;
+            if (!t) return;
+            const sd=vals[`${P}SameDay`]||0, od=vals[`${P}OneDay`]||0, td=vals[`${P}TwoDays`]||0;
+            const th=vals[`${P}ThreeDays`]||0, fd=vals[`${P}FourDays`]||0, fv=vals[`${P}FiveDays`]||0;
+            const md=vals[`${P}MoreDays`]||0, un=vals[`${P}Unanswered`]||0, avg=vals[`${P}AverageDays`]||0;
+            const resp = t - un;
+            sum.total+=t; sum.sd+=sd; sum.od+=od; sum.td+=td; sum.th+=th;
+            sum.fd+=fd; sum.fv+=fv; sum.md+=md; sum.un+=un;
+            if (resp > 0) { wSum += resp * avg; wResp += resp; }
+
+            const color = vals.color || '#FFFFFF';
+            const cs = `background-color:${color} !important;color:#333;`;
+            let r = `<td style="${cs}">${vendor}</td><td style="${cs}">${t}</td>`;
+            r += speedCell(sd, resp, cs);
+            r += speedCell(od, resp, cs);
+            if (cfg.sub === 'one') r += subCell(sd+od, resp, cs, 'Suma 0+1 días');
+            r += speedCell(td, resp, cs);
+            r += speedCell(th, resp, cs);
+            if (cfg.sub === 'three') r += subCell(sd+od+td+th, resp, cs, 'Suma 0+1+2+3 días');
+            r += speedCell(fd, resp, cs);
+            if (cfg.sub === 'four') r += subCell(sd+od+td+th+fd, resp, cs, 'Suma 0+1+2+3+4 días');
+            r += speedCell(fv, resp, cs);
+            r += speedCell(md, resp, cs);
+            r += `<td style="${cs}" title="Sin contestar">${pct(un,t)}% (${un})</td>`;
+            r += `<td style="${cs}">${avg}</td>`;
+            rows += `<tr style="background-color:${color} !important;">${r}</tr>`;
+        });
+
+        const res = sum.total - sum.un;
+        const compAvg = wResp > 0 ? (wSum / wResp).toFixed(2) : '-';
+        let th = '<th>Vendedor</th><th>Total</th><th>0</th><th>1</th>';
+        if (cfg.sub === 'one')   th += `<th style="${SUB}" title="Suma 0+1 días">≤1</th>`;
+        th += '<th>2</th><th>3</th>';
+        if (cfg.sub === 'three') th += `<th style="${SUB}" title="Suma 0+1+2+3 días">≤3</th>`;
+        th += '<th>4</th>';
+        if (cfg.sub === 'four')  th += `<th style="${SUB}" title="Suma 0+1+2+3+4 días">≤4</th>`;
+        th += '<th>5</th><th>+5</th><th title="Sin contestar">SC</th><th>Promedio</th>';
+
+        let totCells = `<td>TOTAL</td><td>${sum.total}</td>`;
+        totCells += `<td>${pct(sum.sd,res)}% (${sum.sd})</td><td>${pct(sum.od,res)}% (${sum.od})</td>`;
+        if (cfg.sub === 'one')   totCells += subCell(sum.sd+sum.od, res, '', 'Suma 0+1 días');
+        totCells += `<td>${pct(sum.td,res)}% (${sum.td})</td><td>${pct(sum.th,res)}% (${sum.th})</td>`;
+        if (cfg.sub === 'three') totCells += subCell(sum.sd+sum.od+sum.td+sum.th, res, '', 'Suma 0+1+2+3 días');
+        totCells += `<td>${pct(sum.fd,res)}% (${sum.fd})</td>`;
+        if (cfg.sub === 'four')  totCells += subCell(sum.sd+sum.od+sum.td+sum.th+sum.fd, res, '', 'Suma 0+1+2+3+4 días');
+        totCells += `<td>${pct(sum.fv,res)}% (${sum.fv})</td><td>${pct(sum.md,res)}% (${sum.md})</td>`;
+        totCells += `<td title="Sin contestar">${pct(sum.un,sum.total)}% (${sum.un})</td><td>${compAvg}</td>`;
+
+        const avgCard = compAvg !== '-'
+            ? `<div style="display:inline-flex;align-items:center;gap:8px;border:1px solid #dee2e6;border-radius:6px;padding:6px 14px;background:#f8f9fa;margin-top:6px;">
+                   <span style="color:#6c757d;font-size:0.85em;">Promedio empresa:</span>
+                   <span style="font-size:1.4em;font-weight:700;">${compAvg} días</span>
+               </div>` : '';
+
+        return `<div class="chart-box mb-3" style="page-break-inside:avoid;break-inside:avoid;">
+            <h4 class="mt-4 mb-2">${cfg.title}</h4>
+            <table class="table table-bordered table-sm" style="font-size:0.8em;width:100%;">
+                <thead class="table-dark"><tr>${th}</tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot><tr class="fw-bold table-dark">${totCells}</tr></tfoot>
+            </table>
+            ${avgCard}
+        </div>`;
+    }
+
+    return [
+        buildSection({ title: 'Total', prefix: 'total' }),
+        buildSection({ title: 'Cotizaciones (FITs + Grupos)', prefix: 'quotes', sub: 'one' }),
+        buildSection({ title: 'Reservas', prefix: 'bookings', sub: 'three' }),
+        buildSection({ title: 'Final Itineraries', prefix: 'finals', sub: 'four' }),
+    ].join('');
+}
+
+async function exportSpeedPDF() {
+    if (!vendorSpeedData || !Object.keys(vendorSpeedData).length) {
+        alert('No hay datos de rapidez cargados todavía.');
+        return;
+    }
+    const buttonsRow = document.getElementById('speed-buttons-row');
+    const tableWrap  = document.getElementById('vendor-speed-table-wrap');
+    const allTables  = document.getElementById('speed-all-vendor-tables');
+
+    if (buttonsRow) buttonsRow.style.display = 'none';
+    if (tableWrap)  tableWrap.style.display  = 'none';
+    allTables.innerHTML = buildAllSpeedTablesHTML();
+    allTables.style.display = 'block';
+
+    try {
+        await exportSectionToPDF('section-speed');
+    } finally {
+        if (buttonsRow) buttonsRow.style.display = '';
+        if (tableWrap)  tableWrap.style.display  = '';
+        allTables.style.display = 'none';
+        allTables.innerHTML = '';
+    }
 }
 
 function renderResponseSpeed() {
@@ -1675,6 +1679,21 @@ function renderResponseSpeed() {
             <td>${data.final_itineraries.more_days}</td>
             <td>${data.final_itineraries.total > 0 ? data.final_itineraries.percentages.more_days.toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
         </tr>
+        <tr title="Sin contestar">
+            <td>SC:</td>
+            <td>${data.total.unanswered ?? 0}</td>
+            <td>${(data.total.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.individual_quotes.unanswered ?? 0}</td>
+            <td>${(data.individual_quotes.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.audley_quotes.unanswered ?? 0}</td>
+            <td>${(data.audley_quotes.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.group_quotes.unanswered ?? 0}</td>
+            <td>${data.group_quotes.total > 0 ? (data.group_quotes.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
+            <td>${data.bookings.unanswered ?? 0}</td>
+            <td>${(data.bookings.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}%</td>
+            <td>${data.final_itineraries.unanswered ?? 0}</td>
+            <td>${data.final_itineraries.total > 0 ? (data.final_itineraries.percentages.unanswered ?? 0).toLocaleString('es-AR', {minimumFractionDigits: 2}) : 0}%</td>
+        </tr>
         <tr>
             <td>TOTAL:</td>
             <td class="fw-bold">${data.total.total}</td>
@@ -1706,6 +1725,41 @@ function renderResponseSpeed() {
             <td>-</td>
         </tr>
     `;
+    // Speed KPI cards
+    const iqUnans = data.individual_quotes.unanswered ?? 0;
+    const iqResp = data.individual_quotes.total - iqUnans;
+    const iqSub1 = (data.individual_quotes.same_day || 0) + (data.individual_quotes.one_day || 0);
+    const iqPct = iqResp > 0 ? ((iqSub1 / iqResp) * 100).toFixed(1) : 0;
+
+    const bkUnans = data.bookings.unanswered ?? 0;
+    const bkResp = data.bookings.total - bkUnans;
+    const bkSub3 = (data.bookings.same_day || 0) + (data.bookings.one_day || 0) + (data.bookings.two_days || 0) + (data.bookings.three_days || 0);
+    const bkPct = bkResp > 0 ? ((bkSub3 / bkResp) * 100).toFixed(1) : 0;
+
+    const fiUnans = data.final_itineraries.unanswered ?? 0;
+    const fiResp = data.final_itineraries.total - fiUnans;
+    const fiSub4 = (data.final_itineraries.same_day || 0) + (data.final_itineraries.one_day || 0) + (data.final_itineraries.two_days || 0) + (data.final_itineraries.three_days || 0) + (data.final_itineraries.four_days || 0);
+    const fiPct = fiResp > 0 ? ((fiSub4 / fiResp) * 100).toFixed(1) : 0;
+
+    const elQPct = document.getElementById('kpi-speed-quotes-pct');
+    const elQCnt = document.getElementById('kpi-speed-quotes-count');
+    const elQAvg = document.getElementById('kpi-speed-quotes-avg');
+    const elBPct = document.getElementById('kpi-speed-bookings-pct');
+    const elBCnt = document.getElementById('kpi-speed-bookings-count');
+    const elBAvg = document.getElementById('kpi-speed-bookings-avg');
+    const elFPct = document.getElementById('kpi-speed-finals-pct');
+    const elFCnt = document.getElementById('kpi-speed-finals-count');
+    const elFAvg = document.getElementById('kpi-speed-finals-avg');
+    if (elQPct) elQPct.textContent = `${iqPct}%`;
+    if (elQCnt) elQCnt.textContent = `${iqSub1}/${iqResp}`;
+    if (elQAvg) elQAvg.textContent = data.individual_quotes.average ?? '—';
+    if (elBPct) elBPct.textContent = `${bkPct}%`;
+    if (elBCnt) elBCnt.textContent = `${bkSub3}/${bkResp}`;
+    if (elBAvg) elBAvg.textContent = data.bookings.average ?? '—';
+    if (elFPct) elFPct.textContent = `${fiPct}%`;
+    if (elFCnt) elFCnt.textContent = `${fiSub4}/${fiResp}`;
+    if (elFAvg) elFAvg.textContent = data.final_itineraries.average ?? '—';
+
     const all_speed_btn = document.querySelectorAll('.speed-type');
     if (all_speed_btn) {
         all_speed_btn.forEach(btn => {
@@ -2215,75 +2269,41 @@ function renderSummaryTrips() {
     const data = window.summaryTableTrips;
     if (!data || !Object.keys(data).length) return;
 
-    const tbody = document.getElementById("summary-trips-tbody");
-    if (!tbody) return;
+    const fmt2  = v => v.toLocaleString('es-AR', {minimumFractionDigits: 2});
+    const fmt1  = v => v.toLocaleString('es-AR', {minimumFractionDigits: 1});
+    const totalRent = data.all_rent_average / 100 * data.total_amount_trips;
 
-    tbody.innerHTML = `
-        <tr>
-            <td>Audley:</td>
-            <td>${data.audley_count_trips}</td>
-            <td>USD ${data.audley_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.audley_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>USD ${(data.audley_rent/100 * data.audley_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.audley_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Individuales:</td>
-            <td>${data.individual_count_trips}</td>
-            <td>USD ${data.individual_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.individual_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>USD ${(data.individual_rent/100 * data.individual_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.individual_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>Grupos:</td>
-            <td>${data.group_count_trips}</td>
-            <td>USD ${data.group_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.group_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>USD ${(data.group_rent/100 * data.group_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.group_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td>FAM clientes:</td>
-            <td>${data.fam_count_trips}</td>
-            <td>USD ${data.fam_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.fam_perc_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>USD ${(data.fam_rent/100 * data.fam_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.fam_rent.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-        <tr>
-            <td><strong>TOTAL</strong></td>
-            <td><strong>${data.total_count_trips}</strong></td>
-            <td><strong>USD ${data.total_amount_trips.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong></td>
-            <td>-</td>
-            <td>USD ${(data.all_rent_average/100 * data.total_amount_trips).toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-            <td>% ${data.all_rent_average.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
-        </tr>
-    `;
+    // KPI cards
+    document.getElementById('kpi-trips').textContent          = data.total_count_trips;
+    document.getElementById('kpi-trips-cancel').textContent   = data.cancellations_count;
+    document.getElementById('kpi-trips-rent').textContent     = 'USD ' + fmt2(totalRent);
+    document.getElementById('kpi-trips-rent-perc').textContent = '% ' + fmt2(data.all_rent_average);
+    document.getElementById('kpi-trips-difficulty').textContent = fmt2(data.average_difficulty) + ' / 5';
 
-    const average_difficulty = document.getElementById('average-difficulty');
-    average_difficulty.innerHTML = `Promedio: ${data.average_difficulty.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    // By-type table
+    const tbody = document.getElementById('summary-trips-tbody');
+    if (tbody) {
+        tbody.innerHTML = (window.byTypeTrips || []).map(r => {
+            const isTotal = r.is_total;
+            return `<tr class="${isTotal ? 'table-dark fw-bold' : ''}">
+                <td>${r.label}</td>
+                <td class="text-end">${r.count}</td>
+                <td class="text-end">USD ${fmt2(r.amount)}</td>
+                <td class="text-end">${isTotal ? '—' : '% ' + fmt1(r.amount_perc)}</td>
+                <td class="text-end">USD ${fmt2(r.rent_amount)}</td>
+                <td class="text-end">% ${fmt2(r.avg_rent_perc)}</td>
+            </tr>`;
+        }).join('');
+    }
 
-    const difficulty_1 = document.getElementById('difficulty-1');
-    difficulty_1.innerHTML = `Muy fácil: ${data.difficulty_1}`;
-
-    const difficulty_2 = document.getElementById('difficulty-2');
-    difficulty_2.innerHTML = `Fácil: ${data.difficulty_2}`;
-
-    const difficulty_3 = document.getElementById('difficulty-3');
-    difficulty_3.innerHTML = `Moderado: ${data.difficulty_3}`;
-
-    const difficulty_4 = document.getElementById('difficulty-4');
-    difficulty_4.innerHTML = `Complejo: ${data.difficulty_4}`;
-
-    const difficulty_5 = document.getElementById('difficulty-5');
-    difficulty_5.innerHTML = `Muy complejo: ${data.difficulty_5}`;
-
-    const cancellations_count = document.getElementById('cancellations-count');
-    cancellations_count.innerHTML = `Cantidad: ${data.cancellations_count}`;
-
-    const cancellations_amount = document.getElementById('cancellations-amount');
-    cancellations_amount.innerHTML = `Monto: - USD ${data.cancellations_amount.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+    document.getElementById('average-difficulty').innerHTML   = `Promedio: ${fmt2(data.average_difficulty)}`;
+    document.getElementById('difficulty-1').innerHTML         = `Muy fácil: ${data.difficulty_1}`;
+    document.getElementById('difficulty-2').innerHTML         = `Fácil: ${data.difficulty_2}`;
+    document.getElementById('difficulty-3').innerHTML         = `Moderado: ${data.difficulty_3}`;
+    document.getElementById('difficulty-4').innerHTML         = `Complejo: ${data.difficulty_4}`;
+    document.getElementById('difficulty-5').innerHTML         = `Muy complejo: ${data.difficulty_5}`;
+    document.getElementById('cancellations-count').innerHTML  = `Cantidad: ${data.cancellations_count}`;
+    document.getElementById('cancellations-amount').innerHTML = `Monto: - USD ${fmt2(data.cancellations_amount)}`;
 }
 
 

@@ -59,6 +59,9 @@
                       {% if nav_pending_revised %}<span class="badge rounded-pill text-bg-warning ms-1" style="font-size:0.65rem;">{{ nav_pending_revised }}</span>{% endif %}
                     </a>
                   </li>
+                  <li class="nav-item">
+                    <a class="nav-link text-light" href="{% url 'calendar_view' %}">Calendario</a>
+                  </li>
                   {% if user.isAdmin %}
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'stats' %}">Estadísticas</a>
@@ -78,9 +81,10 @@
                         <li><a class="dropdown-item" href="{% url 'clients' %}">Clientes</a></li>
                         <li><a class="dropdown-item" href="{% url 'contacts' %}">Contacto Clientes</a></li>
                         <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
-                        <li><a class="dropdown-item" href="{% url 'holidays' %}">Feriados</a></li>
+                        <li><a class="dropdown-item" href="{% url 'holidays' %}">Calendario</a></li>
                         <li><a class="dropdown-item" href="{% url 'modify_tariff' %}">Tarifario</a></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'notifications_management' %}"><i class="fa-solid fa-bell me-2"></i>Notificaciones</a></li>
                         <li><a class="dropdown-item" href="{% url 'email_processor' %}"><i class="fa-solid fa-envelope-open-text me-2"></i>Procesar Emails</a></li>
                       </div>
                     </ul>
@@ -88,7 +92,13 @@
                   {% endif %}
                 {% else %}
                   <li class="nav-item">
+                    <a class="nav-link text-light" href="{% url 'entries' %}">Entries</a>
+                  </li>
+                  <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link text-light" href="{% url 'calendar_view' %}">Calendar</a>
                   </li>
                 {% endif %}
               </ul>
@@ -101,7 +111,7 @@
                   <a class="nav-link text-light" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                     {{ user.username }}
                   </a>
-                  <ul class="dropdown-menu">
+                  <ul class="dropdown-menu dropdown-menu-end">
                     <div class="dropdown show">
                       <li><a class="dropdown-item" href="{% url 'logout' %}">Log Out</a></li>
                     </div>

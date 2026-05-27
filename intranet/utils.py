@@ -252,6 +252,27 @@ def check_incongruent_entry_dates(date_from, date_to):
     )
 
 
+def _get_opted_out_user_ids(notification_type):
+    """Returns set of user IDs explicitly opted out from a notification type."""
+    from .models import NotificationPreference
+    return set(
+        NotificationPreference.objects.filter(
+            notification_type=notification_type, is_active=False
+        ).values_list('user_id', flat=True)
+    )
+
+
+def get_explicit_subscriber_emails(notification_type):
+    """Returns list of emails for explicitly subscribed (is_active=True) users."""
+    from .models import NotificationPreference
+    return list(
+        NotificationPreference.objects
+        .filter(notification_type=notification_type, is_active=True)
+        .exclude(user__email='')
+        .values_list('user__email', flat=True)
+    )
+
+
 def send_templated_email(subject, to_emails, template_name, context):
     html_content = render_to_string(template_name, context)
 
@@ -314,7 +335,7 @@ def build_margin_warning_context(user):
         for t in trips_qs
     ]
 
-    _site_url = getattr(settings, "SITE_URL", "https://sayaliwen.pythonanywhere.com")
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
     if isinstance(_site_url, (list, tuple)):
         _site_url = _site_url[0]
     site_url = _site_url.rstrip("/")
@@ -346,7 +367,8 @@ def send_margin_warnings():
         send_margin_warnings()
     """
     from .models import User as IntranetUser
-    sales_users = IntranetUser.objects.filter(userType="Ventas").exclude(email="")
+    opted_out = _get_opted_out_user_ids('margin_warning')
+    sales_users = IntranetUser.objects.filter(userType="Ventas").exclude(email="").exclude(id__in=opted_out)
 
     import time
 
@@ -423,7 +445,7 @@ def build_margin_warning_manager_context():
         seller_name = _first_name(seller) if seller else "Sin vendedor"
         seller_groups.append({"seller_name": seller_name, "trips": trips_list})
 
-    _site_url = getattr(settings, "SITE_URL", "https://sayaliwen.pythonanywhere.com")
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
     if isinstance(_site_url, (list, tuple)):
         _site_url = _site_url[0]
     site_url = _site_url.rstrip("/")
@@ -434,7 +456,7 @@ def build_margin_warning_manager_context():
     manager_name = "Vic"
 
     subject = "⚠️ Aliwen Intranet – Advertencias de Rentabilidad (Aliwen)"
-    to_emails = ["va@aliwenincoming.com.ar"]
+    to_emails = get_explicit_subscriber_emails('margin_manager') or ["va@aliwenincoming.com.ar"]
     template = "emails/margin_warning_manager.html"
     context = {
         "user_name": manager_name,
@@ -544,7 +566,7 @@ def build_tariff_client_news_context(client, date_from=None):
 
     to_emails = client.email
 
-    _site_url = getattr(settings, "SITE_URL", "https://sayaliwen.pythonanywhere.com")
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
     if isinstance(_site_url, (list, tuple)):
         _site_url = _site_url[0]
     site_url = _site_url.rstrip("/")
@@ -634,7 +656,7 @@ def build_tariff_team_news_context(date_from=None):
     ).exclude(email="").values_list("email", flat=True)
     to_emails = list(internal_users)
 
-    _site_url = getattr(settings, "SITE_URL", "https://sayaliwen.pythonanywhere.com")
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
     if isinstance(_site_url, (list, tuple)):
         _site_url = _site_url[0]
     site_url = _site_url.rstrip("/")
@@ -1125,3 +1147,485 @@ def sync_trip_statuses_from_tourplan():
 
     print(f"Updated: {len(updated)} | Not found in Tourplan: {len(not_found)} | Skipped: {skipped}")
     return updated, not_found, skipped
+
+# ---------------------------------------------------------------------------
+# Weekly roster email para todos
+# ---------------------------------------------------------------------------
+
+DIAS_ES = {
+    0: "Lunes", 1: "Martes", 2: "Miércoles",
+    3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"
+}
+
+MESES_ES = {
+    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
+    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
+    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
+}
+
+def _format_date_es(d):
+    """Devuelve 'Lunes 19 de mayo' en español."""
+    return f"{DIAS_ES[d.weekday()]} {d.day} de {MESES_ES[d.month]}"
+
+def _date_range(date_from, date_to):
+    """Genera todos los días entre date_from y date_to inclusive."""
+    current = date_from
+    while current <= date_to:
+        yield current
+        current += timedelta(days=1)
+
+def _get_week_data(monday, friday):
+    """
+    Reúne toda la información de una semana laboral (lunes a viernes).
+    Devuelve un dict con:
+      - label: string "Lunes DD de mes – Viernes DD de mes"
+      - holidays: lista de dicts con info de feriados que caen en la semana
+      - absences: lista de dicts {user_display, type, date_from, date_to}
+      - birthdays: lista de dicts {user_display, date}
+    """
+    from .models import Holidays, Absence, User as IntranetUser
+
+    # ── Feriados que se cruzan con la semana ─────────────────────────────
+    holidays_qs = Holidays.objects.filter(
+        date_from__lte=friday,
+        date_to__gte=monday,
+        type_holidays="Feriado",
+    )
+
+    holidays_data = []
+    for h in holidays_qs:
+        # Días del feriado que caen dentro de la semana
+        h_start = max(h.date_from, monday)
+        h_end = min(h.date_to, friday)
+        days_in_week = [
+            _format_date_es(d) for d in _date_range(h_start, h_end)
+        ]
+        # Usuarios que trabajan ese feriado (Feriado trabajado en Absence)
+        workers_qs = Absence.objects.filter(
+            type_absence__in=["Feriado trabajado", "Feriado trabajado 1/2"],
+            date_from__lte=h_end,
+            date_to__gte=h_start,
+        ).select_related("absence_user")
+        workers = [
+            {
+                "name": a.absence_user.other_name or a.absence_user.username,
+                "half": a.type_absence == "Feriado trabajado 1/2",
+            }
+            for a in workers_qs
+        ]
+        holidays_data.append({
+            "name": h.name or h.get_type_holidays_display(),
+            "days": days_in_week,
+            "workers": workers,
+        })
+
+    # ── Ausencias de la semana (excluir Feriado trabajado, cumpleaños y home) ──
+    EXCLUDE_ABSENCE = {
+        "Feriado trabajado", "Feriado trabajado 1/2",
+        "Cumpleaños",
+        "Semana home", "FAM/Trabajando fuera ofi",
+    }
+    absences_qs = Absence.objects.filter(
+        date_from__lte=friday,
+        date_to__gte=monday,
+    ).exclude(
+        type_absence__in=EXCLUDE_ABSENCE
+    ).select_related("absence_user").order_by("absence_user__other_name", "date_from")
+
+    absences_data = []
+    for a in absences_qs:
+        disp_from = max(a.date_from, monday)
+        disp_to = min(a.date_to, friday)
+        absences_data.append({
+            "name": a.absence_user.other_name or a.absence_user.username,
+            "type": a.type_absence,
+            "date_from": _format_date_es(disp_from),
+            "date_to": _format_date_es(disp_to),
+            "single_day": disp_from == disp_to,
+        })
+
+    # ── Home / FAM de la semana ──────────────────────────────────────────
+    home_qs = Absence.objects.filter(
+        type_absence__in=["Semana home", "FAM/Trabajando fuera ofi"],
+        date_from__lte=friday,
+        date_to__gte=monday,
+    ).select_related("absence_user").order_by("absence_user__other_name")
+
+    home_data = []
+    for a in home_qs:
+        disp_from = max(a.date_from, monday)
+        disp_to = min(a.date_to, friday)
+        home_data.append({
+            "name": a.absence_user.other_name or a.absence_user.username,
+            "type": a.type_absence,
+            "date_from": _format_date_es(disp_from),
+            "date_to": _format_date_es(disp_to),
+            "single_day": disp_from == disp_to,
+        })
+
+    # ── Cumpleaños de la semana ──────────────────────────────────────────
+    # Comparamos solo mes y día (el año del cumpleaños no importa)
+    all_users = IntranetUser.objects.filter(isActivated=True).exclude(userType="Cliente")
+    birthdays_data = []
+    for day in _date_range(monday, friday):
+        # Buscar en Absence con type "Cumpleaños" que caiga en ese día
+        bday_absences = Absence.objects.filter(
+            type_absence="Cumpleaños",
+            date_from__lte=day,
+            date_to__gte=day,
+        ).select_related("absence_user")
+        for b in bday_absences:
+            birthdays_data.append({
+                "name": b.absence_user.other_name or b.absence_user.username,
+                "date": _format_date_es(day),
+            })
+
+    label = f"{_format_date_es(monday)} – {_format_date_es(friday)}"
+
+    return {
+        "label": label,
+        "holidays": holidays_data,
+        "absences": absences_data,
+        "birthdays": birthdays_data,
+        "home": home_data,
+    }
+
+
+def _week_has_content(week):
+    return bool(week["holidays"] or week["absences"] or week["birthdays"] or week["home"])
+
+
+def build_weekly_roster_context():
+    """
+    Construye el contexto para el email semanal de roster.
+    Destinatarios: todos los usuarios Ventas, Operaciones y Manager con email.
+    Devuelve None si no hay ningún contenido en ninguna de las dos semanas.
+
+    Returns (subject, to_emails, template, context) tuple, or None.
+    """
+    from .models import User as IntranetUser
+
+    today = date.today()
+    this_monday = today - timedelta(days=today.weekday())
+    this_friday = this_monday + timedelta(days=4)
+    next_monday = this_monday + timedelta(weeks=1)
+    next_friday = next_monday + timedelta(days=4)
+
+    this_week = _get_week_data(this_monday, this_friday)
+    next_week = _get_week_data(next_monday, next_friday)
+
+    if not _week_has_content(this_week) and not _week_has_content(next_week):
+        return None
+
+    # Destinatarios: Ventas + Operaciones + Manager de Aliwen con email
+    opted_out = _get_opted_out_user_ids('weekly_roster')
+    to_emails = list(
+        IntranetUser.objects
+        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department="AI")
+        .exclude(email="")
+        .exclude(id__in=opted_out)
+        .values_list("email", flat=True)
+    )
+    if not to_emails:
+        to_emails = [settings.DEFAULT_FROM_EMAIL]
+
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    subject = f"📅 Roster semanal: {this_week['label']}"
+    template = "emails/weekly_roster.html"
+
+    context = {
+        "recipient_name": "equipo",
+        "today": _format_date_es(today),
+        "this_week": this_week,
+        "next_week": next_week,
+        "logo_url": logo_url,
+        "icons_base_url": icons_base_url,
+        "site_url": site_url,
+    }
+
+    return subject, to_emails, template, context
+
+
+def send_weekly_roster():
+    """
+    Envía el email de roster semanal a todos los usuarios Ventas, Operaciones y Manager.
+    No envía si no hay contenido para ninguna de las dos semanas.
+    Llamar desde el scheduler todos los lunes.
+
+    Usage desde Django shell:
+        from intranet.utils import send_weekly_roster
+        send_weekly_roster()
+    """
+    result = build_weekly_roster_context()
+    if result is None:
+        print("Weekly roster: sin contenido, email no enviado.")
+        return
+    subject, to_emails, template, context = result
+    send_templated_email(subject, to_emails, template, context)
+    print(f"Weekly roster sent to {to_emails}")
+
+
+# ── English date helpers ─────────────────────────────────────────────────────
+
+_EN_WEEKDAYS = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday",
+                4: "Friday", 5: "Saturday", 6: "Sunday"}
+
+
+def _ordinal_en(n):
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    sfx = {1: 'st', 2: 'nd', 3: 'rd'}
+    return f"{n}{sfx.get(n % 10, 'th')}"
+
+
+def _date_en(d):
+    return f"{_EN_WEEKDAYS[d.weekday()]} {_ordinal_en(d.day)}"
+
+
+def _holiday_range_en(h):
+    if h.date_from == h.date_to:
+        return _date_en(h.date_from)
+    return f"from {_date_en(h.date_from)} to {_date_en(h.date_to)}"
+
+
+# ── Consecutive holiday group detection ──────────────────────────────────────
+
+def _find_consecutive_holiday_group(today):
+    """
+    If a Feriado/Día no laborable starts exactly 7 days from today, return the list of
+    all consecutive holiday objects in that group (no hábil working days between them).
+    Returns [] otherwise.
+    """
+    target = today + timedelta(days=7)
+
+    first = (
+        Holidays.objects
+        .filter(type_holidays__in=["Feriado", "Día no laborable"], date_from=target)
+        .order_by("date_from", "id")
+        .first()
+    )
+    if not first:
+        return []
+
+    group = [first]
+    current_end = first.date_to
+
+    future = list(
+        Holidays.objects
+        .filter(
+            type_holidays__in=["Feriado", "Día no laborable"],
+            date_from__gt=current_end,
+            date_from__lte=target + timedelta(days=30),
+        )
+        .order_by("date_from", "id")
+    )
+
+    # Pre-build set of all holiday dates for O(1) gap checks
+    holiday_date_set = set()
+    for h in group + future:
+        d = h.date_from
+        while d <= h.date_to:
+            holiday_date_set.add(d)
+            d += timedelta(days=1)
+
+    for next_h in future:
+        d = current_end + timedelta(days=1)
+        has_gap = False
+        while d < next_h.date_from:
+            if d.weekday() < 5 and d not in holiday_date_set:
+                has_gap = True
+                break
+            d += timedelta(days=1)
+        if has_gap:
+            break
+        group.append(next_h)
+        current_end = next_h.date_to
+
+    return group
+
+
+def _get_holiday_workers(group):
+    group_from = min(h.date_from for h in group)
+    group_to   = max(h.date_to   for h in group)
+    qs = (
+        Absence.objects
+        .filter(
+            type_absence__in=["Feriado trabajado", "Feriado trabajado 1/2"],
+            date_from__lte=group_to,
+            date_to__gte=group_from,
+        )
+        .select_related("absence_user")
+        .order_by("absence_user__other_name")
+    )
+    seen, result = set(), []
+    for a in qs:
+        uid = a.absence_user_id
+        if uid not in seen:
+            seen.add(uid)
+            result.append({
+                "name": a.absence_user.other_name or a.absence_user.username,
+                "half": a.type_absence == "Feriado trabajado 1/2",
+            })
+    return result
+
+
+def _build_ooo_text(group, workers):
+    dates_en = [_holiday_range_en(h) for h in group]
+    if len(dates_en) == 1:
+        dates_phrase, verb = dates_en[0], "is"
+    elif len(dates_en) == 2:
+        dates_phrase, verb = f"{dates_en[0]} and {dates_en[1]}", "are"
+    else:
+        dates_phrase = ", ".join(dates_en[:-1]) + f" and {dates_en[-1]}"
+        verb = "are"
+
+    para1 = (
+        f"Kindly note that next {dates_phrase} {verb} national "
+        "holidays in Argentina so I will have no access to my e-mails."
+    )
+    if workers:
+        names = [w["name"] for w in workers]
+        if len(names) == 1:
+            workers_note = f"Please note that {names[0]} will be available to assist with urgent requests during this time."
+        elif len(names) == 2:
+            workers_note = f"Please note that {names[0]} and {names[1]} will be available to assist with urgent requests during this time."
+        else:
+            workers_note = f"Please note that {', '.join(names[:-1])} and {names[-1]} will be available to assist with urgent requests during this time."
+    else:
+        workers_note = None
+
+    paragraphs = [
+        "Dear friends & colleagues,",
+        "",
+        para1,
+    ]
+    if workers_note:
+        paragraphs.append(workers_note)
+    paragraphs += [
+        "",
+        "As usual you can contact quote@aliwenincoming.com.ar for any questions or new requests. "
+        "Your mail will not be automatically forwarded.",
+        "",
+        "Please take into account that most of our suppliers will not be working, "
+        "so there might be delays with confirmations and special requests.",
+        "",
+        "For any emergencies do not hesitate to contact us at our emergency telephone: + 54 911 6991 7018.",
+        "",
+        "For important information in regards to pax in situ these days, on top of calling "
+        "you may send the information to duty@aliwenincoming.com.ar",
+        "",
+        "Regards,",
+    ]
+    return "\n".join(paragraphs)
+
+
+# ── Holiday reminder email ────────────────────────────────────────────────────
+
+def build_holiday_reminder_context(today=None):
+    """
+    Returns (subject, to_emails, template, context) if a holiday starts in exactly 7 days,
+    None otherwise.
+    """
+    from .models import User as IntranetUser
+
+    if today is None:
+        today = date.today()
+
+    group = _find_consecutive_holiday_group(today)
+    if not group:
+        return None
+
+    workers = _get_holiday_workers(group)
+
+    holidays_info = []
+    for h in group:
+        single = h.date_from == h.date_to
+        holidays_info.append({
+            "name":          h.name or h.get_type_holidays_display(),
+            "date_from_ddmm": h.date_from.strftime("%d/%m"),
+            "date_to_ddmm":   h.date_to.strftime("%d/%m"),
+            "date_range_es":  (
+                _format_date_es(h.date_from) if single
+                else f"{_format_date_es(h.date_from)} al {_format_date_es(h.date_to)}"
+            ),
+            "date_range_en": _holiday_range_en(h),
+            "single_day":    single,
+        })
+
+    # Signature line
+    dates_en = [_holiday_range_en(h) for h in group]
+    if len(dates_en) == 1:
+        sig = f"Please bear in mind that {dates_en[0]} is a national holiday in Argentina."
+    elif len(dates_en) == 2:
+        sig = f"Please bear in mind that {dates_en[0]} and {dates_en[1]} are national holidays in Argentina."
+    else:
+        sig = f"Please bear in mind that {', '.join(dates_en[:-1])} and {dates_en[-1]} are national holidays in Argentina."
+
+    # Subject
+    if len(group) == 1:
+        h0 = group[0]
+        d_str = h0.date_from.strftime("%d/%m") if h0.date_from == h0.date_to else f"{h0.date_from.strftime('%d/%m')}-{h0.date_to.strftime('%d/%m')}"
+        subject = f"🇦🇷 ¡Se acerca un feriado! - {d_str}: {h0.name or h0.get_type_holidays_display()}"
+    else:
+        d_parts = [
+            h.date_from.strftime("%d/%m") if h.date_from == h.date_to
+            else f"{h.date_from.strftime('%d/%m')}-{h.date_to.strftime('%d/%m')}"
+            for h in group
+        ]
+        names_part = " + ".join(h.name or h.get_type_holidays_display() for h in group)
+        subject = f"🇦🇷 ¡Se acercan feriados! - {' y '.join(d_parts)}: {names_part}"
+
+    opted_out = _get_opted_out_user_ids('holiday_reminder')
+    to_emails = list(
+        IntranetUser.objects
+        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department="AI")
+        .exclude(email="")
+        .exclude(id__in=opted_out)
+        .values_list("email", flat=True)
+    )
+    if not to_emails:
+        to_emails = [settings.DEFAULT_FROM_EMAIL]
+
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    return subject, to_emails, "emails/holiday_reminder.html", {
+        "logo_url":       logo_url,
+        "icons_base_url": icons_base_url,
+        "site_url":       site_url,
+        "today":          today.strftime("%d/%m/%Y"),
+        "holidays":       holidays_info,
+        "workers":        workers,
+        "signature_line": sig,
+        "ooo_text":       _build_ooo_text(group, workers),
+    }
+
+
+def send_holiday_reminder(today=None):
+    """
+    Send the holiday reminder email if a holiday starts in exactly 7 days.
+    Call daily from daily_tasks.
+
+    Usage:
+        from intranet.utils import send_holiday_reminder
+        send_holiday_reminder()
+    """
+    result = build_holiday_reminder_context(today)
+    if result is None:
+        print("Holiday reminder: no holiday starting in 7 days, email not sent.")
+        return
+    subject, to_emails, template, context = result
+    send_templated_email(subject, to_emails, template, context)
+    print(f"Holiday reminder sent to {to_emails}")

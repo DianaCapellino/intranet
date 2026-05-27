@@ -21,18 +21,57 @@
         </li>
     </ul>
 
-    {# ─── Upload button ───────────────────────────────────────────────────── #}
-    <div class="d-flex justify-content-center mb-3">
+    {# ─── Upload + DB sync buttons ───────────────────────────────────────── #}
+    <div class="d-flex justify-content-center gap-2 mb-3">
+        {# AC buttons #}
         <button id="upload-btn-AC" type="button" class="btn btn-dark btn-lg"
                 data-bs-toggle="modal" data-bs-target="#windowTourplanAC"
-                title="Actualizar Alojamiento desde Tourplan">
-            <i class="fa-solid fa-upload me-2"></i> Subir Tourplan (Alojamiento)
+                title="Actualizar Alojamiento desde CSV">
+            <i class="fa-solid fa-upload me-2"></i> Subir CSV (Alojamiento)
         </button>
+        <form id="sync-db-ac-form" method="post" action="{% url 'sync_tariff_from_db_accommodation' %}"
+              class="d-inline" onsubmit="startDbSync('ac')">
+            {% csrf_token %}
+            <div class="d-flex align-items-center gap-2">
+                <div class="d-flex flex-column align-items-start">
+                    <label for="sync-date-ac" class="text-muted mb-0" style="font-size:.72rem;letter-spacing:.04em">Desde</label>
+                    <input type="date" id="sync-date-ac" name="sync_date_from"
+                           class="form-control form-control-sm" style="width:145px">
+                </div>
+                <button id="sync-btn-AC" type="submit" class="btn btn-outline-dark btn-lg"
+                        title="Sincronizar Alojamiento desde base de datos Tourplan">
+                    <i class="fa-solid fa-database me-2"></i> Sincronizar BD (Alojamiento)
+                </button>
+            </div>
+        </form>
+
+        {# NA buttons #}
         <button id="upload-btn-NA" type="button" class="btn btn-dark btn-lg d-none"
                 data-bs-toggle="modal" data-bs-target="#windowTourplanNA"
-                title="Actualizar Servicios desde Tourplan">
-            <i class="fa-solid fa-upload me-2"></i> Subir Tourplan (Servicios)
+                title="Actualizar Servicios desde CSV">
+            <i class="fa-solid fa-upload me-2"></i> Subir CSV (Servicios)
         </button>
+        <form id="sync-db-na-form" method="post" action="{% url 'sync_tariff_from_db_services' %}"
+              class="d-inline d-none" onsubmit="startDbSync('na')">
+            {% csrf_token %}
+            <div class="d-flex align-items-center gap-2">
+                <div class="d-flex flex-column align-items-start">
+                    <label for="sync-date-na" class="text-muted mb-0" style="font-size:.72rem;letter-spacing:.04em">Desde</label>
+                    <input type="date" id="sync-date-na" name="sync_date_from"
+                           class="form-control form-control-sm" style="width:145px">
+                </div>
+                <button id="sync-btn-NA" type="submit" class="btn btn-outline-dark btn-lg"
+                        title="Sincronizar Servicios desde base de datos Tourplan">
+                    <i class="fa-solid fa-database me-2"></i> Sincronizar BD (Servicios)
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {# ─── DB sync spinner overlay ─────────────────────────────────────────── #}
+    <div id="db-sync-overlay" class="d-none text-center py-4">
+        <div class="spinner-border text-secondary" style="width:2.5rem;height:2.5rem;" role="status"></div>
+        <p class="mt-3 text-muted">Conectando con Tourplan y procesando tarifas, por favor espere…</p>
     </div>
 
     {# ─── Messages ────────────────────────────────────────────────────────── #}
@@ -52,8 +91,11 @@
     <div class="alert alert-warning d-flex align-items-center justify-content-between mt-2" id="pending-banner">
         <span><i class="fa-solid fa-clock me-2"></i>Hay tarifas pendientes de revisión.</span>
         <div class="d-flex gap-2">
-            <button class="btn btn-warning btn-sm" id="btn-open-review">Ver cambios</button>
-            <button class="btn btn-outline-secondary btn-sm" id="btn-discard-all-banner">Descartar todo</button>
+            <a href="{% url 'tp_mod_review' %}" class="btn btn-warning btn-sm">Ver cambios</a>
+            <form method="post" action="{% url 'discard_changes' %}" onsubmit="return confirm('¿Descartar todos los cambios pendientes?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Descartar todo</button>
+            </form>
         </div>
     </div>
     {% endif %}
@@ -171,112 +213,6 @@
     </div>
 </div>
 
-{# ═══════════════════════════════════ MODAL: Review changes ═════════════════════════════ #}
-{% if has_pending %}
-<div class="modal fade modal-xl" id="windowReview" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-scrollable" style="max-width:900px">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5">Revisión de tarifas Tourplan</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-
-            <div class="modal-body p-0">
-                <div class="d-flex align-items-center gap-4 px-4 py-3 border-bottom bg-light flex-wrap">
-                    <div class="text-center">
-                        <div class="fw-bold fs-4" id="count-update">0</div>
-                        <div class="text-muted small">Para actualizar</div>
-                    </div>
-                    <div class="vr"></div>
-                    <div class="text-center">
-                        <div class="fw-bold fs-4 text-info" id="count-update-ci">0</div>
-                        <div class="text-muted small">Ítems de costo</div>
-                    </div>
-                    <div class="vr"></div>
-                    <div class="text-center">
-                        <div class="fw-bold fs-4" id="count-add">0</div>
-                        <div class="text-muted small">Para agregar</div>
-                    </div>
-                    <div class="vr"></div>
-                    <div class="text-center">
-                        <div class="fw-bold fs-4 text-danger" id="count-delete">0</div>
-                        <div class="text-muted small">Para eliminar</div>
-                    </div>
-                    <div class="vr"></div>
-                    <div class="text-center">
-                        <div class="fw-bold fs-4 text-muted" id="count-ignored">0</div>
-                        <div class="text-muted small">Ignorados</div>
-                    </div>
-                    <div class="ms-auto d-flex gap-2 flex-wrap">
-                        <button class="btn btn-outline-danger btn-sm" onclick="discardAll()">Descartar todo</button>
-                        <button class="btn btn-dark" id="btn-confirm-all" onclick="confirmChanges()">
-                            Confirmar cambios
-                        </button>
-                    </div>
-                </div>
-
-                <div class="px-4 py-3">
-                    <div class="d-flex gap-2 px-2 pb-1 mb-1 border-bottom text-muted" style="font-size:.72rem;letter-spacing:.06em;text-transform:uppercase">
-                        <div style="min-width:90px"></div>
-                        <div class="flex-grow-1"></div>
-                        <div style="width:80px;text-align:right">Costo</div>
-                        <div style="width:100px;text-align:right">Sell TP</div>
-                        <div style="width:110px;text-align:right">Sell AI</div>
-                        <div style="width:130px">Temporada (Add)</div>
-                        <div style="width:130px"></div>
-                    </div>
-
-                    <div id="section-update">
-                        <div class="d-flex align-items-center justify-content-between mb-2 mt-3">
-                            <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">⟳ Actualizar</span>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Update')">Ignorar todos</button>
-                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Update')">Restaurar</button>
-                            </div>
-                        </div>
-                        <div id="rows-update"></div>
-                    </div>
-
-                    <div id="section-update-ci">
-                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
-                            <span class="text-info fw-semibold small text-uppercase" style="letter-spacing:.08em">
-                                <i class="fa-solid fa-tag me-1"></i> Actualizar ítems de costo
-                            </span>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('UpdateCI')">Ignorar todos</button>
-                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('UpdateCI')">Restaurar</button>
-                            </div>
-                        </div>
-                        <div id="rows-update-ci"></div>
-                    </div>
-
-                    <div id="section-add">
-                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
-                            <span class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">+ Agregar</span>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Add')">Ignorar todos</button>
-                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Add')">Restaurar</button>
-                            </div>
-                        </div>
-                        <div id="rows-add"></div>
-                    </div>
-
-                    <div id="section-delete">
-                        <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
-                            <span class="text-danger small text-uppercase fw-semibold" style="letter-spacing:.08em">✕ Eliminar RateLines sin coincidencia</span>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-outline-secondary btn-sm" onclick="ignoreAll('Delete')">Ignorar todos</button>
-                                <button class="btn btn-outline-success btn-sm" onclick="restoreAll('Delete')">Restaurar</button>
-                            </div>
-                        </div>
-                        <div id="rows-delete"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 {% endif %}{# /isAdmin #}
 
@@ -326,9 +262,17 @@ function switchType(type) {
     document.getElementById('tab-AC').classList.toggle('active', type === 'AC');
     document.getElementById('tab-NA').classList.toggle('active', type === 'NA');
     document.getElementById('upload-btn-AC').classList.toggle('d-none', type !== 'AC');
+    document.getElementById('sync-db-ac-form').classList.toggle('d-none', type !== 'AC');
     document.getElementById('upload-btn-NA').classList.toggle('d-none', type === 'AC');
+    document.getElementById('sync-db-na-form').classList.toggle('d-none', type === 'AC');
 
     renderLists();
+}
+
+// ─── DB sync spinner ──────────────────────────────────────────────────────────
+function startDbSync(type) {
+    document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+    document.getElementById('db-sync-overlay').classList.remove('d-none');
 }
 
 // ─── Move selected items between lists ────────────────────────────────────────
@@ -359,6 +303,15 @@ function selectAll(key) {
     Array.from(el.options).forEach(o => o.selected = true);
 }
 
+// ─── Default sync start date: 2 months ago ────────────────────────────────────
+(function () {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 2);
+    const iso = d.toISOString().slice(0, 10);
+    document.getElementById('sync-date-ac').value = iso;
+    document.getElementById('sync-date-na').value = iso;
+})();
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 renderLists();
 
@@ -373,291 +326,5 @@ document.getElementById('na-upload-form').addEventListener('submit', function ()
 });
 </script>
 
-{% if has_pending %}
-<script>
-// ─── Pending changes review ───────────────────────────────────────────────────
-const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
-
-const reviewState = CHANGES.map((item, idx) => ({
-    ...item,
-    _id:           item._id !== undefined ? item._id : idx,
-    ignored:       false,
-    edited_sell:   item.sell,
-    edited_season: item.season || "To be defined",
-}));
-
-function renderAll() {
-    renderSection("Update",   "rows-update");
-    renderSection("UpdateCI", "rows-update-ci");
-    renderSection("Add",      "rows-add");
-    renderSection("Delete",   "rows-delete");
-    updateCounts();
-}
-
-function renderSection(action, containerId) {
-    const container = document.getElementById(containerId);
-    const items = reviewState.filter(i => i.action === action);
-    const renderer = action === "Delete" ? rowHTMLDelete : rowHTML;
-    container.innerHTML = items.length
-        ? items.map(renderer).join("")
-        : `<p class="text-muted small fst-italic ps-2">Sin ítems en esta sección.</p>`;
-}
-
-function fmt(n) {
-    return n != null ? Number(n).toLocaleString("es-AR", {minimumFractionDigits:0, maximumFractionDigits:2}) : "—";
-}
-
-function rowHTML(item) {
-    const isUpdate   = item.action === "Update";
-    const isIgnored  = item.ignored;
-    const sellEdited = item.edited_sell !== item.sell_tourplan;
-
-    const badgeClass = isUpdate
-        ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-        : "bg-success-subtle text-success-emphasis border border-success-subtle";
-
-    const sellTPCell = item.has_items
-        ? `<div style="width:100px;text-align:right" class="text-muted fst-italic" style="font-size:.75rem">—</div>`
-        : isUpdate
-        ? `<div style="width:100px;text-align:right">
-               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell_tourplan)}</span>
-               <span class="fw-semibold text-warning-emphasis">${fmt(item.sell_tourplan)}</span>
-           </div>`
-        : `<div style="width:100px;text-align:right">
-               <span class="fw-semibold text-success-emphasis">${fmt(item.sell_tourplan)}</span>
-           </div>`;
-
-    const costCell = isUpdate
-        ? `<div style="width:80px;text-align:right">
-               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_cost)}</span>
-               <span class="fw-semibold">${fmt(item.cost)}</span>
-           </div>`
-        : `<div style="width:80px;text-align:right">
-               <span class="fw-semibold">${fmt(item.cost)}</span>
-           </div>`;
-
-    const sellAIPrev = isUpdate && item.current_sell != null
-        ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>`
-        : '';
-    const sellAICell = (isIgnored || item.has_items)
-        ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
-        : `<div style="width:110px;text-align:right">
-               <div id="sell-ai-display-${item._id}" class="${item.isEditing ? 'd-none' : ''}">
-                   ${sellAIPrev}
-                   <span class="${sellEdited ? 'text-primary fw-semibold' : 'fw-semibold'}">${fmt(item.edited_sell)}</span>
-                   ${sellEdited ? '<span class="text-muted ms-1" style="font-size:.65rem">(editado)</span>' : ''}
-               </div>
-               <div id="sell-ai-edit-${item._id}" class="${item.isEditing ? '' : 'd-none'}">
-                   <input type="number" class="form-control form-control-sm"
-                          style="width:90px;display:inline-block;text-align:right"
-                          value="${item.edited_sell}"
-                          oninput="setSell(${item._id}, this.value)">
-               </div>
-           </div>`;
-
-    const editBtn = (!isIgnored && !item.has_items)
-        ? `<button class="btn btn-sm btn-outline-secondary" onclick="toggleEdit(${item._id})" title="${item.isEditing ? 'Cerrar' : 'Editar sell AI'}">
-               ${item.isEditing ? '✓' : '✎'}
-           </button>`
-        : '';
-
-    const seasonCell = (!isUpdate && !isIgnored)
-        ? `<div style="width:130px">
-               <input type="text" class="form-control form-control-sm"
-                      style="font-size:.72rem"
-                      placeholder="Temporada"
-                      value="${item.edited_season}"
-                      oninput="setSeason(${item._id}, this.value)">
-           </div>`
-        : `<div style="width:130px"></div>`;
-
-    return `
-    <div class="card mb-2 ${isIgnored ? 'opacity-50' : ''}" id="row-${item._id}">
-        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
-            <div style="min-width:90px">
-                <span class="badge rounded-pill ${badgeClass}" style="font-size:.68rem">${item.action}</span>
-                <div class="text-muted mt-1" style="font-size:.68rem">${item.column_options} · ${item.fcu}</div>
-            </div>
-            <div class="flex-grow-1">
-                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}
-                    ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Solo se actualiza el costo — venta no se modifica">ítems de costo</span>' : ""}
-                    ${item.status === "Provisional" ? '<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:.62rem;">Provisional</span>' : ""}
-                </div>
-                ${item.has_items && item.ci_name ? `<div class="text-info-emphasis" style="font-size:.70rem">↳ ${item.ci_name}</div>` : ""}
-                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
-                ${item.rate_group_name ? `<div class="text-muted" style="font-size:.68rem;font-style:italic">${item.rate_group_name}</div>` : ""}
-            </div>
-            ${costCell}
-            ${sellTPCell}
-            ${sellAICell}
-            ${seasonCell}
-            <div class="d-flex gap-1" style="min-width:130px;justify-content:flex-end">
-                ${editBtn}
-                <button class="btn btn-sm ${isIgnored ? 'btn-outline-success' : 'btn-outline-danger'}"
-                        onclick="toggleIgnore(${item._id})">
-                    ${isIgnored ? "Restaurar" : "Ignorar"}
-                </button>
-            </div>
-        </div>
-    </div>`;
-}
-
-function rowHTMLDelete(item) {
-    const isIgnored = item.ignored;
-    const ratesSummary = (item.rates_summary || [])
-        .map(r => `<span class="badge bg-secondary-subtle text-secondary-emphasis border me-1" style="font-size:.68rem">${r.column_options} · ${fmt(r.sell_tourplan)}</span>`)
-        .join("");
-
-    return `
-    <div class="card mb-2 border-danger-subtle ${isIgnored ? "opacity-50" : ""}" id="row-${item._id}">
-        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
-            <div style="min-width:90px">
-                <span class="badge rounded-pill bg-danger-subtle text-danger-emphasis border border-danger-subtle" style="font-size:.68rem">Eliminar</span>
-                <div class="text-muted mt-1" style="font-size:.68rem">${item.season || "—"}</div>
-            </div>
-            <div class="flex-grow-1">
-                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}</div>
-                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
-                <div class="mt-1">${ratesSummary}</div>
-            </div>
-            <div class="d-flex gap-1" style="min-width:100px;justify-content:flex-end">
-                <button class="btn btn-sm ${isIgnored ? "btn-outline-success" : "btn-outline-danger"}"
-                        onclick="toggleIgnore(${item._id})">
-                    ${isIgnored ? "Restaurar" : "Ignorar"}
-                </button>
-            </div>
-        </div>
-    </div>`;
-}
-
-function toggleIgnore(id) {
-    const item = reviewState.find(i => i._id === id);
-    item.ignored   = !item.ignored;
-    item.isEditing = false;
-    renderAll();
-}
-
-function toggleEdit(id) {
-    const item = reviewState.find(i => i._id === id);
-    item.isEditing = !item.isEditing;
-    renderAll();
-}
-
-function setSell(id, val) {
-    const parsed = parseFloat(val);
-    if (!isNaN(parsed)) reviewState.find(i => i._id === id).edited_sell = parsed;
-}
-
-function setSeason(id, val) {
-    reviewState.find(i => i._id === id).edited_season = val;
-}
-
-function ignoreAll(action) {
-    reviewState.filter(i => i.action === action).forEach(i => { i.ignored = true; i.isEditing = false; });
-    renderAll();
-}
-
-function restoreAll(action) {
-    reviewState.filter(i => i.action === action).forEach(i => i.ignored = false);
-    renderAll();
-}
-
-function updateCounts() {
-    const active = reviewState.filter(i => !i.ignored);
-    document.getElementById("count-update").textContent    = active.filter(i => i.action === "Update").length;
-    document.getElementById("count-update-ci").textContent = active.filter(i => i.action === "UpdateCI").length;
-    document.getElementById("count-add").textContent       = active.filter(i => i.action === "Add").length;
-    document.getElementById("count-delete").textContent    = active.filter(i => i.action === "Delete").length;
-    document.getElementById("count-ignored").textContent   = reviewState.filter(i => i.ignored).length;
-    const n = active.length;
-    document.getElementById("btn-confirm-all").textContent = `Confirmar ${n} cambio${n !== 1 ? "s" : ""}`;
-    document.getElementById("btn-confirm-all").disabled = n === 0;
-}
-
-function confirmChanges() {
-    const confirmed  = reviewState.filter(i => !i.ignored).map(item => ({
-        _id:            item._id,
-        action:         item.action,
-        product_name:   item.product_name,
-        product_id:     item.product_id,
-        rate_id:        item.rate_id,
-        rate_group_id:  item.rate_group_id,
-        rate_line_id:   item.rate_line_id,
-        cost:           item.cost,
-        sell_tourplan:  item.sell_tourplan,
-        sell:           item.edited_sell,
-        season:         item.edited_season,
-        price_code:     item.price_code,
-        date_from:      item.date_from,
-        date_to:        item.date_to,
-        column_options: item.column_options,
-        fcu:            item.fcu,
-        // CostItem fields (for has_items rates)
-        has_items:      item.has_items,
-        ci_id:          item.ci_id,
-        ci_value:       item.ci_value,
-        ci_fcu:         item.ci_fcu,
-        base:           item.base,
-        margin:         item.margin,
-        margin_info:    item.margin_info,
-        status:         item.status,
-    }));
-    const ignored_ids = reviewState.filter(i => i.ignored).map(i => i._id);
-
-    // Show spinner in confirm button
-    const btn = document.getElementById('btn-confirm-all');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando…';
-
-    fetch("{% url 'apply_changes' %}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
-        body: JSON.stringify({ confirmed, ignored_ids }),
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error al guardar: ' + data.error);
-            btn.disabled = false;
-            btn.innerHTML = 'Confirmar cambios';
-            return;
-        }
-        window.location.href = "{% url 'tp_mod_list' %}";
-    })
-    .catch(err => {
-        alert('Error al guardar: ' + String(err));
-        btn.disabled = false;
-        btn.innerHTML = 'Confirmar cambios';
-    });
-}
-
-
-function discardAll() {
-    fetch("{% url 'discard_changes' %}", {
-        method: "POST",
-        headers: { "X-CSRFToken": CSRF_TOKEN },
-    }).then(() => { window.location.href = "{% url 'tp_mod_list' %}"; });
-}
-
-function openReviewModal() {
-    renderAll();
-    const modalEl = document.getElementById("windowReview");
-    const modal   = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-    modal.show();
-}
-
-function tryOpenModal() {
-    if (typeof bootstrap !== "undefined") {
-        document.getElementById("btn-open-review").onclick = openReviewModal;
-        document.getElementById("btn-discard-all-banner").onclick = discardAll;
-        openReviewModal();
-    } else {
-        setTimeout(tryOpenModal, 100);
-    }
-}
-
-document.addEventListener("DOMContentLoaded", tryOpenModal);
-</script>
-{% endif %}
 
 {% endblock %}

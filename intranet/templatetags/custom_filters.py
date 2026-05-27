@@ -43,3 +43,10 @@ def dict_get(d, key):
 @register.filter
 def split(value, sep):
     return value.split(sep)
+
+@register.filter
+def has_key(d, key):
+    try:
+        return key in d
+    except TypeError:
+        return False

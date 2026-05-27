@@ -191,8 +191,29 @@
 
                     <td class="fw-bold text-nowrap">
                         {{ row.supplier.name }}
-                        {% if row.supplier.hotel_quality %}
-                            <div class="fw-normal text-muted" style="font-size:0.7rem;">{{ row.supplier.hotel_quality }}</div>
+                        {% if row.supplier.note or row.supplier.prepayment or row.supplier.child_note or row.supplier.stay_note or row.supplier.closing_note %}
+                            <button type="button"
+                                    class="btn btn-link p-0 ms-1 text-warning supplier-notes-btn"
+                                    style="font-size:0.8rem; vertical-align:middle; line-height:1; border:none; background:none;"
+                                    data-supplier-name="{{ row.supplier.name|escape }}"
+                                    data-note="{{ row.supplier.note|default:'' }}"
+                                    data-prepayment="{{ row.supplier.prepayment|default:'' }}"
+                                    data-child-note="{{ row.supplier.child_note|default:'' }}"
+                                    data-stay-note="{{ row.supplier.stay_note|default:'' }}"
+                                    data-closing-note="{{ row.supplier.closing_note|default:'' }}">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </button>
+                        {% endif %}
+                        {% if row.supplier.hotel_quality or row.supplier.group %}
+                            <div class="fw-normal text-muted" style="font-size:0.7rem;">
+                                {% if row.supplier.hotel_quality %}{{ row.supplier.hotel_quality }}{% endif %}
+                                {% if row.supplier.group %}
+                                    {% if row.supplier.hotel_quality %} · {% endif %}{{ row.supplier.group.name }}
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                        {% if row.supplier.stay_note %}
+                            <div class="fw-semibold" style="font-size:0.7rem; color:#D97706;">&#9632; {{ row.supplier.stay_note }}</div>
                         {% endif %}
                     </td>
 
@@ -432,3 +453,45 @@
 </script>
 
 {% endblock body %}
+
+{% block extra_js %}
+<script>
+// ── Supplier notes popovers ──────────────────────────────────────────
+document.querySelectorAll('.supplier-notes-btn').forEach(function (btn) {
+    const fields = [
+        ['General note',   btn.dataset.note],
+        ['Prepayment',     btn.dataset.prepayment],
+        ['Children',       btn.dataset.childNote],
+        ['Minimum stay',   btn.dataset.stayNote],
+        ['Closure',        btn.dataset.closingNote],
+    ];
+    const content = fields
+        .filter(function (f) { return f[1]; })
+        .map(function (f) {
+            return '<div class="mb-1"><strong>' + f[0] + ':</strong> ' +
+                   f[1].replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') +
+                   '</div>';
+        })
+        .join('');
+
+    new bootstrap.Popover(btn, {
+        title:     btn.dataset.supplierName,
+        content:   content,
+        html:      true,
+        placement: 'right',
+        trigger:   'click',
+        container: 'body',
+    });
+});
+
+// Close any open popover when clicking elsewhere
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('.supplier-notes-btn') && !e.target.closest('.popover')) {
+        document.querySelectorAll('.supplier-notes-btn').forEach(function (btn) {
+            const pop = bootstrap.Popover.getInstance(btn);
+            if (pop) pop.hide();
+        });
+    }
+});
+</script>
+{% endblock extra_js %}

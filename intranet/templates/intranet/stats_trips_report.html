@@ -67,37 +67,81 @@
                 
                 <div class="collapse mt-3" id="section-general-trips">
                     <div class="card card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-4">
-                            <div class="m-3" id="working-days"></div>
-                            <div class="mb-3">
-                                <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-general')">
-                                    <i class="fas fa-file-pdf"></i> Exportar PDF
-                                </button>
-                                <button class="btn btn-primary" onclick="window.print()">
-                                    <i class="fas fa-print"></i> Imprimir
-                                </button>
+
+                        <!-- KPI cards row -->
+                        <div class="row g-3 mb-4 text-center">
+                            <div class="col-6 col-md">
+                                <div class="card border-primary h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Total Viajes</div>
+                                        <div class="display-5 fw-bold text-primary" id="kpi-trips">—</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="row">                          
-                            <div class="col">
-                                <h3>📋 Viajes confirmados</h3>
-                                <table class="table table-bordered table-striped" id="summary-table-trips">
-                                    <thead>
-                                        <tr>
-                                            <th>VIAJES</th>
-                                            <th>Cantidad</th>
-                                            <th>Facturación</th>
-                                            <th>Facturación %</th>
-                                            <th>Rentabilidad</th>
-                                            <th>Rentabilidad %</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="summary-trips-tbody"></tbody>
-                                </table>
+                            <div class="col-6 col-md">
+                                <div class="card border-danger h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Cancelaciones</div>
+                                        <div class="display-5 fw-bold text-danger" id="kpi-trips-cancel">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card border-success h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Rentabilidad Total</div>
+                                        <div class="fs-4 fw-bold text-success" id="kpi-trips-rent">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Rentabilidad</div>
+                                        <div class="fs-3 fw-semibold" id="kpi-trips-rent-perc">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md">
+                                <div class="card bg-light h-100">
+                                    <div class="card-body py-3">
+                                        <div class="text-muted small mb-1">Promedio Dificultad</div>
+                                        <div class="fs-3 fw-semibold" id="kpi-trips-difficulty">—</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="row mt-4">
+                        <!-- Export buttons -->
+                        <div class="d-flex justify-content-end mb-4">
+                            <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-general-trips')">
+                                <i class="fas fa-file-pdf"></i> Exportar PDF
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fas fa-print"></i> Imprimir
+                            </button>
+                        </div>
+
+                        <!-- By trip type table -->
+                        <h5 class="mb-3">Por tipo de viaje</h5>
+                        <table class="table table-bordered table-striped table-sm" id="summary-table-trips">
+                            <thead class="table-secondary">
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th class="text-end">Cantidad</th>
+                                    <th class="text-end">Facturación</th>
+                                    <th class="text-end">Fact. %</th>
+                                    <th class="text-end">Rentabilidad</th>
+                                    <th class="text-end">Rent. %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summary-trips-tbody"></tbody>
+                        </table>
+
+                        <hr>
+
+                        <!-- Cancellations detail -->
+                        <div class="row mt-3">
                             <div class="col-md-6">
                                 <h4>Cancelaciones</h4>
                                 <div class="row">
@@ -107,6 +151,7 @@
                             </div>
                         </div>
 
+                        <!-- Difficulty detail -->
                         <div class="mt-4">
                             <h4 class="d-inline">Dificultad de viajes</h4>
                             <i class="fas fa-question-circle text-primary ms-1"

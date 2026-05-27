@@ -64,6 +64,7 @@
                                     {% endif %}
                                 {% endfor %}
                             </select>
+                            <div id="absence-alert" class="alert alert-warning py-1 px-2 mt-1 small d-none" role="alert"></div>
                         </div>
                     </div>
                     <div class="row">
@@ -163,5 +164,23 @@
     </div>
 </div>
 <br>
+{{ absence_alerts|json_script:"absence-alerts-data" }}
+<script>
+  const ABSENCE_ALERTS = JSON.parse(document.getElementById('absence-alerts-data').textContent);
+  const absenceAlertEl = document.getElementById('absence-alert');
+  document.getElementById('user_working_select').addEventListener('change', function () {
+    const username = this.value;
+    const when = ABSENCE_ALERTS[username];
+    if (when) {
+      absenceAlertEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i>'
+        + (when === 'hoy'
+            ? '<strong>' + username + '</strong> está ausente hoy.'
+            : '<strong>' + username + '</strong> estará ausente ' + when + '.');
+      absenceAlertEl.classList.remove('d-none');
+    } else {
+      absenceAlertEl.classList.add('d-none');
+    }
+  });
+</script>
 {% endif %}
 {% endblock %}

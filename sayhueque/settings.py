@@ -32,7 +32,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 # Absolute base URL used to build image links in outgoing emails
-SITE_URL = "https://sayaliwen.pythonanywhere.com"
+SITE_URL = "https://intranet.aliwenincoming.com"
 
 
 # Application definition

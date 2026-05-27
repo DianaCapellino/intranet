@@ -8,15 +8,20 @@
         <a href="{% url 'tariff' %}" class="text-decoration-none text-dark">
             <i class="fa-solid fa-arrow-left"></i>
         </a>
-        <h2 class="mb-0">Generar PDF de Tarifario</h2>
+        <h2 class="mb-0">{% if is_client %}Generate Tariff PDF{% else %}Generar PDF de Tarifario{% endif %}</h2>
     </div>
 
     <form id="pdf-form" method="get" action="{% url 'pdf_view' %}" target="_blank">
+
+        {% if is_client and user_client %}
+            <input type="hidden" name="client" value="{{ user_client.id }}">
+        {% endif %}
 
         <!-- Filters -->
         <div class="card mb-4 shadow-sm">
             <div class="card-body">
                 <div class="row g-3 align-items-end">
+                    {% if not is_client %}
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Cliente</label>
                         <select name="client" class="form-select">
@@ -26,17 +31,19 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-bold">Temporada</label>
+                    {% endif %}
+                    <div class="{% if is_client %}col-md-4{% else %}col-md-3{% endif %}">
+                        <label class="form-label fw-bold">{% if is_client %}Season{% else %}Temporada{% endif %}</label>
                         <select name="season" class="form-select">
                             <option value="{{ this_year|add:-1 }}">{{ this_year|add:-1 }}/{{ this_year }}</option>
                             <option value="{{ this_year }}" selected>{{ this_year }}/{{ this_year|add:1 }}</option>
                             <option value="{{ this_year|add:1 }}">{{ this_year|add:1 }}/{{ this_year|add:2 }}</option>
                         </select>
                     </div>
-                    <div class="col-md-5">
-                        <label class="form-label fw-bold">Buscar</label>
-                        <input type="text" id="supplier-search" class="form-control" placeholder="Filtrar por nombre...">
+                    <div class="{% if is_client %}col-md-8{% else %}col-md-5{% endif %}">
+                        <label class="form-label fw-bold">{% if is_client %}Search{% else %}Buscar{% endif %}</label>
+                        <input type="text" id="supplier-search" class="form-control"
+                               placeholder="{% if is_client %}Filter by name…{% else %}Filtrar por nombre...{% endif %}">
                     </div>
                 </div>
             </div>
@@ -46,26 +53,26 @@
         <ul class="nav nav-tabs mb-3" id="pdfTabs">
             <li class="nav-item">
                 <button class="nav-link active" type="button" data-bs-toggle="tab" data-bs-target="#tab-acc">
-                    <i class="fa-solid fa-hotel me-1"></i>Alojamiento
+                    <i class="fa-solid fa-hotel me-1"></i>{% if is_client %}Accommodation{% else %}Alojamiento{% endif %}
                 </button>
             </li>
             <li class="nav-item">
                 <button class="nav-link" type="button" data-bs-toggle="tab" data-bs-target="#tab-svs">
-                    <i class="fa-solid fa-van-shuttle me-1"></i>Servicios
+                    <i class="fa-solid fa-van-shuttle me-1"></i>{% if is_client %}Services{% else %}Servicios{% endif %}
                 </button>
             </li>
         </ul>
 
         <div class="tab-content">
 
-            <!-- ALOJAMIENTO -->
+            <!-- ALOJAMIENTO / ACCOMMODATION -->
             <div class="tab-pane fade show active" id="tab-acc">
                 <div class="mb-3 d-flex gap-2">
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', true)">
-                        <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
+                        <i class="fa-solid fa-check-double me-1"></i>{% if is_client %}Select all{% else %}Seleccionar todos{% endif %}
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', false)">
-                        <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
+                        <i class="fa-solid fa-xmark me-1"></i>{% if is_client %}Deselect all{% else %}Deseleccionar todos{% endif %}
                     </button>
                 </div>
 
@@ -76,7 +83,9 @@
                         <div class="form-check mb-0">
                             <input class="form-check-input" type="checkbox" id="acc-all-{{ location.id }}"
                                    onchange="toggleLocation('acc', '{{ location.id }}', this.checked)">
-                            <label class="form-check-label text-white small" for="acc-all-{{ location.id }}">Todos</label>
+                            <label class="form-check-label text-white small" for="acc-all-{{ location.id }}">
+                                {% if is_client %}All{% else %}Todos{% endif %}
+                            </label>
                         </div>
                     </div>
                     <div class="card-body p-2">
@@ -106,14 +115,14 @@
                 {% endfor %}
             </div>
 
-            <!-- SERVICIOS -->
+            <!-- SERVICIOS / SERVICES -->
             <div class="tab-pane fade" id="tab-svs">
                 <div class="mb-3 d-flex gap-2">
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('svs', true)">
-                        <i class="fa-solid fa-check-double me-1"></i>Seleccionar todos
+                        <i class="fa-solid fa-check-double me-1"></i>{% if is_client %}Select all{% else %}Seleccionar todos{% endif %}
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('svs', false)">
-                        <i class="fa-solid fa-xmark me-1"></i>Deseleccionar todos
+                        <i class="fa-solid fa-xmark me-1"></i>{% if is_client %}Deselect all{% else %}Deseleccionar todos{% endif %}
                     </button>
                 </div>
 
@@ -124,7 +133,9 @@
                         <div class="form-check mb-0">
                             <input class="form-check-input" type="checkbox" id="svs-all-{{ location.id }}"
                                    onchange="toggleLocation('svs', '{{ location.id }}', this.checked)">
-                            <label class="form-check-label text-white small" for="svs-all-{{ location.id }}">Todos</label>
+                            <label class="form-check-label text-white small" for="svs-all-{{ location.id }}">
+                                {% if is_client %}All{% else %}Todos{% endif %}
+                            </label>
                         </div>
                     </div>
                     <div class="card-body p-2">
@@ -156,7 +167,7 @@
 
         <div class="d-flex justify-content-end mt-4 pb-5">
             <button type="submit" class="btn btn-dark btn-lg px-5">
-                <i class="fa-solid fa-file-pdf me-2"></i>Generar PDF
+                <i class="fa-solid fa-file-pdf me-2"></i>{% if is_client %}Generate PDF{% else %}Generar PDF{% endif %}
             </button>
         </div>
 

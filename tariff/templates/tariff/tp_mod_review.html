@@ -1,0 +1,389 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+{% if user.isAdmin %}
+
+{# ─── Sticky top bar ─────────────────────────────────────────────────────────── #}
+<div id="review-topbar" style="position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid #dee2e6;padding:.6rem 1.25rem;">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        <a href="{% url 'tp_mod_list' %}" class="btn btn-sm btn-outline-secondary me-2" title="Volver">
+            <i class="fa-solid fa-arrow-left"></i>
+        </a>
+        <span class="fw-semibold me-1">Revisión de tarifas</span>
+        <div class="vr"></div>
+        <div class="text-center px-1">
+            <span class="fw-bold" id="tb-count-update">{{ total_updates }}</span>
+            <span class="text-muted small ms-1">actualiz.</span>
+        </div>
+        <div class="text-center px-1">
+            <span class="fw-bold text-success" id="tb-count-add">{{ total_adds }}</span>
+            <span class="text-muted small ms-1">agregar</span>
+        </div>
+        <div class="text-center px-1">
+            <span class="fw-bold text-danger" id="tb-count-delete">{{ total_deletes }}</span>
+            <span class="text-muted small ms-1">eliminar</span>
+        </div>
+        <div class="text-center px-1">
+            <span class="fw-bold text-muted" id="tb-count-ignored">0</span>
+            <span class="text-muted small ms-1">ignorados</span>
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <form method="post" action="{% url 'discard_changes' %}" onsubmit="return confirm('¿Descartar todos los cambios pendientes?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="fa-solid fa-trash me-1"></i> Descartar todo
+                </button>
+            </form>
+            <button class="btn btn-dark" id="btn-confirm-all" onclick="confirmChanges()">
+                Confirmar cambios
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid px-4 py-3">
+
+    <div id="supplier-groups">
+        {% for group in supplier_groups %}
+        <div class="card mb-3 supplier-card" data-supplier="{{ group.supplier_name|escapejs }}" id="sg-{{ forloop.counter }}">
+            <div class="card-header d-flex align-items-center gap-2 py-2" style="background:#f8f9fa;cursor:pointer"
+                 onclick="toggleCard('{{ forloop.counter }}')">
+                <i class="fa-solid fa-chevron-down text-muted card-chevron" id="chev-{{ forloop.counter }}" style="transition:transform .2s;font-size:.8rem"></i>
+                <span class="fw-semibold flex-grow-1">{{ group.supplier_name }}</span>
+                {% if group.updates %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ group.updates }} actualiz.</span>
+                {% endif %}
+                {% if group.adds %}
+                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">{{ group.adds }} agregar</span>
+                {% endif %}
+                {% if group.deletes %}
+                <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">{{ group.deletes }} eliminar</span>
+                {% endif %}
+                <div class="d-flex gap-2 ms-2" onclick="event.stopPropagation()">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="ignoreSupplier('{{ group.supplier_name|escapejs }}')">Ignorar todos</button>
+                    <button class="btn btn-outline-success btn-sm"   onclick="restoreSupplier('{{ group.supplier_name|escapejs }}')">Restaurar</button>
+                </div>
+            </div>
+            <div class="card-body p-2" id="card-body-{{ forloop.counter }}">
+                <div class="d-flex gap-2 px-2 pb-1 mb-1 border-bottom text-muted" style="font-size:.72rem;letter-spacing:.06em;text-transform:uppercase">
+                    <div style="min-width:90px"></div>
+                    <div class="flex-grow-1"></div>
+                    <div style="width:80px;text-align:right">Costo</div>
+                    <div style="width:100px;text-align:right">Sell TP</div>
+                    <div style="width:110px;text-align:right">Sell AI</div>
+                    <div style="width:130px">Temporada (Add)</div>
+                    <div style="width:130px"></div>
+                </div>
+                <div id="supplier-rows-{{ forloop.counter }}"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>{# /container #}
+
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+const APPLY_URL   = "{% url 'apply_changes' %}";
+const RETURN_URL  = "{% url 'tp_mod_list' %}";
+
+// Build reviewState from server data
+const CHANGES = JSON.parse('{{ pending_changes_json|escapejs }}');
+const reviewState = CHANGES.map((item, idx) => ({
+    ...item,
+    _id:           item._id !== undefined ? item._id : idx,
+    ignored:       false,
+    edited_sell:   item.sell,
+    edited_season: item.season || "To be defined",
+    isEditing:     false,
+}));
+
+// Map from supplier name → Django forloop.counter (card index, 1-based)
+const supplierCardIndex = {};
+{% for group in supplier_groups %}
+supplierCardIndex["{{ group.supplier_name|escapejs }}"] = {{ forloop.counter }};
+{% endfor %}
+
+// ─── Card collapse toggle ─────────────────────────────────────────────────────
+function toggleCard(idx) {
+    const body = document.getElementById(`card-body-${idx}`);
+    const chev = document.getElementById(`chev-${idx}`);
+    const hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    chev.style.transform = hidden ? '' : 'rotate(-90deg)';
+}
+
+// ─── Render helpers ───────────────────────────────────────────────────────────
+function fmt(n) {
+    return n != null ? Number(n).toLocaleString("es-AR", {minimumFractionDigits:0, maximumFractionDigits:2}) : "—";
+}
+
+function rowHTML(item) {
+    const isUpdate  = item.action === "Update" || item.action === "UpdateCI";
+    const isIgnored = item.ignored;
+    const sellEdited = item.edited_sell !== item.sell_tourplan;
+
+    const badgeClass = isUpdate
+        ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+        : "bg-success-subtle text-success-emphasis border border-success-subtle";
+
+    const sellTPCell = item.has_items
+        ? `<div style="width:100px;text-align:right" class="text-muted fst-italic" style="font-size:.75rem">—</div>`
+        : isUpdate
+        ? `<div style="width:100px;text-align:right">
+               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell_tourplan)}</span>
+               <span class="fw-semibold text-warning-emphasis">${fmt(item.sell_tourplan)}</span>
+           </div>`
+        : `<div style="width:100px;text-align:right">
+               <span class="fw-semibold text-success-emphasis">${fmt(item.sell_tourplan)}</span>
+           </div>`;
+
+    const costCell = isUpdate
+        ? `<div style="width:80px;text-align:right">
+               <span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_cost)}</span>
+               <span class="fw-semibold">${fmt(item.cost)}</span>
+           </div>`
+        : `<div style="width:80px;text-align:right">
+               <span class="fw-semibold">${fmt(item.cost)}</span>
+           </div>`;
+
+    const sellAIPrev = isUpdate && item.current_sell != null
+        ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>`
+        : '';
+    const sellAICell = (isIgnored || item.has_items)
+        ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
+        : `<div style="width:110px;text-align:right">
+               <div id="sell-ai-display-${item._id}" class="${item.isEditing ? 'd-none' : ''}">
+                   ${sellAIPrev}
+                   <span class="${sellEdited ? 'text-primary fw-semibold' : 'fw-semibold'}">${fmt(item.edited_sell)}</span>
+                   ${sellEdited ? '<span class="text-muted ms-1" style="font-size:.65rem">(editado)</span>' : ''}
+               </div>
+               <div id="sell-ai-edit-${item._id}" class="${item.isEditing ? '' : 'd-none'}">
+                   <input type="number" class="form-control form-control-sm"
+                          style="width:90px;display:inline-block;text-align:right"
+                          value="${item.edited_sell}"
+                          oninput="setSell(${item._id}, this.value)">
+               </div>
+           </div>`;
+
+    const editBtn = (!isIgnored && !item.has_items)
+        ? `<button class="btn btn-sm btn-outline-secondary" onclick="toggleEdit(${item._id})" title="${item.isEditing ? 'Cerrar' : 'Editar sell AI'}">
+               ${item.isEditing ? '✓' : '✎'}
+           </button>`
+        : '';
+
+    const seasonCell = (!isUpdate && !isIgnored)
+        ? `<div style="width:130px">
+               <input type="text" class="form-control form-control-sm"
+                      style="font-size:.72rem"
+                      placeholder="Temporada"
+                      value="${item.edited_season}"
+                      oninput="setSeason(${item._id}, this.value)">
+           </div>`
+        : `<div style="width:130px"></div>`;
+
+    return `
+    <div class="card mb-2 ${isIgnored ? 'opacity-50' : ''}" id="row-${item._id}">
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <div style="min-width:90px">
+                <span class="badge rounded-pill ${badgeClass}" style="font-size:.68rem">${item.action}</span>
+                <div class="text-muted mt-1" style="font-size:.68rem">${item.column_options || ''} · ${item.fcu || ''}</div>
+            </div>
+            <div class="flex-grow-1">
+                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}
+                    ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Solo se actualiza el costo — venta no se modifica">ítems de costo</span>' : ""}
+                    ${item.status === "Provisional" ? '<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:.62rem;">Provisional</span>' : ""}
+                </div>
+                ${item.has_items && item.ci_name ? `<div class="text-info-emphasis" style="font-size:.70rem">↳ ${item.ci_name}</div>` : ""}
+                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
+                ${item.rate_group_name ? `<div class="text-muted" style="font-size:.68rem;font-style:italic">${item.rate_group_name}</div>` : ""}
+            </div>
+            ${costCell}
+            ${sellTPCell}
+            ${sellAICell}
+            ${seasonCell}
+            <div class="d-flex gap-1" style="min-width:130px;justify-content:flex-end">
+                ${editBtn}
+                <button class="btn btn-sm ${isIgnored ? 'btn-outline-success' : 'btn-outline-danger'}"
+                        onclick="toggleIgnore(${item._id})">
+                    ${isIgnored ? "Restaurar" : "Ignorar"}
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function rowHTMLDelete(item) {
+    const isIgnored = item.ignored;
+    const ratesSummary = (item.rates_summary || [])
+        .map(r => `<span class="badge bg-secondary-subtle text-secondary-emphasis border me-1" style="font-size:.68rem">${r.column_options} · ${fmt(r.sell_tourplan)}</span>`)
+        .join("");
+
+    return `
+    <div class="card mb-2 border-danger-subtle ${isIgnored ? "opacity-50" : ""}" id="row-${item._id}">
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <div style="min-width:90px">
+                <span class="badge rounded-pill bg-danger-subtle text-danger-emphasis border border-danger-subtle" style="font-size:.68rem">Eliminar</span>
+                <div class="text-muted mt-1" style="font-size:.68rem">${item.season || "—"}</div>
+            </div>
+            <div class="flex-grow-1">
+                <div class="fw-semibold" style="font-size:.88rem">${item.product_name}</div>
+                <div class="text-muted" style="font-size:.72rem">${item.date_from} → ${item.date_to}</div>
+                <div class="mt-1">${ratesSummary}</div>
+            </div>
+            <div class="d-flex gap-1" style="min-width:100px;justify-content:flex-end">
+                <button class="btn btn-sm ${isIgnored ? "btn-outline-success" : "btn-outline-danger"}"
+                        onclick="toggleIgnore(${item._id})">
+                    ${isIgnored ? "Restaurar" : "Ignorar"}
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ─── Render all supplier cards ────────────────────────────────────────────────
+function renderAll() {
+    // Group reviewState by supplier_name
+    const bySupplier = {};
+    reviewState.forEach(item => {
+        const key = item.supplier_name || "Sin proveedor";
+        if (!bySupplier[key]) bySupplier[key] = [];
+        bySupplier[key].push(item);
+    });
+
+    Object.entries(supplierCardIndex).forEach(([supplierName, cardIdx]) => {
+        const items = bySupplier[supplierName] || [];
+        const container = document.getElementById(`supplier-rows-${cardIdx}`);
+        if (!container) return;
+        container.innerHTML = items.map(item =>
+            item.action === "Delete" ? rowHTMLDelete(item) : rowHTML(item)
+        ).join("") || `<p class="text-muted small fst-italic ps-2">Sin ítems.</p>`;
+    });
+
+    updateTopBar();
+}
+
+// ─── Top bar counts ───────────────────────────────────────────────────────────
+function updateTopBar() {
+    const active  = reviewState.filter(i => !i.ignored);
+    const ignored = reviewState.filter(i => i.ignored);
+    document.getElementById("tb-count-update").textContent  = active.filter(i => i.action === "Update" || i.action === "UpdateCI").length;
+    document.getElementById("tb-count-add").textContent     = active.filter(i => i.action === "Add").length;
+    document.getElementById("tb-count-delete").textContent  = active.filter(i => i.action === "Delete").length;
+    document.getElementById("tb-count-ignored").textContent = ignored.length;
+    const n = active.length;
+    const btn = document.getElementById("btn-confirm-all");
+    btn.textContent = `Confirmar ${n} cambio${n !== 1 ? "s" : ""}`;
+    btn.disabled = n === 0;
+}
+
+// ─── Item-level actions ───────────────────────────────────────────────────────
+function toggleIgnore(id) {
+    const item = reviewState.find(i => i._id === id);
+    if (!item) return;
+    item.ignored   = !item.ignored;
+    item.isEditing = false;
+    renderAll();
+}
+
+function toggleEdit(id) {
+    const item = reviewState.find(i => i._id === id);
+    if (!item) return;
+    item.isEditing = !item.isEditing;
+    renderAll();
+}
+
+function setSell(id, val) {
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed)) reviewState.find(i => i._id === id).edited_sell = parsed;
+}
+
+function setSeason(id, val) {
+    reviewState.find(i => i._id === id).edited_season = val;
+}
+
+// ─── Supplier-level ignore / restore ─────────────────────────────────────────
+function ignoreSupplier(supplierName) {
+    reviewState.filter(i => (i.supplier_name || "Sin proveedor") === supplierName)
+               .forEach(i => { i.ignored = true; i.isEditing = false; });
+    renderAll();
+    // Collapse the card
+    const cardIdx = supplierCardIndex[supplierName];
+    if (cardIdx) {
+        const body = document.getElementById(`card-body-${cardIdx}`);
+        const chev = document.getElementById(`chev-${cardIdx}`);
+        if (body && body.style.display !== 'none') {
+            body.style.display = 'none';
+            if (chev) chev.style.transform = 'rotate(-90deg)';
+        }
+    }
+}
+
+function restoreSupplier(supplierName) {
+    reviewState.filter(i => (i.supplier_name || "Sin proveedor") === supplierName)
+               .forEach(i => { i.ignored = false; });
+    renderAll();
+}
+
+// ─── Confirm ──────────────────────────────────────────────────────────────────
+function confirmChanges() {
+    const confirmed = reviewState.filter(i => !i.ignored).map(item => ({
+        _id:            item._id,
+        action:         item.action,
+        product_name:   item.product_name,
+        product_id:     item.product_id,
+        rate_id:        item.rate_id,
+        rate_group_id:  item.rate_group_id,
+        rate_line_id:   item.rate_line_id,
+        cost:           item.cost,
+        sell_tourplan:  item.sell_tourplan,
+        sell:           item.edited_sell,
+        season:         item.edited_season,
+        price_code:     item.price_code,
+        date_from:      item.date_from,
+        date_to:        item.date_to,
+        column_options: item.column_options,
+        fcu:            item.fcu,
+        has_items:      item.has_items,
+        ci_id:          item.ci_id,
+        ci_value:       item.ci_value,
+        ci_fcu:         item.ci_fcu,
+        base:           item.base,
+        margin:         item.margin,
+        margin_info:    item.margin_info,
+        status:         item.status,
+    }));
+    const ignored_ids = reviewState.filter(i => i.ignored).map(i => i._id);
+
+    const btn = document.getElementById('btn-confirm-all');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando…';
+
+    fetch(APPLY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
+        body: JSON.stringify({ confirmed, ignored_ids }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error al guardar: ' + data.error);
+            btn.disabled = false;
+            btn.textContent = 'Confirmar cambios';
+            return;
+        }
+        window.location.href = RETURN_URL;
+    })
+    .catch(err => {
+        alert('Error al guardar: ' + String(err));
+        btn.disabled = false;
+        btn.textContent = 'Confirmar cambios';
+    });
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", renderAll);
+</script>
+
+{% endif %}{# /isAdmin #}
+{% endblock %}

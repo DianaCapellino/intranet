@@ -39,8 +39,9 @@ def index(request):
                 'supplier_products__rate_products__group_rate',
                 filter=Q(supplier_products__rate_products__group_rate__is_revised=False)
             ))
+            .select_related('group__location')
             .distinct()
-            .order_by('name')
+            .order_by('group__location__order', 'group__location__name', 'name')
         )
 
     return render(request, "tariff/tariff.html", {
@@ -106,6 +107,8 @@ def get_filtered_rate_lines(request):
     else:
         rate_lines = rate_lines.filter(group__product__type_service="NA")
 
+    rate_lines = rate_lines.filter(group__product__isActivated=True)
+
     if season:
         year = int(season)
         season_start = date(year, 5, 1)        # 01 May año
@@ -136,6 +139,12 @@ def get_filtered_rate_lines(request):
 
     is_client = request.user.userType == "Cliente"
 
+    if is_client:
+        rate_lines = rate_lines.filter(
+            is_revised=True,
+            group__product__supplier__is_provisional=False,
+        )
+
     for line in rate_lines:
         rates = {}
         costs = {}
@@ -145,7 +154,7 @@ def get_filtered_rate_lines(request):
         locked_columns = set()
 
         for r in line.line_rates.all():
-            if is_client and r.status != "Confirmed" and not r.rate_line.is_revised:
+            if is_client and r.status != "Confirmed":
                 continue
 
             sell_adjusted = apply_client_margin(
@@ -196,6 +205,16 @@ def tariff_search(request):
 def pdf_select(request):
     from collections import defaultdict
 
+    is_client = request.user.userType == "Cliente"
+    user_client = None
+    if is_client:
+        user_client = getattr(request.user, 'client', None)
+        if user_client is None:
+            try:
+                user_client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                pass
+
     acc_suppliers = (
         Supplier.objects
         .filter(group__type_service="AC")
@@ -225,6 +244,8 @@ def pdf_select(request):
         "svs_locations_data": svs_locations_data,
         "clients": Client.objects.all().order_by("name"),
         "this_year": this_year,
+        "is_client": is_client,
+        "user_client": user_client,
     })
 
 
@@ -232,18 +253,26 @@ def pdf_select(request):
 def pdf_view(request):
     acc_supplier_ids = request.GET.getlist("suppliers")
     svs_product_ids  = request.GET.getlist("svs_products")
-    client_id = request.GET.get("client")
     season = request.GET.get("season")
 
     if not acc_supplier_ids and not svs_product_ids:
         return redirect("pdf_select")
 
-    client = None
-    if client_id:
-        try:
-            client = Client.objects.get(id=client_id)
-        except Client.DoesNotExist:
-            pass
+    if request.user.userType == "Cliente":
+        client = getattr(request.user, 'client', None)
+        if client is None:
+            try:
+                client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                client = None
+    else:
+        client_id = request.GET.get("client")
+        client = None
+        if client_id:
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                pass
 
     year = int(season) if season else date.today().year
     season_start = date(year, 5, 1)
@@ -634,6 +663,56 @@ def discard_changes(request):
 
 
 @login_required
+def tp_mod_review(request):
+    """Full-page review of pending tariff changes, grouped by supplier."""
+    pending = request.session.get("pending_changes", [])
+    if not pending:
+        messages.info(request, "No hay cambios pendientes para revisar.")
+        return HttpResponseRedirect(reverse("tp_mod_list"))
+
+    # Enrich supplier_name for items that may pre-date the field being added
+    missing_ids = [item["product_id"] for item in pending if not item.get("supplier_name") and item.get("product_id")]
+    if missing_ids:
+        sup_map = {
+            p.pk: p.supplier.name
+            for p in Product.objects.select_related("supplier").filter(pk__in=missing_ids)
+        }
+        for item in pending:
+            if not item.get("supplier_name") and item.get("product_id"):
+                item["supplier_name"] = sup_map.get(item["product_id"], "")
+
+    # Group by supplier name, preserving insertion order
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for item in pending:
+        key = item.get("supplier_name") or "Sin proveedor"
+        if key not in groups:
+            groups[key] = {"supplier_name": key, "items": [], "adds": 0, "updates": 0, "deletes": 0}
+        groups[key]["items"].append(item)
+        action = item.get("action", "")
+        if action == "Add":
+            groups[key]["adds"] += 1
+        elif action in ("Update", "UpdateCI"):
+            groups[key]["updates"] += 1
+        elif action == "Delete":
+            groups[key]["deletes"] += 1
+
+    supplier_groups = sorted(groups.values(), key=lambda g: g["supplier_name"])
+
+    total_adds    = sum(g["adds"]    for g in supplier_groups)
+    total_updates = sum(g["updates"] for g in supplier_groups)
+    total_deletes = sum(g["deletes"] for g in supplier_groups)
+
+    return render(request, "tariff/tp_mod_review.html", {
+        "supplier_groups":     supplier_groups,
+        "pending_changes_json": json.dumps(pending),
+        "total_adds":          total_adds,
+        "total_updates":       total_updates,
+        "total_deletes":       total_deletes,
+    })
+
+
+@login_required
 def toggle_supplier_update_tp(request):
     """Toggle update_tp for one or more suppliers."""
     if request.method != 'POST':
@@ -951,6 +1030,7 @@ def upload_data(csv_obj):
                         "product_code":    ctx_product.code,
                         "product_name":    str(ctx_product),
                         "product_id":      ctx_product.pk,
+                        "supplier_name":   ctx_supplier_obj.name if ctx_supplier_obj else "",
                         "rate_group_name": "Breakfast included",
                         "price_code":      ctx_price_code,
                         "date_from":       ctx_date_from,
@@ -1056,6 +1136,7 @@ def upload_data(csv_obj):
                     "product_code":   ctx_product.code,
                     "product_name":   str(ctx_product),
                     "product_id":     ctx_product.pk,
+                    "supplier_name":  ctx_supplier_obj.name if ctx_supplier_obj else "",
                     "price_code":     ctx_price_code,
                     "date_from":      ctx_date_from,
                     "date_to":        ctx_date_to,
@@ -1128,6 +1209,7 @@ def upload_data(csv_obj):
                 "action":         "Delete",
                 "product_code":   product.code,
                 "product_name":   str(product),
+                "supplier_name":  product.supplier.name if hasattr(product, 'supplier') and product.supplier else "",
                 "date_from":      rl.date_from.strftime("%d/%m/%Y"),
                 "date_to":        rl.date_to.strftime("%d/%m/%Y"),
                 "season":         rl.season,
@@ -1147,6 +1229,780 @@ def upload_data(csv_obj):
 
 
 _PXB_RE = re.compile(r'(\d+)\.PXB\s*\((\d+)-(\d+)\)', re.IGNORECASE)
+
+# ── Tourplan DB sync SQL ──────────────────────────────────────────────────────
+_ACC_SYNC_SQL = """
+SELECT
+    UsuarioCreacion = (SELECT TOP 1 LW_BY FROM [LA-SAYHUE_Audit].dbo.OPTAuditOverview
+        JOIN [LA-SAYHUE_Audit].dbo.OSRAudit ON OSRAudit.OPT_ID = OPTAuditOverview.OPT_ID
+        WHERE OSRAudit.osr_id = [LA-SAYHUE].dbo.osr.OSR_ID order by LW_DATE asc),
+    OPT.LOCATION as locationCode, LOC.NAME as locationName, OPT.SERVICE as serviceCode, SRV.NAME as serviceName,
+    OPT.SUPPLIER as supplierCode, CRM.NAME as supplierName, OPT.CODE as optionCode, OPT.DESCRIPTION as optionDescription,
+    OPT.COMMENT as optionComment, OPT.FCU, OPT.SCU, OPT.LW_DATE as lastWorkDate, OPT.MESSAGE_CODE as messageCode, OPT.LOCALITY as locality,
+    OPT.CLASS as class, OPT.INT_OPTION as internet, OPT.ANALYSIS1, OPT.ANALYSIS2, OPT.ANALYSIS3, OPT.ANALYSIS4, OPT.ANALYSIS5,
+    OPT.ANALYSIS6, case OPT.DELETED when 0 then 'N' else 'Y' end as deleted, OSR.PRICE_CODE as priceCode, OSR.DATE_FROM as dateFrom,
+    OSR.DATE_TO as dateTo, OSR.STAY_TYPE as rateName, OSR.RATE_TEXT as rateText, OSR.MIN_SCU as minNigths, OSR.PROV as rateStatus,
+    OSR.BUY_CURRENCY as currencyBuy, OSR.SELL_CURRENCY as currencySell, tarifas.servItem,
+    tarifas.costGroups, tarifas.sellGroups,
+    tarifas.costFits, tarifas.sellFits,
+    isnull((select STUFF((select ', '+RTRIM(LTRIM(odt.tax))
+        from ODT where ODT.OSR_ID = OSR.OSR_ID FOR XML PATH ('')),1,1, '')),'') as TaxList
+from (
+    select OPD.OSR_ID, '1SS' as 'servItem', ssGC.SS as costGroups, ssGS.SS as sellGroups, ssFC.SS as costFits, ssFS.SS as sellFits
+    from OPD join OPD as ssGC on ssGC.RATE_TYPE='GC' and ssGC.AGE_CATEGORY='AD'
+    join OPD as ssGS on ssGS.RATE_TYPE='GS' and ssGS.AGE_CATEGORY='AD'
+    join OPD as ssFC on ssFC.RATE_TYPE='FC' and ssFC.AGE_CATEGORY='AD'
+    join OPD as ssFS on ssFS.RATE_TYPE='FS' and ssFS.AGE_CATEGORY='AD'
+    JOIN OSR ON OSR.OSR_ID=OPD.OSR_ID JOIN OPT ON OPT.OPT_ID=OSR.OPT_ID JOIN SOD ON SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=ssGC.OSR_ID and OPD.OSR_ID=ssGS.OSR_ID AND OPD.OSR_ID=ssFC.OSR_ID and OPD.OSR_ID=ssFS.OSR_ID and sod.SINGLE_AVAIL=1
+    group by OPD.OSR_ID, ssFC.SS, ssFS.SS, ssGC.SS, ssGS.SS
+    UNION
+    select OPD.OSR_ID, '2TW' as 'servItem', twGC.TW as costGroups, twGS.TW as sellGroups, twFC.TW as costFits, twFS.TW as sellFits
+    from OPD join OPD as twGC on twGC.RATE_TYPE='GC' and twGC.AGE_CATEGORY='AD'
+    join OPD as twGS on twGS.RATE_TYPE='GS' and twGS.AGE_CATEGORY='AD'
+    join OPD as twFC on twFC.RATE_TYPE='FC' and twFC.AGE_CATEGORY='AD'
+    join OPD as twFS on twFS.RATE_TYPE='FS' and twFS.AGE_CATEGORY='AD'
+    JOIN OSR ON OSR.OSR_ID=OPD.OSR_ID JOIN OPT ON OPT.OPT_ID=OSR.OPT_ID JOIN SOD ON SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=twGC.OSR_ID and OPD.OSR_ID=twGS.OSR_ID AND OPD.OSR_ID=twFC.OSR_ID and OPD.OSR_ID=twFS.OSR_ID and sod.TWIN_AVAIL=1
+    group by OPD.OSR_ID, twFC.TW, twFS.TW, twGC.TW, twGS.TW
+    UNION
+    select OPD.OSR_ID, '2DB' as 'servItem', dbGC.tw as costGroups, dbGS.tw as sellGroups, dbFC.tw as costFits, dbFS.tw as sellFits
+    from OPD join OPD as dbGC on dbGC.RATE_TYPE='GC' and dbGC.AGE_CATEGORY='AD'
+    join OPD as dbGS on dbGS.RATE_TYPE='GS' and dbGS.AGE_CATEGORY='AD'
+    join OPD as dbFC on dbFC.RATE_TYPE='FC' and dbFC.AGE_CATEGORY='AD'
+    join OPD as dbFS on dbFS.RATE_TYPE='FS' and dbFS.AGE_CATEGORY='AD'
+    JOIN OSR ON OSR.OSR_ID=OPD.OSR_ID JOIN OPT ON OPT.OPT_ID=OSR.OPT_ID JOIN SOD ON SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=dbGC.OSR_ID and OPD.OSR_ID=dbGS.OSR_ID AND OPD.OSR_ID=dbFC.OSR_ID and OPD.OSR_ID=dbFS.OSR_ID and sod.DOUBLE_AVAIL=1
+    group by OPD.OSR_ID, dbFC.tw, dbFS.tw, dbGC.tw, dbGS.tw
+    UNION
+    select OPD.OSR_ID, '3TR' as 'servItem', trGC.TR as costGroups, trGS.TR as sellGroups, trFC.TR as costFits, trFS.TR as sellFits
+    from OPD join OPD as trGC on trGC.RATE_TYPE='GC' and trGC.AGE_CATEGORY='AD'
+    join OPD as trGS on trGS.RATE_TYPE='GS' and trGS.AGE_CATEGORY='AD'
+    join OPD as trFC on trFC.RATE_TYPE='FC' and trFC.AGE_CATEGORY='AD'
+    join OPD as trFS on trFS.RATE_TYPE='FS' and trFS.AGE_CATEGORY='AD'
+    JOIN OSR ON OSR.OSR_ID=OPD.OSR_ID JOIN OPT ON OPT.OPT_ID=OSR.OPT_ID JOIN SOD ON SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=trGC.OSR_ID and OPD.OSR_ID=trGS.OSR_ID AND OPD.OSR_ID=trFC.OSR_ID and OPD.OSR_ID=trFS.OSR_ID AND SOD.TRIPLE_AVAIL=1
+    group by OPD.OSR_ID, trFC.TR, trFS.TR, trGC.TR, trGS.TR
+    UNION
+    select OPD.OSR_ID, '4QR' as 'servItem', qrGC.QR as costGroups, qrGS.QR as sellGroups, qrFC.QR as costFits, qrFS.QR as sellFits
+    from OPD join OPD as qrGC on qrGC.RATE_TYPE='GC' and qrGC.AGE_CATEGORY='AD'
+    join OPD as qrGS on qrGS.RATE_TYPE='GS' and qrGS.AGE_CATEGORY='AD'
+    join OPD as qrFC on qrFC.RATE_TYPE='FC' and qrFC.AGE_CATEGORY='AD'
+    join OPD as qrFS on qrFS.RATE_TYPE='FS' and qrFS.AGE_CATEGORY='AD'
+    JOIN OSR ON OSR.OSR_ID=OPD.OSR_ID JOIN OPT ON OPT.OPT_ID=OSR.OPT_ID JOIN SOD ON SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=qrGC.OSR_ID and OPD.OSR_ID=qrGS.OSR_ID AND OPD.OSR_ID=qrFC.OSR_ID and OPD.OSR_ID=qrFS.OSR_ID and sod.QUAD_AVAIL=1
+    group by OPD.OSR_ID, qrFC.QR, qrFS.QR, qrGC.QR, qrGS.QR
+    UNION
+    select OPD.OSR_ID, '5AA' as 'servItem', aaGC.ADD_ADULT1 as costGroups, aaGS.ADD_ADULT1 as sellGroups,
+    aaFC.ADD_ADULT1 as costFits, aaFS.ADD_ADULT1 as sellFits
+    from OPD join OPD as aaGC on aaGC.RATE_TYPE='GC' and aaGC.AGE_CATEGORY='AD'
+    join OPD as aaGS on aaGS.RATE_TYPE='GS' and aaGS.AGE_CATEGORY='AD'
+    join OPD as aaFC on aaFC.RATE_TYPE='FC' and aaFC.AGE_CATEGORY='AD'
+    join OPD as aaFS on aaFS.RATE_TYPE='FS' and aaFS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=aaGC.OSR_ID and OPD.OSR_ID=aaGS.OSR_ID AND OPD.OSR_ID=aaFC.OSR_ID and OPD.OSR_ID=aaFS.OSR_ID
+    group by OPD.OSR_ID, aaFC.ADD_ADULT1, aaFS.ADD_ADULT1, aaGC.ADD_ADULT1, aaGS.ADD_ADULT1
+    UNION
+    select OPD.OSR_ID, '6CH' as 'servItem', chGC.PRICE_PXB1 as costGroups, chGS.PRICE_PXB1 as sellGroups,
+    chFC.PRICE_PXB1 as costFits, chFS.PRICE_PXB1 as sellFits
+    from OPD join OPD as chGC on chGC.RATE_TYPE='GC' and chGC.AGE_CATEGORY='CH'
+    join OPD as chGS on chGS.RATE_TYPE='GS' and chGS.AGE_CATEGORY='CH'
+    join OPD as chFC on chFC.RATE_TYPE='FC' and chFC.AGE_CATEGORY='CH'
+    join OPD as chFS on chFS.RATE_TYPE='FS' and chFS.AGE_CATEGORY='CH'
+    where OPD.OSR_ID=chGC.OSR_ID and OPD.OSR_ID=chGS.OSR_ID AND OPD.OSR_ID=chFC.OSR_ID and OPD.OSR_ID=chFS.OSR_ID
+    group by OPD.OSR_ID, chFC.PRICE_PXB1, chFS.PRICE_PXB1, chGC.PRICE_PXB1, chGS.PRICE_PXB1
+    UNION
+    select OPD.OSR_ID, '7IN' as 'servItem', inGC.PRICE_PXB1 as costGroups, inGS.PRICE_PXB1 as sellGroups,
+    inFC.PRICE_PXB1 as costFits, inFS.PRICE_PXB1 as sellFits
+    from OPD join OPD as inGC on inGC.RATE_TYPE='GC' and inGC.AGE_CATEGORY='IN'
+    join OPD as inGS on inGS.RATE_TYPE='GS' and inGS.AGE_CATEGORY='IN'
+    join OPD as inFC on inFC.RATE_TYPE='FC' and inFC.AGE_CATEGORY='IN'
+    join OPD as inFS on inFS.RATE_TYPE='FS' and inFS.AGE_CATEGORY='IN'
+    where OPD.OSR_ID=inGC.OSR_ID and OPD.OSR_ID=inGS.OSR_ID AND OPD.OSR_ID=inFC.OSR_ID and OPD.OSR_ID=inFS.OSR_ID
+    group by OPD.OSR_ID, inFC.PRICE_PXB1, inFS.PRICE_PXB1, inGC.PRICE_PXB1, inGS.PRICE_PXB1
+    UNION
+    select OPD.OSR_ID,(Select ex1 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex1GC.ex1 as costGroups, ex1GS.EX1 as sellGroups,
+    ex1FC.EX1 as costFits, ex1FS.EX1 as sellFits
+    from OPD join OPD as ex1GC on ex1GC.RATE_TYPE='GC' and ex1GC.AGE_CATEGORY='AD' join OPD as ex1GS on ex1GS.RATE_TYPE='GS' and ex1GS.AGE_CATEGORY='AD'
+    join OPD as ex1FC on ex1FC.RATE_TYPE='FC' and ex1FC.AGE_CATEGORY='AD' join OPD as ex1FS on ex1FS.RATE_TYPE='FS' and ex1FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex1GC.OSR_ID and OPD.OSR_ID=ex1GS.OSR_ID AND OPD.OSR_ID=ex1FC.OSR_ID and OPD.OSR_ID=ex1FS.OSR_ID
+    group by OPD.OSR_ID, ex1FC.EX1, ex1FS.EX1, ex1GC.EX1, ex1GS.EX1
+    UNION
+    select OPD.OSR_ID,(Select EX2 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', EX2GC.EX2 as costGroups, EX2GS.EX2 as sellGroups,
+    EX2FC.EX2 as costFits, EX2FS.EX2 as sellFits
+    from OPD join OPD as EX2GC on EX2GC.RATE_TYPE='GC' and EX2GC.AGE_CATEGORY='AD' join OPD as EX2GS on EX2GS.RATE_TYPE='GS' and EX2GS.AGE_CATEGORY='AD'
+    join OPD as EX2FC on EX2FC.RATE_TYPE='FC' and EX2FC.AGE_CATEGORY='AD' join OPD as EX2FS on EX2FS.RATE_TYPE='FS' and EX2FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=EX2GC.OSR_ID and OPD.OSR_ID=EX2GS.OSR_ID AND OPD.OSR_ID=EX2FC.OSR_ID and OPD.OSR_ID=EX2FS.OSR_ID
+    group by OPD.OSR_ID, EX2FC.EX2, EX2FS.EX2, EX2GC.EX2, EX2GS.EX2
+    UNION
+    select OPD.OSR_ID,(Select EX3 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex3GC.ex3 as costGroups, ex3GS.ex3 as sellGroups,
+    ex3FC.ex3 as costFits, ex3FS.ex3 as sellFits
+    from OPD join OPD as ex3GC on ex3GC.RATE_TYPE='GC' and ex3GC.AGE_CATEGORY='AD' join OPD as ex3GS on ex3GS.RATE_TYPE='GS' and ex3GS.AGE_CATEGORY='AD'
+    join OPD as ex3FC on ex3FC.RATE_TYPE='FC' and ex3FC.AGE_CATEGORY='AD' join OPD as ex3FS on ex3FS.RATE_TYPE='FS' and ex3FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex3GC.OSR_ID and OPD.OSR_ID=ex3GS.OSR_ID AND OPD.OSR_ID=ex3FC.OSR_ID and OPD.OSR_ID=ex3FS.OSR_ID
+    group by OPD.OSR_ID, ex3FC.ex3, ex3FS.ex3, ex3GC.ex3, ex3GS.ex3
+    UNION
+    select OPD.OSR_ID,(Select ex4 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex4GC.ex4 as costGroups, ex4GS.ex4 as sellGroups,
+    ex4FC.ex4 as costFits, ex4FS.ex4 as sellFits
+    from OPD join OPD as ex4GC on ex4GC.RATE_TYPE='GC' and ex4GC.AGE_CATEGORY='AD' join OPD as ex4GS on ex4GS.RATE_TYPE='GS' and ex4GS.AGE_CATEGORY='AD'
+    join OPD as ex4FC on ex4FC.RATE_TYPE='FC' and ex4FC.AGE_CATEGORY='AD' join OPD as ex4FS on ex4FS.RATE_TYPE='FS' and ex4FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex4GC.OSR_ID and OPD.OSR_ID=ex4GS.OSR_ID AND OPD.OSR_ID=ex4FC.OSR_ID and OPD.OSR_ID=ex4FS.OSR_ID
+    group by OPD.OSR_ID, ex4FC.ex4, ex4FS.ex4, ex4GC.ex4, ex4GS.ex4
+    UNION
+    select OPD.OSR_ID,(Select ex5 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex5GC.ex5 as costGroups, ex5GS.ex5 as sellGroups,
+    ex5FC.ex5 as costFits, ex5FS.ex5 as sellFits
+    from OPD join OPD as ex5GC on ex5GC.RATE_TYPE='GC' and ex5GC.AGE_CATEGORY='AD' join OPD as ex5GS on ex5GS.RATE_TYPE='GS' and ex5GS.AGE_CATEGORY='AD'
+    join OPD as ex5FC on ex5FC.RATE_TYPE='FC' and ex5FC.AGE_CATEGORY='AD' join OPD as ex5FS on ex5FS.RATE_TYPE='FS' and ex5FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex5GC.OSR_ID and OPD.OSR_ID=ex5GS.OSR_ID AND OPD.OSR_ID=ex5FC.OSR_ID and OPD.OSR_ID=ex5FS.OSR_ID
+    group by OPD.OSR_ID, ex5FC.ex5, ex5FS.ex5, ex5GC.ex5, ex5GS.ex5
+) as tarifas
+join OSR on OSR.OSR_ID = tarifas.OSR_ID
+join OPT on OPT.OPT_ID = OSR.OPT_ID
+join LOC on LOC.CODE = OPT.LOCATION
+join SRV on SRV.CODE = OPT.SERVICE
+join CRM on CRM.CODE = OPT.SUPPLIER
+join sod on sod.sod_id = opt.SOD_ID
+where OPT.AC in ('Y','A')
+and OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s
+"""
+
+_SVS_SYNC_SQL = """
+SELECT
+    UsuarioCreacion = (SELECT TOP 1 LW_BY FROM [LA-SAYHUE_Audit].dbo.OPTAuditOverview
+        JOIN [LA-SAYHUE_Audit].dbo.OSRAudit ON OSRAudit.OPT_ID = OPTAuditOverview.OPT_ID
+        WHERE OSRAudit.osr_id = [LA-SAYHUE].dbo.osr.OSR_ID order by LW_DATE asc),
+    OPT.LOCATION, LOC.NAME, OPT.SERVICE, SRV.NAME as Service_Type, OPT.SUPPLIER, CRM.NAME, OPT.CODE, OPT.DESCRIPTION, OPT.COMMENT, OPT.FCU, OPT.SCU, OPT.LW_DATE,
+    OPT.MESSAGE_CODE, OPT.LOCALITY, OPT.CLASS, OPT.INT_OPTION, OPT.ANALYSIS1, OPT.ANALYSIS2, OPT.ANALYSIS3, OPT.ANALYSIS4, OPT.ANALYSIS5, opt.opt_id,
+    OPT.ANALYSIS6, case OPT.DELETED when 0 then 'N' else 'Y' end as DELETED, OSR.PRICE_CODE, OSR.DATE_FROM, OSR.DATE_TO, OSR.STAY_TYPE, OSR.RATE_TEXT, OSR.MIN_SCU,
+    case osr.prov when 'K' then 'Conf' when 'M' then 'Manual' when 'C' then 'Closed' when 'P' then 'Prov' when 'T' then 'Terminal' end as RateST,
+    OSR.BUY_CURRENCY, OSR.SELL_CURRENCY,
+    tarifas.servItem, tarifas.costGroups, tarifas.sellGroups, tarifas.costFits, tarifas.sellFits,
+    isnull((select STUFF((select ', '+RTRIM(LTRIM(odt.tax)) from ODT where ODT.OSR_ID = OSR.OSR_ID FOR XML PATH ('')),1,1, '')),'') as TaxList
+from (
+    select OPD.OSR_ID, '1.PXB (1-'+CAST(OPT.PXB1 as varchar)+')' as 'servItem', pxb1GC.PRICE_PXB1 as costGroups, pxb1GS.PRICE_PXB1 as sellGroups, pxb1FC.PRICE_PXB1 as costFits, pxb1FS.PRICE_PXB1 as sellFits
+    from OPD join OPD as pxb1GC on pxb1GC.RATE_TYPE='GC' and pxb1GC.AGE_CATEGORY='AD' join OPD as pxb1GS on pxb1GS.RATE_TYPE='GS' and pxb1GS.AGE_CATEGORY='AD'
+    join OPD as pxb1FC on pxb1FC.RATE_TYPE='FC' and pxb1FC.AGE_CATEGORY='AD' join OPD as pxb1FS on pxb1FS.RATE_TYPE='FS' and pxb1FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb1GC.OSR_ID and OPD.OSR_ID=pxb1GS.OSR_ID AND OPD.OSR_ID=pxb1FC.OSR_ID and OPD.OSR_ID=pxb1FS.OSR_ID
+    group by OPD.OSR_ID, OPT.PXB1, pxb1FC.PRICE_PXB1, pxb1FS.PRICE_PXB1, pxb1GC.PRICE_PXB1, pxb1GS.PRICE_PXB1
+    UNION
+    select OPD.OSR_ID, '2.PXB ('+CAST((case when opt.pxb1=9999 then OPT.PXB2 else OPT.PXB1+1 end) as varchar)+'-'+CAST(OPT.PXB2 as varchar)+')' as 'servItem', pxb2GC.PRICE_pxb2 as costGroups, pxb2GS.PRICE_pxb2 as sellGroups, pxb2FC.PRICE_pxb2 as costFits, pxb2FS.PRICE_pxb2 as sellFits
+    from OPD join OPD as pxb2GC on pxb2GC.RATE_TYPE='GC' and pxb2GC.AGE_CATEGORY='AD' join OPD as pxb2GS on pxb2GS.RATE_TYPE='GS' and pxb2GS.AGE_CATEGORY='AD'
+    join OPD as pxb2FC on pxb2FC.RATE_TYPE='FC' and pxb2FC.AGE_CATEGORY='AD' join OPD as pxb2FS on pxb2FS.RATE_TYPE='FS' and pxb2FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb2GC.OSR_ID and OPD.OSR_ID=pxb2GS.OSR_ID AND OPD.OSR_ID=pxb2FC.OSR_ID and OPD.OSR_ID=pxb2FS.OSR_ID and OPT.PXB1<>9999
+    group by OPD.OSR_ID, opt.PXB1, OPT.PXB2, pxb2FC.PRICE_pxb2, pxb2FS.PRICE_pxb2, pxb2GC.PRICE_pxb2, pxb2GS.PRICE_pxb2
+    UNION
+    select OPD.OSR_ID, '3.PXB ('+CAST((case when opt.pxb2=9999 then OPT.PXB3 else OPT.pxb2+1 end) as varchar)+'-'+CAST(OPT.pxb3 as varchar)+')' as 'servItem', pxb3GC.PRICE_pxb3 as costGroups, pxb3GS.PRICE_pxb3 as sellGroups, pxb3FC.PRICE_pxb3 as costFits, pxb3FS.PRICE_pxb3 as sellFits
+    from OPD join OPD as pxb3GC on pxb3GC.RATE_TYPE='GC' and pxb3GC.AGE_CATEGORY='AD' join OPD as pxb3GS on pxb3GS.RATE_TYPE='GS' and pxb3GS.AGE_CATEGORY='AD'
+    join OPD as pxb3FC on pxb3FC.RATE_TYPE='FC' and pxb3FC.AGE_CATEGORY='AD' join OPD as pxb3FS on pxb3FS.RATE_TYPE='FS' and pxb3FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb3GC.OSR_ID and OPD.OSR_ID=pxb3GS.OSR_ID AND OPD.OSR_ID=pxb3FC.OSR_ID and OPD.OSR_ID=pxb3FS.OSR_ID and OPT.PXB2<>0 and OPT.PXB2<>9999
+    group by OPD.OSR_ID, opt.pxb2, OPT.pxb3, pxb3FC.PRICE_pxb3, pxb3FS.PRICE_pxb3, pxb3GC.PRICE_pxb3, pxb3GS.PRICE_pxb3
+    UNION
+    select OPD.OSR_ID, '4.PXB ('+CAST((case when opt.PXB3=9999 then OPT.PXB4 else OPT.pxb3+1 end) as varchar)+'-'+CAST(OPT.pxb4 as varchar)+')' as 'servItem', pxb4GC.PRICE_pxb4 as costGroups, pxb4GS.PRICE_pxb4 as sellGroups, pxb4FC.PRICE_pxb4 as costFits, pxb4FS.PRICE_pxb4 as sellFits
+    from OPD join OPD as pxb4GC on pxb4GC.RATE_TYPE='GC' and pxb4GC.AGE_CATEGORY='AD' join OPD as pxb4GS on pxb4GS.RATE_TYPE='GS' and pxb4GS.AGE_CATEGORY='AD'
+    join OPD as pxb4FC on pxb4FC.RATE_TYPE='FC' and pxb4FC.AGE_CATEGORY='AD' join OPD as pxb4FS on pxb4FS.RATE_TYPE='FS' and pxb4FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb4GC.OSR_ID and OPD.OSR_ID=pxb4GS.OSR_ID AND OPD.OSR_ID=pxb4FC.OSR_ID and OPD.OSR_ID=pxb4FS.OSR_ID and OPT.PXB3<>0 and OPT.PXB3<>9999
+    group by OPD.OSR_ID, opt.pxb3, OPT.pxb4, pxb4FC.PRICE_pxb4, pxb4FS.PRICE_pxb4, pxb4GC.PRICE_pxb4, pxb4GS.PRICE_pxb4
+    UNION
+    select OPD.OSR_ID, '5.PXB ('+CAST((case when opt.pxb4=9999 then OPT.PXB5 else OPT.pxb4+1 end) as varchar)+'-'+CAST(OPT.pxb5 as varchar)+')' as 'servItem', pxb5GC.PRICE_pxb5 as costGroups, pxb5GS.PRICE_pxb5 as sellGroups, pxb5FC.PRICE_pxb5 as costFits, pxb5FS.PRICE_pxb5 as sellFits
+    from OPD join OPD as pxb5GC on pxb5GC.RATE_TYPE='GC' and pxb5GC.AGE_CATEGORY='AD' join OPD as pxb5GS on pxb5GS.RATE_TYPE='GS' and pxb5GS.AGE_CATEGORY='AD'
+    join OPD as pxb5FC on pxb5FC.RATE_TYPE='FC' and pxb5FC.AGE_CATEGORY='AD' join OPD as pxb5FS on pxb5FS.RATE_TYPE='FS' and pxb5FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb5GC.OSR_ID and OPD.OSR_ID=pxb5GS.OSR_ID AND OPD.OSR_ID=pxb5FC.OSR_ID and OPD.OSR_ID=pxb5FS.OSR_ID and OPT.PXB4<>0 and OPT.PXB4<>9999
+    group by OPD.OSR_ID, opt.pxb4, OPT.pxb5, pxb5FC.PRICE_pxb5, pxb5FS.PRICE_pxb5, pxb5GC.PRICE_pxb5, pxb5GS.PRICE_pxb5
+    UNION
+    select OPD.OSR_ID, '6.PXB ('+CAST((case when opt.pxb5=9999 then OPT.PXB6 else OPT.pxb5+1 end) as varchar)+'-'+CAST(OPT.pxb6 as varchar)+')' as 'servItem', pxb6GC.PRICE_pxb6 as costGroups, pxb6GS.PRICE_pxb6 as sellGroups, pxb6FC.PRICE_pxb6 as costFits, pxb6FS.PRICE_pxb6 as sellFits
+    from OPD join OPD as pxb6GC on pxb6GC.RATE_TYPE='GC' and pxb6GC.AGE_CATEGORY='AD' join OPD as pxb6GS on pxb6GS.RATE_TYPE='GS' and pxb6GS.AGE_CATEGORY='AD'
+    join OPD as pxb6FC on pxb6FC.RATE_TYPE='FC' and pxb6FC.AGE_CATEGORY='AD' join OPD as pxb6FS on pxb6FS.RATE_TYPE='FS' and pxb6FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb6GC.OSR_ID and OPD.OSR_ID=pxb6GS.OSR_ID AND OPD.OSR_ID=pxb6FC.OSR_ID and OPD.OSR_ID=pxb6FS.OSR_ID and OPT.PXB5<>0 and OPT.PXB5<>9999
+    group by OPD.OSR_ID, opt.pxb5, OPT.pxb6, pxb6FC.PRICE_pxb6, pxb6FS.PRICE_pxb6, pxb6GC.PRICE_pxb6, pxb6GS.PRICE_pxb6
+    UNION
+    select OPD.OSR_ID, '7.PXB ('+CAST((case when opt.pxb6=9999 then OPT.PXB7 else OPT.pxb6+1 end) as varchar)+'-'+CAST(OPT.pxb7 as varchar)+')' as 'servItem', pxb7GC.PRICE_pxb7 as costGroups, pxb7GS.PRICE_pxb7 as sellGroups, pxb7FC.PRICE_pxb7 as costFits, pxb7FS.PRICE_pxb7 as sellFits
+    from OPD join OPD as pxb7GC on pxb7GC.RATE_TYPE='GC' and pxb7GC.AGE_CATEGORY='AD' join OPD as pxb7GS on pxb7GS.RATE_TYPE='GS' and pxb7GS.AGE_CATEGORY='AD'
+    join OPD as pxb7FC on pxb7FC.RATE_TYPE='FC' and pxb7FC.AGE_CATEGORY='AD' join OPD as pxb7FS on pxb7FS.RATE_TYPE='FS' and pxb7FS.AGE_CATEGORY='AD'
+    join OSR on OSR.OSR_ID=OPD.OSR_ID join OPT on OPT.OPT_ID=OSR.OPT_ID join SOD on SOD.SOD_ID=OPT.SOD_ID
+    where OPD.OSR_ID=pxb7GC.OSR_ID and OPD.OSR_ID=pxb7GS.OSR_ID AND OPD.OSR_ID=pxb7FC.OSR_ID and OPD.OSR_ID=pxb7FS.OSR_ID and OPT.PXB6<>0 and OPT.PXB6<>9999
+    group by OPD.OSR_ID, opt.pxb6, OPT.pxb7, pxb7FC.PRICE_pxb7, pxb7FS.PRICE_pxb7, pxb7GC.PRICE_pxb7, pxb7GS.PRICE_pxb7
+    UNION
+    select OPD.OSR_ID,(Select ex1 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex1GC.ex1 as costGroups, ex1GS.EX1 as sellGroups,
+    ex1FC.EX1 as costFits, ex1FS.EX1 as sellFits
+    from OPD join OPD as ex1GC on ex1GC.RATE_TYPE='GC' and ex1GC.AGE_CATEGORY='AD' join OPD as ex1GS on ex1GS.RATE_TYPE='GS' and ex1GS.AGE_CATEGORY='AD'
+    join OPD as ex1FC on ex1FC.RATE_TYPE='FC' and ex1FC.AGE_CATEGORY='AD' join OPD as ex1FS on ex1FS.RATE_TYPE='FS' and ex1FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex1GC.OSR_ID and OPD.OSR_ID=ex1GS.OSR_ID AND OPD.OSR_ID=ex1FC.OSR_ID and OPD.OSR_ID=ex1FS.OSR_ID
+    group by OPD.OSR_ID, ex1FC.EX1, ex1FS.EX1, ex1GC.EX1, ex1GS.EX1
+    UNION
+    select OPD.OSR_ID,(Select EX2 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', EX2GC.EX2 as costGroups, EX2GS.EX2 as sellGroups,
+    EX2FC.EX2 as costFits, EX2FS.EX2 as sellFits
+    from OPD join OPD as EX2GC on EX2GC.RATE_TYPE='GC' and EX2GC.AGE_CATEGORY='AD' join OPD as EX2GS on EX2GS.RATE_TYPE='GS' and EX2GS.AGE_CATEGORY='AD'
+    join OPD as EX2FC on EX2FC.RATE_TYPE='FC' and EX2FC.AGE_CATEGORY='AD' join OPD as EX2FS on EX2FS.RATE_TYPE='FS' and EX2FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=EX2GC.OSR_ID and OPD.OSR_ID=EX2GS.OSR_ID AND OPD.OSR_ID=EX2FC.OSR_ID and OPD.OSR_ID=EX2FS.OSR_ID
+    group by OPD.OSR_ID, EX2FC.EX2, EX2FS.EX2, EX2GC.EX2, EX2GS.EX2
+    UNION
+    select OPD.OSR_ID,(Select EX3 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex3GC.ex3 as costGroups, ex3GS.ex3 as sellGroups,
+    ex3FC.ex3 as costFits, ex3FS.ex3 as sellFits
+    from OPD join OPD as ex3GC on ex3GC.RATE_TYPE='GC' and ex3GC.AGE_CATEGORY='AD' join OPD as ex3GS on ex3GS.RATE_TYPE='GS' and ex3GS.AGE_CATEGORY='AD'
+    join OPD as ex3FC on ex3FC.RATE_TYPE='FC' and ex3FC.AGE_CATEGORY='AD' join OPD as ex3FS on ex3FS.RATE_TYPE='FS' and ex3FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex3GC.OSR_ID and OPD.OSR_ID=ex3GS.OSR_ID AND OPD.OSR_ID=ex3FC.OSR_ID and OPD.OSR_ID=ex3FS.OSR_ID
+    group by OPD.OSR_ID, ex3FC.ex3, ex3FS.ex3, ex3GC.ex3, ex3GS.ex3
+    UNION
+    select OPD.OSR_ID,(Select ex4 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex4GC.ex4 as costGroups, ex4GS.ex4 as sellGroups,
+    ex4FC.ex4 as costFits, ex4FS.ex4 as sellFits
+    from OPD join OPD as ex4GC on ex4GC.RATE_TYPE='GC' and ex4GC.AGE_CATEGORY='AD' join OPD as ex4GS on ex4GS.RATE_TYPE='GS' and ex4GS.AGE_CATEGORY='AD'
+    join OPD as ex4FC on ex4FC.RATE_TYPE='FC' and ex4FC.AGE_CATEGORY='AD' join OPD as ex4FS on ex4FS.RATE_TYPE='FS' and ex4FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex4GC.OSR_ID and OPD.OSR_ID=ex4GS.OSR_ID AND OPD.OSR_ID=ex4FC.OSR_ID and OPD.OSR_ID=ex4FS.OSR_ID
+    group by OPD.OSR_ID, ex4FC.ex4, ex4FS.ex4, ex4GC.ex4, ex4GS.ex4
+    UNION
+    select OPD.OSR_ID,(Select ex5 from opt join osr on osr.opt_id=opt.OPT_ID where osr.OSR_ID=opd.OSR_ID) as 'servItem', ex5GC.ex5 as costGroups, ex5GS.ex5 as sellGroups,
+    ex5FC.ex5 as costFits, ex5FS.ex5 as sellFits
+    from OPD join OPD as ex5GC on ex5GC.RATE_TYPE='GC' and ex5GC.AGE_CATEGORY='AD' join OPD as ex5GS on ex5GS.RATE_TYPE='GS' and ex5GS.AGE_CATEGORY='AD'
+    join OPD as ex5FC on ex5FC.RATE_TYPE='FC' and ex5FC.AGE_CATEGORY='AD' join OPD as ex5FS on ex5FS.RATE_TYPE='FS' and ex5FS.AGE_CATEGORY='AD'
+    where OPD.OSR_ID=ex5GC.OSR_ID and OPD.OSR_ID=ex5GS.OSR_ID AND OPD.OSR_ID=ex5FC.OSR_ID and OPD.OSR_ID=ex5FS.OSR_ID
+    group by OPD.OSR_ID, ex5FC.ex5, ex5FS.ex5, ex5GC.ex5, ex5GS.ex5
+) as tarifas
+join OSR on OSR.OSR_ID = tarifas.OSR_ID
+join OPT on OPT.OPT_ID = OSR.OPT_ID
+join LOC on LOC.CODE = OPT.LOCATION
+join SRV on SRV.CODE = OPT.SERVICE
+join CRM on CRM.CODE = OPT.SUPPLIER
+where OPT.AC IN ('N')
+and OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s
+"""
+
+
+def _build_tp_sync_message(stats, label="tarifas"):
+    parts = [f"Se procesaron <strong>{stats['rows_read']}</strong> {label}."]
+    if stats["up_to_date"]:
+        parts.append(f"<strong>{stats['up_to_date']}</strong> ya coinciden ✓")
+    if stats["to_update"]:
+        parts.append(f"<strong>{stats['to_update']}</strong> para actualizar")
+    if stats["to_add"]:
+        parts.append(f"<strong>{stats['to_add']}</strong> para agregar")
+    if stats["to_delete"]:
+        parts.append(f"<strong>{stats['to_delete']}</strong> líneas sin coincidencia")
+    return " · ".join(parts)
+
+
+def _process_db_acc_rows(rows, today, start_date=None):
+    if start_date is None:
+        start_date = today - timedelta(days=60)
+
+    result = []
+    stats = {"rows_read": 0, "rows_skipped": 0, "up_to_date": 0, "to_update": 0, "to_add": 0, "to_delete": 0}
+
+    supplier_codes = set(Supplier.objects.filter(update_tp=True).values_list("code", flat=True))
+    product_map = {
+        (p.supplier.code, p.code): p
+        for p in Product.objects.select_related("supplier", "group").filter(supplier__update_tp=True)
+    }
+
+    csv_product_dates = set()
+    csv_products_seen = set()
+    result_index = {}
+
+    PRICE_CODE_MAP = {"AU": False, "NR": False, "DM": False, "CX": True, "TD": True}
+    _BASE_ITEMS = {'1SS', '2TW', '2DB', '3TR', '4QR', '5AA', '6CH', '7IN'}
+
+    # Pre-pass 1: collect EX1-EX5 extras whose servItem text contains "SGL" or "DBL".
+    # These are meal-plan supplements (e.g. Full Board SGL / Full Board DBL) that must
+    # be added to the corresponding base room cost.
+    sgl_extras = {}  # (supplier_code, option_code, price_code, date_from, date_to) → extra cost
+    dbl_extras = {}
+    for row in rows:
+        si = (row.get('servItem') or '').strip()
+        if si in _BASE_ITEMS:
+            continue
+        si_upper = si.upper()
+        if 'SGL' in si_upper:
+            target = sgl_extras
+        elif 'DBL' in si_upper:
+            target = dbl_extras
+        else:
+            continue
+        sc = (row.get('supplierCode') or '').strip()
+        oc = (row.get('optionCode') or '').strip()
+        pc = (row.get('priceCode') or '').strip()
+        if pc not in PRICE_CODE_MAP or PRICE_CODE_MAP[pc]:  # skip zero-cost price codes
+            continue
+        dr = row.get('dateFrom')
+        dt = row.get('dateTo')
+        try:
+            df = dr.date() if hasattr(dr, 'date') else (dr if isinstance(dr, date) else datetime.strptime(str(dr)[:10], '%Y-%m-%d').date())
+            dt = dt.date() if hasattr(dt, 'date') else (dt if isinstance(dt, date) else datetime.strptime(str(dt)[:10], '%Y-%m-%d').date())
+        except (ValueError, AttributeError):
+            continue
+        try:
+            extra = round(float(row.get('costFits') or 0), 2)
+        except (ValueError, TypeError):
+            continue
+        if extra <= 0:
+            continue
+        key = (sc, oc, pc, df, dt)
+        target[key] = round(target.get(key, 0.0) + extra, 2)
+
+    # Pre-pass 2: rows with servItem=2DB take priority over 2TW for same product/date/priceCode
+    dbl_keys = set()
+    for row in rows:
+        if (row.get('servItem') or '').strip() == '2DB':
+            dbl_keys.add((
+                (row.get('supplierCode') or '').strip(),
+                (row.get('optionCode') or '').strip(),
+                (row.get('priceCode') or '').strip(),
+                row.get('dateFrom'),
+                row.get('dateTo'),
+            ))
+
+    for row in rows:
+        supplier_code = (row.get('supplierCode') or '').strip()
+        option_code   = (row.get('optionCode') or '').strip()
+        price_code    = (row.get('priceCode') or '').strip()
+        serv_item     = (row.get('servItem') or '').strip()
+        rate_status   = (row.get('rateStatus') or '').strip()
+        cost_fits_raw = row.get('costFits')
+        date_from_raw = row.get('dateFrom')
+        date_to_raw   = row.get('dateTo')
+        fcu_raw       = (row.get('FCU') or '').strip()
+
+        if serv_item == '1SS':
+            column_options = 'SGL'
+        elif serv_item == '2DB':
+            column_options = 'DBL'
+        elif serv_item == '2TW':
+            if (supplier_code, option_code, price_code, date_from_raw, date_to_raw) in dbl_keys:
+                continue
+            column_options = 'DBL'
+        else:
+            continue
+
+        if price_code not in PRICE_CODE_MAP:
+            continue
+        is_zero_cost = PRICE_CODE_MAP[price_code]
+
+        if supplier_code not in supplier_codes:
+            continue
+
+        product = product_map.get((supplier_code, option_code))
+        if not product:
+            continue
+
+        try:
+            if hasattr(date_from_raw, 'date'):
+                date_from_db = date_from_raw.date()
+            elif isinstance(date_from_raw, date):
+                date_from_db = date_from_raw
+            else:
+                date_from_db = datetime.strptime(str(date_from_raw)[:10], '%Y-%m-%d').date()
+
+            if hasattr(date_to_raw, 'date'):
+                date_to_db = date_to_raw.date()
+            elif isinstance(date_to_raw, date):
+                date_to_db = date_to_raw
+            else:
+                date_to_db = datetime.strptime(str(date_to_raw)[:10], '%Y-%m-%d').date()
+        except (ValueError, AttributeError):
+            continue
+
+        if date_from_db < start_date:
+            continue
+
+        date_from_str = date_from_db.strftime('%d/%m/%Y')
+        date_to_str   = date_to_db.strftime('%d/%m/%Y')
+
+        if rate_status == 'K':
+            status, is_closed = 'Confirmed', False
+        elif rate_status == 'P':
+            status, is_closed = 'Provisional', False
+        elif rate_status == 'C':
+            status, is_closed = 'Confirmed', True
+        else:
+            status, is_closed = 'Confirmed', False
+
+        fcu = 'Person' if fcu_raw in ('PP', 'PE', 'PX') else 'Group'
+
+        if is_zero_cost or is_closed:
+            cost = 0.0
+        else:
+            try:
+                cost = round(float(cost_fits_raw or 0), 2)
+            except (ValueError, TypeError):
+                continue
+            if cost <= 0:
+                continue
+            # Add meal-plan supplements (e.g. Full Board SGL / DBL) from EX1-EX5 rows
+            extra_key = (supplier_code, option_code, price_code, date_from_db, date_to_db)
+            if column_options == 'SGL':
+                cost = round(cost + sgl_extras.get(extra_key, 0.0), 2)
+            elif column_options == 'DBL':
+                cost = round(cost + dbl_extras.get(extra_key, 0.0), 2)
+
+        if is_closed or is_zero_cost:
+            sell_tourplan = 0
+        else:
+            margin = product.supplier.margin
+            if not margin or margin == 0:
+                continue
+            sell_tourplan = math.ceil(cost / margin)
+
+        margin_num  = product.supplier.margin
+        margin_info = product.supplier.margin_info
+
+        csv_products_seen.add(product.pk)
+        csv_product_dates.add((product.pk, date_from_db, date_to_db))
+
+        all_rate_groups = list(RateGroup.objects.filter(product=product).order_by("order"))
+
+        if not all_rate_groups:
+            dedup_key = (product.pk, date_from_db, date_to_db, column_options, None)
+            if dedup_key not in result_index:
+                entry = {
+                    "action": "Add",
+                    "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                    "rate_id": None, "rate_group_id": None,
+                    "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                    "supplier_name": product.supplier.name,
+                    "rate_group_name": "Breakfast included", "price_code": price_code,
+                    "date_from": date_from_str, "date_to": date_to_str,
+                    "column_options": column_options, "fcu": fcu,
+                    "cost": cost, "status": status, "sell_tourplan": sell_tourplan, "sell": sell_tourplan,
+                    "margin": margin_num, "margin_info": margin_info, "season": "To be defined",
+                    "_id": stats["rows_read"],
+                }
+                stats["rows_read"] += 1
+                stats["to_add"] += 1
+                result_index[dedup_key] = len(result)
+                result.append(entry)
+            continue
+
+        for rate_group in all_rate_groups:
+            dedup_key = (product.pk, date_from_db, date_to_db, column_options, rate_group.pk)
+
+            matching_rate_line = (
+                RateLine.objects.filter(group=rate_group, date_from=date_from_db, date_to=date_to_db)
+                .select_related("group").first()
+            )
+
+            if matching_rate_line:
+                existing_rate = Rate.objects.filter(
+                    rate_line=matching_rate_line, column_options=column_options
+                ).first()
+
+                if existing_rate:
+                    if existing_rate.locked:
+                        continue
+                    if existing_rate.sell_tourplan != sell_tourplan:
+                        entry = {
+                            "action": "Update",
+                            "current_sell_tourplan": existing_rate.sell_tourplan,
+                            "current_sell": existing_rate.sell,
+                            "current_cost": existing_rate.cost,
+                            "rate_id": existing_rate.pk, "rate_group_id": None,
+                        }
+                    else:
+                        if dedup_key in result_index:
+                            idx = result_index.pop(dedup_key)
+                            result.pop(idx)
+                            result_index = {k: (v - 1 if v > idx else v) for k, v in result_index.items()}
+                            stats["to_update"] -= 1
+                        stats["up_to_date"] += 1
+                        continue
+                else:
+                    entry = {
+                        "action": "Add",
+                        "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                        "rate_id": None, "rate_group_id": matching_rate_line.group.pk,
+                    }
+            else:
+                entry = {
+                    "action": "Add",
+                    "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                    "rate_id": None, "rate_group_id": rate_group.pk,
+                }
+
+            entry.update({
+                "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                "supplier_name": product.supplier.name,
+                "price_code": price_code, "date_from": date_from_str, "date_to": date_to_str,
+                "column_options": column_options, "fcu": fcu, "cost": cost, "status": status,
+                "sell_tourplan": sell_tourplan, "sell": sell_tourplan,
+                "margin": margin_num, "margin_info": margin_info,
+                "rate_group_name": rate_group.name, "season": "To be defined",
+            })
+
+            if dedup_key in result_index:
+                idx = result_index[dedup_key]
+                entry["_id"] = result[idx]["_id"]
+                result[idx] = entry
+            else:
+                entry["_id"] = stats["rows_read"]
+                stats["rows_read"] += 1
+                if entry["action"] == "Update":
+                    stats["to_update"] += 1
+                else:
+                    stats["to_add"] += 1
+                result_index[dedup_key] = len(result)
+                result.append(entry)
+
+    if csv_products_seen:
+        orphan_lines = (
+            RateLine.objects.filter(group__product__in=csv_products_seen, date_from__gt=today)
+            .select_related("group__product__supplier").prefetch_related("line_rates")
+        )
+        next_id = stats["rows_read"]
+        for rl in orphan_lines:
+            product = rl.group.product
+            if (product.pk, rl.date_from, rl.date_to) in csv_product_dates:
+                continue
+            rates_summary = [
+                {"column_options": r.column_options, "sell_tourplan": r.sell_tourplan, "sell": r.sell, "cost": r.cost}
+                for r in rl.line_rates.all()
+            ]
+            stats["to_delete"] += 1
+            result.append({
+                "_id": next_id, "action": "Delete",
+                "product_code": product.code, "product_name": str(product),
+                "supplier_name": product.supplier.name,
+                "date_from": rl.date_from.strftime("%d/%m/%Y"), "date_to": rl.date_to.strftime("%d/%m/%Y"),
+                "season": rl.season, "rate_line_id": rl.pk, "rates_summary": rates_summary,
+                "price_code": None, "column_options": None, "fcu": None,
+                "cost": None, "sell_tourplan": None, "sell": None, "margin": None,
+                "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                "rate_id": None, "rate_group_id": None,
+            })
+            next_id += 1
+
+    return result, stats
+
+
+def _process_db_svs_rows(rows, today, start_date=None):
+    if start_date is None:
+        start_date = today - timedelta(days=60)
+
+    result = []
+    stats = {"rows_read": 0, "rows_skipped": 0, "up_to_date": 0, "to_update": 0, "to_add": 0, "to_delete": 0}
+
+    supplier_codes = set(
+        Supplier.objects.filter(update_tp=True, group__type_service='NA').values_list("code", flat=True)
+    )
+    product_map = {
+        (p.supplier.code, p.code): p
+        for p in Product.objects.select_related("supplier", "group")
+        .filter(supplier__update_tp=True, type_service='NA')
+    }
+
+    csv_product_dates = set()
+    csv_products_seen = set()
+    result_index = {}
+
+    for row in rows:
+        supplier_code = (row.get('SUPPLIER') or '').strip()
+        option_code   = (row.get('CODE') or '').strip()
+        price_code    = (row.get('PRICE_CODE') or '').strip()
+        serv_item     = (row.get('servItem') or '').strip()
+        rate_st       = (row.get('RateST') or '').strip()
+        cost_fits_raw = row.get('costFits')
+        date_from_raw = row.get('DATE_FROM')
+        date_to_raw   = row.get('DATE_TO')
+        fcu_raw       = (row.get('FCU') or '').strip()
+
+        m = _PXB_RE.search(serv_item)
+        if not m:
+            continue
+
+        band_min = int(m.group(2))
+        band_max = int(m.group(3))
+        if band_min > 6:
+            continue
+
+        if supplier_code not in supplier_codes:
+            continue
+
+        product = product_map.get((supplier_code, option_code))
+        if not product:
+            continue
+
+        try:
+            if hasattr(date_from_raw, 'date'):
+                date_from_db = date_from_raw.date()
+            elif isinstance(date_from_raw, date):
+                date_from_db = date_from_raw
+            else:
+                date_from_db = datetime.strptime(str(date_from_raw)[:10], '%Y-%m-%d').date()
+
+            if hasattr(date_to_raw, 'date'):
+                date_to_db = date_to_raw.date()
+            elif isinstance(date_to_raw, date):
+                date_to_db = date_to_raw
+            else:
+                date_to_db = datetime.strptime(str(date_to_raw)[:10], '%Y-%m-%d').date()
+        except (ValueError, AttributeError):
+            continue
+
+        if date_from_db < start_date:
+            continue
+
+        date_from_str = date_from_db.strftime('%d/%m/%Y')
+        date_to_str   = date_to_db.strftime('%d/%m/%Y')
+
+        if rate_st == 'Conf':
+            status, is_closed = 'Confirmed', False
+        elif rate_st == 'Prov':
+            status, is_closed = 'Provisional', False
+        elif rate_st == 'Closed':
+            status, is_closed = 'Confirmed', True
+        else:
+            status, is_closed = 'Confirmed', False
+
+        fcu = 'Person' if fcu_raw in ('PP', 'PE', 'PX') else 'Group'
+
+        try:
+            band_cost = round(float(cost_fits_raw or 0), 2)
+        except (ValueError, TypeError):
+            continue
+        if band_cost <= 0 and not is_closed:
+            continue
+
+        margin      = product.supplier.margin
+        margin_info = product.supplier.margin_info
+        if not margin or margin == 0:
+            continue
+
+        csv_products_seen.add(product.pk)
+        csv_product_dates.add((product.pk, date_from_db, date_to_db))
+
+        all_rate_groups = list(RateGroup.objects.filter(product=product).order_by("order"))
+
+        for base in range(band_min, min(band_max, 6) + 1):
+            column_options = str(base)
+            direct_cost    = round(band_cost / base, 2) if fcu == 'Group' else band_cost
+            sell_tourplan  = math.ceil(direct_cost / margin) if not is_closed else 0
+            cost           = 0.0 if is_closed else direct_cost
+
+            if not all_rate_groups:
+                dedup_key = (product.pk, date_from_db, date_to_db, column_options, None)
+                if dedup_key not in result_index:
+                    entry = {
+                        "action": "Add", "has_items": False,
+                        "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                        "rate_id": None, "rate_group_id": None,
+                        "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                        "supplier_name": product.supplier.name,
+                        "rate_group_name": "Breakfast included", "price_code": None,
+                        "date_from": date_from_str, "date_to": date_to_str,
+                        "column_options": column_options, "fcu": fcu,
+                        "cost": cost, "status": status, "sell_tourplan": sell_tourplan, "sell": sell_tourplan,
+                        "margin": margin, "margin_info": margin_info, "season": "To be defined",
+                        "_id": stats["rows_read"],
+                    }
+                    stats["rows_read"] += 1
+                    stats["to_add"] += 1
+                    result_index[dedup_key] = len(result)
+                    result.append(entry)
+                continue
+
+            for rate_group in all_rate_groups:
+                dedup_key = (product.pk, date_from_db, date_to_db, column_options, rate_group.pk)
+
+                matching_rate_line = (
+                    RateLine.objects.filter(group=rate_group, date_from=date_from_db, date_to=date_to_db)
+                    .select_related("group").first()
+                )
+
+                if matching_rate_line:
+                    existing_rate = (
+                        Rate.objects.filter(rate_line=matching_rate_line, column_options=column_options)
+                        .prefetch_related("cost_items").first()
+                    )
+                    if existing_rate:
+                        if existing_rate.locked:
+                            continue
+                        if existing_rate.has_items:
+                            continue  # CI-based rates not handled via DB sync
+                        if existing_rate.sell_tourplan != sell_tourplan:
+                            entry = {
+                                "action": "Update", "has_items": False,
+                                "current_sell_tourplan": existing_rate.sell_tourplan,
+                                "current_sell": existing_rate.sell,
+                                "current_cost": existing_rate.cost,
+                                "rate_id": existing_rate.pk, "rate_group_id": None,
+                                "sell_tourplan": sell_tourplan, "sell": sell_tourplan, "cost": cost,
+                            }
+                        else:
+                            if dedup_key in result_index:
+                                idx = result_index.pop(dedup_key)
+                                result.pop(idx)
+                                result_index = {k: (v - 1 if v > idx else v) for k, v in result_index.items()}
+                                stats["to_update"] -= 1
+                            stats["up_to_date"] += 1
+                            continue
+                    else:
+                        entry = {
+                            "action": "Add", "has_items": False,
+                            "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                            "rate_id": None, "rate_group_id": matching_rate_line.group.pk,
+                            "sell_tourplan": sell_tourplan, "sell": sell_tourplan, "cost": cost,
+                        }
+                else:
+                    entry = {
+                        "action": "Add", "has_items": False,
+                        "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                        "rate_id": None, "rate_group_id": rate_group.pk,
+                        "sell_tourplan": sell_tourplan, "sell": sell_tourplan, "cost": cost,
+                    }
+
+                entry.update({
+                    "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                    "supplier_name": product.supplier.name,
+                    "price_code": None, "date_from": date_from_str, "date_to": date_to_str,
+                    "column_options": column_options, "fcu": fcu, "status": status,
+                    "margin": margin, "margin_info": margin_info,
+                    "rate_group_name": rate_group.name, "season": "To be defined",
+                })
+
+                if dedup_key in result_index:
+                    idx = result_index[dedup_key]
+                    entry["_id"] = result[idx]["_id"]
+                    result[idx] = entry
+                else:
+                    entry["_id"] = stats["rows_read"]
+                    stats["rows_read"] += 1
+                    if entry["action"] == "Update":
+                        stats["to_update"] += 1
+                    else:
+                        stats["to_add"] += 1
+                    result_index[dedup_key] = len(result)
+                    result.append(entry)
+
+    if csv_products_seen:
+        orphan_lines = (
+            RateLine.objects.filter(group__product__in=csv_products_seen, date_from__gt=today)
+            .select_related("group__product__supplier").prefetch_related("line_rates")
+        )
+        next_id = stats["rows_read"]
+        for rl in orphan_lines:
+            product = rl.group.product
+            if (product.pk, rl.date_from, rl.date_to) in csv_product_dates:
+                continue
+            rates_summary = [
+                {"column_options": r.column_options, "sell_tourplan": r.sell_tourplan, "sell": r.sell, "cost": r.cost}
+                for r in rl.line_rates.all()
+            ]
+            stats["to_delete"] += 1
+            result.append({
+                "_id": next_id, "action": "Delete", "has_items": False,
+                "product_code": product.code, "product_name": str(product),
+                "supplier_name": product.supplier.name,
+                "date_from": rl.date_from.strftime("%d/%m/%Y"), "date_to": rl.date_to.strftime("%d/%m/%Y"),
+                "season": rl.season, "rate_line_id": rl.pk, "rates_summary": rates_summary,
+                "price_code": None, "column_options": None, "fcu": None,
+                "cost": None, "sell_tourplan": None, "sell": None, "margin": None,
+                "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
+                "rate_id": None, "rate_group_id": None,
+            })
+            next_id += 1
+
+    return result, stats
 
 
 def _cost_per_pax_sv(value, fcu, tax, increase, usd, exchange, pax):
@@ -1457,6 +2313,7 @@ def upload_data_services(csv_obj):
                             "product_code":          ctx_product.code,
                             "product_name":          str(ctx_product),
                             "product_id":            ctx_product.pk,
+                            "supplier_name":         ctx_supplier_obj.name if ctx_supplier_obj else "",
                             "rate_group_name":       "Breakfast included",
                             "price_code":            None,
                             "date_from":             ctx_date_from,
@@ -1536,6 +2393,7 @@ def upload_data_services(csv_obj):
                                         "product_code":          ctx_product.code,
                                         "product_name":          str(ctx_product),
                                         "product_id":            ctx_product.pk,
+                                        "supplier_name":         ctx_supplier_obj.name if ctx_supplier_obj else "",
                                         "price_code":            None,
                                         "date_from":             ctx_date_from,
                                         "date_to":               ctx_date_to,
@@ -1615,6 +2473,7 @@ def upload_data_services(csv_obj):
                         "product_code":    ctx_product.code,
                         "product_name":    str(ctx_product),
                         "product_id":      ctx_product.pk,
+                        "supplier_name":   ctx_supplier_obj.name if ctx_supplier_obj else "",
                         "price_code":      None,
                         "date_from":       ctx_date_from,
                         "date_to":         ctx_date_to,
@@ -1676,6 +2535,7 @@ def upload_data_services(csv_obj):
                 "has_items":      False,
                 "product_code":   product.code,
                 "product_name":   str(product),
+                "supplier_name":  product.supplier.name if hasattr(product, 'supplier') and product.supplier else "",
                 "date_from":      rl.date_from.strftime("%d/%m/%Y"),
                 "date_to":        rl.date_to.strftime("%d/%m/%Y"),
                 "season":         rl.season,
@@ -2115,6 +2975,104 @@ def history_of_changes_data(request):
         data.append(row)
 
     return JsonResponse({"data": data})
+
+
+@login_required
+def sync_tariff_from_db_accommodation(request):
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse("tp_mod_list"))
+
+    if not request.user.isAdmin:
+        messages.error(request, "Acceso denegado.")
+        return HttpResponseRedirect(reverse("tp_mod_list"))
+
+    try:
+        from intranet.utils import get_tourplan_connection
+        today = date.today()
+        default_start = today - timedelta(days=60)
+        raw_start = request.POST.get('sync_date_from', '').strip()
+        try:
+            start_date = datetime.strptime(raw_start, '%Y-%m-%d').date() if raw_start else default_start
+        except ValueError:
+            start_date = default_start
+
+        p1 = start_date.strftime('%Y%m%d')
+        p2 = (today + timedelta(days=730)).strftime('%Y%m%d')
+
+        conn = get_tourplan_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(_ACC_SYNC_SQL, (p1, p2))
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        changes, stats = _process_db_acc_rows(rows, today, start_date)
+
+        if stats["rows_read"] == 0:
+            messages.warning(request,
+                "No se leyó ninguna tarifa de alojamiento desde la base de datos. "
+                "Verificá que los proveedores tengan 'Actualizar desde TP' activo.")
+        elif changes:
+            request.session["pending_changes"] = changes
+            messages.info(request, _build_tp_sync_message(stats, "tarifas de alojamiento"))
+        else:
+            messages.success(request, _build_tp_sync_message(stats, "tarifas de alojamiento") + " — Todo está al día.")
+
+    except Exception as e:
+        logger.exception("sync_tariff_from_db_accommodation error: %s", e)
+        messages.error(request, f"Error al conectar con la base de datos Tourplan: {e}")
+
+    return HttpResponseRedirect(reverse("tp_mod_list"))
+
+
+@login_required
+def sync_tariff_from_db_services(request):
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse("tp_mod_list"))
+
+    if not request.user.isAdmin:
+        messages.error(request, "Acceso denegado.")
+        return HttpResponseRedirect(reverse("tp_mod_list"))
+
+    try:
+        from intranet.utils import get_tourplan_connection
+        today = date.today()
+        default_start = today - timedelta(days=60)
+        raw_start = request.POST.get('sync_date_from', '').strip()
+        try:
+            start_date = datetime.strptime(raw_start, '%Y-%m-%d').date() if raw_start else default_start
+        except ValueError:
+            start_date = default_start
+
+        p1 = start_date.strftime('%Y%m%d')
+        p2 = (today + timedelta(days=730)).strftime('%Y%m%d')
+
+        conn = get_tourplan_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(_SVS_SYNC_SQL, (p1, p2))
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        changes, stats = _process_db_svs_rows(rows, today, start_date)
+
+        if stats["rows_read"] == 0:
+            messages.warning(request,
+                "No se leyó ninguna tarifa de servicios desde la base de datos. "
+                "Verificá que los proveedores tengan 'Actualizar desde TP' activo.")
+        elif changes:
+            request.session["pending_changes"] = changes
+            messages.info(request, _build_tp_sync_message(stats, "tarifas de servicios"))
+        else:
+            messages.success(request, _build_tp_sync_message(stats, "tarifas de servicios") + " — Todo está al día.")
+
+    except Exception as e:
+        logger.exception("sync_tariff_from_db_services error: %s", e)
+        messages.error(request, f"Error al conectar con la base de datos Tourplan: {e}")
+
+    return HttpResponseRedirect(reverse("tp_mod_list"))
 
 
 @login_required

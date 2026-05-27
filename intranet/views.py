@@ -14,12 +14,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
 from difflib import SequenceMatcher
 from datetime import datetime, date, timedelta
+import math
 from django.utils.timezone import localtime, now as timezone_now
 from imap_tools import MailBox
 import os
@@ -31,6 +32,38 @@ from django.core.paginator import Paginator
 from collections import OrderedDict
 from django.views.decorators.http import require_GET
 from .utils import get_working_days, get_working_days_worker, count_workable_days
+
+_ABSENT_TYPES = frozenset({
+    'Vacaciones', 'Beneficio Vacaciones', 'Compensatorios',
+    'Enfermedad', 'Exámenes/Día de Estudio',
+    'Sin goce de sueldo', 'Viernes OFF alta', 'Viernes OFF',
+    'Cumpleaños en baja',
+})
+
+def _absences_on_day(target_date, department):
+    """Return Absence queryset for staff absent on target_date within a department."""
+    return Absence.objects.filter(
+        type_absence__in=_ABSENT_TYPES,
+        date_from__lte=target_date,
+        date_to__gte=target_date,
+        absence_user__isActivated=True,
+        absence_user__department=department,
+        absence_user__userType__in=['Ventas', 'Operaciones', 'Internal', 'Manager'],
+    ).select_related('absence_user')
+
+def _next_working_days(from_date, n):
+    """Return list of next n working days (Mon–Fri, non-holiday) after from_date."""
+    from .utils import _holiday_weekday_set
+    # look ahead up to 14 days to find n working days
+    look_ahead = from_date + timedelta(days=14)
+    holiday_days = _holiday_weekday_set(from_date + timedelta(days=1), look_ahead)
+    result = []
+    d = from_date + timedelta(days=1)
+    while len(result) < n and d <= look_ahead:
+        if d.weekday() < 5 and d not in holiday_days:
+            result.append(d)
+        d += timedelta(days=1)
+    return result
 from collections import defaultdict
 
 
@@ -49,6 +82,22 @@ def index (request):
         trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
     elif request.user.userType == "Operaciones":
         trips = Trip.objects.filter(status="Booking").filter(operations_user=request.user).order_by('travelling_date')
+    elif request.user.userType == "Cliente":
+        user_client = getattr(request.user, 'client', None)
+        if not user_client:
+            try:
+                user_client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                user_client = None
+        if user_client:
+            trips = Trip.objects.filter(status="Booking", client=user_client).order_by('travelling_date')
+            if user_client.name == "Audley Travel UK":
+                client_contact_email = "audley@aliwenincoming.com.ar"
+            else:
+                client_contact_email = "quote@aliwenincoming.com.ar"
+        else:
+            trips = Trip.objects.none()
+            client_contact_email = "quote@aliwenincoming.com.ar"
     else:
         trips = Trip.objects.filter(status="Booking").filter(responsable_user=request.user).order_by('travelling_date')
 
@@ -91,16 +140,27 @@ def index (request):
                 col_num+=1
         row_num+=1
 
+    today_absences = [
+        {
+            "name": a.absence_user.other_name or a.absence_user.username,
+            "color": a.absence_user.color or '#6c757d',
+            "type": a.type_absence,
+        }
+        for a in _absences_on_day(today, request.user.department)
+    ]
+
     return render(request, "intranet/index.html", {
         "pax_arriving": pax_arriving,
         "pax_insitu": pax_insitu,
+        "client_contact_email": locals().get("client_contact_email", "quote@aliwenincoming.com.ar"),
         "notes": Notes.objects.all(),
         "entries": Entry.objects.all(),
         "pendings": data,
         "total_quotes": total_quotes,
         "total_bookings": total_bookings,
         "total_finals": total_finals,
-        "total_others": total_others
+        "total_others": total_others,
+        "today_absences": today_absences,
     })
 
 def login_view (request):
@@ -498,6 +558,8 @@ def modify_user(request, user_id):
         except MultiValueDictKeyError:
             color = "#000000"
 
+        show_in_client_team = request.POST.get('show_in_client_team') == 'on'
+
         # Validations
         if not name or not email or not username or not department or not type:
             return render(request, "intranet/users.html", {
@@ -530,6 +592,7 @@ def modify_user(request, user_id):
         user.is_active = is_active
         user.userType = type
         user.color = color
+        user.show_in_client_team = show_in_client_team
         user.client_id = client_id or None
 
         user.save()
@@ -1171,9 +1234,23 @@ def create_feedback(request, trip_id):
 
 @login_required
 def pendings(request):
-
-    # Shows all entries
-    return render(request, "intranet/pendings.html", get_return_page("entries", "", request.user))
+    ctx = get_return_page("entries", "", request.user)
+    ctx["progress_legend"] = [
+        (
+            f'<span style="background:{bg};color:{fg};padding:2px 10px;'
+            f'border-radius:999px;font-size:.82em;white-space:nowrap;">{label}</span>',
+            desc,
+        )
+        for label, bg, fg, desc in [
+            ("0 - Not started yet",        "#9ca3af", "#fff", "The enquiry has been received but work has not yet begun."),
+            ("1 - Analysed",               "#60a5fa", "#fff", "The request has been reviewed and understood."),
+            ("2 - Suppliers contacted",    "#3b82f6", "#fff", "We have reached out to the relevant suppliers for availability and pricing."),
+            ("3 - Status sent",            "#f59e0b", "#fff", "A status update or quote has been sent to you."),
+            ("4 - Awaiting response",      "#f97316", "#fff", "We are waiting for a reply from a supplier or from your side."),
+            ("5 - Finalised",              "#22c55e", "#fff", "The quote or booking is complete and under final revision."),
+        ]
+    ]
+    return render(request, "intranet/pendings.html", ctx)
 
 @login_required
 def create_entry(request, trip_id):
@@ -1192,6 +1269,14 @@ def create_entry(request, trip_id):
 
         # Validations of the form
         if not starting_date or not status or not importance or not user_working_form:
+            _today = date.today()
+            _next = _next_working_days(_today, 2)
+            _day_labels = [(_today, 'hoy')] + [(_next[i], f'en {i+1} día{"s" if i else ""} hábil{"es" if i else ""}') for i in range(len(_next))]
+            _alerts = {}
+            for _d, _l in _day_labels:
+                for _a in _absences_on_day(_d, request.user.department):
+                    if _a.absence_user.username not in _alerts:
+                        _alerts[_a.absence_user.username] = _l
             return render(request, "intranet/new_entry.html", {
                 "entries": filter_entries,
                 "status": STATUS_OPTIONS,
@@ -1199,6 +1284,7 @@ def create_entry(request, trip_id):
                 "progress_options": PROGRESS_OPTIONS,
                 "users": User.objects.all(),
                 "trip": trip,
+                "absence_alerts": _alerts,
             })
 
         # Get the user from the username in the form
@@ -1280,8 +1366,19 @@ def create_entry(request, trip_id):
         return HttpResponse(status=204)
 
     else:
+        today = date.today()
+        next_wd = _next_working_days(today, 2)
+        day_labels = [(today, 'hoy')] + [
+            (next_wd[i], f'en {i+1} día{"s" if i else ""} hábil{"es" if i else ""}')
+            for i in range(len(next_wd))
+        ]
+        absence_alerts = {}
+        for d, label in day_labels:
+            for a in _absences_on_day(d, request.user.department):
+                uname = a.absence_user.username
+                if uname not in absence_alerts:
+                    absence_alerts[uname] = label
 
-        # Return all the entries without answer and the rest of the info for the form
         return render(request, "intranet/new_entry.html", {
             "entries": filter_entries,
             "status": STATUS_OPTIONS,
@@ -1289,6 +1386,7 @@ def create_entry(request, trip_id):
             "progress_options": PROGRESS_OPTIONS,
             "users": User.objects.all(),
             "trip": trip,
+            "absence_alerts": absence_alerts,
         })
 
 @login_required
@@ -1628,30 +1726,67 @@ _ABSENCE_COLORS = {
 }
 
 
-@login_required
-def holidays(request):
+def _calendar_staff_users(department):
     from django.db.models import Case, When, Value, IntegerField
-    staff_users = (
+    return (
         User.objects
         .filter(
             isActivated=True,
-            department=request.user.department,
-            userType__in=['Internal', 'Ventas', 'Operaciones'],
+            department=department,
+            userType__in=['Internal', 'Ventas', 'Operaciones', 'Manager'],
         )
         .annotate(_order=Case(
-            When(userType='Internal', then=Value(0)),
-            When(userType='Ventas',   then=Value(1)),
+            When(userType='Internal',    then=Value(0)),
+            When(userType='Ventas',      then=Value(1)),
             When(userType='Operaciones', then=Value(2)),
-            default=Value(3),
+            When(userType='Manager',     then=Value(3)),
+            default=Value(4),
             output_field=IntegerField(),
         ))
         .order_by('_order', 'username')
     )
+
+
+@login_required
+def holidays(request):
+    staff_users = _calendar_staff_users(request.user.department)
+    locations = Location.objects.all().order_by('order', 'name')
     return render(request, "intranet/holidays.html", {
         'staff_users': staff_users,
         'absence_types': TYPE_ABSENCE,
         'current_year': date.today().year,
+        'locations': locations,
+        'ext_categories': EXT_CALENDAR_CATEGORIES,
     })
+
+
+@login_required
+def calendar_view(request):
+    is_client = request.user.userType == "Cliente"
+    staff_users = [] if is_client else _calendar_staff_users(request.user.department)
+    locations = Location.objects.all().order_by('order', 'name')
+    return render(request, "intranet/calendar.html", {
+        'staff_users': staff_users,
+        'current_year': date.today().year,
+        'locations': locations,
+        'is_client': is_client,
+    })
+
+
+@login_required
+@csrf_exempt
+def update_calendar_visibility(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    data = json.loads(request.body)
+    visible_ids = set(int(i) for i in data.get('visible_ids', []))
+    staff = _calendar_staff_users(request.user.department)
+    for u in staff:
+        new_val = u.id in visible_ids
+        if u.show_in_calendar != new_val:
+            u.show_in_calendar = new_val
+            u.save(update_fields=['show_in_calendar'])
+    return JsonResponse({'ok': True})
 
 
 def create_weekend_holidays(start_date, end_date):
@@ -1849,6 +1984,217 @@ def delete_absence(request, absence_id):
         return JsonResponse({'success': True})
     except Absence.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
+
+
+# ── External Calendar ──────────────────────────────────────────────────────────
+
+@login_required
+def json_external_calendar(request):
+    start_str = request.GET.get('start')
+    end_str   = request.GET.get('end')
+    if start_str and end_str:
+        start_date = datetime.fromisoformat(start_str[:10]).date()
+        end_date   = datetime.fromisoformat(end_str[:10]).date()
+        qs = ExternalCalendarEntry.objects.filter(
+            date_from__lte=end_date, date_to__gte=start_date
+        ).select_related('location')
+        holiday_qs = Holidays.objects.filter(
+            date_from__lte=end_date, date_to__gte=start_date,
+            type_holidays='Feriado',
+        )
+    else:
+        qs = ExternalCalendarEntry.objects.all().select_related('location')
+        holiday_qs = Holidays.objects.filter(
+            type_holidays='Feriado',
+        )
+
+    CATEGORY_COLORS = {
+        'holiday':         '#87CEEB',
+        'long_weekend':    '#FFD700',
+        'other':           '#C8E6C9',
+        'full_moon':       '#E1D5F7',
+        'not_recommended': '#FFAB91',
+    }
+    events = []
+    for e in qs:
+        end = e.date_to + timedelta(days=1)
+        events.append({
+            'id':              f'ext_{e.id}',
+            'title':           e.name or e.get_category_display(),
+            'start':           str(e.date_from),
+            'end':             str(end),
+            'backgroundColor': CATEGORY_COLORS.get(e.category, '#ccc'),
+            'extendedProps': {
+                'category':    e.category,
+                'location_id': e.location_id,
+                'name':        e.name,
+                'notes':       e.notes,
+                'source':      'external',
+                'entry_id':    e.id,
+            },
+        })
+    # Internal holidays appear in all location rows (read-only)
+    for h in holiday_qs:
+        end = h.date_to + timedelta(days=1)
+        events.append({
+            'id':              f'hol_{h.id}',
+            'title':           h.name or h.type_holidays,
+            'start':           str(h.date_from),
+            'end':             str(end),
+            'backgroundColor': '#87CEEB',
+            'extendedProps': {
+                'category':    'holiday',
+                'location_id': None,
+                'name':        h.name or h.type_holidays,
+                'source':      'internal',
+                'entry_id':    None,
+            },
+        })
+    return JsonResponse(events, safe=False)
+
+
+@login_required
+@csrf_exempt
+def create_external_entry(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    data = json.loads(request.body)
+    loc_id = data.get('location_id') or None
+    entry = ExternalCalendarEntry.objects.create(
+        date_from=data['date_from'],
+        date_to=data['date_to'],
+        name=data.get('name', ''),
+        notes=data.get('notes', ''),
+        category=data.get('category', 'holiday'),
+        location_id=loc_id,
+    )
+    return JsonResponse({'id': entry.id, 'success': True})
+
+
+@login_required
+@csrf_exempt
+def edit_external_entry(request, entry_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        entry = ExternalCalendarEntry.objects.get(pk=entry_id)
+    except ExternalCalendarEntry.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    entry.date_from   = data.get('date_from', entry.date_from)
+    entry.date_to     = data.get('date_to', entry.date_to)
+    entry.name        = data.get('name', entry.name)
+    entry.notes       = data.get('notes', entry.notes)
+    entry.category    = data.get('category', entry.category)
+    entry.location_id = data.get('location_id') or None
+    entry.save()
+    return JsonResponse({'success': True})
+
+
+@login_required
+@csrf_exempt
+def delete_external_entry(request, entry_id):
+    if request.method not in ('POST', 'DELETE'):
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        ExternalCalendarEntry.objects.get(pk=entry_id).delete()
+        return JsonResponse({'success': True})
+    except ExternalCalendarEntry.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+def _calculate_full_moons(year):
+    """
+    Full moon dates for a year via the synodic period (29.53059 days).
+    Reference: Jan 21, 2000 was a full moon (04:40 UTC). Accurate to ±1 day.
+    """
+    KNOWN = date(2000, 1, 21)
+    SYNODIC = 29.53058867
+    k = math.ceil((date(year, 1, 1) - KNOWN).days / SYNODIC)
+    results = []
+    while True:
+        d = KNOWN + timedelta(days=round(k * SYNODIC))
+        if d.year > year:
+            break
+        if d.year == year:
+            results.append(d)
+        k += 1
+    return results
+
+
+@login_required
+@csrf_exempt
+def import_long_weekends(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    data = json.loads(request.body)
+    year = int(data.get('year', date.today().year))
+
+    # Get all Feriados for the year
+    feriados = Holidays.objects.filter(
+        type_holidays='Feriado',
+        date_from__year=year,
+    )
+
+    # Existing long_weekend entries for the year (by date_from)
+    existing = set(
+        ExternalCalendarEntry.objects.filter(
+            category='long_weekend',
+            date_from__year=year,
+        ).values_list('date_from', flat=True)
+    )
+
+    created = 0
+    for h in feriados:
+        saturday = sunday = None
+        # Check first day: Friday → weekend after
+        if h.date_from.weekday() == 4:
+            saturday = h.date_from + timedelta(days=1)
+            sunday   = h.date_from + timedelta(days=2)
+        # Check last day: Monday → weekend before
+        elif h.date_to.weekday() == 0:
+            saturday = h.date_to - timedelta(days=2)
+            sunday   = h.date_to - timedelta(days=1)
+
+        if saturday and saturday not in existing:
+            name = f'Long Weekend — {h.name or h.type_holidays}'
+            ExternalCalendarEntry.objects.create(
+                date_from=saturday, date_to=sunday,
+                name=name, category='long_weekend', location=None,
+            )
+            existing.add(saturday)
+            created += 1
+
+    return JsonResponse({'created': created, 'year': year})
+
+
+@login_required
+@csrf_exempt
+def import_full_moons(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    data = json.loads(request.body)
+    year = int(data.get('year', date.today().year))
+
+    full_moon_dates = _calculate_full_moons(year)
+
+    existing = set(
+        ExternalCalendarEntry.objects.filter(
+            category='full_moon',
+            date_from__year=year,
+        ).values_list('date_from', flat=True)
+    )
+
+    created = 0
+    for d in full_moon_dates:
+        if d not in existing:
+            ExternalCalendarEntry.objects.create(
+                date_from=d, date_to=d,
+                name='Full Moon', category='full_moon', location=None,
+            )
+            created += 1
+
+    return JsonResponse({'created': created, 'total': len(full_moon_dates), 'year': year})
 
 
 @login_required
@@ -2460,6 +2806,27 @@ _PROGRESS_OPTIONS = [
     "5 - Finalizado",
 ]
 
+_PROGRESS_LABELS_EN = {
+    "0 - No comenzado":                     ("0 - Not started yet",         "#9ca3af", "#fff"),
+    "1 - Analizado":                         ("1 - Analysed",                "#60a5fa", "#fff"),
+    "2 - Contactados proveedores":           ("2 - Suppliers contacted",     "#3b82f6", "#fff"),
+    "3 - Enviado Status":                    ("3 - Status sent",             "#f59e0b", "#fff"),
+    "4 - Falta respuesta proveedor/cliente": ("4 - Awaiting response",       "#f97316", "#fff"),
+    "5 - Finalizado":                        ("5 - Finalised",               "#22c55e", "#fff"),
+}
+
+
+def _progress_label_en(current):
+    entry = _PROGRESS_LABELS_EN.get(current)
+    if entry:
+        label, bg, color = entry
+    else:
+        label, bg, color = (current or "—", "#9ca3af", "#fff")
+    return (
+        f'<span style="background:{bg};color:{color};padding:2px 8px;'
+        f'border-radius:999px;font-size:.82em;white-space:nowrap;">{label}</span>'
+    )
+
 
 def _progress_select_html(entry_id, current):
     opts = "".join(
@@ -2488,6 +2855,49 @@ def update_entry_progress(request, entry_id):
         return JsonResponse({'success': True})
     except Entry.DoesNotExist:
         return JsonResponse({'error': 'not found'}, status=404)
+
+
+@login_required
+@csrf_exempt
+def client_entry_inquiry(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method not allowed'}, status=405)
+    if request.user.userType != 'Cliente':
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    data = json.loads(request.body)
+    entry_id = data.get('entry_id')
+    message = data.get('message', '').strip()
+    try:
+        entry = Entry.objects.select_related('trip', 'trip__client').get(
+            pk=entry_id, trip__department=request.user.department
+        )
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'not found'}, status=404)
+
+    client_ref = entry.trip.client_reference or '—'
+    trip_display = f"{entry.trip.name} x {entry.trip.quantity_pax}" if entry.trip else '—'
+    status_label = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}".strip()
+    subject = f"Consulta de cliente desde Intranet - Ref: {client_ref} - Viaje: {trip_display}"
+
+    html_body = (
+        f"<p><strong>Client:</strong> {request.user.other_name or request.user.username}</p>"
+        f"<p><strong>Reference:</strong> {client_ref}</p>"
+        f"<p><strong>Trip:</strong> {trip_display}</p>"
+        f"<p><strong>Entry status:</strong> {status_label}</p>"
+        f"<hr><p>{message}</p>"
+    )
+    from intranet.utils import send_templated_email
+    from django.core.mail import EmailMultiAlternatives
+    from django.conf import settings as _settings
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=message,
+        from_email=_settings.DEFAULT_FROM_EMAIL,
+        to=['quote@aliwenincoming.com.ar'],
+    )
+    msg.attach_alternative(html_body, 'text/html')
+    msg.send()
+    return JsonResponse({'success': True})
 
 
 @login_required
@@ -2628,20 +3038,59 @@ def entries_data(request):
 
         trip_name = f"{entry.trip.name if entry.trip else ''} x {entry.trip.quantity_pax}"
 
+        is_client_user = request.user.userType == "Cliente"
+
         # status con versión
-        status = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}"
+        status_raw = entry.status
+        version_str = (entry.version_quote if status_raw == 'Quote' else entry.version) or ''
+        status = f"{status_raw} {version_str}".strip()
+
+        if is_client_user:
+            _status_colors = {
+                'Quote':   ('#3b82f6', '#fff'),
+                'Booking': ('#22c55e', '#fff'),
+                'Final':   ('#f97316', '#fff'),
+            }
+            _bg, _fg = _status_colors.get(status_raw, ('#6b7280', '#fff'))
+            status_display = (
+                f'<span style="background:{_bg};color:{_fg};padding:2px 10px;'
+                f'border-radius:999px;font-size:.85em;white-space:nowrap;">{status}</span>'
+            )
+        else:
+            status_display = status
 
         # monto
-        amount = f"USD {entry.amount}" if entry.amount else "Pendiente"
+        if entry.amount:
+            amount = f"USD {entry.amount}"
+        elif is_client_user:
+            amount = "<span class='text-muted small fst-italic'>Not available yet</span>"
+        else:
+            amount = "Pendiente"
 
         # fechas
-        starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
-        closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
-        travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
+        if is_client_user:
+            starting_date = localtime(entry.starting_date).strftime("%d %b %Y")
+            closing_date = localtime(entry.closing_date).strftime("%d %b %Y") if entry.isClosed else "—"
+            travelling_date = entry.trip.travelling_date.strftime("%d %b %Y") if entry.trip and entry.trip.travelling_date else "—"
+        else:
+            starting_date = localtime(entry.starting_date).strftime("%Y/%m/%d %H:%M")
+            closing_date = localtime(entry.closing_date).strftime("%Y/%m/%d %H:%M") if entry.isClosed else f"<div class='bg-{entry.timingStatus}'>n/a</div>"
+            travelling_date = entry.trip.travelling_date.strftime("%Y/%m/%d") if entry.trip and entry.trip.travelling_date else ""
 
-        if request.user.userType == "Cliente":
-            acciones_html = f"""<div>None</div>
-            """
+        if is_client_user:
+            client_ref = entry.trip.client_reference if entry.trip else ""
+            trip_display = f"{entry.trip.name if entry.trip else ''} x {entry.trip.quantity_pax}"
+            acciones_html = (
+                f'<div class="text-center">'
+                f'<button class="btn btn-sm btn-outline-secondary client-entry-email-btn" '
+                f'data-entry-id="{entry.id}" '
+                f'data-ref="{client_ref}" '
+                f'data-trip="{trip_display}" '
+                f'data-status="{status}" '
+                f'title="Send an email about this {entry.status.lower()}">'
+                f'<i class="fa-solid fa-envelope"></i>'
+                f'</button></div>'
+            )
         else:
             # acciones con modal
             acciones_html = f"""
@@ -2673,19 +3122,24 @@ def entries_data(request):
                     </div>
             """
 
+        if is_client_user:
+            progress_display = _progress_label_en(entry.progress)
+        else:
+            progress_display = _progress_select_html(entry.id, entry.progress)
+
         data.append({
             "starting_date": starting_date,
             "closing_date": closing_date,
             "trip": trip_name,
             "type": entry.trip.trip_type,
-            "status": status,
+            "status": status_display,
             "amount": amount,
             "client": entry.trip.client.name if entry.trip and entry.trip.client else "",
             "contact": str(entry.trip.contact) if entry.trip and entry.trip.contact else "",
             "client_reference": entry.trip.client_reference if entry.trip else "",
             "user_creator": _user_pill(entry.user_creator),
             "user_working": _user_pill(entry.user_working),
-            "progress": _progress_select_html(entry.id, entry.progress),
+            "progress": progress_display,
             "importance": entry.importance,
             "difficulty": entry.trip.difficulty,
             "note": entry.note or "n/a",
@@ -3228,17 +3682,23 @@ def stats_entries_by_speed(qs):
             four_days=Count('id', filter=Q(response_speed=4)),
             five_days=Count('id', filter=Q(response_speed=5)),
             more_days=Count('id', filter=Q(response_speed__gt=5)),
+            unanswered=Count('id', filter=Q(response_speed__isnull=True)),
             avg=Coalesce(Avg("response_speed", output_field=FloatField()), 0.0),
         )
         total = agg['total'] or 0
+        unanswered = agg['unanswered'] or 0
+        responded = total - unanswered
         if total == 0:
             return {
                 "total": 0, "same_day": 0, "one_day": 0, "two_days": 0,
                 "three_days": 0, "four_days": 0, "five_days": 0, "more_days": 0,
-                "average": 0, "percentages": {},
+                "unanswered": 0, "average": 0, "percentages": {},
             }
-        ranges = {k: agg[k] or 0 for k in ("same_day","one_day","two_days","three_days","four_days","five_days","more_days")}
-        percentages = {k: round(v / total * 100, 2) for k, v in ranges.items()}
+        speed_keys = ("same_day", "one_day", "two_days", "three_days", "four_days", "five_days", "more_days")
+        ranges = {k: agg[k] or 0 for k in (*speed_keys, "unanswered")}
+        # Speed bucket %s are over answered entries; SC % is over total
+        percentages = {k: round(ranges[k] / responded * 100, 2) if responded > 0 else 0 for k in speed_keys}
+        percentages['unanswered'] = round(unanswered / total * 100, 2) if total > 0 else 0
         return {
             "total": total,
             **ranges,
@@ -3251,19 +3711,20 @@ def stats_entries_by_speed(qs):
 
     # --- Totales por vendedor: 1 sola query con conditional counts por status × speed ---
     vendors = defaultdict(dict)
-    _SPEED_FIELDS = ("same_day","one_day","two_days","three_days","four_days","five_days","more_days")
+    _SPEED_FIELDS = ("same_day","one_day","two_days","three_days","four_days","five_days","more_days","unanswered")
     _SPEED_Q = {
-        "same_day": Q(response_speed=0),
-        "one_day":  Q(response_speed=1),
-        "two_days": Q(response_speed=2),
+        "same_day":   Q(response_speed=0),
+        "one_day":    Q(response_speed=1),
+        "two_days":   Q(response_speed=2),
         "three_days": Q(response_speed=3),
         "four_days":  Q(response_speed=4),
         "five_days":  Q(response_speed=5),
         "more_days":  Q(response_speed__gt=5),
+        "unanswered": Q(response_speed__isnull=True),
     }
     _STATUSES = {
         "total":    Q(),
-        "quotes":   Q(status="Quote"),
+        "quotes":   Q(status="Quote") & Q(trip__trip_type__in=["FIT's", "Grupos"]),
         "bookings": Q(status="Booking"),
         "finals":   Q(status="Final Itinerary"),
     }
@@ -3290,13 +3751,18 @@ def stats_entries_by_speed(qs):
         total = row[f"{prefix}__total"] or 0
         if total == 0:
             return {"total":0,"same_day":0,"one_day":0,"two_days":0,"three_days":0,
-                    "four_days":0,"five_days":0,"more_days":0,"average":0,"percentages":{}}
+                    "four_days":0,"five_days":0,"more_days":0,"unanswered":0,"average":0,"percentages":{}}
         ranges = {k: row[f"{prefix}__{k}"] or 0 for k in _SPEED_FIELDS}
+        unanswered = ranges['unanswered']
+        responded = total - unanswered
+        _speed_only = ("same_day","one_day","two_days","three_days","four_days","five_days","more_days")
+        percentages = {k: round(ranges[k] / responded * 100, 2) if responded > 0 else 0 for k in _speed_only}
+        percentages['unanswered'] = round(unanswered / total * 100, 2) if total > 0 else 0
         return {
             "total": total,
             **ranges,
             "average": round(row[f"{prefix}__avg"], 2),
-            "percentages": {k: round(v/total*100, 2) for k, v in ranges.items()},
+            "percentages": percentages,
         }
 
     for row in vendor_rows:
@@ -3542,6 +4008,49 @@ def stats_presentation_entries(request):
     average_bookings_quantity = round(total_count_bookings / days, 2)
     average_bookings_amount   = round(total_amount_bookings / days, 2)
 
+    # By trip type (all TRIP_TYPES, single group-by query each)
+    q_by_type_qs = quotes.values('trip__trip_type').annotate(count=Count('id'), amount=Sum('amount'))
+    b_by_type_qs = bookings.values('trip__trip_type').annotate(count=Count('id'), amount=Sum('amount'))
+    q_type_map = {r['trip__trip_type']: r for r in q_by_type_qs}
+    b_type_map = {r['trip__trip_type']: r for r in b_by_type_qs}
+    by_type_quotes = []
+    by_type_bookings = []
+    for tt_val, tt_label in TRIP_TYPES:
+        rq = q_type_map.get(tt_val, {})
+        rb = b_type_map.get(tt_val, {})
+        cnt_q = rq.get('count', 0) or 0
+        amt_q = float(rq.get('amount', 0) or 0)
+        cnt_b = rb.get('count', 0) or 0
+        amt_b = float(rb.get('amount', 0) or 0)
+        by_type_quotes.append({'label': tt_label, 'count': cnt_q, 'amount': amt_q, 'perc': _pct(amt_q, total_amount_quotes)})
+        by_type_bookings.append({'label': tt_label, 'count': cnt_b, 'amount': amt_b, 'perc': _pct(amt_b, total_amount_bookings)})
+    by_type_quotes.append({'label': 'TOTAL', 'count': total_count_quotes, 'amount': total_amount_quotes, 'perc': 100.0, 'is_total': True})
+    by_type_bookings.append({'label': 'TOTAL', 'count': total_count_bookings, 'amount': total_amount_bookings, 'perc': 100.0, 'is_total': True})
+
+    # By travelling season (dynamic: all distinct seasons from actual data)
+    def _season_of(d):
+        return d.year if d.month >= 5 else d.year - 1
+
+    td_q = set(quotes.exclude(trip__travelling_date__isnull=True).values_list('trip__travelling_date', flat=True))
+    td_b = set(bookings.exclude(trip__travelling_date__isnull=True).values_list('trip__travelling_date', flat=True))
+    season_starts_list = sorted(set(_season_of(d) for d in (td_q | td_b)))
+    by_season_quotes = []
+    by_season_bookings = []
+    for ss in season_starts_list:
+        sf  = date(ss,     5, 1)
+        st_ = date(ss + 1, 4, 30)
+        slabel = f"{ss}/{ss + 1}"
+        sq = quotes.filter(trip__travelling_date__range=(sf, st_))
+        sq_c = sq.count()
+        sq_a = float(sq.aggregate(s=Sum('amount'))['s'] or 0)
+        sb = bookings.filter(trip__travelling_date__range=(sf, st_))
+        sb_c = sb.count()
+        sb_a = float(sb.aggregate(s=Sum('amount'))['s'] or 0)
+        by_season_quotes.append({'label': slabel, 'count': sq_c, 'amount': sq_a, 'perc': _pct(sq_a, total_amount_quotes)})
+        by_season_bookings.append({'label': slabel, 'count': sb_c, 'amount': sb_a, 'perc': _pct(sb_a, total_amount_bookings)})
+    by_season_quotes.append({'label': 'TOTAL', 'count': total_count_quotes, 'amount': total_amount_quotes, 'perc': 100.0, 'is_total': True})
+    by_season_bookings.append({'label': 'TOTAL', 'count': total_count_bookings, 'amount': total_amount_bookings, 'perc': 100.0, 'is_total': True})
+
     # Cancellation information
     cancellations_count = qs.filter(status="Cancelado").count()
 
@@ -3697,6 +4206,10 @@ def stats_presentation_entries(request):
         "vendors_bookings": vendors_bookings,
         "summary_table_quotes": summary_table_quotes,
         "summary_table_bookings": summary_table_bookings,
+        "by_type_quotes": by_type_quotes,
+        "by_type_bookings": by_type_bookings,
+        "by_season_quotes": by_season_quotes,
+        "by_season_bookings": by_season_bookings,
         "summary_speed": summary_speed,
         "clients": clients,
         "monthly_breakdown": monthly_breakdown,
@@ -4137,8 +4650,42 @@ def stats_presentation_trips(request):
                 'bookings_amount': float(r['bookings_amount'] or 0),
             })
 
+    # By trip type (group-by query)
+    t_by_type_qs = trips.values('trip_type').annotate(
+        count=Count('id'),
+        amount=Sum('amount'),
+        rent_sum=Sum('rent_perc'),
+    )
+    t_type_map = {r['trip_type']: r for r in t_by_type_qs}
+    by_type_trips = []
+    for tt_val, tt_label in TRIP_TYPES:
+        r = t_type_map.get(tt_val, {})
+        cnt  = r.get('count', 0) or 0
+        amt  = float(r.get('amount', 0) or 0)
+        rent_s = float(r.get('rent_sum', 0) or 0)
+        avg_rent_pct = _pct(rent_s, cnt)
+        by_type_trips.append({
+            'label':        tt_label,
+            'count':        cnt,
+            'amount':       amt,
+            'amount_perc':  _pct(amt, total_amount_trips),
+            'avg_rent_perc': avg_rent_pct,
+            'rent_amount':  avg_rent_pct / 100 * amt,
+        })
+    total_rent_amount = all_rent_average / 100 * total_amount_trips
+    by_type_trips.append({
+        'label':        'TOTAL',
+        'count':        total_count_trips,
+        'amount':       total_amount_trips,
+        'amount_perc':  100.0,
+        'avg_rent_perc': all_rent_average,
+        'rent_amount':  total_rent_amount,
+        'is_total':     True,
+    })
+
     return JsonResponse({
         "summary_table_trips": summary_table_trips,
+        "by_type_trips": by_type_trips,
         "trips_by_responsable": trips_by_responsable,
         "trips_by_operator": trips_by_operator,
         "clients": clients,
@@ -4289,7 +4836,7 @@ def upload_data(csv_obj):
                     quantity_pax = int(raw_pax)
                 except ValueError:
                     quantity_pax = 2
-                if trip_status in ("Booking", "Cancelado"):
+                if trip_status in ("Booking", "Cancelado") and not tp_id.startswith(("ALSI", "ALPP")):
                     raw_rent = row[20].strip() if len(row) > 20 else ""
                     raw_amount = row[21].strip() if len(row) > 21 else ""
                     csv_not_in_app.append({
@@ -4573,7 +5120,14 @@ def tourplan_create_trips(request):
         csv_client_name = row.get("client_name", "").strip()
         csv_client_lower = csv_client_name.lower()
         if csv_client_lower.startswith("consumidor final"):
-            client = clients_by_name.get("consumidor final") or default_client
+            # Try exact CSV name first, then without "aliwen", then base fallback
+            normalized = csv_client_lower.replace(" aliwen", "").strip()
+            client = (
+                clients_by_name.get(csv_client_lower)
+                or clients_by_name.get(normalized)
+                or clients_by_name.get("consumidor final")
+                or default_client
+            )
         else:
             client = clients_by_name.get(csv_client_lower)
             if not client:
@@ -6482,3 +7036,181 @@ def calidad_entity_delete(request, entity_id):
         return JsonResponse({'ok': True})
     except FeedbackEntity.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
+
+# ── Notification management ──────────────────────────────────────────────────
+
+def _auto_logic_users(notification_type):
+    """Returns list of User objects that auto-logic would send this type to."""
+    if notification_type == 'margin_warning':
+        return list(User.objects.filter(userType='Ventas').exclude(email='').order_by('username'))
+    if notification_type in ('weekly_roster', 'holiday_reminder'):
+        return list(
+            User.objects.filter(
+                userType__in=['Ventas', 'Operaciones', 'Manager'],
+                isActivated=True,
+                department='AI',
+            ).exclude(email='').order_by('username')
+        )
+    return []
+
+
+@login_required
+def notifications_management(request):
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    TYPE_LABELS = dict(NOTIFICATION_TYPES)
+
+    sections = []
+    for type_key, type_label in NOTIFICATION_TYPES:
+        is_auto = type_key in NOTIFICATION_AUTO_TYPES
+
+        pref_map = {
+            p.user_id: p
+            for p in NotificationPreference.objects.filter(
+                notification_type=type_key
+            ).select_related('user')
+        }
+
+        rows = []
+        shown_user_ids = set()
+        is_client_type = (type_key == 'tariff_client')
+        admin_dept = request.user.department
+
+        if is_auto:
+            for user in _auto_logic_users(type_key):
+                if user.department != admin_dept:
+                    continue
+                pref = pref_map.get(user.id)
+                rows.append({
+                    'user': user,
+                    'is_auto': True,
+                    'is_active': pref.is_active if pref else True,
+                    'opt_out_by': pref.opt_out_by if pref else '',
+                    'pref_id': pref.id if pref else None,
+                })
+                shown_user_ids.add(user.id)
+
+        # Explicit records not already shown
+        for uid, pref in pref_map.items():
+            if uid in shown_user_ids:
+                continue
+            u = pref.user
+            if is_client_type:
+                if u.userType != 'Cliente':
+                    continue
+            else:
+                if u.department != admin_dept or u.userType == 'Cliente':
+                    continue
+            rows.append({
+                'user': u,
+                'is_auto': False,
+                'is_active': pref.is_active,
+                'opt_out_by': pref.opt_out_by,
+                'pref_id': pref.id,
+            })
+            shown_user_ids.add(uid)
+
+        if is_client_type:
+            available_users = (
+                User.objects.filter(isActivated=True, userType='Cliente')
+                .exclude(email='')
+                .exclude(id__in=shown_user_ids)
+                .order_by('username')
+            )
+        else:
+            available_users = (
+                User.objects.filter(isActivated=True, department=admin_dept)
+                .exclude(email='')
+                .exclude(userType='Cliente')
+                .exclude(id__in=shown_user_ids)
+                .order_by('username')
+            )
+
+        sections.append({
+            'type': type_key,
+            'label': type_label,
+            'is_auto': is_auto,
+            'rows': rows,
+            'available_users': available_users,
+        })
+
+    return render(request, 'intranet/notifications.html', {
+        'sections': sections,
+    })
+
+
+@login_required
+def notification_toggle(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    user_id = request.POST.get('user_id')
+    notification_type = request.POST.get('notification_type')
+    action = request.POST.get('action')  # 'deactivate' or 'activate'
+
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return HttpResponseRedirect(reverse('notifications_management'))
+
+    pref, _ = NotificationPreference.objects.get_or_create(
+        user=target_user,
+        notification_type=notification_type,
+        defaults={'is_active': True},
+    )
+
+    if action == 'deactivate':
+        pref.is_active = False
+        pref.opt_out_by = 'admin'
+    else:
+        pref.is_active = True
+        pref.opt_out_by = ''
+    pref.save()
+
+    return HttpResponseRedirect(reverse('notifications_management') + f'#{notification_type}')
+
+
+@login_required
+def notification_add(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    user_id = request.POST.get('user_id')
+    notification_type = request.POST.get('notification_type')
+
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return HttpResponseRedirect(reverse('notifications_management'))
+
+    pref, _ = NotificationPreference.objects.get_or_create(
+        user=target_user,
+        notification_type=notification_type,
+        defaults={'is_active': True, 'opt_out_by': ''},
+    )
+    if not pref.is_active:
+        pref.is_active = True
+        pref.opt_out_by = ''
+        pref.save()
+
+    return HttpResponseRedirect(reverse('notifications_management') + f'#{notification_type}')
+
+
+def notification_unsubscribe(request, token):
+    """Public unsubscribe endpoint — no login required (link is in email)."""
+    try:
+        pref = NotificationPreference.objects.select_related('user').get(unsubscribe_token=token)
+    except NotificationPreference.DoesNotExist:
+        return HttpResponse("Invalid or expired unsubscribe link.", status=404)
+
+    already_done = not pref.is_active
+    if not already_done:
+        pref.is_active = False
+        pref.opt_out_by = 'self'
+        pref.save()
+
+    return render(request, 'intranet/notifications_unsubscribed.html', {
+        'notification_label': pref.get_notification_type_display(),
+        'already_done': already_done,
+    })

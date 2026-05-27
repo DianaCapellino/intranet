@@ -10,6 +10,8 @@ urlpatterns = [
     path("entries", views.pendings, name="entries"),
     path("stats", views.stats, name="stats"),
     path("holidays", views.holidays, name="holidays"),
+    path("calendar", views.calendar_view, name="calendar_view"),
+    path("holidays/calendar-visibility", views.update_calendar_visibility, name="update_calendar_visibility"),
 
     # Paths for creating items
     path("countries", views.create_country, name="countries"),
@@ -39,6 +41,7 @@ urlpatterns = [
     path("entries/json/<int:entry_id>", views.json_entry, name="json_entry"),
     path("entries/tp_lookup", views.entry_tp_lookup, name="entry_tp_lookup"),
     path("entries/data/", views.entries_data, name="entries_data"),
+    path("entries/client-inquiry/", views.client_entry_inquiry, name="client_entry_inquiry"),
     path("entries/json/pendings", views.json_pendings, name="json_pendings"),
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
     path("stats/data/", views.stats_data, name="stats_data"),   
@@ -62,6 +65,12 @@ urlpatterns = [
     path("holidays/holiday/<int:holiday_id>/edit", views.edit_holiday, name="edit_holiday"),
     path("holidays/absence/create", views.create_absence, name="create_absence"),
     path("holidays/absence/<int:absence_id>/delete", views.delete_absence, name="delete_absence"),
+    path("external-calendar/json", views.json_external_calendar, name="json_external_calendar"),
+    path("external-calendar/entry/create", views.create_external_entry, name="create_external_entry"),
+    path("external-calendar/entry/<int:entry_id>/edit", views.edit_external_entry, name="edit_external_entry"),
+    path("external-calendar/entry/<int:entry_id>/delete", views.delete_external_entry, name="delete_external_entry"),
+    path("external-calendar/full-moons/import", views.import_full_moons, name="import_full_moons"),
+    path("external-calendar/long-weekends/import", views.import_long_weekends, name="import_long_weekends"),
 
     # Other paths for views
     path("read_emails", views.read_emails, name="read_emails"),
@@ -85,6 +94,12 @@ urlpatterns = [
     path("filter_trips", views.trip_filter, name="trip_filter"),
     path("filter_trips/clients", views.trip_filter_clients, name="trip_filter_clients"),
     path("filter_trips/results", views.trip_filter_results, name="trip_filter_results"),
+
+    # Notification management
+    path("notifications", views.notifications_management, name="notifications_management"),
+    path("notifications/toggle", views.notification_toggle, name="notification_toggle"),
+    path("notifications/add", views.notification_add, name="notification_add"),
+    path("notifications/unsubscribe/<uuid:token>/", views.notification_unsubscribe, name="notification_unsubscribe"),
 
     # Margin management
     path("margin_management", views.margin_management, name="margin_management"),
