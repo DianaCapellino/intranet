@@ -90,12 +90,17 @@
                     </ul>
                   </li>
                   {% endif %}
+                  {% if user.isAdmin %}
+                  <li class="nav-item">
+                    <a class="nav-link text-success fw-semibold" href="{% url 'aliwen_green' %}">🌿 Aliwen Green</a>
+                  </li>
+                  {% endif %}
                 {% else %}
                   <li class="nav-item">
-                    <a class="nav-link text-light" href="{% url 'entries' %}">Entries</a>
+                    <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff</a>
                   </li>
                   <li class="nav-item">
-                    <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff</a>
+                    <a class="nav-link text-light" href="{% url 'entries' %}">Entries</a>
                   </li>
                   <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'calendar_view' %}">Calendar</a>
@@ -116,6 +121,12 @@
                       <li><a class="dropdown-item" href="{% url 'logout' %}">Log Out</a></li>
                     </div>
                   </ul>
+                </li>
+                <li class="nav-item d-lg-none"><hr class="border-secondary opacity-50 my-1"></li>
+                <li class="nav-item d-lg-none">
+                  <a class="nav-link text-light" href="{% url 'logout' %}">
+                    <i class="fa-solid fa-right-from-bracket me-2"></i>Log Out
+                  </a>
                 </li>
             {% else %}
             <ul class="nav navbar-nav">

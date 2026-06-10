@@ -11,7 +11,7 @@
       <input type="number" id="yearSelector" class="form-control form-control-sm"
              style="width:80px" value="{{ current_year }}" min="2000" max="2050">
       <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">Actualizar</button>
-      <div id="headerButtonsInterno" class="d-flex gap-2">
+      <div id="headerButtonsInterno" class="d-flex gap-2 align-items-center">
         <button class="btn btn-sm btn-outline-secondary" id="btnUsers" data-bs-toggle="modal" data-bs-target="#modalUsers">Usuarios</button>
         <button class="btn btn-sm btn-primary" id="btnGestion">Gestionar Feriados y Cumpleaños</button>
       </div>
@@ -121,9 +121,13 @@
           <label class="form-label small mb-1">Persona</label>
           <select class="form-select form-select-sm" id="absUser">
             {% for u in staff_users %}
-            <option value="{{ u.id }}">{{ u.username }}{% if u.other_name %} — {{ u.other_name }}{% endif %}</option>
+            <option value="{{ u.id }}" data-visible="{{ u.show_in_calendar|yesno:'true,false' }}">{{ u.username }}{% if u.other_name %} — {{ u.other_name }}{% endif %}</option>
             {% endfor %}
           </select>
+          <div class="form-check mt-1">
+            <input class="form-check-input" type="checkbox" id="absShowHidden">
+            <label class="form-check-label small text-muted" for="absShowHidden">Mostrar usuarios no visibles</label>
+          </div>
         </div>
         <div class="mb-2">
           <label class="form-label small mb-1">Tipo</label>
@@ -391,6 +395,9 @@ const STAFF_USERS = [
   {% endfor %}
 ];
 
+const CURRENT_YEAR  = new Date().getFullYear();
+const CURRENT_MONTH = new Date().getMonth();
+
 // ── Color maps ────────────────────────────────────────────────────────────────
 const HOLIDAY_COLORS = {
   'Feriado':          '#87CEEB',
@@ -424,8 +431,8 @@ const TYPE_ABBREV = {
   'Feriado trabajado 1/2':'1/2',
 };
 
-const MONTHS_ES  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const DAYS_SHORT = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const MONTHS_ES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 (function () {
@@ -499,9 +506,8 @@ function renderGrid(events, yr) {
   const { personal, company } = buildMaps(events);
   const container = document.getElementById('calendarGrid');
   container.innerHTML = '';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'cal-wrap';
+  const startMo = (yr === CURRENT_YEAR) ? CURRENT_MONTH : 0;
+  const monthEls = [];
 
   for (let mo = 0; mo < 12; mo++) {
     const days    = new Date(yr, mo + 1, 0).getDate();
@@ -590,10 +596,32 @@ function renderGrid(events, yr) {
     }
 
     monthDiv.appendChild(tbl);
-    wrap.appendChild(monthDiv);
+    monthEls.push(monthDiv);
   }
 
-  container.appendChild(wrap);
+  const outerWrap = document.createElement('div');
+  if (startMo > 0) {
+    const toggle = document.createElement('div');
+    toggle.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    toggle.style.cssText = 'cursor:pointer;user-select:none;';
+    toggle.innerHTML = `<span class="pm-arr">▶</span> ${MONTHS_ES.slice(0, startMo).join('–')}`;
+    const prevWrap = document.createElement('div');
+    prevWrap.className = 'cal-wrap';
+    prevWrap.style.display = 'none';
+    for (let mo = 0; mo < startMo; mo++) prevWrap.appendChild(monthEls[mo]);
+    toggle.addEventListener('click', () => {
+      const hidden = prevWrap.style.display === 'none';
+      prevWrap.style.display = hidden ? '' : 'none';
+      toggle.querySelector('.pm-arr').textContent = hidden ? '▼' : '▶';
+    });
+    outerWrap.appendChild(toggle);
+    outerWrap.appendChild(prevWrap);
+  }
+  const curWrap = document.createElement('div');
+  curWrap.className = 'cal-wrap';
+  for (let mo = startMo; mo < 12; mo++) curWrap.appendChild(monthEls[mo]);
+  outerWrap.appendChild(curWrap);
+  container.appendChild(outerWrap);
 }
 
 function isWeekend(yr, mo, d) {
@@ -845,6 +873,28 @@ function getVisibleStaff() {
   return STAFF_USERS.filter(u => visibleUserIds.has(String(u.id)));
 }
 
+// Toggle in absence modal: show/hide non-visible user options
+(function () {
+  function filterAbsUsers() {
+    const showHidden = document.getElementById('absShowHidden')?.checked;
+    document.querySelectorAll('#absUser option').forEach(opt => {
+      const visible = opt.dataset.visible === 'true';
+      opt.hidden = !visible && !showHidden;
+    });
+    // If currently selected option is hidden, reset to first visible
+    const sel = document.getElementById('absUser');
+    if (sel?.options[sel.selectedIndex]?.hidden) {
+      const first = Array.from(sel.options).find(o => !o.hidden);
+      if (first) sel.value = first.value;
+    }
+  }
+  document.getElementById('absShowHidden')?.addEventListener('change', filterAbsUsers);
+  document.getElementById('modalAdd')?.addEventListener('show.bs.modal', () => {
+    document.getElementById('absShowHidden').checked = false;
+    filterAbsUsers();
+  });
+})();
+
 // Sync checkboxes to current state when modal opens
 document.getElementById('modalUsers').addEventListener('show.bs.modal', () => {
   document.querySelectorAll('.user-vis-check').forEach(cb => {
@@ -871,22 +921,45 @@ document.getElementById('btnApplyUsers').addEventListener('click', async () => {
 
 // ── Calendar warning ─────────────────────────────────────────────────────────
 function updateCalendarWarning() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const feriados = eventsCache.filter(ev => {
     const p = ev.extendedProps || {};
+    const d = new Date(ev.start + 'T00:00:00');
     return p.eventType === 'holiday' && p.type_holidays === 'Feriado' &&
-           new Date(ev.start + 'T00:00:00').getFullYear() === year;
+           d.getFullYear() === year && d >= today;
   });
-  const incomplete = feriados.some(f => {
-    const p = f.extendedProps;
-    if (p.work_level === 'none') return false;
-    if (!p.min_workers) return false;
-    const ventasAssigned = getAssignedToFeriado(f).filter(a => {
-      const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
-      return u && u.userType === 'Ventas';
-    });
-    return ventasAssigned.length < p.min_workers;
+
+  let hasIncomplete = false;
+  let hasInactive   = false;
+
+  feriados.forEach(f => {
+    const p        = f.extendedProps;
+    const assigned = getAssignedToFeriado(f);
+    if (p.work_level !== 'none') {
+      if (p.min_workers) {
+        const ventasAssigned = assigned.filter(a => {
+          const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+          return u && u.userType === 'Ventas';
+        });
+        if (ventasAssigned.length < p.min_workers) hasIncomplete = true;
+      }
+      if (assigned.some(a => {
+        const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+        return !u || !u.showInCalendar;
+      })) hasInactive = true;
+    }
   });
-  document.getElementById('calWarning').style.display = incomplete ? '' : 'none';
+
+  const warnEl = document.getElementById('calWarning');
+  if (!hasIncomplete && !hasInactive) {
+    warnEl.style.display = 'none';
+    return;
+  }
+  const msgs = [];
+  if (hasIncomplete) msgs.push('Hay feriados sin asignar.');
+  if (hasInactive)   msgs.push('Hay feriados con usuarios no activos asignados que requieren revisión.');
+  warnEl.style.display = '';
+  warnEl.innerHTML = '⚠️ ' + msgs.join(' ') + ' Revisá en <strong>Gestionar Feriados y Cumpleaños</strong>.';
 }
 
 // ── Birthday / feriado trabajado conflict warning ────────────────────────────
@@ -998,10 +1071,12 @@ function buildFeriadoTab() {
     return { f, assigned, assignedVentas };
   });
 
-  // Warning: only Ventas count vs min_workers
+  const todayMs = new Date().setHours(0, 0, 0, 0);
+  // Warning: only future feriados with incomplete Ventas assignments
   const incomplete = feriadoData.filter(({ f, assignedVentas }) => {
     const p = f.extendedProps;
-    return p.work_level !== 'none' && p.min_workers && assignedVentas.length < p.min_workers;
+    const isFuture = new Date(f.start + 'T00:00:00').getTime() >= todayMs;
+    return isFuture && p.work_level !== 'none' && p.min_workers && assignedVentas.length < p.min_workers;
   });
   const warnEl = document.getElementById('feriadoWarning');
   warnEl.style.display = incomplete.length > 0 ? '' : 'none';
@@ -1063,7 +1138,8 @@ function buildFeriadoTab() {
   // Build a lookup from feriado id → {assigned, assignedVentas} for the list
   const feriadoDataMap = new Map(feriadoData.map(d => [d.f.id, d]));
 
-  let listHtml = '';
+  let futureHtml = '';
+  let pastHtml   = '';
   allSpecial.forEach(f => {
     const isFeriado = f.extendedProps.type_holidays === 'Feriado';
     const { assigned = [], assignedVentas = [] } = feriadoDataMap.get(f.id) || {};
@@ -1075,20 +1151,26 @@ function buildFeriadoTab() {
     fEndExcl.setDate(fEndExcl.getDate() - 1);
     const fEndDate  = fmtDate(fEndExcl);
     const noWork    = p.work_level === 'none';
+    const isFuture  = new Date(f.start + 'T00:00:00').getTime() >= todayMs;
 
     // Assignment UI only for feriados
     const badgesHtml = isFeriado
       ? (assigned.length === 0
           ? '<span class="text-muted small fst-italic">Sin asignaciones</span>'
           : assigned.map(a => {
-              const u    = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
-              const half = a.extendedProps.type_absence === 'Feriado trabajado 1/2';
-              const aid  = a.id.replace('a_', '');
-              return `<span class="badge text-bg-secondary">${u ? u.name : '?'} ${half ? '½' : '●'} <span style="cursor:pointer" data-del-abs="${aid}">✕</span></span>`;
+              const u           = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+              const displayName = u ? u.name : (a.extendedProps.user_name || `#${a.extendedProps.user_id}`);
+              const half        = a.extendedProps.type_absence === 'Feriado trabajado 1/2';
+              const aid         = a.id.replace('a_', '');
+              const isFutureFeriado = new Date(f.start + 'T00:00:00').getTime() >= todayMs;
+              const inactive    = isFutureFeriado && (!u || !u.showInCalendar);
+              const badgeCls    = inactive ? 'text-bg-danger' : 'text-bg-secondary';
+              const tooltip     = inactive ? ' title="Usuario no activo — requiere reasignación"' : '';
+              return `<span class="badge ${badgeCls}"${tooltip}>${displayName} ${half ? '½' : '●'} <span style="cursor:pointer" data-del-abs="${aid}">✕</span></span>`;
             }).join(' '))
       : '';
 
-    const ventasMissing = (isFeriado && !noWork) ? Math.max(0, (p.min_workers || 0) - assignedVentas.length) : 0;
+    const ventasMissing = (isFuture && isFeriado && !noWork) ? Math.max(0, (p.min_workers || 0) - assignedVentas.length) : 0;
     let requiredSlotsHtml = '';
     for (let i = 0; i < ventasMissing; i++) {
       requiredSlotsHtml += `<div class="d-flex gap-2 align-items-center flex-wrap mb-1">
@@ -1105,7 +1187,7 @@ function buildFeriadoTab() {
       </div>`;
     }
 
-    const extraRowHtml = (isFeriado && !noWork) ? `<div class="d-flex gap-2 align-items-center flex-wrap mt-1">
+    const extraRowHtml = (isFuture && isFeriado && !noWork) ? `<div class="d-flex gap-2 align-items-center flex-wrap mt-1">
       <span class="badge text-bg-secondary small">Extra</span>
       <select class="form-select form-select-sm" style="width:auto;max-width:150px" id="fs_u_${hid}">
         <option value="">— Persona —</option>${allOpts}
@@ -1118,11 +1200,19 @@ function buildFeriadoTab() {
         data-assign-f="${hid}" data-f-from="${f.start}" data-f-to="${fEndDate}">+ Asignar</button>
     </div>` : '';
 
+    const hasInactiveAssigned = isFuture && isFeriado && assigned.some(a => {
+      const u = STAFF_USERS.find(u => u.id === a.extendedProps.user_id);
+      return !u || !u.showInCalendar;
+    });
+    const reviewWarningHtml = hasInactiveAssigned
+      ? `<span class="badge text-bg-warning ms-1" title="Hay asignaciones de usuarios no activos que requieren revisión">⚠ Revisar asignación</span>`
+      : '';
+
     const safeName = (f.title || '').replace(/"/g, '&quot;');
     const typeBadge = isFeriado
       ? '<span class="badge text-bg-info text-dark">Feriado</span>'
       : '<span class="badge text-bg-light border">No laborable</span>';
-    listHtml += `<div class="card mb-2 border-0 bg-light">
+    const cardHtml = `<div class="card mb-2 border-0 bg-light">
       <div class="card-body py-2 px-3">
         <div class="mb-1 d-flex align-items-center flex-wrap gap-2">
           <span class="fw-semibold small">${name}</span>
@@ -1141,9 +1231,10 @@ function buildFeriadoTab() {
                      id="fw_min_${hid}" value="${p.min_workers || ''}">
               <button class="btn btn-sm btn-outline-secondary py-0" style="height:22px;font-size:0.7rem"
                       data-save-min="${hid}">✓</button>
-              ${p.min_workers && assignedVentas.length < p.min_workers
+              ${isFuture && p.min_workers && assignedVentas.length < p.min_workers
                 ? `<span class="badge text-bg-danger">Faltan ${p.min_workers - assignedVentas.length}</span>` : ''}
             </span>` : ''}
+          ${reviewWarningHtml}
         </div>
         <div id="fedit_${hid}" class="bg-white rounded border p-2 mb-2" style="display:none">
           <div class="row g-2 mb-2">
@@ -1179,10 +1270,22 @@ function buildFeriadoTab() {
         ${extraRowHtml}
       </div>
     </div>`;
+    if (isFuture) futureHtml += cardHtml;
+    else          pastHtml   += cardHtml;
   });
 
+  const pastCount = allSpecial.filter(f => new Date(f.start + 'T00:00:00').getTime() < todayMs).length;
+  const collapsiblePast = pastCount > 0
+    ? `<div class="mb-2">
+        <button class="btn btn-sm btn-outline-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#pastFeriados" aria-expanded="false">
+          <i class="fa-solid fa-clock-rotate-left me-1"></i>Ver anteriores (${pastCount})
+        </button>
+        <div class="collapse mt-2" id="pastFeriados">${pastHtml}</div>
+      </div>` : '';
+
   const listEl = document.getElementById('feriadoList');
-  listEl.innerHTML = listHtml;
+  listEl.innerHTML = futureHtml + collapsiblePast;
 
   listEl.querySelectorAll('[data-edit-feriado]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1518,7 +1621,11 @@ const EXT_CAT_LABELS = {
   for (const [key, label] of Object.entries(EXT_CAT_LABELS)) {
     const item = document.createElement('div');
     item.className = 'd-flex align-items-center gap-1';
-    item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    if (key === 'full_moon') {
+      item.innerHTML = `<span style="font-size:0.95rem;flex-shrink:0;line-height:1;">🌕</span><small>${label}</small>`;
+    } else {
+      item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    }
     c.appendChild(item);
   }
 })();
@@ -1534,8 +1641,13 @@ async function loadExtAndRender() {
 }
 
 function buildExtMaps(events) {
-  const perLocation = {};
-  const allLocs     = {};
+  const perLocation      = {};
+  const allLocs          = {};
+  const fullMoon         = {};
+  const otherGlobalCount   = {};
+  const otherLocCount      = {};
+  const otherGlobalEntries = {};
+  const otherLocEntries    = {};
   for (const ev of events) {
     const p = ev.extendedProps || {};
     const s = new Date(ev.start + 'T00:00:00');
@@ -1551,7 +1663,23 @@ function buildExtMaps(events) {
         location_id: p.location_id,
         source:      p.source || 'external',
       };
-      if (p.location_id == null) {
+      if (p.category === 'other') {
+        const entry = { name: ev.title || '', notes: p.notes || '' };
+        if (p.location_id == null) {
+          otherGlobalCount[ds] = (otherGlobalCount[ds] || 0) + 1;
+          if (!otherGlobalEntries[ds]) otherGlobalEntries[ds] = [];
+          otherGlobalEntries[ds].push(entry);
+        } else {
+          if (!otherLocCount[p.location_id]) otherLocCount[p.location_id] = {};
+          otherLocCount[p.location_id][ds] = (otherLocCount[p.location_id][ds] || 0) + 1;
+          if (!otherLocEntries[p.location_id]) otherLocEntries[p.location_id] = {};
+          if (!otherLocEntries[p.location_id][ds]) otherLocEntries[p.location_id][ds] = [];
+          otherLocEntries[p.location_id][ds].push(entry);
+        }
+      }
+      if (p.category === 'full_moon') {
+        if (!fullMoon[ds]) fullMoon[ds] = info;
+      } else if (p.location_id == null) {
         if (!allLocs[ds]) allLocs[ds] = info;
       } else {
         if (!perLocation[p.location_id]) perLocation[p.location_id] = {};
@@ -1559,15 +1687,15 @@ function buildExtMaps(events) {
       }
     }
   }
-  return { perLocation, allLocs };
+  return { perLocation, allLocs, fullMoon, otherGlobalCount, otherLocCount, otherGlobalEntries, otherLocEntries };
 }
 
 function renderExtGrid(events, yr) {
-  const { perLocation, allLocs } = buildExtMaps(events);
+  const { perLocation, allLocs, fullMoon, otherGlobalCount, otherLocCount, otherGlobalEntries, otherLocEntries } = buildExtMaps(events);
   const container = document.getElementById('extCalendarGrid');
   container.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'cal-wrap';
+  const startMo = (yr === CURRENT_YEAR) ? CURRENT_MONTH : 0;
+  const monthEls = [];
   for (let mo = 0; mo < 12; mo++) {
     const days    = new Date(yr, mo + 1, 0).getDate();
     const shortYr = String(yr).slice(2);
@@ -1581,9 +1709,15 @@ function renderExtGrid(events, yr) {
     tdM.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
     tdM.className   = 'cal-name cal-hdr-month';
     for (let d = 1; d <= days; d++) {
+      const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
       const isWE = isWeekend(yr, mo, d);
       const td   = rNum.insertCell();
-      td.textContent = d;
+      const fm   = fullMoon[ds];
+      if (fm) {
+        td.innerHTML = `${d}<span title="${fm.name}${fm.notes ? ' — ' + fm.notes : ''}" style="font-size:0.8em;line-height:1;cursor:default;">🌕</span>`;
+      } else {
+        td.textContent = d;
+      }
       td.className   = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
     }
     // Day-name row
@@ -1611,11 +1745,18 @@ function renderExtGrid(events, yr) {
         const locEv = perLocation[loc.id]?.[ds];
         const allEv = allLocs[ds];
         const ev    = locEv || allEv;
+        const totalOther = (otherGlobalCount[ds] || 0) + (otherLocCount[loc.id]?.[ds] || 0);
+        const hasOverlap = totalOther >= 2;
         if (ev) {
           td.className        = 'cal-day-cell';
           td.style.background = ev.color;
           td.style.color      = isLight(ev.color) ? '#333' : '#fff';
           td.title            = ev.name + (ev.notes ? '\n' + ev.notes : '') + (ev.source === 'internal' ? ' ★' : '');
+          if (hasOverlap) {
+            td.style.filter = 'brightness(78%)';
+            const allEntries = [...(otherGlobalEntries[ds] || []), ...(otherLocEntries[loc.id]?.[ds] || [])];
+            td.title = allEntries.map(e => e.name + (e.notes ? '\n' + e.notes : '')).join('\n\n');
+          }
           if (ev.source !== 'internal' && ev.entry_id) {
             td.style.cursor     = 'pointer';
             td.dataset.entryid  = ev.entry_id;
@@ -1637,9 +1778,31 @@ function renderExtGrid(events, yr) {
       }
     }
     monthDiv.appendChild(tbl);
-    wrap.appendChild(monthDiv);
+    monthEls.push(monthDiv);
   }
-  container.appendChild(wrap);
+  const outerWrap = document.createElement('div');
+  if (startMo > 0) {
+    const toggle = document.createElement('div');
+    toggle.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    toggle.style.cssText = 'cursor:pointer;user-select:none;';
+    toggle.innerHTML = `<span class="pm-arr">▶</span> ${MONTHS_ES.slice(0, startMo).join('–')}`;
+    const prevWrap = document.createElement('div');
+    prevWrap.className = 'cal-wrap';
+    prevWrap.style.display = 'none';
+    for (let mo = 0; mo < startMo; mo++) prevWrap.appendChild(monthEls[mo]);
+    toggle.addEventListener('click', () => {
+      const hidden = prevWrap.style.display === 'none';
+      prevWrap.style.display = hidden ? '' : 'none';
+      toggle.querySelector('.pm-arr').textContent = hidden ? '▼' : '▶';
+    });
+    outerWrap.appendChild(toggle);
+    outerWrap.appendChild(prevWrap);
+  }
+  const curWrap = document.createElement('div');
+  curWrap.className = 'cal-wrap';
+  for (let mo = startMo; mo < 12; mo++) curWrap.appendChild(monthEls[mo]);
+  outerWrap.appendChild(curWrap);
+  container.appendChild(outerWrap);
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -1669,6 +1832,15 @@ document.getElementById('yearSelector').addEventListener('keydown', e => {
 const bsModalExtEntry  = new bootstrap.Modal(document.getElementById('modalExtEntry'));
 const bsModalExtManage = new bootstrap.Modal(document.getElementById('modalExtManage'));
 let extEditingId = null;
+let _entryFromManage = false;
+
+document.getElementById('modalExtEntry').addEventListener('show.bs.modal', () => {
+  _entryFromManage = document.getElementById('modalExtManage').classList.contains('show');
+  if (_entryFromManage) bsModalExtManage.hide();
+});
+document.getElementById('modalExtEntry').addEventListener('hidden.bs.modal', () => {
+  if (_entryFromManage) { _entryFromManage = false; bsModalExtManage.show(); }
+});
 
 function openExtEntryModal(mode, data = {}) {
   extEditingId = mode === 'edit' ? data.entry_id : null;
@@ -1727,8 +1899,8 @@ document.getElementById('btnSaveExtEntry').addEventListener('click', async () =>
   if (resp.ok) {
     bsModalExtEntry.hide();
     extEventsCache = [];
-    loadExtAndRender();
-    if (document.getElementById('modalExtManage').classList.contains('show')) buildExtManageList();
+    await loadExtAndRender();
+    buildExtManageList();
   } else { alert('Error al guardar'); }
 });
 
@@ -1740,8 +1912,8 @@ document.getElementById('btnDeleteExtEntry').addEventListener('click', async () 
   if (r.ok) {
     bsModalExtEntry.hide();
     extEventsCache = [];
-    loadExtAndRender();
-    if (document.getElementById('modalExtManage').classList.contains('show')) buildExtManageList();
+    await loadExtAndRender();
+    buildExtManageList();
   } else { alert('Error al eliminar'); }
 });
 
@@ -1775,7 +1947,7 @@ async function runExtImport(url, btnId) {
       msg.className     = data.created > 0 ? 'small text-success' : 'small text-muted';
       msg.style.display = '';
       extEventsCache    = [];
-      loadExtAndRender();
+      await loadExtAndRender();
       buildExtManageList();
     } else {
       alert('Error al importar');
@@ -1811,7 +1983,7 @@ document.getElementById('btnCopySpecial').addEventListener('click', async () => 
       msg.className     = data.created > 0 ? 'small text-success' : 'small text-muted';
       msg.style.display = '';
       extEventsCache    = [];
-      loadExtAndRender();
+      await loadExtAndRender();
       buildExtManageList();
     } else {
       alert('Error al copiar entradas');

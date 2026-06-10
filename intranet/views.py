@@ -64,6 +64,67 @@ def _next_working_days(from_date, n):
             result.append(d)
         d += timedelta(days=1)
     return result
+
+def _ordinal(n):
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    return {1: f"{n}st", 2: f"{n}nd", 3: f"{n}rd"}.get(n % 10, f"{n}th")
+
+def _get_client_holiday_alert(today):
+    """Returns holiday banner context dict for client homepage, or None."""
+    _MONTHS = ['January','February','March','April','May','June',
+               'July','August','September','October','November','December']
+
+    if today.weekday() >= 5:  # Saturday=5, Sunday=6
+        return {'type': 'weekend'}
+
+    today_holiday = Holidays.objects.filter(
+        type_holidays__in=['Feriado', 'Día no laborable'],
+        date_from__lte=today,
+        date_to__gte=today,
+    ).first()
+
+    if today_holiday:
+        working_users = []
+        if today_holiday.work_level in ('half', 'full'):
+            working_users = list(
+                User.objects.filter(
+                    absence_users__type_absence__in=['Feriado trabajado', 'Feriado trabajado 1/2'],
+                    absence_users__date_from__lte=today,
+                    absence_users__date_to__gte=today,
+                    isActivated=True,
+                ).order_by('other_name').distinct()
+            )
+        return {
+            'type': 'today_holiday',
+            'holiday': today_holiday,
+            'working_users': working_users,
+        }
+
+    # Check next 1–2 business days for an upcoming Feriado
+    biz_passed = 0
+    d = today + timedelta(days=1)
+    while d <= today + timedelta(days=10):
+        if d.weekday() >= 5:
+            d += timedelta(days=1)
+            continue
+        upcoming_h = Holidays.objects.filter(
+            type_holidays='Feriado',
+            date_from__lte=d,
+            date_to__gte=d,
+        ).first()
+        if upcoming_h is not None:
+            if biz_passed < 2:
+                date_str = f"{d.strftime('%A')} {_ordinal(d.day)} {_MONTHS[d.month - 1]}"
+                return {'type': 'upcoming_holiday', 'holiday': upcoming_h, 'date_str': date_str, 'days_ahead': biz_passed + 1}
+            break
+        biz_passed += 1
+        if biz_passed >= 2:
+            break
+        d += timedelta(days=1)
+
+    return None
+
 from collections import defaultdict
 
 
@@ -149,6 +210,11 @@ def index (request):
         for a in _absences_on_day(today, request.user.department)
     ]
 
+    client_holiday_alert = (
+        _get_client_holiday_alert(today)
+        if request.user.userType == "Cliente" else None
+    )
+
     return render(request, "intranet/index.html", {
         "pax_arriving": pax_arriving,
         "pax_insitu": pax_insitu,
@@ -161,6 +227,7 @@ def index (request):
         "total_finals": total_finals,
         "total_others": total_others,
         "today_absences": today_absences,
+        "client_holiday_alert": client_holiday_alert,
     })
 
 def login_view (request):
@@ -370,6 +437,10 @@ def create_client(request):
             category=category,
         )
         new_client.save()
+
+        # Habilitar todos los productos activos para la nueva agencia
+        from tariff.models import Product
+        new_client.available_clients.set(Product.objects.filter(isActivated=True))
 
         return render(request, "intranet/clients.html", {
             "clients": Client.objects.all(),
@@ -1244,12 +1315,14 @@ def pendings(request):
         for label, bg, fg, desc in [
             ("0 - Not started yet",        "#9ca3af", "#fff", "The enquiry has been received but work has not yet begun."),
             ("1 - Analysed",               "#60a5fa", "#fff", "The request has been reviewed and understood."),
-            ("2 - Suppliers contacted",    "#3b82f6", "#fff", "We have reached out to the relevant suppliers for availability and pricing."),
-            ("3 - Status sent",            "#f59e0b", "#fff", "A status update or quote has been sent to you."),
+            ("2 - Suppliers contacted",    "#3b82f6", "#fff", "We have reached out to the relevant suppliers for availability, pricing or reconfirmation."),
+            ("3 - Status sent",            "#f59e0b", "#fff", "A status update or draft information has been sent to you."),
             ("4 - Awaiting response",      "#f97316", "#fff", "We are waiting for a reply from a supplier or from your side."),
-            ("5 - Finalised",              "#22c55e", "#fff", "The quote or booking is complete and under final revision."),
+            ("5 - Finalised",              "#22c55e", "#fff", "The quote, booking or final itinerary is complete and under final revision."),
         ]
     ]
+    if request.user.userType == "Cliente":
+        ctx["client_holiday_alert"] = _get_client_holiday_alert(date.today())
     return render(request, "intranet/pendings.html", ctx)
 
 @login_required
@@ -1871,6 +1944,7 @@ def json_holidays(request):
                 'eventType': 'absence',
                 'type_absence': event.type_absence,
                 'user_id': event.absence_user_id,
+                'user_name': user_name,
             },
         })
 
@@ -2106,14 +2180,17 @@ def delete_external_entry(request, entry_id):
 def _calculate_full_moons(year):
     """
     Full moon dates for a year via the synodic period (29.53059 days).
-    Reference: Jan 21, 2000 was a full moon (04:40 UTC). Accurate to ±1 day.
+    Reference: Jan 21, 2000 04:40 UTC. Dates resolved in Argentina time (UTC-3).
     """
-    KNOWN = date(2000, 1, 21)
-    SYNODIC = 29.53058867
-    k = math.ceil((date(year, 1, 1) - KNOWN).days / SYNODIC)
+    from datetime import timezone
+    KNOWN_UTC = datetime(2000, 1, 21, 4, 40, tzinfo=timezone.utc)
+    SYNODIC   = 29.53058867
+    ARG       = timedelta(hours=-3)
+    k = math.ceil((datetime(year, 1, 1, tzinfo=timezone.utc) - KNOWN_UTC).total_seconds() / (SYNODIC * 86400))
     results = []
     while True:
-        d = KNOWN + timedelta(days=round(k * SYNODIC))
+        moment_arg = KNOWN_UTC + timedelta(days=k * SYNODIC) + ARG
+        d = moment_arg.date()
         if d.year > year:
             break
         if d.year == year:
@@ -2178,23 +2255,15 @@ def import_full_moons(request):
 
     full_moon_dates = _calculate_full_moons(year)
 
-    existing = set(
-        ExternalCalendarEntry.objects.filter(
-            category='full_moon',
-            date_from__year=year,
-        ).values_list('date_from', flat=True)
-    )
+    ExternalCalendarEntry.objects.filter(category='full_moon', date_from__year=year).delete()
 
-    created = 0
     for d in full_moon_dates:
-        if d not in existing:
-            ExternalCalendarEntry.objects.create(
-                date_from=d, date_to=d,
-                name='Full Moon', category='full_moon', location=None,
-            )
-            created += 1
+        ExternalCalendarEntry.objects.create(
+            date_from=d, date_to=d,
+            name='Full Moon', category='full_moon', location=None,
+        )
 
-    return JsonResponse({'created': created, 'total': len(full_moon_dates), 'year': year})
+    return JsonResponse({'created': len(full_moon_dates), 'total': len(full_moon_dates), 'year': year})
 
 
 @login_required
@@ -2429,14 +2498,14 @@ def entry_tp_lookup(request):
         am = row.get("amount")
         if am:
             try:
-                trip.amount = int(float(am))
+                trip.amount = round(float(am))
             except (ValueError, TypeError):
                 pass
         trip.save()
 
     amount = row.get("amount")
     try:
-        amount = int(float(amount)) if amount else None
+        amount = round(float(amount)) if amount else None
     except (ValueError, TypeError):
         amount = None
 
@@ -2844,23 +2913,23 @@ def json_pendings(request):
 
     return JsonResponse(data, safe=False)
 
-_PROGRESS_OPTIONS = [
-    "0 - No comenzado",
-    "1 - Analizado",
-    "2 - Contactados proveedores",
-    "3 - Enviado Status",
-    "4 - Falta respuesta proveedor/cliente",
-    "5 - Finalizado",
+_PROGRESS_DATA = [
+    ("0 - No comenzado",                     "0 - Not started yet",         "#9ca3af", "#fff"),
+    ("1 - Analizado",                         "1 - Analysed",                "#60a5fa", "#fff"),
+    ("2 - Contactados proveedores",           "2 - Suppliers contacted",     "#3b82f6", "#fff"),
+    ("3 - Enviado Status",                    "3 - Status sent",             "#f59e0b", "#fff"),
+    ("4 - Falta respuesta proveedor/cliente", "4 - Awaiting response",       "#f97316", "#fff"),
+    ("5 - Finalizado",                        "5 - Finalised",               "#22c55e", "#fff"),
 ]
+_PROGRESS_OPTIONS  = [d[0] for d in _PROGRESS_DATA]
+_PROGRESS_LABELS_EN = {d[0]: (d[1], d[2], d[3]) for d in _PROGRESS_DATA}
 
-_PROGRESS_LABELS_EN = {
-    "0 - No comenzado":                     ("0 - Not started yet",         "#9ca3af", "#fff"),
-    "1 - Analizado":                         ("1 - Analysed",                "#60a5fa", "#fff"),
-    "2 - Contactados proveedores":           ("2 - Suppliers contacted",     "#3b82f6", "#fff"),
-    "3 - Enviado Status":                    ("3 - Status sent",             "#f59e0b", "#fff"),
-    "4 - Falta respuesta proveedor/cliente": ("4 - Awaiting response",       "#f97316", "#fff"),
-    "5 - Finalizado":                        ("5 - Finalised",               "#22c55e", "#fff"),
-}
+_PILL_BASE  = "padding:2px 10px;border-radius:999px;font-size:.82em;white-space:nowrap;"
+_PILL_OPT   = _PILL_BASE + "cursor:pointer;display:block;margin-bottom:4px;"
+_DROP_STYLE = ("display:none;position:absolute;z-index:1050;background:#fff;"
+               "border:1px solid #dee2e6;border-radius:8px;padding:8px;"
+               "box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:220px;"
+               "top:calc(100% + 4px);left:0;")
 
 
 def _progress_label_en(current):
@@ -2870,21 +2939,30 @@ def _progress_label_en(current):
     else:
         label, bg, color = (current or "—", "#9ca3af", "#fff")
     return (
-        f'<span style="background:{bg};color:{color};padding:2px 8px;'
-        f'border-radius:999px;font-size:.82em;white-space:nowrap;">{label}</span>'
+        f'<span style="background:{bg};color:{color};{_PILL_BASE}">{label}</span>'
     )
 
 
 def _progress_select_html(entry_id, current):
+    cur = _PROGRESS_LABELS_EN.get(current)
+    if cur:
+        cur_label, cur_bg, cur_fg = cur
+    else:
+        cur_label, cur_bg, cur_fg = (current or "—", "#9ca3af", "#fff")
+
     opts = "".join(
-        f'<option value="{v}"{"selected" if v == current else ""}>{v}</option>'
-        for v in _PROGRESS_OPTIONS
+        f'<span class="progress-pill-option" data-value="{val}" data-bg="{bg}" data-fg="{fg}" '
+        f'style="background:{bg};color:{fg};{_PILL_OPT}">{label}</span>'
+        for val, label, bg, fg in _PROGRESS_DATA
     )
     return (
-        f'<select class="form-select form-select-sm progress-inline border-0 px-1" '
-        f'data-entry-id="{entry_id}" '
-        f'style="min-width:130px;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:none">'
-        f'{opts}</select>'
+        f'<div class="progress-pill-widget" data-entry-id="{entry_id}" '
+        f'style="position:relative;display:inline-block;">'
+        f'<span class="progress-pill-display" '
+        f'style="background:{cur_bg};color:{cur_fg};{_PILL_BASE}cursor:pointer;user-select:none;">'
+        f'{cur_label}</span>'
+        f'<div class="progress-pill-dropdown" style="{_DROP_STYLE}">{opts}</div>'
+        f'</div>'
     )
 
 
@@ -2915,7 +2993,7 @@ def client_entry_inquiry(request):
     entry_id = data.get('entry_id')
     message = data.get('message', '').strip()
     try:
-        entry = Entry.objects.select_related('trip', 'trip__client').get(
+        entry = Entry.objects.select_related('trip', 'trip__client', 'user_working').get(
             pk=entry_id, trip__department=request.user.department
         )
     except Entry.DoesNotExist:
@@ -2926,11 +3004,28 @@ def client_entry_inquiry(request):
     status_label = f"{entry.status} {entry.version_quote if entry.status == 'Quote' else entry.version}".strip()
     subject = f"Consulta de cliente desde Intranet - Ref: {client_ref} - Viaje: {trip_display}"
 
+    uw = entry.user_working
+    uw_name = (uw.other_name or uw.username) if uw else '—'
+    if uw and uw.color:
+        color = str(uw.color)
+        try:
+            h = color.lstrip('#')
+            r, g, b = int(h[0:2], 16)/255, int(h[2:4], 16)/255, int(h[4:6], 16)/255
+            text = '#333333' if (0.2126*r + 0.7152*g + 0.0722*b) > 0.45 else '#ffffff'
+        except (ValueError, TypeError):
+            text = '#333333'
+        uw_pill = (f'<span style="background-color:{color};color:{text};'
+                   f'padding:2px 10px;border-radius:999px;font-size:.85em;">'
+                   f'{uw_name}</span>')
+    else:
+        uw_pill = uw_name
+
     html_body = (
         f"<p><strong>Client:</strong> {request.user.other_name or request.user.username}</p>"
         f"<p><strong>Reference:</strong> {client_ref}</p>"
         f"<p><strong>Trip:</strong> {trip_display}</p>"
         f"<p><strong>Entry status:</strong> {status_label}</p>"
+        f"<p><strong>Working:</strong> {uw_pill}</p>"
         f"<hr><p>{message}</p>"
     )
     from intranet.utils import send_templated_email
@@ -3092,19 +3187,16 @@ def entries_data(request):
         version_str = (entry.version_quote if status_raw == 'Quote' else entry.version) or ''
         status = f"{status_raw} {version_str}".strip()
 
-        if is_client_user:
-            _status_colors = {
-                'Quote':   ('#3b82f6', '#fff'),
-                'Booking': ('#22c55e', '#fff'),
-                'Final':   ('#f97316', '#fff'),
-            }
-            _bg, _fg = _status_colors.get(status_raw, ('#6b7280', '#fff'))
-            status_display = (
-                f'<span style="background:{_bg};color:{_fg};padding:2px 10px;'
-                f'border-radius:999px;font-size:.85em;white-space:nowrap;">{status}</span>'
-            )
-        else:
-            status_display = status
+        _status_colors = {
+            'Quote':   ('#3b82f6', '#fff'),
+            'Booking': ('#22c55e', '#fff'),
+            'Final':   ('#f97316', '#fff'),
+        }
+        _bg, _fg = _status_colors.get(status_raw, ('#6b7280', '#fff'))
+        status_display = (
+            f'<span style="background:{_bg};color:{_fg};padding:2px 10px;'
+            f'border-radius:999px;font-size:.85em;white-space:nowrap;">{status}</span>'
+        )
 
         # monto
         if entry.amount:
@@ -4975,7 +5067,7 @@ def upload_data(csv_obj):
             # col 22 (index 21) — amount
             if len(row) > 21 and row[21].strip():
                 try:
-                    trip.amount = int(float(row[21].strip().replace(".", "").replace(",", ".")))
+                    trip.amount = round(float(row[21].strip().replace(".", "").replace(",", ".")))
                 except ValueError:
                     pass
 
@@ -5228,7 +5320,7 @@ def tourplan_create_trips(request):
         raw_amount = row.get("amount_raw", "").strip()
         if raw_amount:
             try:
-                amount = int(float(raw_amount.replace(".", "").replace(",", ".")))
+                amount = round(float(raw_amount.replace(".", "").replace(",", ".")))
             except ValueError:
                 pass
 

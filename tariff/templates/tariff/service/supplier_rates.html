@@ -19,6 +19,12 @@
                 <div class="ms-auto d-flex align-items-center gap-2">
                     {% if user.isAdmin %}
                     <button type="button"
+                            id="reviewTPBtn"
+                            class="btn btn-outline-primary btn-lg text-nowrap"
+                            title="Revisar y actualizar ventas TP">
+                        <i class="fa-solid fa-eye me-1"></i> Revisar TP
+                    </button>
+                    <button type="button"
                             class="btn btn-outline-secondary btn-lg text-nowrap"
                             data-bs-toggle="modal"
                             data-bs-target="#manageFRCModal"
@@ -204,6 +210,8 @@
                                     <button class="btn btn-sm btn-success add-cost-btn"
                                             title="Agregar costo"
                                             data-line-id="{{ line.id }}"
+                                            data-date-from="{{ line.date_from|date:'Y-m-d' }}"
+                                            data-date-to="{{ line.date_to|date:'Y-m-d' }}"
                                             data-rate-map='{{ line.rate_map_json }}'
                                             data-location-id="{{ location.id }}"
                                             data-bs-toggle="modal"
@@ -266,8 +274,8 @@
                                                         </td>
                                                         {% endif %}
                                                         <td>
-                                                            <strong>{{ base.rate.sell_tourplan|default:"N/A" }}</strong>
-                                                            <small class="text-muted">({{ base.rate.margin_tp|floatformat:1 }}%)</small>
+                                                            <strong class="sell-tp-cell">{{ base.rate.sell_tourplan|default:"N/A" }}</strong>
+                                                            <small class="text-muted sell-tp-margin">({{ base.rate.margin_tp|floatformat:1 }}%)</small>
                                                         </td>
                                                         <td class="rate-cell"
                                                             data-rate="{{ base.rate.id }}"
@@ -664,7 +672,6 @@
                     <table class="table table-sm table-hover align-middle" id="frcTable">
                         <thead class="table-dark">
                             <tr>
-                                <th>Nombre</th>
                                 <th>Valor</th>
                                 <th>Por</th>
                                 <th>USD</th>
@@ -672,6 +679,7 @@
                                 <th>Vigencia desde</th>
                                 <th>Vigencia hasta</th>
                                 <th>Aumento %</th>
+                                <th>Código TP</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -721,6 +729,10 @@
                                 <label class="form-label">Aum. %</label>
                                 <input type="number" step="0.1" class="form-control form-control-sm" id="new_frc_increase" value="0">
                             </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Código TP <span class="text-muted">(opcional)</span></label>
+                                <input type="text" class="form-control form-control-sm" id="new_frc_code" placeholder="ej: TRPG04">
+                            </div>
                         </div>
                         <div class="mt-2 d-flex gap-2">
                             <button class="btn btn-sm btn-success" id="confirmAddFrcBtn">
@@ -742,6 +754,64 @@
         </div>
     </div>
 
+    {# ─── MODAL: Revisar ventas TP ────────────────────────────────────────────── #}
+    <div class="modal fade" id="reviewTPModal" tabindex="-1" aria-labelledby="reviewTPLabel">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reviewTPLabel">
+                        <i class="fa-solid fa-eye me-2"></i>Revisar ventas TP — {{ supplier.name }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <div class="d-flex align-items-center gap-3 mb-3 p-3 bg-light rounded">
+                        <button class="btn btn-sm btn-success text-nowrap" id="applyAllTPBtn">
+                            <i class="fa-solid fa-check-double me-1"></i>Aplicar sugerida a todas
+                        </button>
+                        <small class="text-muted">
+                            <strong>Sugerida</strong> = <code>ceil(costo / margen)</code> calculada desde los CostItems.
+                            Solo aparece cuando hay costo cargado. "Aplicar todas" omite filas sin sugerencia.
+                        </small>
+                        <div class="ms-auto">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="filterWithSellOnly" autocomplete="off">
+                                <label class="form-check-label" for="filterWithSellOnly">
+                                    Solo donde la venta no coincide
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <table class="table table-sm table-hover align-middle" id="reviewTPTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Producto</th>
+                                <th>Línea</th>
+                                <th>Base</th>
+                                <th>Vigencia</th>
+                                <th class="text-end">Costo/pax</th>
+                                <th class="text-end text-success">Sugerida</th>
+                                <th class="text-end">Venta TP actual</th>
+                                <th style="width:110px;">Nueva Venta TP</th>
+                                <th class="text-end">Venta AI actual</th>
+                                <th style="width:110px;">Nueva Venta AI</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewTPBody">
+                        </tbody>
+                    </table>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 {% endif %}
 
 <script>
@@ -749,14 +819,19 @@ const CSRF_TOKEN       = '{{ csrf_token }}';
 const SUPPLIER_ID      = {{ supplier.id }};
 const DEFAULT_EXCHANGE = {{ default_exchange }};
 let ALL_FIXED_RATE_COSTS = {{ fixed_rate_costs_json|safe }};
+let RATES_SUMMARY = {{ rates_summary_json|safe }};
 
 // ─── current line state ──────────────────────────────────────────────────────
-let currentRateMap = {};   // { "1": rateId, "2": rateId, ... }
+let currentRateMap  = {};   // { "1": rateId, "2": rateId, ... }
+let currentDateFrom = null; // "YYYY-MM-DD" of the rate line being edited
+let currentDateTo   = null;
 
 // ─── Open cost modal ─────────────────────────────────────────────────────────
 document.querySelectorAll('.add-cost-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        currentRateMap = JSON.parse(btn.dataset.rateMap);
+        currentRateMap  = JSON.parse(btn.dataset.rateMap);
+        currentDateFrom = btn.dataset.dateFrom || null;
+        currentDateTo   = btn.dataset.dateTo   || null;
 
         // Disable base checkboxes for bases without a rate
         document.querySelectorAll('.base-check').forEach(cb => {
@@ -769,13 +844,22 @@ document.querySelectorAll('.add-cost-btn').forEach(btn => {
         document.getElementById('ci_exchange').value  = DEFAULT_EXCHANGE;
         document.getElementById('frc_exchange').value = DEFAULT_EXCHANGE;
 
-        // Populate existing FixedRateCosts dropdown
+        // Populate FRC dropdown with unique names only.
+        // The matching period is resolved automatically at save time
+        // based on the rate line's date range.
         const sel = document.getElementById('frc_select');
         sel.innerHTML = '<option value="">— Seleccionar —</option>';
-        ALL_FIXED_RATE_COSTS.forEach(frc => {
+        const uniqueNames = [...new Set(ALL_FIXED_RATE_COSTS.map(f => f.name))].sort();
+        uniqueNames.forEach(name => {
+            const periods = ALL_FIXED_RATE_COSTS.filter(f => f.name === name);
+            const hasPeriodMatch = periods.some(
+                f => f.date_from === currentDateFrom && f.date_to === currentDateTo
+            );
             const opt = document.createElement('option');
-            opt.value       = frc.id;
-            opt.textContent = `${frc.name}  ($${frc.value}${frc.usd ? ' USD' : ' ARS'})`;
+            opt.value = name;
+            opt.textContent = hasPeriodMatch
+                ? name
+                : `${name}  ⚠ sin período para esta vigencia`;
             sel.appendChild(opt);
         });
     });
@@ -855,9 +939,30 @@ document.getElementById('saveCostBtn').addEventListener('click', async () => {
                 await postJSON('{% url "create_fixed_rate_cost" %}', body);
             } else {
                 // ── Link existing FixedRateCost ────────────────────────────
-                const frcId = document.getElementById('frc_select').value;
-                if (!frcId) { alert('Seleccioná un costo fijo.'); return; }
-                await postJSON('{% url "add_fixed_rate_link" %}', { fixed_rate_id: frcId, rate_ids: rateIds });
+                const selectedName = document.getElementById('frc_select').value;
+                if (!selectedName) { alert('Seleccioná un costo fijo.'); return; }
+
+                // Find the period that matches this rate line's date range
+                let matchedFrc = ALL_FIXED_RATE_COSTS.find(
+                    f => f.name === selectedName &&
+                         f.date_from === currentDateFrom &&
+                         f.date_to   === currentDateTo
+                );
+                if (!matchedFrc) {
+                    // No exact period — fall back to the most recent one and warn
+                    const candidates = ALL_FIXED_RATE_COSTS
+                        .filter(f => f.name === selectedName)
+                        .sort((a, b) => (b.date_from || '').localeCompare(a.date_from || ''));
+                    matchedFrc = candidates[0];
+                    if (!matchedFrc) { alert('No se encontró el costo fijo.'); return; }
+                    const ok = confirm(
+                        `No existe "${selectedName}" para la vigencia ${currentDateFrom} → ${currentDateTo}.\n` +
+                        `Se vinculará el período ${matchedFrc.date_from} → ${matchedFrc.date_to}.\n` +
+                        `¿Continuar?`
+                    );
+                    if (!ok) return;
+                }
+                await postJSON('{% url "add_fixed_rate_link" %}', { fixed_rate_id: matchedFrc.id, rate_ids: rateIds });
             }
         }
 
@@ -908,7 +1013,28 @@ async function refreshBaseCostTotal(rateId) {
     const baseRow = document.querySelector(`.base-rate-row[data-rate-id="${rateId}"]`);
     if (!baseRow) return;
     const totalCell = baseRow.querySelector('.base-total-cell');
-    if (!totalCell) return;  // cell is editable (no items), nothing to update
+    const sell      = parseFloat(baseRow.dataset.sell) || 0;
+    const marginAi  = parseFloat(baseRow.dataset.marginAi) || 0;
+    const sugCell   = baseRow.querySelector('.suggested-sell-cell');
+    const marginCell = baseRow.querySelector('.margin-cell');
+
+    if (!totalCell) {
+        // Rate has no cost-item sub-rows — cost comes from rate.cost directly.
+        // Recalculate suggested sell and AI margin using the cost-cell value.
+        const costCellEl = baseRow.querySelector('.rate-cell[data-field="cost"]');
+        const directCost = parseFloat(costCellEl?.textContent) || 0;
+        if (directCost > 0) {
+            if (sugCell && marginAi > 0 && marginAi < 100) {
+                sugCell.textContent = Math.round(directCost / (1 - marginAi / 100));
+            }
+            if (sell > 0 && marginCell) {
+                const actualMargin = ((sell - directCost) / sell * 100).toFixed(1);
+                marginCell.textContent = actualMargin + '%';
+            }
+        }
+        return;
+    }
+
     let total = 0;
     document.querySelectorAll(`.ci-cost-row[data-rate-id="${rateId}"], .frc-cost-row[data-rate-id="${rateId}"]`).forEach(row => {
         const txt = row.querySelector('.cost-per-pax-val')?.textContent || '';
@@ -918,18 +1044,14 @@ async function refreshBaseCostTotal(rateId) {
     totalCell.textContent = total;
 
     // Suggested sell: keep same margin_ai with new cost
-    const marginAi = parseFloat(baseRow.dataset.marginAi) || 0;
-    const sugCell  = baseRow.querySelector('.suggested-sell-cell');
     if (sugCell && marginAi > 0 && marginAi < 100) {
         sugCell.textContent = Math.round(total / (1 - marginAi / 100));
     }
 
     // Update actual Rent% cell: (sell - new_cost) / sell
-    const sell = parseFloat(baseRow.dataset.sell) || 0;
-    if (sell > 0) {
+    if (sell > 0 && marginCell) {
         const actualMargin = ((sell - total) / sell * 100).toFixed(1);
-        const marginCell = baseRow.querySelector('.margin-cell');
-        if (marginCell) marginCell.textContent = actualMargin + '%';
+        marginCell.textContent = actualMargin + '%';
     }
 
     // Persist new cost to DB (fire-and-forget)
@@ -986,75 +1108,101 @@ function renderFrcTable() {
     const tbody = document.getElementById('frcTableBody');
     if (!tbody) return;
     if (!ALL_FIXED_RATE_COSTS.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-center">Sin costos fijos para este proveedor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-center py-3">Sin costos fijos para este proveedor.</td></tr>';
         return;
     }
-    tbody.innerHTML = ALL_FIXED_RATE_COSTS.map(frc => `
-        <tr data-frc-id="${frc.id}" class="frc-view-row">
-            <td>${frc.name}</td>
-            <td>${frc.value}</td>
-            <td><span class="badge ${frc.fcu === 'Person' ? 'bg-secondary' : 'bg-primary'}">${frc.fcu === 'Person' ? 'Persona' : 'Grupo'}</span></td>
-            <td>${frc.usd ? '<i class="fa-solid fa-check text-success"></i>' : '<i class="fa-solid fa-xmark text-danger"></i>'}</td>
-            <td>${frc.usd ? '—' : frc.exchange}</td>
-            <td>${frc.date_from}</td>
-            <td>${frc.date_to}</td>
-            <td>${frc.increase != null ? frc.increase + '%' : '0%'}</td>
-            <td class="text-nowrap">
-                <button class="btn btn-sm btn-outline-primary me-1 edit-frc-btn" data-id="${frc.id}" title="Editar">
-                    <i class="fa-solid fa-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger delete-frc-btn" data-id="${frc.id}" title="Eliminar">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-        <tr data-frc-edit="${frc.id}" style="display:none;" class="table-warning">
-            <td><input type="text"   class="form-control form-control-sm" id="edit_name_${frc.id}"  value="${frc.name}"></td>
-            <td><input type="number" class="form-control form-control-sm" id="edit_value_${frc.id}" value="${frc.value}" step="0.01"></td>
-            <td>
-                <select class="form-select form-select-sm" id="edit_fcu_${frc.id}">
-                    <option value="Person" ${frc.fcu === 'Person' ? 'selected' : ''}>Persona</option>
-                    <option value="Group"  ${frc.fcu === 'Group'  ? 'selected' : ''}>Grupo</option>
-                </select>
-            </td>
-            <td>
-                <div class="form-check">
-                    <input type="checkbox" class="form-check-input" id="edit_usd_${frc.id}" ${frc.usd ? 'checked' : ''}
-                           onchange="document.getElementById('edit_tc_wrap_${frc.id}').style.display=this.checked?'none':''">
-                </div>
-            </td>
-            <td>
-                <div id="edit_tc_wrap_${frc.id}" style="display:${frc.usd ? 'none' : ''}">
-                    <input type="number" class="form-control form-control-sm" id="edit_exchange_${frc.id}" value="${frc.exchange}" style="width:70px;">
-                </div>
-            </td>
-            <td><input type="date"   class="form-control form-control-sm" id="edit_from_${frc.id}"     value="${frc.date_from}"></td>
-            <td><input type="date"   class="form-control form-control-sm" id="edit_to_${frc.id}"       value="${frc.date_to}"></td>
-            <td><input type="number" class="form-control form-control-sm" id="edit_increase_${frc.id}" value="${frc.increase ?? 0}" step="0.1" style="width:70px;"></td>
-            <td class="text-nowrap">
-                <button class="btn btn-sm btn-success me-1 save-frc-btn" data-id="${frc.id}">
-                    <i class="fa-solid fa-check"></i>
-                </button>
-                <button class="btn btn-sm btn-secondary cancel-frc-btn" data-id="${frc.id}">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
 
-    // Bind edit/delete/save/cancel
+    // Group by name, preserving insertion order
+    const nameOrder = [];
+    const groups = {};
+    ALL_FIXED_RATE_COSTS.forEach(frc => {
+        if (!groups[frc.name]) { nameOrder.push(frc.name); groups[frc.name] = []; }
+        groups[frc.name].push(frc);
+    });
+    // Sort periods within each group chronologically
+    nameOrder.forEach(n => groups[n].sort((a, b) => (a.date_from || '').localeCompare(b.date_from || '')));
+
+    tbody.innerHTML = nameOrder.map(name => {
+        const frcs   = groups[name];
+        const header = `<tr class="table-info">
+            <td colspan="9" class="py-1 px-2 fw-semibold" style="font-size:.85rem;">
+                <i class="fa-solid fa-bookmark me-1"></i>${name}
+                <span class="badge bg-secondary ms-2" style="font-size:.68rem;">${frcs.length} período${frcs.length !== 1 ? 's' : ''}</span>
+            </td>
+        </tr>`;
+        const rows = frcs.map(frc => `
+            <tr data-frc-id="${frc.id}" class="frc-view-row">
+                <td class="fw-semibold">$${frc.value}</td>
+                <td><span class="badge ${frc.fcu === 'Person' ? 'bg-secondary' : 'bg-primary'}" style="font-size:.72rem;">${frc.fcu === 'Person' ? 'Persona' : 'Grupo'}</span></td>
+                <td>${frc.usd ? '<i class="fa-solid fa-check text-success"></i>' : '<i class="fa-solid fa-xmark text-danger"></i>'}</td>
+                <td class="text-muted">${frc.usd ? '—' : frc.exchange}</td>
+                <td>${frc.date_from}</td>
+                <td>${frc.date_to}</td>
+                <td>${frc.increase != null ? frc.increase + '%' : '0%'}</td>
+                <td>${frc.code ? `<code style="font-size:.75rem;">${frc.code}</code>` : '<span class="text-muted">—</span>'}</td>
+                <td class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary me-1 edit-frc-btn" data-id="${frc.id}" title="Editar">
+                        <i class="fa-solid fa-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-frc-btn" data-id="${frc.id}" title="Eliminar">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            <tr data-frc-edit="${frc.id}" style="display:none;" class="table-warning">
+                <td><input type="number" class="form-control form-control-sm" id="edit_value_${frc.id}" value="${frc.value}" step="0.01" style="width:80px;"></td>
+                <td>
+                    <select class="form-select form-select-sm" id="edit_fcu_${frc.id}" style="width:90px;">
+                        <option value="Person" ${frc.fcu === 'Person' ? 'selected' : ''}>Persona</option>
+                        <option value="Group"  ${frc.fcu === 'Group'  ? 'selected' : ''}>Grupo</option>
+                    </select>
+                </td>
+                <td>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="edit_usd_${frc.id}" ${frc.usd ? 'checked' : ''}
+                               onchange="document.getElementById('edit_tc_wrap_${frc.id}').style.display=this.checked?'none':''">
+                    </div>
+                </td>
+                <td>
+                    <div id="edit_tc_wrap_${frc.id}" style="display:${frc.usd ? 'none' : ''}">
+                        <input type="number" class="form-control form-control-sm" id="edit_exchange_${frc.id}" value="${frc.exchange}" style="width:65px;">
+                    </div>
+                </td>
+                <td><input type="date" class="form-control form-control-sm" id="edit_from_${frc.id}" value="${frc.date_from}"></td>
+                <td><input type="date" class="form-control form-control-sm" id="edit_to_${frc.id}"   value="${frc.date_to}"></td>
+                <td><input type="number" class="form-control form-control-sm" id="edit_increase_${frc.id}" value="${frc.increase ?? 0}" step="0.1" style="width:65px;"></td>
+                <td><input type="text" class="form-control form-control-sm" id="edit_code_${frc.id}" value="${frc.code || ''}" placeholder="Código TP" style="width:90px;"></td>
+                <td>
+                    <div class="d-flex flex-column gap-1">
+                        <input type="text" class="form-control form-control-sm" id="edit_name_${frc.id}"
+                               value="${frc.name}" placeholder="Nombre" style="width:120px;" title="Renombrar">
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-success save-frc-btn" data-id="${frc.id}" title="Guardar">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                            <button class="btn btn-sm btn-secondary cancel-frc-btn" data-id="${frc.id}" title="Cancelar">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </td>
+            </tr>`).join('');
+        return header + rows;
+    }).join('');
+
+    // ── Bind events ──────────────────────────────────────────────────────────
     tbody.querySelectorAll('.edit-frc-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
-            document.querySelector(`tr[data-frc-id="${id}"]`).style.display    = 'none';
-            document.querySelector(`tr[data-frc-edit="${id}"]`).style.display  = '';
+            tbody.querySelector(`tr[data-frc-id="${id}"]`).style.display   = 'none';
+            tbody.querySelector(`tr[data-frc-edit="${id}"]`).style.display = '';
         });
     });
     tbody.querySelectorAll('.cancel-frc-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
-            document.querySelector(`tr[data-frc-id="${id}"]`).style.display   = '';
-            document.querySelector(`tr[data-frc-edit="${id}"]`).style.display = 'none';
+            tbody.querySelector(`tr[data-frc-id="${id}"]`).style.display   = '';
+            tbody.querySelector(`tr[data-frc-edit="${id}"]`).style.display = 'none';
         });
     });
     tbody.querySelectorAll('.save-frc-btn').forEach(btn => {
@@ -1071,22 +1219,34 @@ function renderFrcTable() {
                 date_from: document.getElementById(`edit_from_${id}`).value,
                 date_to  : document.getElementById(`edit_to_${id}`).value,
                 increase : parseFloat(document.getElementById(`edit_increase_${id}`).value) || 0,
+                code     : document.getElementById(`edit_code_${id}`)?.value.trim() || '',
             };
-            await postJSON('{% url "update_fixed_rate_cost" %}', body);
-            const frc = ALL_FIXED_RATE_COSTS.find(f => f.id == id);
-            Object.assign(frc, body);
-            renderFrcTable();
-            refreshFrcRows(id);
+            if (!body.name || isNaN(body.value)) { alert('Completá nombre y valor.'); return; }
+            btn.disabled = true;
+            try {
+                await postJSON('{% url "update_fixed_rate_cost" %}', body);
+                const frc = ALL_FIXED_RATE_COSTS.find(f => String(f.id) === String(id));
+                if (frc) Object.assign(frc, body);
+                renderFrcTable();
+                refreshFrcRows(id);
+            } catch(e) {
+                alert('Error al guardar: ' + e.message);
+                btn.disabled = false;
+            }
         });
     });
     tbody.querySelectorAll('.delete-frc-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             if (!confirm('¿Eliminar este costo fijo? Se desvinculará de todas las tarifas.')) return;
             const id = btn.dataset.id;
-            await postJSON(`/tariff/modify/fixed-rate-cost/${id}/delete/`, {});
-            ALL_FIXED_RATE_COSTS = ALL_FIXED_RATE_COSTS.filter(f => f.id != id);
-            renderFrcTable();
-            refreshFrcRows(id);  // removes DOM rows for deleted FRC
+            try {
+                await postJSON(`/tariff/modify/fixed-rate-cost/${id}/delete/`, {});
+                ALL_FIXED_RATE_COSTS = ALL_FIXED_RATE_COSTS.filter(f => String(f.id) !== String(id));
+                renderFrcTable();
+                refreshFrcRows(id);
+            } catch(e) {
+                alert('Error al eliminar: ' + e.message);
+            }
         });
     });
 }
@@ -1153,6 +1313,7 @@ document.getElementById('confirmAddFrcBtn').addEventListener('click', async () =
         date_from  : document.getElementById('new_frc_date_from').value,
         date_to    : document.getElementById('new_frc_date_to').value,
         increase   : parseFloat(document.getElementById('new_frc_increase').value) || 0,
+        code       : document.getElementById('new_frc_code').value.trim(),
     };
     if (!body.name || isNaN(body.value) || !body.date_from || !body.date_to) {
         alert('Completá todos los campos.'); return;
@@ -1326,6 +1487,231 @@ document.addEventListener('click', function(e) {
         else { alert(data.error || 'Error al crear tarifa'); btn.disabled = false; }
     })
     .catch(() => { alert('Error al crear tarifa'); btn.disabled = false; });
+});
+
+// ─── Revisar TP Modal ────────────────────────────────────────────────────────
+
+// Tracks the filter checkbox state independently of the DOM to avoid
+// spurious re-checks when show.bs.modal fires during Bootstrap's click handling.
+let _tpFilterActive = true;
+
+function renderReviewTPTable() {
+    const tbody = document.getElementById('reviewTPBody');
+    if (!tbody) return;
+
+    const data = _tpFilterActive
+        ? RATES_SUMMARY.filter(r => r.suggested_sell > 0 && (r.sell_tourplan !== r.suggested_sell || r.sell !== r.suggested_sell))
+        : RATES_SUMMARY.filter(r => r.suggested_sell > 0);
+
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-3">Sin tarifas con costo calculado para mostrar.</td></tr>';
+        return;
+    }
+
+    // Group by date range for visual separation
+    let lastDateRange = null;
+    tbody.innerHTML = data.map(r => {
+        const dateRange = `${r.date_from} / ${r.date_to}`;
+        let separator = '';
+        if (dateRange !== lastDateRange) {
+            separator = `<tr class="table-secondary"><td colspan="11" class="small fw-bold text-muted py-1 px-2">
+                Vigencia: ${r.date_from} — ${r.date_to}</td></tr>`;
+            lastDateRange = dateRange;
+        }
+        const costDisplay  = r.cost > 0 ? r.cost.toFixed(2) : '—';
+        const suggestedVal = r.suggested_sell > 0 ? r.suggested_sell : '';
+        const tpActual     = r.sell_tourplan > 0 ? r.sell_tourplan : '—';
+        const aiActual     = r.sell > 0 ? r.sell : '—';
+        const tpClass = r.sell_tourplan > 0 && r.sell_tourplan == suggestedVal ? 'text-success' : (r.sell_tourplan > 0 ? 'text-warning' : 'text-muted');
+        const aiClass = r.sell > 0 && r.sell == suggestedVal ? 'text-success' : (r.sell > 0 ? 'text-warning' : 'text-muted');
+        return `${separator}
+        <tr data-rate-id="${r.rate_id}">
+            <td>${r.product_name}</td>
+            <td class="text-muted small">${r.line_name}</td>
+            <td><span class="badge bg-secondary">${r.pax}</span></td>
+            <td class="small text-muted">${r.date_from}</td>
+            <td class="text-end fw-bold">${costDisplay}</td>
+            <td class="text-end text-success fw-bold">${suggestedVal || '—'}</td>
+            <td class="text-end ${tpClass} fw-bold">${tpActual}</td>
+            <td>
+                <input type="number" min="0" step="1"
+                       class="form-control form-control-sm tp-new-input"
+                       value="${r.sell_tourplan == suggestedVal ? '' : suggestedVal}"
+                       placeholder="${tpActual}"
+                       style="width:100px;">
+            </td>
+            <td class="text-end ${aiClass} fw-bold">${aiActual}</td>
+            <td>
+                <input type="number" min="0" step="1"
+                       class="form-control form-control-sm ai-new-input"
+                       value="${r.sell == suggestedVal ? '' : suggestedVal}"
+                       placeholder="${aiActual}"
+                       style="width:100px;">
+            </td>
+            <td>
+                <button class="btn btn-sm btn-success save-tp-row-btn"
+                        data-rate-id="${r.rate_id}"
+                        title="Guardar">
+                    <i class="fa-solid fa-check"></i>
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    bindReviewTPRowEvents();
+}
+
+function bindReviewTPRowEvents() {
+    document.querySelectorAll('#reviewTPBody .save-tp-row-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const rateId  = parseInt(btn.dataset.rateId);
+            const row     = btn.closest('tr[data-rate-id]');
+            const rawTP   = row.querySelector('.tp-new-input').value;
+            const rawAI   = row.querySelector('.ai-new-input').value;
+            const newTP   = rawTP !== '' ? parseInt(rawTP) : null;
+            const newAI   = rawAI !== '' ? parseInt(rawAI) : null;
+            if (newTP === null && newAI === null) return;
+            if ((newTP !== null && (isNaN(newTP) || newTP < 0)) ||
+                (newAI !== null && (isNaN(newAI) || newAI < 0))) {
+                alert('Valor inválido'); return;
+            }
+            btn.disabled = true;
+            try {
+                const rates = [];
+                if (newTP !== null) rates.push({ rate_id: rateId, field: 'sell_tourplan', value: newTP });
+                if (newAI !== null) rates.push({ rate_id: rateId, field: 'sell', value: newAI });
+                await postJSON('{% url "update_rate_block" %}', { rates });
+                const item = RATES_SUMMARY.find(x => x.rate_id === rateId);
+                if (item) {
+                    if (newTP !== null) item.sell_tourplan = newTP;
+                    if (newAI !== null) item.sell = newAI;
+                }
+                if (newTP !== null) updateMainTableTP(rateId, newTP);
+                if (newAI !== null) updateMainTableAI(rateId, newAI);
+                btn.innerHTML = '<i class="fa-solid fa-check text-white"></i>';
+                btn.classList.replace('btn-success', 'btn-outline-success');
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    btn.classList.replace('btn-outline-success', 'btn-success');
+                    btn.disabled = false;
+                }, 1500);
+            } catch(e) {
+                alert('Error al guardar: ' + e.message);
+                btn.disabled = false;
+            }
+        });
+    });
+}
+
+function updateMainTableTP(rateId, newTP) {
+    const baseRow = document.querySelector(`.base-rate-row[data-rate-id="${rateId}"]`);
+    if (!baseRow) return;
+    const tpCell = baseRow.querySelector('.sell-tp-cell');
+    if (tpCell) tpCell.textContent = newTP;
+    const cost = parseFloat(baseRow.querySelector('.base-total-cell')?.textContent
+                  || baseRow.querySelector('.rate-cell[data-field="cost"]')?.textContent) || 0;
+    if (newTP > 0 && cost > 0) {
+        const marginTP = ((newTP - cost) / newTP * 100).toFixed(1);
+        const marginEl = baseRow.querySelector('.sell-tp-margin');
+        if (marginEl) marginEl.textContent = `(${marginTP}%)`;
+    }
+}
+
+function updateMainTableAI(rateId, newAI) {
+    const baseRow = document.querySelector(`.base-rate-row[data-rate-id="${rateId}"]`);
+    if (!baseRow) return;
+    baseRow.dataset.sell = newAI;
+    const aiCell = baseRow.querySelector('.rate-cell[data-field="sell"]');
+    if (aiCell) aiCell.textContent = newAI;
+    // Recalculate AI margin display
+    const cost = parseFloat(baseRow.querySelector('.base-total-cell')?.textContent
+                  || baseRow.querySelector('.rate-cell[data-field="cost"]')?.textContent) || 0;
+    if (newAI > 0 && cost > 0) {
+        const marginAI = ((newAI - cost) / newAI * 100).toFixed(1);
+        const marginEl = baseRow.querySelector('.margin-cell');
+        if (marginEl) marginEl.textContent = marginAI + '%';
+    }
+}
+
+// show.bs.modal fires BEFORE the animation — user can't interact yet, no phantom re-check.
+// Fetch fresh rates_summary from server each time the modal opens so the list
+// reflects any CI/FRC edits made since the page was loaded.
+document.getElementById('reviewTPModal').addEventListener('show.bs.modal', async () => {
+    const filterCb = document.getElementById('filterWithSellOnly');
+    if (filterCb) filterCb.checked = _tpFilterActive;
+
+    const tbody = document.getElementById('reviewTPBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-center py-3 text-muted">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Calculando costos…</td></tr>`;
+
+    try {
+        const res = await fetch(`{% url "rates_summary_api" supplier.id %}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        RATES_SUMMARY = await res.json();
+    } catch(e) {
+        console.warn('rates_summary_api error, using cached data:', e);
+    }
+    renderReviewTPTable();
+});
+
+document.getElementById('filterWithSellOnly').addEventListener('change', function() {
+    _tpFilterActive = this.checked;
+    renderReviewTPTable();
+});
+
+document.getElementById('applyAllTPBtn').addEventListener('click', async () => {
+    const rows  = document.querySelectorAll('#reviewTPBody tr[data-rate-id]');
+    if (!rows.length) return;
+    const rates = [];
+    rows.forEach(row => {
+        const rateId = parseInt(row.dataset.rateId);
+        const rawTP  = row.querySelector('.tp-new-input')?.value;
+        const rawAI  = row.querySelector('.ai-new-input')?.value;
+        const newTP  = rawTP !== '' ? parseInt(rawTP) : NaN;
+        const newAI  = rawAI !== '' ? parseInt(rawAI) : NaN;
+        if (!isNaN(newTP) && newTP > 0) rates.push({ rate_id: rateId, field: 'sell_tourplan', value: newTP });
+        if (!isNaN(newAI) && newAI > 0) rates.push({ rate_id: rateId, field: 'sell',          value: newAI });
+    });
+    if (!rates.length) { alert('No hay valores para aplicar.'); return; }
+    const btn = document.getElementById('applyAllTPBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Guardando…';
+    try {
+        await postJSON('{% url "update_rate_block" %}', { rates });
+        rates.forEach(r => {
+            const item = RATES_SUMMARY.find(x => x.rate_id === r.rate_id);
+            if (!item) return;
+            if (r.field === 'sell_tourplan') { item.sell_tourplan = r.value; updateMainTableTP(r.rate_id, r.value); }
+            if (r.field === 'sell')          { item.sell = r.value;          updateMainTableAI(r.rate_id, r.value); }
+        });
+        renderReviewTPTable();
+        btn.innerHTML = '<i class="fa-solid fa-check-double me-1"></i>¡Aplicado!';
+        setTimeout(() => {
+            btn.innerHTML = '<i class="fa-solid fa-check-double me-1"></i>Aplicar sugerida a todas';
+            btn.disabled = false;
+        }, 2500);
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.innerHTML = '<i class="fa-solid fa-check-double me-1"></i>Aplicar sugerida a todas';
+        btn.disabled = false;
+    }
+});
+
+// ─── Revisar TP: sync first, then open modal ─────────────────────────────────
+document.getElementById('reviewTPBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('reviewTPBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Sincronizando…';
+    try {
+        await postJSON('{% url "quick_sync_supplier" supplier.id %}', {});
+    } catch(e) {
+        console.warn('quick_sync_supplier error:', e);
+    }
+    btn.innerHTML = '<i class="fa-solid fa-eye me-1"></i> Revisar TP';
+    btn.disabled = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('reviewTPModal')).show();
 });
 
 // ─── Lock/unlock base ─────────────────────────────────────────────────────────

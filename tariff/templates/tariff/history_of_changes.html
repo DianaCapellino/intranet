@@ -21,6 +21,7 @@
     </div>
     <hr>
 
+    <div class="table-responsive">
     <table id="changesTable" class="table table-hover" style="font-size:.85rem">
         <thead>
             <tr>
@@ -35,8 +36,9 @@
                 {% endif %}
             </tr>
         </thead>
-            
+
     </table>
+    </div>
     <div id="modals-container"></div>
 </div>
 
@@ -106,6 +108,15 @@
                         style="cursor:pointer"></i>
                     </div>`
             }] : []),
+        ],
+        responsive: true,
+        columnDefs: [
+            { responsivePriority: 1, targets: [0, 1] },   // Date, Supplier — always visible
+            { responsivePriority: 2, targets: [4] },       // Type
+            { responsivePriority: 3, targets: [2] },       // Product
+            { responsivePriority: 4, targets: [5] },       // Percentage
+            { responsivePriority: 5, targets: [3] },       // Validity
+            ...(IS_ADMIN ? [{ responsivePriority: 1, targets: [6] }] : []),
         ],
         pageLength: 25,
         order: [[0, "desc"]],

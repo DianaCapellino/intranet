@@ -44,6 +44,7 @@ urlpatterns = [
     # Json urls
     path("modify/location/json/<int:location_id>", modify.json_location, name="json_location"),
     path("modify/supplier/json/<int:supplier_id>", modify.json_supplier, name="json_supplier"),
+    path("modify/supplier/<int:supplier_id>/rates-summary/", modify.rates_summary_api, name="rates_summary_api"),
     path("changes/json/<int:change_id>", modify.json_changes, name="json_changes"),
     path("modify/supplier-group/json/<int:group_id>", modify.json_supplier_group, name="json_supplier_group"),
     path("modify/product-group/json/<int:group_id>", modify.json_product_group, name="json_product_group"),
@@ -63,13 +64,18 @@ urlpatterns = [
     path('modify/fixed-rate-cost/<int:frc_id>/delete/', modify.delete_fixed_rate_cost, name='delete_fixed_rate_cost'),
     path('modify/supplier/<int:supplier_id>/set-exchange/', modify.update_supplier_exchange, name='update_supplier_exchange'),
     path('modify/supplier/<int:supplier_id>/bulk-update-exchange/', modify.bulk_update_exchange, name='bulk_update_exchange'),
+    path('modify/supplier/<int:supplier_id>/fix-group-fcu/', modify.fix_group_fcu, name='fix_group_fcu'),
     path('modify/rate/update-cost/', modify.update_rate_cost, name='update_rate_cost'),
     path('modify/rate/toggle-lock/', modify.toggle_rate_lock, name='toggle_rate_lock'),
     path('modify/rate/create-missing/', modify.create_missing_rate, name='create_missing_rate'),
     path('modify/rate/delete-single/', modify.delete_single_rate, name='delete_single_rate'),
     path('modify/suppliers/reorder/', modify.reorder_suppliers, name='reorder_suppliers'),
     path('modify/suppliers/auto-sort/', modify.auto_sort_suppliers, name='auto_sort_suppliers'),
+    path('modify/supplier/<int:supplier_id>/sustainable-action/add/', modify.add_sustainable_action, name='add_sustainable_action'),
+    path('modify/sustainable-action/<int:action_id>/delete/', modify.delete_sustainable_action, name='delete_sustainable_action'),
 
+    path("aliwen-green/", tariff.aliwen_green, name="aliwen_green"),
+    path("aliwen-green/excel/", tariff.aliwen_green_excel, name="aliwen_green_excel"),
     path("pdf/select/", tariff.pdf_select, name="pdf_select"),
     path("pdf/view/", tariff.pdf_view, name="pdf_view"),
 
@@ -81,6 +87,7 @@ urlpatterns = [
     path("tp/upload-services/",  tariff.tp_mod_list_services,      name="tp_mod_list_services"),
     path("tp/sync-db-accommodation/", tariff.sync_tariff_from_db_accommodation, name="sync_tariff_from_db_accommodation"),
     path("tp/sync-db-services/",      tariff.sync_tariff_from_db_services,      name="sync_tariff_from_db_services"),
+    path("tp/quick-sync/<int:supplier_id>/", tariff.quick_sync_supplier, name="quick_sync_supplier"),
     path("rateline/<int:line_id>/mark-revised/",   tariff.mark_rate_line_revised,   name="mark_rate_line_revised"),
     path("rateline/<int:line_id>/mark-unrevised/", tariff.mark_rate_line_unrevised, name="mark_rate_line_unrevised"),
 ]

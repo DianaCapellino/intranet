@@ -168,6 +168,16 @@ TYPE_HISTORY = [
     ("Add", "Added rates to existing property/product")
 ]
 
+SUSTAINABLE_ACTION_CATEGORIES = [
+    ('WASTE', 'Wastes / Recycle'),
+    ('ENERGY', 'Energy'),
+    ('PURCHASING', 'Purchasing / Efficiency'),
+    ('SOCIAL', 'Social / Culture'),
+    ('SOIL', 'Soil / Food / Environment'),
+    ('GUEST', 'Guest Participation'),
+    ('OTHER', 'Other'),
+]
+
 TOURS_TIMING = [
     ("AM", "Morning"),
     ("PM", "Afternoon"),
@@ -245,6 +255,15 @@ class Supplier(models.Model):
     # Default exchange rate pre-filled when creating cost items for this supplier
     default_exchange = models.PositiveIntegerField(default=1)
 
+    # Accommodation highlights
+    highlight = models.CharField(max_length=500, blank=True, default='')
+    highlight_sustentability = models.CharField(max_length=500, blank=True, default='')
+
+    # General accommodation notes
+    room_quantity = models.CharField(max_length=100, blank=True, default='')
+    inclusions = models.CharField(max_length=500, blank=True, default='')
+    bedding = models.CharField(max_length=300, blank=True, default='')
+
     def __str__(self):
         return f"{self.name}"
 
@@ -318,6 +337,17 @@ class Product(models.Model):
     # If the tour is in the morning, afternoon or evening
     tour_timing = models.CharField(choices=TOURS_TIMING, max_length=64, blank=True, null=True)
 
+    # Tourplan location code used to filter sync results; defaults to the product group's location code
+    tp_location_code = models.CharField(max_length=10, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.tp_location_code:
+            if self.supplier and self.supplier.group and self.supplier.group.location:
+                self.tp_location_code = self.supplier.group.location.code
+            elif self.group and self.group.location:
+                self.tp_location_code = self.group.location.code
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.supplier} - {self.name} - {self.group}"
 
@@ -379,6 +409,7 @@ class CostItem(models.Model):
 
 class FixedRateCost(models.Model):
     name = models.CharField(max_length=64)
+    code = models.CharField(max_length=64, blank=True, null=True)
     date_from = models.DateField(verbose_name='from_date')
     date_to = models.DateField(verbose_name='to_date')
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="fixed_rate_costs", null=True, blank=True)
@@ -532,3 +563,15 @@ class Change(models.Model):
 
     class Meta:
         ordering = ["-date"]
+
+
+class SustainableAction(models.Model):
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='sustainable_actions')
+    category = models.CharField(choices=SUSTAINABLE_ACTION_CATEGORIES, max_length=20)
+    description = models.TextField()
+
+    def __str__(self):
+        return f"{self.get_category_display()}: {self.description[:50]}"
+
+    class Meta:
+        ordering = ['category']

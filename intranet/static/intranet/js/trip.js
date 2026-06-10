@@ -303,6 +303,7 @@ function create_datatable (type) {
             lengthMenu: _isClient
                 ? [ [30, 20, -1], [30, 20, "All"] ]
                 : [ [30, 20, -1], [30, 20, "Todos"] ],
+            responsive: _isClient,
             columnDefs: _isClient ? [
                 // Hidden and excluded from colvis: Type, Client, Quoted by,
                 // Priority, Difficulty, More info
@@ -310,7 +311,17 @@ function create_datatable (type) {
                 // Date of Travel: hidden by default but toggleable via colvis
                 { visible: false, targets: [15] },
                 { width: '20%', targets: [2] },
-                { orderable: false, targets: [16] }
+                { orderable: false, targets: [16] },
+                // Responsive priorities: lower = stays visible longer on small screens
+                { responsivePriority: 1, targets: [2, 16] },   // Trip, Actions — always visible
+                { responsivePriority: 2, targets: [4] },        // Status
+                { responsivePriority: 3, targets: [11] },       // Progress
+                { responsivePriority: 4, targets: [5] },        // Amount
+                { responsivePriority: 5, targets: [7] },        // Contact
+                { responsivePriority: 6, targets: [8] },        // Client reference
+                { responsivePriority: 7, targets: [10] },       // Worked by
+                { responsivePriority: 8, targets: [0] },        // Date
+                { responsivePriority: 9, targets: [1] },        // Date Response
             ] : [
                 { orderable: false, targets: -1 },
                 { width: '20%', targets: [2] },
@@ -355,11 +366,25 @@ function create_datatable (type) {
             entriesTable.ajax.reload();
         });
 
-        // Inline progress update — delegated so it works after DataTables redraws
-        $('#entries').on('change', '.progress-inline', function () {
-            const $sel = $(this);
-            const entryId = $sel.data('entry-id');
-            const progress = $sel.val();
+        // Progress pill widget — open/close dropdown
+        $('#entries').on('click', '.progress-pill-display', function (e) {
+            e.stopPropagation();
+            const $drop = $(this).siblings('.progress-pill-dropdown');
+            // Close any other open dropdown first
+            $('.progress-pill-dropdown').not($drop).hide();
+            $drop.toggle();
+        });
+
+        // Progress pill widget — select an option
+        $('#entries').on('click', '.progress-pill-option', function (e) {
+            e.stopPropagation();
+            const $opt    = $(this);
+            const $widget = $opt.closest('.progress-pill-widget');
+            const entryId = $widget.data('entry-id');
+            const progress = $opt.data('value');
+            const bg      = $opt.data('bg');
+            const fg      = $opt.data('fg');
+            const label   = $opt.text();
             const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
 
             fetch(`/entries/${entryId}/progress`, {
@@ -368,16 +393,16 @@ function create_datatable (type) {
                 body: JSON.stringify({ progress }),
             }).then(resp => {
                 if (resp.ok) {
-                    $sel.addClass('border-success');
-                    setTimeout(() => $sel.removeClass('border-success'), 1400);
-                } else {
-                    $sel.addClass('border-danger');
-                    setTimeout(() => $sel.removeClass('border-danger'), 1400);
+                    const $display = $widget.find('.progress-pill-display');
+                    $display.text(label).css({ background: bg, color: fg });
+                    $widget.find('.progress-pill-dropdown').hide();
                 }
-            }).catch(() => {
-                $sel.addClass('border-danger');
-                setTimeout(() => $sel.removeClass('border-danger'), 1400);
             });
+        });
+
+        // Close pill dropdowns when clicking outside
+        $(document).on('click.progressPill', function () {
+            $('.progress-pill-dropdown').hide();
         });
 
     } else if (type == ("trips")){
@@ -1962,7 +1987,32 @@ function deleteLineButtons() {
             .then(r => r.json())
             .then(resp => {
                 if (resp.ok) {
-                    location.reload();
+                    // Snapshot which collapses are currently open so we can restore them
+                    // after Bootstrap's modal-close sequence (which can inadvertently close collapses)
+                    const openIds = new Set(
+                        [...document.querySelectorAll('.collapse.show')].map(el => el.id).filter(Boolean)
+                    );
+
+                    const row = document.querySelector(`.row-rateline[data-rateline-id="${ratelineId}"]`);
+                    if (row) {
+                        const next = row.nextElementSibling;
+                        if (next && !next.classList.contains('row-rateline')) next.remove();
+                        row.remove();
+                    }
+                    const modalEl = document.getElementById(`windowRateLineTrash${ratelineId}`);
+                    const bsModal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+                    if (bsModal) {
+                        modalEl.addEventListener('hidden.bs.modal', () => {
+                            modalEl.remove();
+                            openIds.forEach(id => {
+                                const el = document.getElementById(id);
+                                if (el) el.classList.add('show');
+                            });
+                        }, { once: true });
+                        bsModal.hide();
+                    } else {
+                        modalEl?.remove();
+                    }
                 } else {
                     alert("Error al eliminar: " + (resp.error || "Desconocido"));
                 }
@@ -2042,31 +2092,42 @@ function confirmDeleteBlock(blockId) {
         return;
     }
     
-    console.log("Eliminando RateLines:", ratelineIds);
-    
     fetch("/tariff/modify/delete-rate-block/", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "X-CSRFToken": getCookie("csrftoken")
         },
-        body: JSON.stringify({
-            rateline_ids: ratelineIds
-        })
+        body: JSON.stringify({ rateline_ids: ratelineIds })
     })
     .then(r => r.json())
     .then(resp => {
-        console.log("Respuesta del servidor:", resp);
         if (resp.ok) {
-            alert(resp.message || "Bloque eliminado exitosamente");
-            // Cerrar modal
-            const modalElement = document.getElementById(`deleteBlockModal${blockId}`);
-            const modalInstance = bootstrap.Modal.getInstance(modalElement);
-            if (modalInstance) {
-                modalInstance.hide();
+            // Snapshot open collapses in OTHER blocks before any DOM changes
+            const openIds = new Set(
+                [...document.querySelectorAll('.collapse.show')].map(el => el.id).filter(Boolean)
+            );
+
+            const headerRow = document.querySelector(`.delete-block[data-block="${blockId}"]`)?.closest('tr');
+            headerRow?.remove();
+            rows.forEach(row => {
+                const next = row.nextElementSibling;
+                if (next && !next.classList.contains('row-rateline')) next.remove();
+                row.remove();
+            });
+            ratelineIds.forEach(id => document.getElementById(`windowRateLineTrash${id}`)?.remove());
+
+            const confirmEl = document.getElementById(`deleteBlockModal${blockId}`);
+            const bsModal   = confirmEl ? bootstrap.Modal.getInstance(confirmEl) : null;
+            if (bsModal) {
+                confirmEl.addEventListener('hidden.bs.modal', () => {
+                    openIds.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.classList.add('show');
+                    });
+                }, { once: true });
+                bsModal.hide();
             }
-            // Recargar página
-            setTimeout(() => location.reload(), 300);
         } else {
             alert("Error al eliminar: " + (resp.error || "Desconocido"));
         }
@@ -2084,7 +2145,7 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
     // Obtener todos los productos del supplier
     const productSelect = document.getElementById("product_filter_select");
     const products = [];
-    
+
     for (let i = 1; i < productSelect.options.length; i++) {
         const option = productSelect.options[i];
         products.push({
@@ -2092,18 +2153,20 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
             name: option.text
         });
     }
-    
+
     if (products.length === 0) {
         alert("No hay productos disponibles para crear tarifas");
         return;
     }
-    
+
+    const isServices = document.getElementById('supplier_list')?.dataset.serviceType === 'NA';
+
     // Crear lista de checkboxes para productos
     const productCheckboxes = products.map(p => `
         <div class="form-check">
-            <input class="form-check-input product-checkbox" 
-                   type="checkbox" 
-                   value="${p.id}" 
+            <input class="form-check-input product-checkbox"
+                   type="checkbox"
+                   value="${p.id}"
                    id="product_${p.id}"
                    checked>
             <label class="form-check-label" for="product_${p.id}">
@@ -2111,7 +2174,7 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
             </label>
         </div>
     `).join('');
-    
+
     const modal = document.createElement('div');
     modal.innerHTML = `
         <div class="modal fade" id="newBlockModal" tabindex="-1">
@@ -2139,15 +2202,38 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="mb-3">
                             <label class="form-label">Nombre Vigencia/Temporada *</label>
-                            <input type="text" class="form-control" id="blockSeason" 
+                            <input type="text" class="form-control" id="blockSeason"
                                    placeholder="Ej: Temporada Alta 2026" required>
                         </div>
-                        
+
+                        ${isServices ? `
                         <hr>
-                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Tipo de tarifa *</label>
+                            <div class="d-flex gap-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="blockRateType" id="rateTypeSIB" value="sib">
+                                    <label class="form-check-label" for="rateTypeSIB">
+                                        <strong>Regular (SIB)</strong>
+                                        <small class="text-muted d-block">Solo columna SIB</small>
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="blockRateType" id="rateTypePrivate" value="private" checked>
+                                    <label class="form-check-label" for="rateTypePrivate">
+                                        <strong>Privada</strong>
+                                        <small class="text-muted d-block">Columnas 1 a 6 pax</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        <hr>
+
                         <div class="mb-3">
                             <label class="form-label d-flex justify-content-between align-items-center">
                                 <span>Productos a incluir *</span>
@@ -2164,11 +2250,11 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
                                 ${productCheckboxes}
                             </div>
                         </div>
-                        
+
                         <hr>
-                        
+
                         <h6 class="mb-3">Configuración de Tarifas</h6>
-                        
+
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="mb-3">
@@ -2182,7 +2268,7 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
                             <div class="col-md-4">
                                 <div class="mb-3">
                                     <label class="form-label">Increase (%)</label>
-                                    <input type="number" step="0.01" class="form-control" 
+                                    <input type="number" step="0.01" class="form-control"
                                            id="blockIncrease" placeholder="0.00">
                                     <small class="text-muted">Opcional: incremento porcentual</small>
                                 </div>
@@ -2198,9 +2284,9 @@ document.getElementById("new_block_btn").addEventListener("click", function() {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <hr>
-                                                
+
                         <small class="text-muted">
                             <i class="fa-solid fa-info-circle"></i>
                             Los costos base serán 0 por defecto. La configuración de status, increase y margin se aplicará a todas las tarifas del bloque.
@@ -2235,49 +2321,44 @@ function selectAllProducts(checked) {
 
 function confirmCreateBlock() {
     const dateFrom = document.getElementById('blockDateFrom').value;
-    const dateTo = document.getElementById('blockDateTo').value;
-    const season = document.getElementById('blockSeason').value;
-    const status = document.getElementById('blockStatus').value;
+    const dateTo   = document.getElementById('blockDateTo').value;
+    const season   = document.getElementById('blockSeason').value;
+    const status   = document.getElementById('blockStatus').value;
     const increase = document.getElementById('blockIncrease').value;
-    const margin = document.getElementById('blockMargin').value;
-      
+    const margin   = document.getElementById('blockMargin').value;
+
     // Validaciones
     if (!dateFrom || !dateTo || !season) {
         alert("Por favor completa todos los campos obligatorios");
         return;
     }
-    
     if (!status || !margin) {
         alert("Por favor selecciona el status y el margin");
         return;
     }
-    
     if (new Date(dateFrom) > new Date(dateTo)) {
         alert("La fecha desde no puede ser posterior a la fecha hasta");
         return;
     }
-    
+
+    // Tipo de tarifa (solo servicios)
+    const isServices = document.getElementById('supplier_list')?.dataset.serviceType === 'NA';
+    let rateType = null;
+    if (isServices) {
+        const rateTypeEl = document.querySelector('input[name="blockRateType"]:checked');
+        if (!rateTypeEl) { alert("Seleccioná el tipo de tarifa (Regular o Privada)"); return; }
+        rateType = rateTypeEl.value;
+    }
+
     // Obtener productos seleccionados
     const selectedProducts = [];
-    document.querySelectorAll('.product-checkbox:checked').forEach(checkbox => {
-        selectedProducts.push(checkbox.value);
-    });
-    
+    document.querySelectorAll('.product-checkbox:checked').forEach(cb => selectedProducts.push(cb.value));
+
     if (selectedProducts.length === 0) {
         alert("Debes seleccionar al menos un producto");
         return;
     }
-    
-    console.log("Creando nuevo bloque:", {
-        dateFrom,
-        dateTo,
-        season,
-        status,
-        increase: increase || null,
-        margin,
-        products: selectedProducts,
-    });
-    
+
     fetch("/tariff/modify/create-rate-block/", {
         method: "POST",
         headers: {
@@ -2285,13 +2366,14 @@ function confirmCreateBlock() {
             "X-CSRFToken": getCookie("csrftoken")
         },
         body: JSON.stringify({
-            date_from: dateFrom,
-            date_to: dateTo,
-            season: season,
-            status: status,
-            increase: increase ? parseFloat(increase) : null,
-            margin: margin,
-            product_ids: selectedProducts,
+            date_from   : dateFrom,
+            date_to     : dateTo,
+            season      : season,
+            status      : status,
+            increase    : increase ? parseFloat(increase) : null,
+            margin      : margin,
+            product_ids : selectedProducts,
+            rate_type   : rateType,
         })
     })
     .then(r => r.json())

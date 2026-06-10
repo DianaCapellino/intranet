@@ -1,7 +1,7 @@
 from django.shortcuts import render, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
-from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, Change, CostItem, FixedRateCost, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING, TYPE_HISTORY, TAXES
+from tariff.models import Supplier, Client, SupplierGroup, Product, ProductGroup, Location, RateLine, Rate, RateGroup, Change, CostItem, FixedRateCost, SustainableAction, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, FCU_OPTIONS, TOURS_TIMING, TYPE_HISTORY, TAXES, SUSTAINABLE_ACTION_CATEGORIES
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -458,6 +458,7 @@ def modify_supplier(request, supplier_id):
                     "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
                     "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
                     "supplier_groups": supplier_groups.order_by("location__name", "name"),
+                    "SUSTAINABLE_ACTION_CATEGORIES": SUSTAINABLE_ACTION_CATEGORIES,
                 })
             else:
                 return render(request, "tariff/service/supplier.html", {
@@ -486,6 +487,11 @@ def modify_supplier(request, supplier_id):
             supplier.stay_note=request.POST.get("stay_note")
             supplier.closing_note=request.POST.get("closing_note")
             supplier.recommended=request.POST.get("recommended") == "on"
+            supplier.highlight=request.POST.get("highlight", "")
+            supplier.highlight_sustentability=request.POST.get("highlight_sustentability", "")
+            supplier.room_quantity=request.POST.get("room_quantity", "")
+            supplier.inclusions=request.POST.get("inclusions", "")
+            supplier.bedding=request.POST.get("bedding", "")
 
         # Modifies the model of the supplier from the form information
         supplier.name=name
@@ -499,7 +505,6 @@ def modify_supplier(request, supplier_id):
         supplier.pic1_url=request.POST.get("pic1_url")
         supplier.pic2_url=request.POST.get("pic2_url")
         supplier.pic3_url=request.POST.get("pic3_url")
-        
         supplier.save()
 
         if type_service == "AC":
@@ -672,16 +677,21 @@ def modify_supplier_rates(request, supplier_id):
                         )
                         cost_items_list.append(ci)
                     for frc in rate.rates_with_fixed.all():
-                        frc.cost_per_pax = _cost_per_pax(
-                            frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, pax_for_calc
-                        )
-                        fixed_costs_list.append(frc)
+                        if frc.date_from <= line.date_to and frc.date_to >= line.date_from:
+                            frc.cost_per_pax = _cost_per_pax(
+                                frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, pax_for_calc
+                            )
+                            fixed_costs_list.append(frc)
 
                 has_items  = bool(cost_items_list or fixed_costs_list)
                 total_cost = round(
                     sum(ci.cost_per_pax for ci in cost_items_list) +
                     sum(frc.cost_per_pax for frc in fixed_costs_list), 2
                 ) if has_items else None
+
+                # Recalculate margin_tp using the real per-pax cost when cost items exist.
+                if rate and has_items and total_cost and rate.sell_tourplan and rate.sell_tourplan > 0:
+                    rate.margin_tp = ((rate.sell_tourplan - total_cost) / rate.sell_tourplan) * 100
 
                 effective_cost = total_cost if has_items else (float(rate.cost) if rate and rate.cost else None)
                 if has_items and total_cost and rate and rate.sell and float(rate.sell) > 0:
@@ -770,8 +780,30 @@ def modify_supplier_rates(request, supplier_id):
     else:
         fixed_rate_costs = list(
             FixedRateCost.objects.filter(supplier=supplier)
-            .values('id', 'name', 'date_from', 'date_to', 'value', 'usd', 'exchange', 'increase', 'fcu')
+            .values('id', 'name', 'code', 'date_from', 'date_to', 'value', 'usd', 'exchange', 'increase', 'fcu')
         )
+        rates_summary = []
+        for block in rate_blocks:
+            for line in block['lines']:
+                for base in line.bases:
+                    if base['rate']:
+                        cost_val = (
+                            base['total_cost'] if base['has_items']
+                            else (float(base['rate'].cost) if base['rate'].cost is not None else 0)
+                        )
+                        rates_summary.append({
+                            'rate_id': base['rate'].id,
+                            'product_name': line.group.product.name,
+                            'line_name': line.group.name,
+                            'date_from': str(block['date_from']),
+                            'date_to': str(block['date_to']),
+                            'pax': base['pax'],
+                            'has_items': base['has_items'],
+                            'cost': cost_val,
+                            'sell': base['rate'].sell or 0,
+                            'sell_tourplan': base['rate'].sell_tourplan or 0,
+                            'suggested_sell': base['suggested_sell'] or 0,
+                        })
         import json as _json
         return render(request, "tariff/service/supplier_rates.html", {
             "supplier": supplier,
@@ -787,7 +819,85 @@ def modify_supplier_rates(request, supplier_id):
             "TAXES": TAXES,
             "fixed_rate_costs_json": _json.dumps(fixed_rate_costs, default=str),
             "default_exchange": supplier.default_exchange,
+            "rates_summary_json": _json.dumps(rates_summary),
         })
+
+
+@login_required
+def rates_summary_api(request, supplier_id):
+    """Return fresh rates_summary JSON for the Revisar TP modal."""
+    import math as _math
+    from django.http import JsonResponse
+
+    supplier = Supplier.objects.get(pk=supplier_id)
+    if supplier.group.type_service != 'NA':
+        return JsonResponse([], safe=False)
+
+    rate_lines = (
+        RateLine.objects
+        .filter(group__product__supplier=supplier)
+        .select_related("group__product")
+        .prefetch_related("line_rates__cost_items", "line_rates__rates_with_fixed")
+        .order_by("date_from", "group__product__order")
+    )
+
+    NA_COLS = ["SIB"] + [str(i) for i in range(1, 7)]
+    rates_summary = []
+
+    for line in rate_lines:
+        bases_map = {col: None for col in NA_COLS}
+        for rate in line.line_rates.all():
+            if rate.column_options in bases_map:
+                bases_map[rate.column_options] = rate
+
+        for col in NA_COLS:
+            rate = bases_map[col]
+            if not rate:
+                continue
+
+            pax = 1 if col == "SIB" else int(col)
+            ci_list  = list(rate.cost_items.all())
+            frc_list = list(rate.rates_with_fixed.all())
+            has_items = bool(ci_list or frc_list)
+
+            ci_total = sum(
+                _cost_per_pax(ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, pax)
+                for ci in ci_list
+            )
+            frc_total = sum(
+                _cost_per_pax(frc.value, frc.fcu, 0, frc.increase or 0, frc.usd, frc.exchange, pax)
+                for frc in frc_list
+            )
+            total_cost = round(ci_total + frc_total, 2) if has_items else None
+            effective_cost = total_cost if has_items else (float(rate.cost) if rate.cost else None)
+
+            if has_items and total_cost and rate.sell and float(rate.sell) > 0:
+                margin_ai = round((float(rate.sell) - total_cost) / float(rate.sell) * 100, 1)
+            else:
+                margin_ai = 0
+
+            suggested_sell = None
+            if has_items and total_cost and supplier.margin:
+                suggested_sell = _math.ceil(total_cost / supplier.margin)
+            elif effective_cost and margin_ai and 0 < margin_ai < 100:
+                suggested_sell = round(effective_cost / (1 - margin_ai / 100))
+
+            cost_val = total_cost if has_items else (float(rate.cost) if rate.cost is not None else 0)
+            rates_summary.append({
+                'rate_id':       rate.id,
+                'product_name':  line.group.product.name,
+                'line_name':     line.group.name,
+                'date_from':     str(line.date_from),
+                'date_to':       str(line.date_to),
+                'pax':           col,
+                'has_items':     has_items,
+                'cost':          cost_val,
+                'sell':          float(rate.sell) if rate.sell else 0,
+                'sell_tourplan': rate.sell_tourplan or 0,
+                'suggested_sell': suggested_sell or 0,
+            })
+
+    return JsonResponse(rates_summary, safe=False)
 
 
 """
@@ -873,7 +983,9 @@ def modify_product(request, product_id):
 
         if type_service == "NA":
             product.tour_timing = tour_timing
-        
+
+        product.tp_location_code = request.POST.get("tp_location_code", "").strip().upper()
+
         product.save()
         
         # Redirigir a la página de tarifas del proveedor
@@ -1301,6 +1413,7 @@ def create_rate_block(request):
         increase = data.get("increase")
         margin = data.get("margin")
         status = data.get("status")
+        rate_type = data.get("rate_type")  # "sib", "private", or None (all)
         
         if not date_from or not date_to or not season:
             return JsonResponse({"ok": False, "error": "Faltan datos requeridos"}, status=400)
@@ -1358,6 +1471,10 @@ def create_rate_block(request):
                 
                 if product.group.type_service == "AC":
                     columns = ["SGL", "DBL", "TPL"]
+                elif rate_type == "sib":
+                    columns = ["SIB"]
+                elif rate_type == "private":
+                    columns = ["1", "2", "3", "4", "5", "6"]
                 else:
                     columns = ["SIB", "1", "2", "3", "4", "5", "6"]
 
@@ -1400,8 +1517,13 @@ def create_rate_block(request):
                                 usd=ci.usd, exchange=ci.exchange, fcu=ci.fcu,
                                 code=ci.code, rate=new_rate,
                             )
-                    # Link existing FixedRateCosts for this product to the new rate
-                    for frc in FixedRateCost.objects.filter(rate__rate_line__group__product=product).distinct():
+                    # Link existing FixedRateCosts for this product to the new rate,
+                    # but only those whose validity period overlaps the new block's dates.
+                    for frc in FixedRateCost.objects.filter(
+                        rate__rate_line__group__product=product,
+                        date_from__lte=date_to,
+                        date_to__gte=date_from,
+                    ).distinct():
                         frc.rate.add(new_rate)
                     created_rates += 1
 
@@ -1591,20 +1713,32 @@ def create_fixed_rate_cost(request):
         supplier = Supplier.objects.get(pk=data['supplier_id'])
     except Supplier.DoesNotExist:
         return JsonResponse({'error': 'Supplier not found'}, status=404)
-    frc = FixedRateCost.objects.create(
+    frc, created = FixedRateCost.objects.get_or_create(
         name      = data['name'],
+        supplier  = supplier,
         date_from = data['date_from'],
         date_to   = data['date_to'],
-        supplier  = supplier,
-        value     = float(data['value']),
-        usd       = data.get('usd', True),
-        exchange  = int(data.get('exchange', 1)),
-        increase  = float(data['increase']) if data.get('increase') else None,
-        fcu       = data.get('fcu', 'Person'),
+        defaults  = {
+            'code'    : data.get('code') or None,
+            'value'   : float(data['value']),
+            'usd'     : data.get('usd', True),
+            'exchange': int(data.get('exchange', 1)),
+            'increase': float(data['increase']) if data.get('increase') else None,
+            'fcu'     : data.get('fcu', 'Person'),
+        },
     )
+    if not created:
+        # Already existed — update mutable fields so the user's values are saved
+        frc.value    = float(data['value'])
+        frc.usd      = data.get('usd', frc.usd)
+        frc.exchange = int(data.get('exchange', frc.exchange))
+        frc.increase = float(data['increase']) if data.get('increase') else frc.increase
+        frc.fcu      = data.get('fcu', frc.fcu)
+        frc.code     = data.get('code') or frc.code
+        frc.save()
     for rate_id in data.get('rate_ids', []):
         frc.rate.add(rate_id)
-    return JsonResponse({'id': frc.id, 'name': frc.name})
+    return JsonResponse({'id': frc.id, 'name': frc.name, 'created': created})
 
 
 @login_required
@@ -1634,6 +1768,7 @@ def update_fixed_rate_cost(request):
     except FixedRateCost.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
     frc.name      = data.get('name', frc.name)
+    frc.code      = data.get('code') or None
     frc.value     = float(data.get('value', frc.value))
     frc.usd       = data.get('usd', frc.usd)
     frc.exchange  = int(data.get('exchange', frc.exchange))
@@ -1728,6 +1863,55 @@ def update_cost_item(request):
     )
 
     return JsonResponse({'updated': True})
+
+
+@login_required
+def fix_group_fcu(request, supplier_id):
+    """Fix CostItems loaded with fcu=Group but per-person values (already divided by pax).
+    Multiplies each value by its base pax count and changes fcu to Person.
+    Also recalculates rate.cost for affected rates."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    from django.db import transaction
+
+    group_cis = list(
+        CostItem.objects
+        .filter(rate__rate_line__group__product__supplier_id=supplier_id, fcu='Group')
+        .select_related('rate')
+    )
+
+    affected_rate_ids = set()
+    updated = 0
+    with transaction.atomic():
+        for ci in group_cis:
+            col = ci.rate.column_options
+            pax = 1 if col == 'SIB' else (int(col) if col in ('1', '2', '3', '4', '5', '6') else 1)
+            ci.value = round(ci.value * pax, 2)
+            ci.fcu = 'Person'
+            ci.save(update_fields=['value', 'fcu'])
+            affected_rate_ids.add(ci.rate_id)
+            updated += 1
+
+    # Recalculate rate.cost for affected rates
+    rates_updated = 0
+    for rate in (Rate.objects
+                 .filter(id__in=affected_rate_ids)
+                 .prefetch_related('cost_items', 'rates_with_fixed')):
+        col = rate.column_options
+        pax = 1 if col == 'SIB' else (int(col) if col in ('1', '2', '3', '4', '5', '6') else 1)
+        total = 0
+        for ci in rate.cost_items.all():
+            total += _cost_per_pax(ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, pax)
+        for frc in rate.rates_with_fixed.all():
+            total += _cost_per_pax(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, pax)
+        if total > 0:
+            Rate.objects.filter(pk=rate.pk).update(cost=round(total, 2))
+            rates_updated += 1
+
+    return JsonResponse({'ci_updated': updated, 'rates_updated': rates_updated})
 
 
 @login_required
@@ -1881,3 +2065,48 @@ def toggle_rate_lock(request):
     rate.locked = not rate.locked
     rate.save(update_fields=['locked'])
     return JsonResponse({'ok': True, 'locked': rate.locked})
+
+
+@login_required
+def add_sustainable_action(request, supplier_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        supplier = Supplier.objects.get(pk=supplier_id)
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    category = data.get('category', '').strip()
+    description = data.get('description', '').strip()
+    valid_categories = [c[0] for c in SUSTAINABLE_ACTION_CATEGORIES]
+    if not category or category not in valid_categories or not description:
+        return JsonResponse({'error': 'Datos inválidos'}, status=400)
+    action = SustainableAction.objects.create(
+        supplier=supplier,
+        category=category,
+        description=description,
+    )
+    return JsonResponse({
+        'ok': True,
+        'id': action.id,
+        'category': action.category,
+        'category_display': action.get_category_display(),
+        'description': action.description,
+    })
+
+
+@login_required
+def delete_sustainable_action(request, action_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        action = SustainableAction.objects.get(pk=action_id)
+    except SustainableAction.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    action.delete()
+    return JsonResponse({'ok': True})
+

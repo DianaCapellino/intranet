@@ -1,12 +1,37 @@
 {% extends "intranet/layout.html" %}
 {% load static %}
 
+{% block extra_head %}
+<style>
+@media print {
+    /* ── Hide interactive UI ── */
+    nav, .navbar, footer,
+    form, #add-slot-btn,
+    .d-print-none { display: none !important; }
+
+    /* ── Show content even if Bootstrap hides it ── */
+    .d-print-block { display: block !important; }
+
+    /* ── Special-dates alert: show if it has content ── */
+    #special-dates-alert:not(:empty) { display: block !important; }
+
+    /* ── Landscape A4 ── */
+    @page { size: A4 landscape; margin: 1cm 1.2cm; }
+
+    /* ── Table ── */
+    table { font-size: 0.72rem; min-width: unset !important; }
+    .container-fluid { padding: 0 !important; }
+    div[style*="overflow-x"] { overflow: visible !important; }
+}
+</style>
+{% endblock %}
+
 {% block body %}
 <div class="container-fluid py-4">
 
     <div class="d-flex justify-content-between align-items-center">
         <h1>Tariff - Hotel Comparison</h1>
-        <div class="text-center">
+        <div class="text-center d-print-none">
             <a href="{% url 'tariff' %}"><button class="btn btn-dark" data-toggle="tooltip" data-placement="left" title="Return to tariff"><i class="fa-solid fa-rotate-left"></i></button></a>
         </div>
     </div>
@@ -162,6 +187,9 @@
 
     </form>
 
+    {# ── SPECIAL DATES WARNING ── #}
+    <div id="special-dates-alert" class="d-none mb-3"></div>
+
     {# ── ERROR ── #}
     {% if error %}
         <div class="alert alert-warning">{{ error }}</div>
@@ -171,6 +199,11 @@
     {% if searched %}
 
         {% if rows %}
+        <div class="d-flex justify-content-end mb-2 d-print-none">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="printPage()">
+                <i class="fa-solid fa-print me-1"></i>Print / Save as PDF
+            </button>
+        </div>
         <div style="overflow-x:auto;">
         <table class="table table-sm table-bordered align-middle" style="min-width:900px;">
             <thead class="table-dark text-center small">
@@ -240,7 +273,7 @@
                             </td>
                             {% else %}
                             <td class="text-center fw-bold" {% if rate.provisional %}style="background-color:#FEF3C7;"{% endif %}>
-                                {{ rate.value|floatformat:0 }}
+                                {{ rate.value|floatformat:2 }}
                             </td>
                             {% endif %}
                         {% else %}
@@ -250,8 +283,8 @@
 
                     <td class="text-center fw-bold">
                         {% if row.total is not None %}
-                            USD {{ row.total|floatformat:0 }}
-                            <div class="text-muted fw-normal" style="font-size:0.7rem;">{{ row.n_nights }}n · avg {{ row.avg_night|floatformat:0 }}</div>
+                            USD {{ row.total|floatformat:2 }}
+                            <div class="text-muted fw-normal" style="font-size:0.7rem;">{{ row.n_nights }}n · avg {{ row.avg_night|floatformat:2 }}</div>
                         {% else %}
                             <span class="text-muted small">incomplete</span>
                         {% endif %}
@@ -262,7 +295,7 @@
                             {% if row.diff == 0 %}
                                 <span class="badge bg-success">cheapest</span>
                             {% else %}
-                                <span class="text-danger fw-bold">+{{ row.diff|floatformat:0 }}</span>
+                                <span class="text-danger fw-bold">+{{ row.diff|floatformat:2 }}</span>
                             {% endif %}
                         {% else %}
                             <span class="text-muted">—</span>
@@ -277,12 +310,10 @@
         </div>
 
         <div class="text-muted small mt-2">
-            All amounts in <strong>USD per person</strong>. DBL rates are divided by 2.
+            All amounts in <strong>USD per person</strong>.
             "vs cheapest" compares avg/night to normalise different stay lengths.
-            <span style="background-color:#f1f3f5; padding:1px 4px; border-radius:3px;">N/A</span> = night outside that hotel's date range.
-            Amber cells = <strong>Provisional</strong> rate.
-            <span class="text-danger fw-semibold">Closed/Not available</span> = rate of 0 (hotel closed or not available that night).
-            — = no rate found for that night.
+            <span class="text-danger fw-semibold">Closed/Not available</span> = hotel closed or not available that night. Contact the team if there are doubts.
+            — = no rate found for that night. There might not be information about these dates. Please contact the team.
         </div>
 
         {% else %}
@@ -298,6 +329,48 @@
             <p>Enter check-in and check-out dates, then press Search.</p>
         </div>
     {% endif %}
+
+    {# ── PRINT-ONLY: hotel notes (populated by JS) ── #}
+    <div id="print-hotel-notes" class="d-none d-print-block"></div>
+
+    {# ── PRINT-ONLY: Terms & Conditions ── #}
+    <div class="d-none d-print-block mt-4">
+        <hr>
+        <h4 class="fw-bold text-uppercase mt-4" style="letter-spacing:1px;">General Conditions</h4>
+        <h5 class="mt-3">GENERAL</h5>
+        <ul>
+            <li>All rates are net, per person, in USD American Dollars.</li>
+            <li>All rates include the current Argentinean Taxes. In case these taxes are modified prices will suffer a change.</li>
+            <li>Hotel rates with breakfast DO NOT INCLUDE VAT, in order to apply for this benefit we need full Client details and copy of the passport of every person travelling to Argentina <strong>at the moment of the booking</strong>, otherwise additional 21% of VAT will apply and needs to be added to the rates shown in this Tariff. If the hotel is paid and the booking is cancelled, VAT will apply and will have to be paid additionally. For any other service required to a hotel (wines, extra amenities, massages, etc), and for all the activities they provide as part of their rate such as (but not limited to) transfers, additional meals, services and excursions VAT will apply and is included in the rate shown in this Tariff.</li>
+            <li>All rates are subject to changes without previous notice.</li>
+            <li>All the rates of services are not valid for Easter, Long weekends, Christmas and New Year, where special prices apply almost everywhere. Kindly check with us for further details as each property applies a different policy.</li>
+            <li>All these rates do not imply any booking nor confirmation.</li>
+            <li>This tariff is valid for the dates informed in each property/service at each destination.</li>
+            <li>All the Hotels include breakfast (unless specifically mentioned that other meals are included or not included).</li>
+            <li>All transfers in Buenos Aires include tips for the drivers. For the rest of the destinations tips are not included.</li>
+            <li>For all transfers and connections in case flights are delayed Aliwen will charge the necessary additional hours.</li>
+            <li>Entrance Fees to National Parks, Museums and Other Natural Reserves are only included where specifically mentioned.</li>
+            <li>All Excursions are subject to weather conditions.</li>
+        </ul>
+        <hr>
+        <h5>SECURITY</h5>
+        <ul>
+            <li>All passengers need to have a personal "Travel Insurance". In case they do not have their own we will be happy to quote this additional for you.</li>
+        </ul>
+        <hr>
+        <h5>PAYMENTS</h5>
+        <ul>
+            <li>All services must be pre-paid at least 30 days prior to the arrival of the passengers to Argentina.</li>
+            <li>In case the itinerary includes hotels which request pre payments, this will be requested to confirm the booking together with the copy of the passports.</li>
+            <li><strong>For all payments under USD 2.000,- American Dollars, we request a Bank Transfer fee of USD 20,- which needs to be added to the total of the services paid.</strong></li>
+        </ul>
+        <hr>
+        <h5>CANCELLATIONS</h5>
+        <ul>
+            <li>For itineraries cancelled between 60 and 30 days prior to the arrival to Argentina, Aliwen Incoming will refund all the services and Hotels which do refund us the payments. Discounting any bank expenses resulting in the payments already done. This will depend on the policies of each hotel and service of the itinerary.</li>
+            <li>For itineraries cancelled between 29 days and the day of the arrival to Argentina, Aliwen Incoming will charge a cancellation penalty of <strong>15% of the total Invoice of the Itinerary. Plus the cancellation of all the hotels and services which charge us cancellation penalties and the bank expenses resulting on the payments already done.</strong></li>
+        </ul>
+    </div>
 
 </div>
 
@@ -346,8 +419,20 @@
         }
     }
 
+    function autoFillDateOut(slotEl) {
+        const dateIn  = slotEl.querySelector('.slot-date-in');
+        const dateOut = slotEl.querySelector('.slot-date-out');
+        if (!dateIn.value || dateOut.value) return;
+        const d = new Date(dateIn.value + 'T00:00:00');
+        if (isNaN(d.getTime()) || d.getFullYear() < 2000) return;
+        d.setDate(d.getDate() + 1);
+        dateOut.value = d.toISOString().slice(0, 10);
+    }
+
     // Attach change listeners. runFilter=true also does an initial filter pass.
     function attachListeners(slotEl, runFilter = true) {
+        slotEl.querySelector('.slot-date-in')
+              .addEventListener('change', () => autoFillDateOut(slotEl));
         slotEl.querySelector('.slot-location')
               .addEventListener('change', () => filterSlot(slotEl));
         slotEl.querySelector('.slot-supplier')
@@ -455,6 +540,170 @@
 {% endblock body %}
 
 {% block extra_js %}
+{{ special_dates|json_script:"special-dates-data" }}
+<script>
+// ── Print / Save as PDF ──────────────────────────────────────────────
+function printPage() {
+    function esc(s) {
+        if (!s) return '';
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // Build deduplicated hotel notes from the popover data attributes
+    const seen = new Set();
+    const noteItems = [];
+    document.querySelectorAll('.supplier-notes-btn').forEach(function (btn) {
+        const name = btn.dataset.supplierName;
+        if (seen.has(name)) return;
+        seen.add(name);
+        const fields = [
+            ['General note',  btn.dataset.note],
+            ['Prepayment',    btn.dataset.prepayment],
+            ['Children',      btn.dataset.childNote],
+            ['Minimum stay',  btn.dataset.stayNote],
+            ['Closure',       btn.dataset.closingNote],
+        ].filter(function (f) { return f[1]; });
+        if (!fields.length) return;
+        noteItems.push(
+            '<div class="mb-3"><strong>' + esc(name) + '</strong><br>' +
+            fields.map(function (f) {
+                return '<span style="font-size:0.85rem;"><em>' + f[0] + ':</em> ' + esc(f[1]) + '</span>';
+            }).join('<br>') +
+            '</div>'
+        );
+    });
+
+    const notesEl = document.getElementById('print-hotel-notes');
+    if (noteItems.length) {
+        notesEl.innerHTML =
+            '<hr><h5 class="fw-bold text-uppercase mt-4 mb-3" style="letter-spacing:1px;font-size:0.85rem;">Hotel Notes</h5>' +
+            noteItems.join('<hr style="margin:0.5rem 0;">');
+    } else {
+        notesEl.innerHTML = '';
+    }
+
+    window.print();
+}
+</script>
+<script>
+// ── Special-date overlap warning ─────────────────────────────────────
+(function () {
+    const SPECIAL_DATES = JSON.parse(document.getElementById('special-dates-data').textContent);
+    const alertEl       = document.getElementById('special-dates-alert');
+
+    const CATEGORY_STYLES = {
+        holiday:         { label: 'Public Holiday',   bg: '#87CEEB', color: '#0c3547', border: '#5ba3c9', icon: 'fa-solid fa-triangle-exclamation' },
+        long_weekend:    { label: 'Long Weekend',     bg: '#FFD700', color: '#5a3e00', border: '#c9a900', icon: 'fa-solid fa-triangle-exclamation' },
+        other:           { label: 'Special Date',     bg: '#C8E6C9', color: '#1b5e20', border: '#7dbf82', icon: 'fa-solid fa-triangle-exclamation' },
+        full_moon:       { label: 'Full Moon',        bg: '#E1D5F7', color: '#3b1a6e', border: '#b89de8', icon: 'fa-solid fa-moon'                 },
+        not_recommended: { label: 'Not Recommended',  bg: '#FFAB91', color: '#6b1a0a', border: '#e06040', icon: 'fa-solid fa-triangle-exclamation' },
+    };
+
+    // Returns true if [aFrom, aTo] overlaps [bFrom, bTo] (inclusive)
+    function overlaps(aFrom, aTo, bFrom, bTo) {
+        return aFrom <= bTo && aTo >= bFrom;
+    }
+
+    // Collect all { dateIn, dateOut, locationId } across every slot
+    function collectSlots() {
+        const slots = [];
+        const form  = document.querySelector('form');
+        if (!form) return slots;
+
+        const dateIns   = form.querySelectorAll('.slot-date-in');
+        const dateOuts  = form.querySelectorAll('.slot-date-out');
+        const locs      = form.querySelectorAll('.slot-location');
+
+        for (let i = 0; i < dateIns.length; i++) {
+            const di  = dateIns[i].value;
+            const dou = dateOuts[i] ? dateOuts[i].value : '';
+            const loc = locs[i]    ? locs[i].value      : '';
+            if (di) slots.push({ dateIn: di, dateOut: dou || di, locationId: loc ? parseInt(loc, 10) : null });
+        }
+        return slots;
+    }
+
+    function updateWarning() {
+        const slots = collectSlots();
+        const hits  = [];   // { name, category, date_from, date_to }
+
+        for (const slot of slots) {
+            for (const sd of SPECIAL_DATES) {
+                // Location filter: show entry if it applies to all (location_id null)
+                // OR if it matches the slot's chosen location
+                const locationMatch =
+                    sd.location_id === null ||
+                    sd.location_id === slot.locationId;
+
+                if (!locationMatch) continue;
+
+                if (overlaps(slot.dateIn, slot.dateOut, sd.date_from, sd.date_to)) {
+                    // Deduplicate by name+date_from+date_to
+                    const key = sd.name + '|' + sd.date_from + '|' + sd.date_to;
+                    if (!hits.some(h => h.key === key)) {
+                        hits.push({ key, name: sd.name, notes: sd.notes, category: sd.category,
+                                    date_from: sd.date_from, date_to: sd.date_to });
+                    }
+                }
+            }
+        }
+
+        if (!hits.length) {
+            alertEl.className = 'd-none mb-3';
+            alertEl.innerHTML = '';
+            return;
+        }
+
+        const items = hits.map(h => {
+            const s     = CATEGORY_STYLES[h.category] || { label: h.category, bg: '#e2e3e5', color: '#383d41', border: '#adb5bd', icon: 'fa-solid fa-triangle-exclamation' };
+            const range = h.date_from === h.date_to
+                ? h.date_from
+                : h.date_from + ' → ' + h.date_to;
+            return `<div class="d-flex align-items-start gap-2">
+                        <i class="${s.icon} mt-1 flex-shrink-0"></i>
+                        <div>
+                            <strong>${h.name}</strong>
+                            <span class="ms-1 badge rounded-pill border"
+                                  style="font-size:.7rem;background:${s.bg};color:${s.color};border-color:${s.border};">${s.label}</span>
+                            <div class="text-muted small">${range}</div>
+                            ${h.notes ? `<div class="text-muted small fst-italic mt-1">${h.notes}</div>` : ''}
+                        </div>
+                    </div>`;
+        }).join('');
+
+        alertEl.className = 'mb-3 alert alert-warning';
+        alertEl.innerHTML = `<div class="fw-semibold mb-2"><i class="fa-solid fa-calendar-exclamation me-2"></i>Special dates overlap your selected period:</div>
+                             <div class="d-flex flex-column gap-2">${items}</div>`;
+    }
+
+    // Wire up listeners on a slot element
+    function watchSlot(slotEl) {
+        slotEl.querySelectorAll('.slot-date-in, .slot-date-out, .slot-location')
+              .forEach(el => el.addEventListener('change', updateWarning));
+    }
+
+    // Observe newly appended slots via MutationObserver
+    const container = document.getElementById('slots-container');
+    if (container) {
+        new MutationObserver(mutations => {
+            mutations.forEach(m => {
+                m.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) watchSlot(node);
+                });
+            });
+        }).observe(container, { childList: true });
+    }
+
+    // Watch the always-visible first slot
+    watchSlot(document.getElementById('first-slot'));
+
+    // Run on load in case dates are pre-filled from URL
+    updateWarning();
+})();
+</script>
+
 <script>
 // ── Supplier notes popovers ──────────────────────────────────────────
 document.querySelectorAll('.supplier-notes-btn').forEach(function (btn) {

@@ -6,10 +6,12 @@
   <!-- Header -->
   <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
     <h5 class="mb-0">{% if is_client %}Calendar{% else %}Calendario{% endif %}</h5>
+    <div class="d-flex align-items-center gap-1">
+      <button class="btn btn-sm btn-outline-secondary" id="btnPrevYear" style="padding:2px 10px;font-size:1rem;">&#9664;</button>
+      <span id="yearDisplay" class="fw-bold text-secondary mx-1" style="font-size:1.6rem;line-height:1;">{{ current_year }}</span>
+      <button class="btn btn-sm btn-outline-secondary" id="btnNextYear" style="padding:2px 10px;font-size:1rem;">&#9654;</button>
+    </div>
     <div class="d-flex gap-2 align-items-center">
-      <input type="number" id="yearSelector" class="form-control form-control-sm"
-             style="width:80px" value="{{ current_year }}" min="2000" max="2050">
-      <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">{% if is_client %}Refresh{% else %}Actualizar{% endif %}</button>
       <button class="btn btn-sm btn-outline-secondary" id="btnExportExtPDF">Export PDF</button>
       {% if not is_client %}
       <button class="btn btn-sm btn-outline-secondary" id="btnCumpleanos"
@@ -117,6 +119,7 @@
 .ext-pdf-leg-name    { font-weight:700; }
 .ext-pdf-leg-dates   { color:#555; }
 .ext-pdf-leg-notes   { font-style:italic; color:#c84b00; }
+.ext-pdf-footer      { margin-top:10px; border-top:1px solid #dee2e6; padding-top:6px; font-size:9px; color:#777; font-style:italic; text-align:center; }
 
 .cal-wrap      { overflow-x: auto; }
 .cal-month     { margin-bottom: 6px; }
@@ -176,9 +179,9 @@ const TYPE_ABBREV = {
   'Feriado trabajado 1/2':   '1/2',
 };
 
-const MONTHS_ES   = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const MONTHS_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const DAYS_SHORT  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+const MONTHS_ES   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 (function () {
   const c = document.getElementById('legendContainer');
@@ -193,10 +196,13 @@ const DAYS_SHORT  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   }
 })();
 
-let year = parseInt(document.getElementById('yearSelector').value);
+const CURRENT_YEAR  = new Date().getFullYear();
+const CURRENT_MONTH = new Date().getMonth();
+let year = CURRENT_YEAR;
 let eventsCache = [];
 
 async function loadAndRender() {
+  document.getElementById('yearDisplay').textContent = year;
   document.getElementById('calendarGrid').innerHTML =
     '<div class="text-muted py-4 text-center">Cargando…</div>';
   const resp = await fetch(`/holidays/json?start=${year}-01-01&end=${year + 1}-01-01`);
@@ -244,8 +250,8 @@ function renderGrid(events, yr) {
   const { personal, company } = buildMaps(events);
   const container = document.getElementById('calendarGrid');
   container.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'cal-wrap';
+  const startMo = (yr === CURRENT_YEAR) ? CURRENT_MONTH : 0;
+  const monthEls = [];
   for (let mo = 0; mo < 12; mo++) {
     const days    = new Date(yr, mo + 1, 0).getDate();
     const shortYr = String(yr).slice(2);
@@ -304,9 +310,50 @@ function renderGrid(events, yr) {
       }
     }
     monthDiv.appendChild(tbl);
-    wrap.appendChild(monthDiv);
+    monthEls.push(monthDiv);
   }
-  container.appendChild(wrap);
+  const outerWrap = document.createElement('div');
+  if (startMo > 0) {
+    const toggle = document.createElement('div');
+    toggle.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    toggle.style.cssText = 'cursor:pointer;user-select:none;';
+    toggle.innerHTML = `<span class="pm-arr">▶</span> ${MONTHS_ES.slice(0, startMo).join('–')}`;
+    const prevWrap = document.createElement('div');
+    prevWrap.className = 'cal-wrap';
+    prevWrap.style.display = 'none';
+    for (let mo = 0; mo < startMo; mo++) prevWrap.appendChild(monthEls[mo]);
+    toggle.addEventListener('click', () => {
+      const hidden = prevWrap.style.display === 'none';
+      prevWrap.style.display = hidden ? '' : 'none';
+      toggle.querySelector('.pm-arr').textContent = hidden ? '▼' : '▶';
+    });
+    outerWrap.appendChild(toggle);
+    outerWrap.appendChild(prevWrap);
+  } else if (yr > CURRENT_YEAR) {
+    const prevYrDiv = document.createElement('div');
+    prevYrDiv.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    prevYrDiv.style.cssText = 'cursor:pointer;user-select:none;';
+    prevYrDiv.innerHTML = `◀ ${yr - 1}`;
+    prevYrDiv.addEventListener('click', () => {
+      year = yr - 1; loadAndRender(); extEventsCache = [];
+      if (document.getElementById('tabExterno')?.classList.contains('active')) loadExtAndRender();
+    });
+    outerWrap.appendChild(prevYrDiv);
+  }
+  const curWrap = document.createElement('div');
+  curWrap.className = 'cal-wrap';
+  for (let mo = startMo; mo < 12; mo++) curWrap.appendChild(monthEls[mo]);
+  outerWrap.appendChild(curWrap);
+  const nextYrDiv = document.createElement('div');
+  nextYrDiv.className = 'd-flex align-items-center justify-content-end py-2 text-muted small mt-1';
+  nextYrDiv.style.cssText = 'cursor:pointer;user-select:none;border-top:1px solid #dee2e6;';
+  nextYrDiv.innerHTML = `${yr + 1} ▶`;
+  nextYrDiv.addEventListener('click', () => {
+    year = yr + 1; loadAndRender(); extEventsCache = [];
+    if (document.getElementById('tabExterno')?.classList.contains('active')) loadExtAndRender();
+  });
+  outerWrap.appendChild(nextYrDiv);
+  container.appendChild(outerWrap);
 }
 
 function styleCell(td, color, abbrev, type) {
@@ -321,20 +368,6 @@ function getVisibleStaff() {
   return STAFF_USERS.filter(u => u.showInCalendar);
 }
 
-document.getElementById('btnRefresh').addEventListener('click', () => {
-  year = parseInt(document.getElementById('yearSelector').value);
-  loadAndRender();
-  extEventsCache = [];
-  if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
-});
-document.getElementById('yearSelector').addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    year = parseInt(e.target.value);
-    loadAndRender();
-    extEventsCache = [];
-    if (document.getElementById('tabExterno').classList.contains('active')) loadExtAndRender();
-  }
-});
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.getElementById('tab-externo-btn').addEventListener('shown.bs.tab', () => {
@@ -413,7 +446,9 @@ const EXT_CAT_LABELS = {
 
 {% if is_client %}
 // Client: define helpers (not defined above)
-let year = parseInt(document.getElementById('yearSelector').value);
+const CURRENT_YEAR  = new Date().getFullYear();
+const CURRENT_MONTH = new Date().getMonth();
+let year = CURRENT_YEAR;
 function fmtDate(d)  { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 function pad(n)      { return String(n).padStart(2, '0'); }
 function isWeekend(yr, mo, d) { const dow = new Date(yr, mo, d).getDay(); return dow === 0 || dow === 6; }
@@ -424,17 +459,8 @@ function isLight(hex) {
     return (0.2126*r + 0.7152*g + 0.0722*b) > 0.5;
   } catch { return true; }
 }
-const MONTHS_ES  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const DAYS_SHORT = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-
-document.getElementById('btnRefresh').addEventListener('click', () => {
-  year = parseInt(document.getElementById('yearSelector').value);
-  extEventsCache = [];
-  loadExtAndRender();
-});
-document.getElementById('yearSelector').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { year = parseInt(e.target.value); extEventsCache = []; loadExtAndRender(); }
-});
+const MONTHS_ES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 {% endif %}
 
 // ── Ext legend ────────────────────────────────────────────────────────────────
@@ -443,7 +469,11 @@ document.getElementById('yearSelector').addEventListener('keydown', e => {
   for (const [key, label] of Object.entries(EXT_CAT_LABELS)) {
     const item = document.createElement('div');
     item.className = 'd-flex align-items-center gap-1';
-    item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    if (key === 'full_moon') {
+      item.innerHTML = `<span style="font-size:0.95rem;flex-shrink:0;line-height:1;">🌕</span><small>${label}</small>`;
+    } else {
+      item.innerHTML = `<span style="width:13px;height:13px;border-radius:3px;background:${EXT_CAT_COLORS[key]};flex-shrink:0;display:inline-block"></span><small>${label}</small>`;
+    }
     c.appendChild(item);
   }
 })();
@@ -451,6 +481,7 @@ document.getElementById('yearSelector').addEventListener('keydown', e => {
 let extEventsCache = [];
 
 async function loadExtAndRender() {
+  document.getElementById('yearDisplay').textContent = year;
   document.getElementById('extCalendarGrid').innerHTML =
     `<div class="text-muted py-4 text-center">${LOADING_MSG}</div>`;
   const resp = await fetch(`/external-calendar/json?start=${year}-01-01&end=${year + 1}-01-01`);
@@ -459,8 +490,13 @@ async function loadExtAndRender() {
 }
 
 function buildExtMaps(events) {
-  const perLocation = {};
-  const allLocs     = {};
+  const perLocation      = {};
+  const allLocs          = {};
+  const fullMoon         = {};
+  const otherGlobalCount   = {};
+  const otherLocCount      = {};
+  const otherGlobalEntries = {};
+  const otherLocEntries    = {};
   for (const ev of events) {
     const p = ev.extendedProps || {};
     const s = new Date(ev.start + 'T00:00:00');
@@ -468,7 +504,23 @@ function buildExtMaps(events) {
     for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
       const ds   = fmtDate(d);
       const info = { color: ev.backgroundColor, name: ev.title, notes: p.notes || '', category: p.category, source: p.source || 'external' };
-      if (p.location_id == null) {
+      if (p.category === 'other') {
+        const entry = { name: ev.title || '', notes: p.notes || '' };
+        if (p.location_id == null) {
+          otherGlobalCount[ds] = (otherGlobalCount[ds] || 0) + 1;
+          if (!otherGlobalEntries[ds]) otherGlobalEntries[ds] = [];
+          otherGlobalEntries[ds].push(entry);
+        } else {
+          if (!otherLocCount[p.location_id]) otherLocCount[p.location_id] = {};
+          otherLocCount[p.location_id][ds] = (otherLocCount[p.location_id][ds] || 0) + 1;
+          if (!otherLocEntries[p.location_id]) otherLocEntries[p.location_id] = {};
+          if (!otherLocEntries[p.location_id][ds]) otherLocEntries[p.location_id][ds] = [];
+          otherLocEntries[p.location_id][ds].push(entry);
+        }
+      }
+      if (p.category === 'full_moon') {
+        if (!fullMoon[ds]) fullMoon[ds] = info;
+      } else if (p.location_id == null) {
         if (!allLocs[ds]) allLocs[ds] = info;
       } else {
         if (!perLocation[p.location_id]) perLocation[p.location_id] = {};
@@ -476,15 +528,15 @@ function buildExtMaps(events) {
       }
     }
   }
-  return { perLocation, allLocs };
+  return { perLocation, allLocs, fullMoon, otherGlobalCount, otherLocCount, otherGlobalEntries, otherLocEntries };
 }
 
 function renderExtGrid(events, yr) {
-  const { perLocation, allLocs } = buildExtMaps(events);
+  const { perLocation, allLocs, fullMoon, otherGlobalCount, otherLocCount, otherGlobalEntries, otherLocEntries } = buildExtMaps(events);
   const container = document.getElementById('extCalendarGrid');
   container.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'cal-wrap';
+  const startMo = (yr === CURRENT_YEAR) ? CURRENT_MONTH : 0;
+  const monthEls = [];
   for (let mo = 0; mo < 12; mo++) {
     const days    = new Date(yr, mo + 1, 0).getDate();
     const shortYr = String(yr).slice(2);
@@ -497,9 +549,15 @@ function renderExtGrid(events, yr) {
     tdM.textContent = `${MONTHS_ES[mo]}-${shortYr}`;
     tdM.className   = 'cal-name cal-hdr-month';
     for (let d = 1; d <= days; d++) {
+      const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
       const isWE = isWeekend(yr, mo, d);
       const td   = rNum.insertCell();
-      td.textContent = d;
+      const fm   = fullMoon[ds];
+      if (fm) {
+        td.innerHTML = `${d}<span title="${fm.name}${fm.notes ? ' — ' + fm.notes : ''}" style="font-size:0.8em;line-height:1;cursor:default;">🌕</span>`;
+      } else {
+        td.textContent = d;
+      }
       td.className   = 'cal-hdr-num' + (isWE ? ' cal-we' : '');
     }
     const rDay = tbl.insertRow();
@@ -522,12 +580,21 @@ function renderExtGrid(events, yr) {
         const ds   = `${yr}-${pad(mo+1)}-${pad(d)}`;
         const isWE = isWeekend(yr, mo, d);
         const td   = tr.insertCell();
-        const ev   = perLocation[loc.id]?.[ds] || allLocs[ds];
+        const locEv = perLocation[loc.id]?.[ds];
+        const allEv = allLocs[ds];
+        const ev    = locEv || allEv;
+        const totalOther = (otherGlobalCount[ds] || 0) + (otherLocCount[loc.id]?.[ds] || 0);
+        const hasOverlap = totalOther >= 2;
         if (ev) {
           td.className        = 'cal-day-cell';
           td.style.background = ev.color;
           td.style.color      = isLight(ev.color) ? '#333' : '#fff';
           td.title            = ev.name + (ev.notes ? '\n' + ev.notes : '') + (ev.source === 'internal' ? ' ★' : '');
+          if (hasOverlap) {
+            td.style.filter = 'brightness(78%)';
+            const allEntries = [...(otherGlobalEntries[ds] || []), ...(otherLocEntries[loc.id]?.[ds] || [])];
+            td.title = allEntries.map(e => e.name + (e.notes ? '\n' + e.notes : '')).join('\n\n');
+          }
         } else if (isWE) {
           td.className = 'cal-we';
         } else {
@@ -536,9 +603,50 @@ function renderExtGrid(events, yr) {
       }
     }
     monthDiv.appendChild(tbl);
-    wrap.appendChild(monthDiv);
+    monthEls.push(monthDiv);
   }
-  container.appendChild(wrap);
+  const outerWrap = document.createElement('div');
+  if (startMo > 0) {
+    const toggle = document.createElement('div');
+    toggle.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    toggle.style.cssText = 'cursor:pointer;user-select:none;';
+    toggle.innerHTML = `<span class="pm-arr">▶</span> ${MONTHS_ES.slice(0, startMo).join('–')}`;
+    const prevWrap = document.createElement('div');
+    prevWrap.className = 'cal-wrap';
+    prevWrap.style.display = 'none';
+    for (let mo = 0; mo < startMo; mo++) prevWrap.appendChild(monthEls[mo]);
+    toggle.addEventListener('click', () => {
+      const hidden = prevWrap.style.display === 'none';
+      prevWrap.style.display = hidden ? '' : 'none';
+      toggle.querySelector('.pm-arr').textContent = hidden ? '▼' : '▶';
+    });
+    outerWrap.appendChild(toggle);
+    outerWrap.appendChild(prevWrap);
+  } else if (yr > CURRENT_YEAR) {
+    const prevYrDiv = document.createElement('div');
+    prevYrDiv.className = 'd-flex align-items-center gap-1 py-1 text-muted small mb-1';
+    prevYrDiv.style.cssText = 'cursor:pointer;user-select:none;';
+    prevYrDiv.innerHTML = `◀ ${yr - 1}`;
+    prevYrDiv.addEventListener('click', () => {
+      year = yr - 1; extEventsCache = []; loadExtAndRender();
+      if (typeof eventsCache !== 'undefined') { eventsCache = []; if (document.getElementById('tabInterno')?.classList.contains('active')) loadAndRender?.(); }
+    });
+    outerWrap.appendChild(prevYrDiv);
+  }
+  const curWrap = document.createElement('div');
+  curWrap.className = 'cal-wrap';
+  for (let mo = startMo; mo < 12; mo++) curWrap.appendChild(monthEls[mo]);
+  outerWrap.appendChild(curWrap);
+  const nextYrDiv = document.createElement('div');
+  nextYrDiv.className = 'd-flex align-items-center justify-content-end py-2 text-muted small mt-1';
+  nextYrDiv.style.cssText = 'cursor:pointer;user-select:none;border-top:1px solid #dee2e6;';
+  nextYrDiv.innerHTML = `${yr + 1} ▶`;
+  nextYrDiv.addEventListener('click', () => {
+    year = yr + 1; extEventsCache = []; loadExtAndRender();
+    if (typeof eventsCache !== 'undefined') { eventsCache = []; if (document.getElementById('tabInterno')?.classList.contains('active')) loadAndRender?.(); }
+  });
+  outerWrap.appendChild(nextYrDiv);
+  container.appendChild(outerWrap);
 }
 
 {% if is_client %}
@@ -612,10 +720,11 @@ function buildPDFMonth(yr, mo, events) {
     const dateStr = clipS === clipE ? `${clipS}` : `${clipS}–${clipE}`;
     const name   = p.name || ev.title;
     const notes  = p.notes || '';
+    const displayName = p.category === 'holiday' ? `Bank Holiday — ${name}` : name;
     const isLocSpecific = p.location_id != null &&
                           (p.category === 'not_recommended' || p.category === 'other');
     const locName = isLocSpecific ? (LOCATIONS.find(l => l.id === p.location_id)?.name || '') : '';
-    const fullName = locName ? `${locName} - ${name}` : name;
+    const fullName = locName ? `${locName} - ${displayName}` : displayName;
     const bodyHTML = isLocSpecific
       ? `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? ` - <span class="ext-pdf-leg-notes">${notes}</span>` : ''}`
       : `<span class="ext-pdf-leg-dates">${dateStr} — </span><span class="ext-pdf-leg-name">${fullName}</span>${notes ? `<br><span class="ext-pdf-leg-notes">${notes}</span>` : ''}`;
@@ -648,7 +757,8 @@ async function exportExtCalendarPDF() {
       let monthsHTML = '';
       for (let i = 0; i < 6; i++)
         monthsHTML += buildPDFMonth(year, half * 6 + i, extEventsCache);
-      pageEl.innerHTML = pdfHeaderHTML + `<div class="ext-pdf-months-grid">${monthsHTML}</div>`;
+      pageEl.innerHTML = pdfHeaderHTML + `<div class="ext-pdf-months-grid">${monthsHTML}</div>`
+        + `<div class="ext-pdf-footer">Please note that dates are estimated and may be subject to change.</div>`;
     }
     const { jsPDF } = window.jspdf;
     const doc   = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -664,7 +774,7 @@ async function exportExtCalendarPDF() {
       if (half > 0) doc.addPage();
       doc.addImage(imgData, 'JPEG', (pageW - iw) / 2, (pageH - ih) / 2, iw, ih);
     }
-    doc.save(`Argentina Special Dates ${year}.pdf`);
+    doc.save(`Aliwen Argentina Special Dates ${year}.pdf`);
   } finally {
     document.getElementById('ext-pdf-wrap').style.display = 'none';
     btn.disabled    = false;
@@ -673,5 +783,26 @@ async function exportExtCalendarPDF() {
 }
 
 document.getElementById('btnExportExtPDF').addEventListener('click', exportExtCalendarPDF);
+
+document.getElementById('btnPrevYear').addEventListener('click', () => {
+  year -= 1;
+  {% if not is_client %}
+  eventsCache = []; extEventsCache = [];
+  if (document.getElementById('tabInterno')?.classList.contains('active')) loadAndRender();
+  else loadExtAndRender();
+  {% else %}
+  extEventsCache = []; loadExtAndRender();
+  {% endif %}
+});
+document.getElementById('btnNextYear').addEventListener('click', () => {
+  year += 1;
+  {% if not is_client %}
+  eventsCache = []; extEventsCache = [];
+  if (document.getElementById('tabInterno')?.classList.contains('active')) loadAndRender();
+  else loadExtAndRender();
+  {% else %}
+  extEventsCache = []; loadExtAndRender();
+  {% endif %}
+});
 </script>
 {% endblock %}

@@ -1,4 +1,5 @@
 {% extends "intranet/layout.html" %}
+{% load custom_filters %}
 
 {% block body %}
 <script>window.ENTRIES_IS_CLIENT = {% if user.userType == "Cliente" %}true{% else %}false{% endif %};</script>
@@ -6,7 +7,7 @@
 <div id="entry_list">
     {% if user.userType != "Cliente" %}
     <br>
-    <div class="d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div>
             <h2 class="d-inline">Pendientes</h2>
             <i class="fa-solid fa-lg fa-eye-slash m-3" id="pending-eye" aria-label="ver-todos"></i>
@@ -15,7 +16,7 @@
             <select class="form-select" aria-label="user_filter" name="user_filter" id="user_filter_select">
                 <option value="">Todos</option>
                 {% for user in users %}
-                    {% if user.isActivated and user.department == request.user.department %}
+                    {% if user.isActivated and user.show_in_calendar and user.department == request.user.department %}
                         {% if user.userType == "Ventas" or user.userType == "Operaciones" %}
                             <option value="{{ user.username }}">{{ user.username }} - {{ user.other_name }}</option>
                         {% endif %}
@@ -23,12 +24,11 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="row m-2">
-            <div class="col bg-light d-flex text-center">En tiempo</div>
-            <div class="col bg-warning bg-gradient d-flex align-items-center justify-content-center">Al límite</div>
-            <div class="col bg-info d-flex align-items-center justify-content-center">Vencido</div>
-            <div class="col bg-danger text-center">Muy vencido</div>
-        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-toggle="modal" data-bs-target="#staffReferencesModal"
+                style="font-size:0.78rem;">
+            <i class="fa-solid fa-circle-info me-1"></i>Referencias
+        </button>
     </div>
     <br>
     {% endif %}
@@ -41,12 +41,40 @@
     {% if user.userType == "Cliente" %}
     <div class="d-flex align-items-center justify-content-center gap-3 mb-2">
         <h1 class="mb-0">ENTRIES</h1>
+        <i class="fa-solid fa-lg fa-eye-slash" id="pending-eye" aria-label="ver-todos"
+           style="cursor:pointer;" title="Show closed entries"></i>
         <button type="button" class="btn btn-sm btn-outline-secondary"
                 data-bs-toggle="modal" data-bs-target="#referencesModal"
                 style="font-size:0.78rem;">
             <i class="fa-solid fa-circle-info me-1"></i>References
         </button>
     </div>
+    {% if client_holiday_alert %}{% with alert=client_holiday_alert %}
+    {% if alert.type == "weekend" %}
+    <div class="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+        <span>The office is closed today. We will be back on Monday.</span>
+    </div>
+    {% elif alert.type == "upcoming_holiday" %}
+    <div class="alert alert-warning py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+        <span><strong>{{ alert.date_str }}</strong> will be a National Holiday in Argentina. Response times may be affected.</span>
+    </div>
+    {% elif alert.type == "today_holiday" %}
+    <div class="alert {% if alert.working_users %}alert-warning{% else %}alert-secondary{% endif %} py-2 px-3 mb-3 d-flex align-items-center flex-wrap gap-2" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+        <span>
+            Today is a National Holiday in Argentina.
+            {% if alert.working_users %}Staff working today:{% else %}The office is closed.{% endif %}
+        </span>
+        {% for u in alert.working_users %}
+        <span style="background-color:{{ u.color|default:'#6c757d' }};color:{{ u.color|default:'#6c757d'|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">
+            {{ u.other_name|default:u.username }}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}{% endif %}
     {% endif %}
 
     {% if message %}<div>{{ message }}</div>{% endif %}
@@ -105,6 +133,84 @@
         </div>
     </div>
 </div>
+
+{% if user.userType != "Cliente" %}
+<!-- References modal (staff) -->
+<div class="modal fade" id="staffReferencesModal" tabindex="-1" aria-labelledby="staffReferencesModalLabel">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="staffReferencesModalLabel">
+                    <i class="fa-solid fa-circle-info me-2"></i>Referencias
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+
+                <!-- Timing colors -->
+                <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px; font-size:0.75rem; color:#555;">
+                    Tiempos de respuesta
+                </h6>
+                <div class="d-flex flex-column gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="rounded px-3 py-1 bg-light border" style="font-size:0.82rem; min-width:110px;">En tiempo</span>
+                        <span class="text-muted small">La respuesta está dentro del plazo esperado.</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="rounded px-3 py-1 bg-warning bg-gradient" style="font-size:0.82rem; min-width:110px;">Al límite</span>
+                        <span class="text-muted small">Próximo a vencer el plazo de respuesta.</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="rounded px-3 py-1 bg-info" style="font-size:0.82rem; min-width:110px;">Vencido</span>
+                        <span class="text-muted small">El plazo de respuesta ya venció.</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="rounded px-3 py-1 bg-danger text-white" style="font-size:0.82rem; min-width:110px;">Muy vencido</span>
+                        <span class="text-muted small">El plazo está muy excedido.</span>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Status colors -->
+                <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px; font-size:0.75rem; color:#555;">
+                    Status
+                </h6>
+                <div class="d-flex flex-column gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                        <span style="background:#3b82f6;color:#fff;padding:2px 10px;border-radius:999px;font-size:.82em;white-space:nowrap;min-width:80px;text-align:center;">Quote</span>
+                        <span class="text-muted small">Cotización enviada al cliente.</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span style="background:#22c55e;color:#fff;padding:2px 10px;border-radius:999px;font-size:.82em;white-space:nowrap;min-width:80px;text-align:center;">Booking</span>
+                        <span class="text-muted small">Reserva confirmada.</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span style="background:#f97316;color:#fff;padding:2px 10px;border-radius:999px;font-size:.82em;white-space:nowrap;min-width:80px;text-align:center;">Final</span>
+                        <span class="text-muted small">Itinerario final.</span>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Progress legend -->
+                <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px; font-size:0.75rem; color:#555;">
+                    Progreso (etiquetas en inglés para clientes)
+                </h6>
+                <div class="d-flex flex-column gap-2">
+                    {% for pill, label in progress_legend %}
+                    <div class="d-flex align-items-start gap-3">
+                        {{ pill|safe }}
+                        <span class="text-muted small">{{ label }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if user.userType == "Cliente" %}
 <!-- References modal (client) -->
@@ -214,7 +320,11 @@
 {% block extra_js %}
 <script>
 (function () {
+    if (window._clientInquirySetup) return;
+    window._clientInquirySetup = true;
+
     let _currentEntryId = null;
+    let _isSending = false;
 
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('.client-entry-email-btn');
@@ -234,11 +344,14 @@
             `Ref: ${ref} – Trip: ${trip}`;
         document.getElementById('inquiry-message').value = '';
         document.getElementById('inquiry-feedback').textContent = '';
+        _isSending = false;
 
         bootstrap.Modal.getOrCreateInstance(document.getElementById('clientInquiryModal')).show();
     });
 
     document.getElementById('inquiry-send-btn').addEventListener('click', function () {
+        if (_isSending) return;
+
         const message = document.getElementById('inquiry-message').value.trim();
         if (!message) {
             document.getElementById('inquiry-feedback').textContent = 'Please write a message before sending.';
@@ -246,6 +359,7 @@
             return;
         }
 
+        _isSending = true;
         const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
         const sendBtn = this;
         sendBtn.disabled = true;
@@ -273,6 +387,7 @@
             document.getElementById('inquiry-feedback').className = 'mt-2 small text-danger';
         })
         .finally(() => {
+            _isSending = false;
             sendBtn.disabled = false;
             sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Send';
         });
@@ -283,4 +398,6 @@
 {% endif %}
 
 <br>
+
+
 {% endblock %}

@@ -65,7 +65,7 @@ def fill_missing_amounts_from_tourplan():
                 continue
 
             try:
-                amount = int(float(amount_val))
+                amount = round(float(amount_val))
             except (ValueError, TypeError):
                 not_found.append(entry)
                 continue

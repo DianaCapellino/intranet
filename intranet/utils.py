@@ -879,7 +879,7 @@ def sync_from_tourplan_db():
                 am = row.get("amount")
                 if am:
                     try:
-                        amount_raw = str(int(float(am)))
+                        amount_raw = str(round(float(am)))
                     except (ValueError, TypeError):
                         pass
                 dh_name_raw = _s(row, "dh_name")
@@ -958,7 +958,7 @@ def sync_from_tourplan_db():
         am = row.get("amount")
         if am:
             try:
-                trip.amount = int(float(am))
+                trip.amount = round(float(am))
             except (ValueError, TypeError):
                 pass
 

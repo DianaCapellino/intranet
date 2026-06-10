@@ -1,0 +1,226 @@
+{% extends "intranet/layout.html" %}
+{% load static %}
+
+{% block title %}Aliwen Green{% endblock %}
+
+{% block body %}
+<div class="container-fluid px-4">
+
+  {# ── Intro section ─────────────────────────────────────────────────────── #}
+  <div class="row justify-content-center mt-4 mb-5">
+    <div class="col-lg-9">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <span style="font-size:2.2rem;">🌿</span>
+        <h1 class="mb-0 fw-bold" style="color:#1a6b3b;">Aliwen Green</h1>
+      </div>
+      <div class="p-4 rounded-3" style="background:#f0f7f0;border-left:5px solid #2e8b57;">
+        <p class="mb-0" style="font-size:1.05rem;line-height:1.75;color:#2c3e30;" id="intro-text">
+          When you book with us, you are making a meaningful difference through travel. As a certified B Corp, we are committed to using tourism as a force for good. For every traveller, we plant 10 native trees in Patagonia to help restore forests in damaged areas. Through our partnerships, we also support local communities, empowering grassroots tourism initiatives and fostering sustainable economic growth. By choosing Aliwen Incoming, you are not just booking a trip — you are actively contributing to a more responsible and regenerative way of exploring the world.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Sustainable Properties ─────────────────────────────────────────────── #}
+  <div class="row justify-content-center">
+    <div class="col-lg-12">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h2 class="fw-semibold mb-0" style="color:#1a6b3b;">Sustainable Properties</h2>
+        <div class="d-flex gap-2">
+          <a id="excel-link" href="{% url 'aliwen_green_excel' %}{% if location_filter or ranking_filter %}?{% if location_filter %}location={{ location_filter }}{% endif %}{% if location_filter and ranking_filter %}&amp;{% endif %}{% if ranking_filter %}ranking={{ ranking_filter }}{% endif %}{% endif %}"
+             class="btn btn-sm btn-success">
+            <i class="fa-solid fa-file-excel me-1"></i>Excel
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-success" id="btn-download-pdf">
+            <i class="fa-solid fa-file-pdf me-1"></i>PDF
+          </button>
+        </div>
+      </div>
+
+      {# Filters #}
+      <form method="get" class="d-flex flex-wrap gap-3 align-items-end mb-4" id="filter-form">
+        <div>
+          <label class="form-label small text-muted mb-1">Destination</label>
+          <select name="location" class="form-select form-select-sm" style="min-width:180px;" onchange="this.form.submit()">
+            <option value="">— All destinations —</option>
+            {% for loc in all_locations %}
+              <option value="{{ loc.id }}" {% if location_filter == loc.id|stringformat:"s" %}selected{% endif %}>{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Min. sustainability ranking</label>
+          <select name="ranking" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">— Any —</option>
+            {% for v in "12345" %}
+              <option value="{{ v }}" {% if ranking_filter == v %}selected{% endif %}>{{ v }}★ or higher</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if location_filter or ranking_filter %}
+        <div class="align-self-end">
+          <a href="{% url 'aliwen_green' %}" class="btn btn-sm btn-outline-secondary">Clear filters</a>
+        </div>
+        {% endif %}
+      </form>
+
+      {% if not grouped %}
+        <div class="alert alert-info">No properties with sustainable actions match the current filters.</div>
+      {% endif %}
+
+      <div id="properties-content">
+      {% for location, entries in grouped.items %}
+      <div class="mb-5 location-block" data-location="{{ location.name }}">
+        <h4 class="py-2 px-3 rounded-2 mb-0 location-header" style="background:#2e8b57;color:#fff;">
+          📍 {{ location.name }}
+        </h4>
+
+        <div class="table-responsive mt-0">
+          <table class="table table-bordered table-sm align-middle green-table" style="font-size:.82rem;min-width:900px;">
+            <thead style="background:#e8f5e9;">
+              <tr>
+                <th style="min-width:170px;max-width:200px;">Property</th>
+                <th style="min-width:30px;text-align:center;" title="Sustainability Ranking">★</th>
+                {% for cat_key, cat_label in categories %}
+                  <th style="min-width:140px;">{{ cat_label }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in entries %}
+              {% with s=entry.supplier %}
+              <tr>
+                <td class="fw-semibold">
+                  {{ s.name }}
+                  {% if s.hotel_quality %}<br><small class="text-muted fw-normal">{{ s.hotel_quality }}</small>{% endif %}
+                  {% if s.highlight %}
+                  <br><small class="text-success fst-italic">✦ {{ s.highlight }}</small>
+                  {% endif %}
+                </td>
+                <td class="text-center fw-bold" style="color:#2e8b57;">{{ s.sustentability_ranking }}</td>
+                {% for cat_label, actions in entry.actions_pairs %}
+                <td>
+                  {% if actions %}
+                    <ul class="mb-0 ps-3">
+                      {% for desc in actions %}
+                        <li>{{ desc }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+      </div>{# /properties-content #}
+
+    </div>
+  </div>
+</div>
+
+<style>
+  table.table-bordered th, table.table-bordered td {
+    vertical-align: top;
+    padding: .45rem .6rem;
+  }
+  .green-table thead th {
+    font-size: .78rem;
+    letter-spacing: .02em;
+    color: #1a5c30;
+  }
+</style>
+
+<script>
+document.getElementById('btn-download-pdf').addEventListener('click', function () {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    const GREEN       = [46, 139, 87];
+    const LIGHT_GREEN = [232, 245, 233];
+    const DARK_TEXT   = [30, 50, 30];
+    const CAT_LABELS  = [{% for cat_key, cat_label in categories %}"{{ cat_label }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+    const PAGE_W = doc.internal.pageSize.getWidth();
+    const MARGIN = 12;
+    const CONTENT_W = PAGE_W - MARGIN * 2;
+
+    // ── Title ──────────────────────────────────────────────────────────────
+    doc.setFontSize(18);
+    doc.setTextColor(...GREEN);
+    doc.setFont(undefined, 'bold');
+    doc.text('Aliwen Green — Sustainable Properties', MARGIN, 18);
+
+    // ── Intro text ──────────────────────────────────────────────────────────
+    const introText = document.getElementById('intro-text').textContent.trim();
+    doc.setFontSize(8);
+    doc.setTextColor(...DARK_TEXT);
+    doc.setFont(undefined, 'normal');
+    const introLines = doc.splitTextToSize(introText, CONTENT_W);
+    doc.text(introLines, MARGIN, 25);
+    let yPos = 25 + introLines.length * 3.5 + 4;
+
+    // ── Per-location tables ─────────────────────────────────────────────────
+    const blocks = document.querySelectorAll('.location-block');
+    blocks.forEach(function (block) {
+        const locationName = block.dataset.location;
+        const table = block.querySelector('.green-table');
+        if (!table) return;
+
+        // Check page space
+        if (yPos > doc.internal.pageSize.getHeight() - 30) {
+            doc.addPage();
+            yPos = 12;
+        }
+
+        // Destination header
+        doc.setFillColor(...GREEN);
+        doc.rect(MARGIN, yPos, CONTENT_W, 7, 'F');
+        doc.setFontSize(10);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont(undefined, 'bold');
+        doc.text('  ' + locationName, MARGIN, yPos + 5);
+        yPos += 10;
+
+        // Build table data from DOM
+        const headCells = Array.from(table.querySelectorAll('thead th'));
+        const headLabels = headCells.map(function (th) { return th.textContent.trim(); });
+
+        const rows = [];
+        table.querySelectorAll('tbody tr').forEach(function (tr) {
+            const cells = Array.from(tr.querySelectorAll('td'));
+            rows.push(cells.map(function (td) {
+                return td.innerText.replace(/\n+/g, '\n').trim();
+            }));
+        });
+
+        // Column widths: property (40), ranking (8), then equal split for 7 categories
+        const catW = Math.floor((CONTENT_W - 48) / CAT_LABELS.length);
+        const colWidths = [40, 8, ...CAT_LABELS.map(function () { return catW; })];
+
+        doc.autoTable({
+            startY: yPos,
+            head: [headLabels],
+            body: rows,
+            margin: { left: MARGIN, right: MARGIN },
+            styles: { fontSize: 7, cellPadding: 2, valign: 'top', overflow: 'linebreak' },
+            headStyles: { fillColor: LIGHT_GREEN, textColor: DARK_TEXT, fontStyle: 'bold', fontSize: 7 },
+            columnStyles: headLabels.reduce(function (acc, _, i) {
+                acc[i] = { cellWidth: colWidths[i] || catW };
+                return acc;
+            }, {}),
+            theme: 'grid',
+            tableWidth: CONTENT_W,
+            didDrawPage: function (data) { yPos = data.cursor.y + 4; },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 8;
+    });
+
+    doc.save('Aliwen_Green_Sustainable_Properties.pdf');
+});
+</script>
+{% endblock %}

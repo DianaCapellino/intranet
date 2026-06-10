@@ -448,6 +448,9 @@ function markUnrevised(lineId, btn) {
                                                 {% endif %}
                                             </td>
 
+                                            {% if is_client and not line.rates_by_column and line.provisional_columns %}
+                                            <td colspan="3" class="text-center fst-italic text-muted border-0 small py-2">Check with the team these rates</td>
+                                            {% else %}
                                             <td class="text-center fw-bold border-0">
                                                 {{ line.rates_by_column.SGL|divided:1|default:"N/A" }}
                                             </td>
@@ -469,6 +472,7 @@ function markUnrevised(lineId, btn) {
                                             <td class="text-center fw-bold border-0 d-none">
                                                 {{ line.rates_by_column.TPL|default:"N/A" }}
                                             </td>
+                                            {% endif %}
                                         </tr>
 
                                         {% endif %}
@@ -637,6 +641,68 @@ function markUnrevised(lineId, btn) {
                                         </div>
                                     </div>
                                     {% endif %}{# /not Cliente — rankings/interests block #}
+
+                                    {# ── Highlights & Sustainability (visible to all) ── #}
+                                    {% if supplier.highlight or supplier.highlight_sustentability or supplier.sustainable_actions.exists or supplier.room_quantity or supplier.inclusions or supplier.bedding %}
+                                    <hr>
+                                    <h4><i class="fa-solid fa-leaf text-success me-2"></i>Sustainability & Property Highlights</h4>
+
+                                    {% if supplier.highlight %}
+                                    <div class="d-flex align-items-start mb-2">
+                                        <i class="fa-solid fa-star text-warning me-2 mt-1"></i>
+                                        <div><strong>Highlight:</strong> {{ supplier.highlight }}</div>
+                                    </div>
+                                    {% endif %}
+
+                                    {% if supplier.highlight_sustentability %}
+                                    <div class="d-flex align-items-start mb-3">
+                                        <i class="fa-solid fa-seedling text-success me-2 mt-1"></i>
+                                        <div><strong>Sustainability:</strong> {{ supplier.highlight_sustentability }}</div>
+                                    </div>
+                                    {% endif %}
+
+                                    {% if supplier.room_quantity or supplier.inclusions or supplier.bedding %}
+                                    <div class="row g-2 mb-3">
+                                        {% if supplier.room_quantity %}
+                                        <div class="col-auto">
+                                            <span class="badge bg-light text-dark border">
+                                                <i class="fa-solid fa-door-closed me-1 text-secondary"></i>{{ supplier.room_quantity }} rooms
+                                            </span>
+                                        </div>
+                                        {% endif %}
+                                        {% if supplier.bedding %}
+                                        <div class="col-auto">
+                                            <span class="badge bg-light text-dark border">
+                                                <i class="fa-solid fa-bed me-1 text-secondary"></i>{{ supplier.bedding }}
+                                            </span>
+                                        </div>
+                                        {% endif %}
+                                        {% if supplier.inclusions %}
+                                        <div class="col-12">
+                                            <small class="text-muted">{{ supplier.inclusions }}</small>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+
+                                    {% if supplier.sustainable_actions.all %}
+                                    <h6 class="text-success fw-semibold mb-2" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;">
+                                        <i class="fa-solid fa-leaf me-1"></i>Sustainable Actions
+                                    </h6>
+                                    {% regroup supplier.sustainable_actions.all by get_category_display as action_groups %}
+                                    {% for grp in action_groups %}
+                                    <div class="mb-2">
+                                        <div class="fw-semibold text-success-emphasis" style="font-size:.82rem;">{{ grp.grouper }}</div>
+                                        <ul class="mb-0 ps-4" style="font-size:.88rem;">
+                                            {% for action in grp.list %}
+                                            <li>{{ action.description }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endfor %}
+                                    {% endif %}
+                                    {% endif %}{# /sustainability block #}
+
                                     {% if supplier.description %}
                                     <br>
                                         <h4>Description</h4>
@@ -898,6 +964,9 @@ function markUnrevised(lineId, btn) {
                     {% endif %}
                 </td>
 
+                {% if is_client and not line.rates_by_column and line.provisional_columns %}
+                <td colspan="7" class="text-center fst-italic text-muted small py-2">Check with the team these rates</td>
+                {% else %}
                 <td class="text-center fw-bold">
                     {% if line.rate_ids_by_column|has_key:"SIB" %}{{ line.rates_by_column.SIB|default:"N/A" }}{% endif %}
                 </td>
@@ -908,6 +977,7 @@ function markUnrevised(lineId, btn) {
                 </td>
                 {% if show_costs %}<td class="text-center cost-col text-muted small">{% if not line.rates_by_column.SIB %}{{ line.costs_by_column|dict_get:col|default:"—" }}{% endif %}</td>{% endif %}
                 {% endfor %}
+                {% endif %}
             </tr>
         {% endfor %}
 
@@ -1205,6 +1275,6 @@ function markUnrevised(lineId, btn) {
 {% else %}
     <div class="text-center p-5 text-muted">
         <i class="fa-solid fa-exclamation fa-3x mb-3"></i>
-        <p>No results found.</p>
+        <p>Check with the team these rates.</p>
     </div>
 {% endif %}

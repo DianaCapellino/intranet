@@ -1,10 +1,11 @@
 from django.shortcuts import render, redirect
 from django.http import HttpResponseRedirect, HttpResponse, FileResponse
 from django.urls import reverse
-from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine, Change, TYPE_HISTORY
+from tariff.models import Location, SupplierGroup, Supplier, ProductGroup, Product, FixedRateCost, RateGroup, Rate, CostItem, RateLine, CsvFileTourplan, CsvFormTourplan, TourplanLine, Change, TYPE_HISTORY, SUSTAINABLE_ACTION_CATEGORIES
+from collections import defaultdict
 from tariff.utils import apply_client_margin
 from intranet.utils import report_tariff_error_hotel, send_templated_email, report_tariff_error_service
-from intranet.models import Client, Holidays
+from intranet.models import Client, Holidays, ExternalCalendarEntry
 import csv
 from django.contrib.auth.decorators import login_required
 from datetime import date, datetime, timedelta
@@ -16,7 +17,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image
 from django.http import JsonResponse
-from django.db.models import Q, Avg
+from django.db.models import Q, Avg, Exists, OuterRef
 from django.core.paginator import Paginator
 import json
 from collections import defaultdict
@@ -74,7 +75,7 @@ def get_filtered_rate_lines(request):
                 "group__product__group",
                 "group__product__supplier",
             )
-            .prefetch_related("line_rates")
+            .prefetch_related("line_rates", "group__product__supplier__sustainable_actions")
             .order_by(
                 "group__product__supplier__group__order",
                 "group__product__supplier__order",
@@ -93,7 +94,7 @@ def get_filtered_rate_lines(request):
                 "group__product__group",
                 "group__product__supplier",
             )
-            .prefetch_related("line_rates")
+            .prefetch_related("line_rates", "line_rates__cost_items", "line_rates__rates_with_fixed")
             .order_by(
                 "group__product__group__order",
                 "group__product__supplier__order",
@@ -158,6 +159,8 @@ def get_filtered_rate_lines(request):
         locked_columns = set()
 
         for r in line.line_rates.all():
+            if r.status == "Provisional":
+                provisional_columns.add(r.column_options)
             if is_client and r.status != "Confirmed":
                 continue
 
@@ -168,7 +171,21 @@ def get_filtered_rate_lines(request):
             )
 
             rates[r.column_options] = sell_adjusted
-            costs[r.column_options] = r.cost
+            if r.has_items and t_type != 'acc':
+                pax = 1 if r.column_options == 'SIB' else int(r.column_options)
+                costs[r.column_options] = round(
+                    sum(
+                        _cost_per_pax_sv(ci.value, ci.fcu, ci.tax, ci.increase or 0, ci.usd, ci.exchange, pax)
+                        for ci in r.cost_items.all()
+                    ) + sum(
+                        _cost_per_pax_sv(frc.value, frc.fcu, 0, frc.increase or 0, frc.usd, frc.exchange, pax)
+                        for frc in r.rates_with_fixed.all()
+                        if frc.date_from <= line.date_to and frc.date_to >= line.date_from
+                    ),
+                    2,
+                )
+            else:
+                costs[r.column_options] = r.cost
             rate_meta[r.column_options] = {'id': r.id, 'locked': r.locked}
             if r.status == "Provisional":
                 provisional_columns.add(r.column_options)
@@ -191,7 +208,7 @@ def get_filtered_rate_lines(request):
 def tariff_search(request):
 
     has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
-    if not has_params:
+    if not has_params or not request.GET.get('type'):
         return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
 
     rate_lines, t_type, is_client = get_filtered_rate_lines(request)
@@ -232,8 +249,19 @@ def pdf_select(request):
 
     svs_products = (
         Product.objects
-        .filter(type_service="NA", isActivated=True)
+        .filter(
+            type_service="NA",
+            isActivated=True,
+        )
+        .filter(Exists(
+            RateLine.objects.filter(
+                group__product=OuterRef('pk'),
+                is_revised=True,
+                group__product__supplier__is_provisional=False,
+            )
+        ))
         .select_related("group__location", "group", "supplier")
+        .prefetch_related("rate_products")
         .order_by("group__location__order", "group__order", "order")
     )
     svs_locs = defaultdict(list)
@@ -300,6 +328,16 @@ def pdf_view(request):
         "date_to",
         "group__product__order",
     ]
+    svs_order = [
+        "group__product__supplier__group__location__order",
+        "group__product__group__order",
+        "group__product__order",
+        "group__product__supplier__id",
+        "date_from",
+        "date_to",
+    ]
+
+    is_client_user = request.user.userType == "Cliente"
 
     # ACC rate lines
     acc_rate_lines = []
@@ -318,9 +356,13 @@ def pdf_view(request):
         )
         if client:
             qs = qs.filter(group__product__clients__id=client.id)
+        if is_client_user:
+            qs = qs.filter(is_revised=True, group__product__supplier__is_provisional=False)
         for line in qs:
             rates = {}
             for r in line.line_rates.all():
+                if is_client_user and r.status != "Confirmed":
+                    continue
                 rates[r.column_options] = apply_client_margin(r, client_category, "AC")
             line.rates_by_column = rates
         acc_rate_lines = qs
@@ -338,14 +380,18 @@ def pdf_view(request):
             )
             .select_related(*shared_select)
             .prefetch_related("line_rates")
-            .order_by(*shared_order)
+            .order_by(*svs_order)
         )
+        if is_client_user:
+            qs = qs.filter(is_revised=True, group__product__supplier__is_provisional=False)
         for line in qs:
             rates = {}
             for r in line.line_rates.all():
+                if is_client_user and r.status != "Confirmed":
+                    continue
                 rates[r.column_options] = apply_client_margin(r, client_category, "NA")
             line.rates_by_column = rates
-        svs_rate_lines = qs
+        svs_rate_lines = [line for line in qs if line.rates_by_column]
 
     import base64
     from django.contrib.staticfiles.finders import find as static_find
@@ -374,7 +420,9 @@ def export_services_excel(request):
         return HttpResponse("No data to export")
 
     rate_lines, t_type, is_client = get_filtered_rate_lines(request)
-    # 👆 MISMA lógica que tu vista principal
+
+    def _r(v):
+        return "N/A" if v == 0 else v
 
     header_fill = PatternFill(start_color="D88775", end_color="D88775", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF")
@@ -425,6 +473,7 @@ def export_services_excel(request):
             "Group",
             "From",
             "To",
+            "SIB",
             "1 Pax",
             "2 Pax",
             "3 Pax",
@@ -433,18 +482,21 @@ def export_services_excel(request):
             "6 Pax",
         ])
         for line in rate_lines:
+            if is_client and not line.rates_by_column:
+                continue
             ws.append([
                 line.group.product.name,
                 line.group.name,
                 line.group.product.group.name,
                 line.date_from,
                 line.date_to,
-                line.rates_by_column.get('1'),
-                line.rates_by_column.get('2'),
-                line.rates_by_column.get('3'),
-                line.rates_by_column.get('4'),
-                line.rates_by_column.get('5'),
-                line.rates_by_column.get('6'),
+                _r(line.rates_by_column.get('SIB')),
+                _r(line.rates_by_column.get('1')),
+                _r(line.rates_by_column.get('2')),
+                _r(line.rates_by_column.get('3')),
+                _r(line.rates_by_column.get('4')),
+                _r(line.rates_by_column.get('5')),
+                _r(line.rates_by_column.get('6')),
             ])
     else:
         ws.append([
@@ -465,8 +517,8 @@ def export_services_excel(request):
                 line.group.product.group.name,
                 line.date_from,
                 line.date_to,
-                line.rates_by_column.get('SGL'),
-                line.rates_by_column.get('DBL'),
+                _r(line.rates_by_column.get('SGL')),
+                _r(line.rates_by_column.get('DBL')),
             ])
 
     # Format of the header
@@ -975,6 +1027,8 @@ def upload_data(csv_obj):
                     cost = round(float(raw_cost), 2)
                 except ValueError:
                     continue
+                if cost == 9999.0:
+                    cost = 0.0
 
             # ---- accumulate SGL / DBL costs symmetrically
             if not is_zero_cost:
@@ -1591,6 +1645,11 @@ def _process_db_acc_rows(rows, today, start_date=None):
         if not product:
             continue
 
+        tp_loc  = (product.tp_location_code or '').strip().upper()
+        row_loc = (row.get('locationCode') or '').strip().upper()
+        if tp_loc and row_loc and tp_loc != row_loc:
+            continue
+
         try:
             if hasattr(date_from_raw, 'date'):
                 date_from_db = date_from_raw.date()
@@ -1608,7 +1667,7 @@ def _process_db_acc_rows(rows, today, start_date=None):
         except (ValueError, AttributeError):
             continue
 
-        if date_from_db < start_date:
+        if date_to_db < start_date:
             continue
 
         date_from_str = date_from_db.strftime('%d/%m/%Y')
@@ -1632,6 +1691,8 @@ def _process_db_acc_rows(rows, today, start_date=None):
                 cost = round(float(cost_fits_raw or 0), 2)
             except (ValueError, TypeError):
                 continue
+            if cost == 9999.0:
+                cost = 0.0
             if cost <= 0:
                 continue
             # Add meal-plan supplements (e.g. Full Board SGL / DBL) from EX1-EX5 rows
@@ -1695,7 +1756,7 @@ def _process_db_acc_rows(rows, today, start_date=None):
                 if existing_rate:
                     if existing_rate.locked:
                         continue
-                    if existing_rate.sell_tourplan != sell_tourplan:
+                    if existing_rate.sell_tourplan != sell_tourplan or existing_rate.status != status:
                         entry = {
                             "action": "Update",
                             "current_sell_tourplan": existing_rate.sell_tourplan,
@@ -1798,21 +1859,209 @@ def _process_db_svs_rows(rows, today, start_date=None):
     csv_product_dates = set()
     csv_products_seen = set()
     result_index = {}
+    product_has_items_cache = {}  # product_pk -> bool
+    product_sib_cache = {}        # product_pk -> bool (has SIB column)
 
     for row in rows:
         supplier_code = (row.get('SUPPLIER') or '').strip()
         option_code   = (row.get('CODE') or '').strip()
         price_code    = (row.get('PRICE_CODE') or '').strip()
-        serv_item     = (row.get('servItem') or '').strip()
-        rate_st       = (row.get('RateST') or '').strip()
-        cost_fits_raw = row.get('costFits')
-        date_from_raw = row.get('DATE_FROM')
-        date_to_raw   = row.get('DATE_TO')
-        fcu_raw       = (row.get('FCU') or '').strip()
+        serv_item      = (row.get('servItem') or '').strip()
+        rate_st        = (row.get('RateST') or '').strip()
+        cost_fits_raw  = row.get('costFits')
+        cost_groups_raw = row.get('costGroups')
+        date_from_raw  = row.get('DATE_FROM')
+        date_to_raw    = row.get('DATE_TO')
+        fcu_raw        = (row.get('FCU') or '').strip()
 
         m = _PXB_RE.search(serv_item)
+
+        # ── Non-PXB rows: EX-type cost items (e.g. serv_item = "TRPG04") ─────
         if not m:
-            continue
+            serv_code = serv_item.strip()
+            if not serv_code:
+                continue
+            if supplier_code not in supplier_codes:
+                continue
+            product = product_map.get((supplier_code, option_code))
+            if not product:
+                continue
+            tp_loc  = (product.tp_location_code or '').strip().upper()
+            row_loc = (row.get('LOCATION') or '').strip().upper()
+            if tp_loc and row_loc and tp_loc != row_loc:
+                continue
+            try:
+                if hasattr(date_from_raw, 'date'):
+                    date_from_db = date_from_raw.date()
+                elif isinstance(date_from_raw, date):
+                    date_from_db = date_from_raw
+                else:
+                    date_from_db = datetime.strptime(str(date_from_raw)[:10], '%Y-%m-%d').date()
+                if hasattr(date_to_raw, 'date'):
+                    date_to_db = date_to_raw.date()
+                elif isinstance(date_to_raw, date):
+                    date_to_db = date_to_raw
+                else:
+                    date_to_db = datetime.strptime(str(date_to_raw)[:10], '%Y-%m-%d').date()
+            except (ValueError, AttributeError):
+                continue
+            if date_to_db < start_date:
+                continue
+            # Register the period before cost checks so orphan detection always
+            # sees this (product, period) even when band_cost is 0 or 9999.
+            csv_products_seen.add(product.pk)
+            csv_product_dates.add((product.pk, date_from_db, date_to_db))
+            try:
+                band_cost = round(float(cost_fits_raw or 0), 2)
+            except (ValueError, TypeError):
+                continue
+            if band_cost == 9999.0:
+                band_cost = 0.0
+            if band_cost <= 0:
+                continue
+            margin      = product.supplier.margin
+            margin_info = product.supplier.margin_info
+            if not margin or margin == 0:
+                continue
+            fcu = 'Person' if fcu_raw in ('PP', 'PE', 'PX') else 'Group'
+            if rate_st == 'Conf':
+                status = 'Confirmed'
+            elif rate_st == 'Prov':
+                status = 'Provisional'
+            else:
+                status = 'Confirmed'
+            date_from_str = date_from_db.strftime('%d/%m/%Y')
+            date_to_str   = date_to_db.strftime('%d/%m/%Y')
+            for rate_group in RateGroup.objects.filter(product=product).order_by("order"):
+                rate_line = (
+                    RateLine.objects
+                    .filter(group=rate_group, date_from=date_from_db, date_to=date_to_db)
+                    .first()
+                )
+                if not rate_line:
+                    continue
+                for rate in Rate.objects.prefetch_related("cost_items", "rates_with_fixed").filter(
+                    rate_line=rate_line, has_items=True
+                ):
+                    matching_ci = next(
+                        (ci for ci in rate.cost_items.all()
+                         if ci.code and ci.code.strip() == serv_code),
+                        None,
+                    )
+                    if not matching_ci:
+                        continue
+                    try:
+                        base = int(rate.column_options)
+                    except (ValueError, TypeError):
+                        continue
+                    # EX items: costFits is the raw value (same unit as the CI stores)
+                    new_ci_value = band_cost
+                    if round(new_ci_value, 2) == round(matching_ci.value, 2):
+                        stats["up_to_date"] += 1
+                        continue
+                    new_rate_cost = round(sum(
+                        new_ci_value if ci.pk == matching_ci.pk else ci.value
+                        for ci in rate.cost_items.all()
+                    ), 2)
+                    per_pax_cost = round(
+                        sum(
+                            _cost_per_pax_sv(
+                                new_ci_value if ci.pk == matching_ci.pk else ci.value,
+                                ci.fcu, ci.tax, ci.increase, ci.usd, ci.exchange, base,
+                            )
+                            for ci in rate.cost_items.all()
+                        ) + sum(
+                            _cost_per_pax_sv(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, base)
+                            for frc in rate.rates_with_fixed.all()
+                        ),
+                        2,
+                    )
+                    new_sell_tp = math.ceil(per_pax_cost / margin)
+                    if new_sell_tp == rate.sell_tourplan and new_sell_tp == rate.sell:
+                        stats["up_to_date"] += 1
+                        continue
+                    dedup_key = (product.pk, date_from_db, date_to_db, rate.column_options, rate_group.pk)
+                    ci_entry = {
+                        "action": "UpdateCI", "has_items": True,
+                        "ci_id": matching_ci.pk,
+                        "ci_name": matching_ci.name,
+                        "ci_value": new_ci_value,
+                        "ci_fcu": matching_ci.fcu,
+                        "base": base,
+                        "new_rate_cost": new_rate_cost,
+                        "current_cost": rate.cost,
+                        "current_sell_tourplan": rate.sell_tourplan,
+                        "current_sell": rate.sell,
+                        "rate_id": rate.pk,
+                        "rate_group_id": None,
+                        "sell_tourplan": new_sell_tp,
+                        "sell": new_sell_tp,
+                        "cost": new_rate_cost,
+                        "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                        "supplier_name": product.supplier.name,
+                        "price_code": price_code, "date_from": date_from_str, "date_to": date_to_str,
+                        "column_options": rate.column_options, "fcu": fcu, "status": status,
+                        "margin": margin, "margin_info": margin_info,
+                        "rate_group_name": rate_group.name, "season": "To be defined",
+                    }
+                    if dedup_key in result_index:
+                        idx = result_index[dedup_key]
+                        existing = result[idx]
+                        # PXB-sourced UpdateCI for the same CI takes precedence:
+                        # when option_code == EX field value both paths match the
+                        # same CI with different band_cost values (PXB FC vs EX FC).
+                        # Letting the EX row overwrite causes oscillation across syncs.
+                        if (existing.get("source") == "PXB"
+                                and existing.get("ci_id") == matching_ci.pk):
+                            stats["up_to_date"] += 1
+                            continue
+                        ci_entry["_id"] = existing["_id"]
+                        result[idx] = ci_entry
+                    else:
+                        ci_entry["_id"] = stats["rows_read"]
+                        stats["rows_read"] += 1
+                        stats["to_update"] += 1
+                        result_index[dedup_key] = len(result)
+                        result.append(ci_entry)
+
+            # ── FixedRateCost sync by code ────────────────────────────────
+            if serv_code:
+                for frc in FixedRateCost.objects.filter(
+                    code=serv_code,
+                    supplier=product.supplier,
+                    date_from=date_from_db,
+                    date_to=date_to_db,
+                ):
+                    if round(band_cost, 2) == round(frc.value, 2):
+                        stats["up_to_date"] += 1
+                        continue
+                    frc_key = ('frc', frc.pk)
+                    if frc_key not in result_index:
+                        frc_entry = {
+                            "action": "UpdateFixedCost",
+                            "has_items": True,
+                            "frc_id": frc.pk,
+                            "ci_name": frc.name,
+                            "current_cost": frc.value,
+                            "cost": band_cost,
+                            "current_sell_tourplan": None,
+                            "sell_tourplan": None,
+                            "current_sell": None,
+                            "sell": None,
+                            "rate_id": None, "rate_group_id": None,
+                            "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                            "supplier_name": product.supplier.name,
+                            "price_code": price_code, "date_from": date_from_str, "date_to": date_to_str,
+                            "column_options": None, "fcu": fcu, "status": status,
+                            "margin": margin, "margin_info": margin_info,
+                            "rate_group_name": "", "season": "To be defined",
+                            "_id": stats["rows_read"],
+                        }
+                        stats["rows_read"] += 1
+                        stats["to_update"] += 1
+                        result_index[frc_key] = len(result)
+                        result.append(frc_entry)
+            continue  # done with non-PXB row
 
         band_min = int(m.group(2))
         band_max = int(m.group(3))
@@ -1824,6 +2073,11 @@ def _process_db_svs_rows(rows, today, start_date=None):
 
         product = product_map.get((supplier_code, option_code))
         if not product:
+            continue
+
+        tp_loc  = (product.tp_location_code or '').strip().upper()
+        row_loc = (row.get('LOCATION') or '').strip().upper()
+        if tp_loc and row_loc and tp_loc != row_loc:
             continue
 
         try:
@@ -1843,7 +2097,7 @@ def _process_db_svs_rows(rows, today, start_date=None):
         except (ValueError, AttributeError):
             continue
 
-        if date_from_db < start_date:
+        if date_to_db < start_date:
             continue
 
         date_from_str = date_from_db.strftime('%d/%m/%Y')
@@ -1858,12 +2112,35 @@ def _process_db_svs_rows(rows, today, start_date=None):
         else:
             status, is_closed = 'Confirmed', False
 
-        fcu = 'Person' if fcu_raw in ('PP', 'PE', 'PX') else 'Group'
+        # Detect per-person vs group from the FCU text Tourplan returns.
+        # OPT.FCU can be a full description ("Per person per entry", "Per group", etc.)
+        # or a short code — check for the word "person" to cover both cases.
+        is_per_person = 'person' in fcu_raw.lower()
+        fcu = 'Person' if is_per_person else 'Group'
+
+        # Register the period before cost checks so orphan detection always
+        # sees this (product, period) even when band_cost is 0 or 9999.
+        csv_products_seen.add(product.pk)
+        csv_product_dates.add((product.pk, date_from_db, date_to_db))
 
         try:
-            band_cost = round(float(cost_fits_raw or 0), 2)
+            fits_val   = round(float(cost_fits_raw   or 0), 2)
+            groups_val = round(float(cost_groups_raw or 0), 2)
         except (ValueError, TypeError):
             continue
+
+        # Per-person: use costFits (FC) directly — already per-pax.
+        # Group: use costGroups (GC) — group total, divide by pax count later.
+        # Fallback: if the primary column is 0 or 9999, use the other.
+        if is_per_person:
+            raw            = fits_val if fits_val not in (0.0, 9999.0) else groups_val
+            is_group_price = False
+        else:
+            raw            = groups_val if groups_val not in (0.0, 9999.0) else fits_val
+            is_group_price = True
+
+        band_cost = raw if raw != 9999.0 else 0.0
+
         if band_cost <= 0 and not is_closed:
             continue
 
@@ -1872,14 +2149,37 @@ def _process_db_svs_rows(rows, today, start_date=None):
         if not margin or margin == 0:
             continue
 
-        csv_products_seen.add(product.pk)
-        csv_product_dates.add((product.pk, date_from_db, date_to_db))
+        if product.pk not in product_has_items_cache:
+            product_has_items_cache[product.pk] = Rate.objects.filter(
+                rate_line__group__product=product, has_items=True
+            ).exists()
+        is_pkg = product_has_items_cache[product.pk]
+
+        if product.pk not in product_sib_cache:
+            product_sib_cache[product.pk] = Rate.objects.filter(
+                rate_line__group__product=product, column_options='SIB'
+            ).exists()
+        uses_sib = product_sib_cache[product.pk]
+
+        # SIB products: take the first PXB band only and map it to the SIB column.
+        # All other bands are skipped because a SIB RateLine holds a single rate.
+        if uses_sib:
+            if band_min != 1:
+                continue
+            bases_to_process = ['SIB']
+        else:
+            bases_to_process = [str(b) for b in range(band_min, min(band_max, 6) + 1)]
 
         all_rate_groups = list(RateGroup.objects.filter(product=product).order_by("order"))
 
-        for base in range(band_min, min(band_max, 6) + 1):
-            column_options = str(base)
-            direct_cost    = round(band_cost / base, 2) if fcu == 'Group' else band_cost
+        for column_options in bases_to_process:
+            base = 1 if column_options == 'SIB' else int(column_options)
+            # Group pricing: band_cost is the group total → divide by pax count.
+            # Per-pax pricing: band_cost is already per-pax → use directly.
+            if is_group_price and base > 1:
+                direct_cost = round(band_cost / base, 2)
+            else:
+                direct_cost = band_cost
             sell_tourplan  = math.ceil(direct_cost / margin) if not is_closed else 0
             cost           = 0.0 if is_closed else direct_cost
 
@@ -1887,7 +2187,7 @@ def _process_db_svs_rows(rows, today, start_date=None):
                 dedup_key = (product.pk, date_from_db, date_to_db, column_options, None)
                 if dedup_key not in result_index:
                     entry = {
-                        "action": "Add", "has_items": False,
+                        "action": "Add", "has_items": is_pkg,
                         "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
                         "rate_id": None, "rate_group_id": None,
                         "product_code": product.code, "product_name": str(product), "product_id": product.pk,
@@ -1899,6 +2199,9 @@ def _process_db_svs_rows(rows, today, start_date=None):
                         "margin": margin, "margin_info": margin_info, "season": "To be defined",
                         "_id": stats["rows_read"],
                     }
+                    if is_pkg:
+                        entry["ci_code"] = option_code
+                        entry["ci_value"] = band_cost
                     stats["rows_read"] += 1
                     stats["to_add"] += 1
                     result_index[dedup_key] = len(result)
@@ -1916,14 +2219,98 @@ def _process_db_svs_rows(rows, today, start_date=None):
                 if matching_rate_line:
                     existing_rate = (
                         Rate.objects.filter(rate_line=matching_rate_line, column_options=column_options)
-                        .prefetch_related("cost_items").first()
+                        .prefetch_related("cost_items", "rates_with_fixed").first()
                     )
                     if existing_rate:
                         if existing_rate.locked:
                             continue
                         if existing_rate.has_items:
-                            continue  # CI-based rates not handled via DB sync
-                        if existing_rate.sell_tourplan != sell_tourplan:
+                            # Match CostItem by option_code (e.g. CI code "TRPG04" maps to this product's code)
+                            matching_ci = next(
+                                (ci for ci in existing_rate.cost_items.all()
+                                 if ci.code and ci.code.strip() == option_code),
+                                None,
+                            )
+                            if not matching_ci:
+                                continue
+                            # Store band_cost as-is; each CI's own fcu drives the per-pax division
+                            # (avoids relying on option-level FCU which may not be correctly mapped)
+                            new_ci_value = band_cost
+                            logger.info(
+                                "CI sync: product=%s option_code=%s base=%s fcu_raw=%s band_cost=%s ci=%s ci_fcu=%s",
+                                product.code, option_code, base, fcu_raw, band_cost, matching_ci.name, matching_ci.fcu,
+                            )
+                            if round(new_ci_value, 2) == round(matching_ci.value, 2):
+                                if dedup_key in result_index:
+                                    idx = result_index.pop(dedup_key)
+                                    result.pop(idx)
+                                    result_index = {k: (v - 1 if v > idx else v) for k, v in result_index.items()}
+                                    stats["to_update"] -= 1
+                                stats["up_to_date"] += 1
+                                continue
+                            all_cis = list(existing_rate.cost_items.all())
+                            new_rate_cost = round(sum(
+                                new_ci_value if ci.pk == matching_ci.pk else ci.value
+                                for ci in all_cis
+                            ), 2)
+                            per_pax_cost = round(
+                                sum(
+                                    _cost_per_pax_sv(
+                                        new_ci_value if ci.pk == matching_ci.pk else ci.value,
+                                        ci.fcu, ci.tax, ci.increase, ci.usd, ci.exchange, base,
+                                    )
+                                    for ci in all_cis
+                                ) + sum(
+                                    _cost_per_pax_sv(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, base)
+                                    for frc in existing_rate.rates_with_fixed.all()
+                                ),
+                                2,
+                            )
+                            new_sell_tp = math.ceil(per_pax_cost / margin)
+                            if new_sell_tp == existing_rate.sell_tourplan and new_sell_tp == existing_rate.sell:
+                                if dedup_key in result_index:
+                                    idx = result_index.pop(dedup_key)
+                                    result.pop(idx)
+                                    result_index = {k: (v - 1 if v > idx else v) for k, v in result_index.items()}
+                                    stats["to_update"] -= 1
+                                stats["up_to_date"] += 1
+                                continue
+                            ci_entry = {
+                                "action": "UpdateCI", "has_items": True,
+                                "source": "PXB",
+                                "ci_id": matching_ci.pk,
+                                "ci_name": matching_ci.name,
+                                "ci_value": new_ci_value,
+                                "ci_fcu": matching_ci.fcu,
+                                "base": base,
+                                "new_rate_cost": new_rate_cost,
+                                "current_cost": existing_rate.cost,
+                                "current_sell_tourplan": existing_rate.sell_tourplan,
+                                "current_sell": existing_rate.sell,
+                                "rate_id": existing_rate.pk,
+                                "rate_group_id": None,
+                                "sell_tourplan": new_sell_tp,
+                                "sell": new_sell_tp,
+                                "cost": new_rate_cost,
+                                "product_code": product.code, "product_name": str(product), "product_id": product.pk,
+                                "supplier_name": product.supplier.name,
+                                "price_code": None, "date_from": date_from_str, "date_to": date_to_str,
+                                "column_options": column_options, "fcu": fcu, "status": status,
+                                "margin": margin, "margin_info": margin_info,
+                                "rate_group_name": rate_group.name, "season": "To be defined",
+                            }
+                            if dedup_key in result_index:
+                                idx = result_index[dedup_key]
+                                ci_entry["_id"] = result[idx]["_id"]
+                                result[idx] = ci_entry
+                            else:
+                                ci_entry["_id"] = stats["rows_read"]
+                                stats["rows_read"] += 1
+                                stats["to_update"] += 1
+                                result_index[dedup_key] = len(result)
+                                result.append(ci_entry)
+                            continue
+                        if existing_rate.sell_tourplan != sell_tourplan or existing_rate.status != status:
                             entry = {
                                 "action": "Update", "has_items": False,
                                 "current_sell_tourplan": existing_rate.sell_tourplan,
@@ -1942,14 +2329,14 @@ def _process_db_svs_rows(rows, today, start_date=None):
                             continue
                     else:
                         entry = {
-                            "action": "Add", "has_items": False,
+                            "action": "Add", "has_items": is_pkg,
                             "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
                             "rate_id": None, "rate_group_id": matching_rate_line.group.pk,
                             "sell_tourplan": sell_tourplan, "sell": sell_tourplan, "cost": cost,
                         }
                 else:
                     entry = {
-                        "action": "Add", "has_items": False,
+                        "action": "Add", "has_items": is_pkg,
                         "current_sell_tourplan": None, "current_sell": None, "current_cost": None,
                         "rate_id": None, "rate_group_id": rate_group.pk,
                         "sell_tourplan": sell_tourplan, "sell": sell_tourplan, "cost": cost,
@@ -1963,6 +2350,9 @@ def _process_db_svs_rows(rows, today, start_date=None):
                     "margin": margin, "margin_info": margin_info,
                     "rate_group_name": rate_group.name, "season": "To be defined",
                 })
+                if is_pkg:
+                    entry["ci_code"] = option_code
+                    entry["ci_value"] = band_cost
 
                 if dedup_key in result_index:
                     idx = result_index[dedup_key]
@@ -2149,6 +2539,8 @@ def upload_data_services(csv_obj):
                     svc_cost = round(float(raw_svc.replace(",", ".")), 2)
                 except ValueError:
                     continue
+                if svc_cost == 9999.0:
+                    svc_cost = 0.0
 
                 svc_margin = ctx_supplier_obj.margin
                 svc_margin_info = ctx_supplier_obj.margin_info
@@ -2286,6 +2678,8 @@ def upload_data_services(csv_obj):
                 band_cost = round(float(raw_cost.replace(",", ".")), 2)
             except ValueError:
                 continue
+            if band_cost == 9999.0:
+                band_cost = 0.0
 
             margin      = ctx_supplier_obj.margin
             margin_info = ctx_supplier_obj.margin_info
@@ -2624,24 +3018,29 @@ def apply_confirmed_changes(confirmed_items):
                 if ci_id and ci_value is not None:
                     CostItem.objects.filter(pk=ci_id).update(value=ci_value)
                 rate_obj = (
-                    Rate.objects.prefetch_related("cost_items")
+                    Rate.objects.prefetch_related("cost_items", "rates_with_fixed")
                     .get(pk=item["rate_id"])
-                )
-                recalc_cost = round(
-                    sum(ci.value for ci in rate_obj.cost_items.all()), 2
                 )
                 item_margin = item.get("margin") or 1
                 item_base   = item.get("base") or 1
-                item_ci_fcu = item.get("ci_fcu") or ""
-                per_base = (
-                    recalc_cost / item_base
-                    if item_ci_fcu == "Group" and item_base > 0
-                    else recalc_cost
+                all_cis  = list(rate_obj.cost_items.all())
+                all_frcs = list(rate_obj.rates_with_fixed.all())
+                recalc_cost = round(sum(ci.value for ci in all_cis), 2)
+                per_pax_cost = round(
+                    sum(
+                        _cost_per_pax_sv(ci.value, ci.fcu, ci.tax, ci.increase, ci.usd, ci.exchange, item_base)
+                        for ci in all_cis
+                    ) + sum(
+                        _cost_per_pax_sv(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, item_base)
+                        for frc in all_frcs
+                    ),
+                    2,
                 )
-                recalc_sell_tp = math.ceil(per_base / item_margin)
+                recalc_sell_tp = math.ceil(per_pax_cost / item_margin)
                 Rate.objects.filter(pk=item["rate_id"]).update(
                     cost=recalc_cost,
                     sell_tourplan=recalc_sell_tp,
+                    sell=recalc_sell_tp,
                 )
                 updated_rate_ids.add(item["rate_id"])
             else:
@@ -2668,6 +3067,12 @@ def apply_confirmed_changes(confirmed_items):
                         provisional_rateline_ids.add(rl_id)
                     except Rate.DoesNotExist:
                         pass
+
+        elif action == "UpdateFixedCost":
+            frc_id    = item.get("frc_id")
+            new_value = item.get("cost")
+            if frc_id and new_value is not None:
+                FixedRateCost.objects.filter(pk=frc_id).update(value=new_value)
 
         elif action == "Add":
             rate_group_id = item.get("rate_group_id")
@@ -2712,6 +3117,7 @@ def apply_confirmed_changes(confirmed_items):
                     margin_info = rate_line.group.product.supplier.margin_info
                 except Exception:
                     margin_info = ""
+            add_has_items = item.get("has_items", False)
             rate_obj, rate_created = Rate.objects.get_or_create(
                 rate_line=rate_line,
                 column_options=item["column_options"],
@@ -2722,18 +3128,128 @@ def apply_confirmed_changes(confirmed_items):
                     "status":        status,
                     "margin":        margin_info,
                     "has_rate":      True,
+                    "has_items":     add_has_items,
                 },
             )
             logger.info(
-                "Add: Rate id=%s (created=%s) col=%s cost=%s sell_tp=%s sell=%s product=%s",
+                "Add: Rate id=%s (created=%s) col=%s cost=%s sell_tp=%s sell=%s has_items=%s product=%s",
                 rate_obj.id, rate_created, item["column_options"],
-                cost, sell_tourplan, sell, item.get("product_name"),
+                cost, sell_tourplan, sell, add_has_items, item.get("product_name"),
             )
             if not rate_created:
-                logger.warning(
-                    "Add: Rate already existed (id=%s) — NOT updated. col=%s %s→%s product=%s",
+                Rate.objects.filter(pk=rate_obj.pk).update(
+                    cost=cost,
+                    sell_tourplan=sell_tourplan,
+                    sell=sell,
+                    status=status,
+                )
+                updated_rate_ids.add(rate_obj.pk)
+                logger.info(
+                    "Add: Rate already existed (id=%s) — updated in place. col=%s %s→%s product=%s",
                     rate_obj.id, item["column_options"], date_from, date_to, item.get("product_name"),
                 )
+            elif add_has_items:
+                # Clone CostItem structure from an existing rate with has_items for this product
+                ci_code      = item.get("ci_code")
+                ci_value     = item.get("ci_value")
+                col_opts     = item.get("column_options") or ""
+                item_margin  = item.get("margin") or 1
+                product_id_  = item.get("product_id")
+                template = (
+                    Rate.objects.filter(
+                        rate_line__group__product_id=product_id_,
+                        column_options=col_opts,
+                        has_items=True,
+                    ).exclude(pk=rate_obj.pk)
+                    .prefetch_related("cost_items")
+                    .first()
+                ) or (
+                    Rate.objects.filter(
+                        rate_line__group__product_id=product_id_,
+                        has_items=True,
+                    ).exclude(pk=rate_obj.pk)
+                    .prefetch_related("cost_items")
+                    .first()
+                )
+                if template:
+                    base = int(col_opts) if col_opts.isdigit() else 1
+                    cis_to_create = [
+                        CostItem(
+                            rate=rate_obj,
+                            name=ci.name,
+                            code=ci.code,
+                            usd=ci.usd,
+                            exchange=ci.exchange,
+                            tax=ci.tax,
+                            value=(ci_value if ci_code and ci.code and ci.code.strip() == ci_code else ci.value),
+                            fcu=ci.fcu,
+                            increase=ci.increase or 0,
+                        )
+                        for ci in template.cost_items.all()
+                    ]
+                    if cis_to_create:
+                        CostItem.objects.bulk_create(cis_to_create)
+                        logger.info(
+                            "Add pkg: cloned %d CostItems for Rate id=%s from template id=%s",
+                            len(cis_to_create), rate_obj.pk, template.pk,
+                        )
+
+                    # Link codeless FixedRateCost items to the new rate.
+                    # For each codeless FRC on the template: look for one that matches
+                    # the new date range. If found, link it. If not, create one from
+                    # the most recent known value (provisional until reviewed).
+                    codeless_frcs = list(template.rates_with_fixed.filter(
+                        Q(code__isnull=True) | Q(code='')
+                    ))
+                    for frc in codeless_frcs:
+                        match = FixedRateCost.objects.filter(
+                            Q(code__isnull=True) | Q(code=''),
+                            supplier=frc.supplier,
+                            name=frc.name,
+                            date_from=date_from,
+                            date_to=date_to,
+                        ).first()
+                        if match:
+                            rate_obj.rates_with_fixed.add(match)
+                        else:
+                            new_frc = FixedRateCost.objects.create(
+                                name=frc.name,
+                                supplier=frc.supplier,
+                                date_from=date_from,
+                                date_to=date_to,
+                                usd=frc.usd,
+                                exchange=frc.exchange,
+                                value=frc.value,
+                                fcu=frc.fcu,
+                                increase=frc.increase,
+                            )
+                            rate_obj.rates_with_fixed.add(new_frc)
+                            logger.info(
+                                "Add pkg: created provisional FixedRateCost '%s' id=%s "
+                                "for Rate id=%s (copied from frc id=%s)",
+                                new_frc.name, new_frc.pk, rate_obj.pk, frc.pk,
+                            )
+
+                    # Final cost/sell recalc from DB including all CIs and linked FRCs
+                    all_cis_final  = list(rate_obj.cost_items.all())
+                    all_frcs_final = list(rate_obj.rates_with_fixed.all())
+                    if all_cis_final:
+                        recalc_cost_final = round(sum(ci.value for ci in all_cis_final), 2)
+                        per_pax_final = round(
+                            sum(
+                                _cost_per_pax_sv(ci.value, ci.fcu, ci.tax, ci.increase, ci.usd, ci.exchange, base)
+                                for ci in all_cis_final
+                            ) + sum(
+                                _cost_per_pax_sv(frc.value, frc.fcu, 0, frc.increase, frc.usd, frc.exchange, base)
+                                for frc in all_frcs_final
+                            ),
+                            2,
+                        )
+                        Rate.objects.filter(pk=rate_obj.pk).update(
+                            cost=recalc_cost_final,
+                            sell_tourplan=math.ceil(per_pax_final / item_margin),
+                            sell=math.ceil(per_pax_final / item_margin),
+                        )
             # Deduplicate by rate_line id
             if not any(rl.id == rate_line.id for rl, _ in added_rate_lines):
                 product_id = rate_line.group.product_id
@@ -3080,6 +3596,74 @@ def sync_tariff_from_db_services(request):
 
 
 @login_required
+def quick_sync_supplier(request, supplier_id):
+    """Sync Tourplan DB rates for a single supplier and apply cost updates immediately.
+
+    Called via AJAX before opening the "Revisar TP" modal so the review reflects
+    the latest Tourplan costs.  Only Update/UpdateCI/UpdateFixedCost actions are
+    applied; Add/Delete remain for explicit review via the full sync page.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Acceso denegado'}, status=403)
+
+    try:
+        supplier = Supplier.objects.select_related('group').get(pk=supplier_id)
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Proveedor no encontrado'}, status=404)
+
+    if supplier.group.type_service != 'NA':
+        return JsonResponse({'updated': 0, 'skipped': 0, 'message': 'No es proveedor NA'})
+
+    try:
+        from intranet.utils import get_tourplan_connection
+        today         = date.today()
+        start_date    = today - timedelta(days=60)
+        p1 = start_date.strftime('%Y%m%d')
+        p2 = (today + timedelta(days=730)).strftime('%Y%m%d')
+
+        sup_code = supplier.code.strip()
+        # Inject supplier filter into the SQL WHERE clause so Tourplan
+        # only returns rows for this supplier (avoids fetching the full table).
+        supplier_sql = _SVS_SYNC_SQL.replace(
+            "where OPT.AC IN ('N')\nand OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s",
+            "where OPT.AC IN ('N')\nand OPT.SUPPLIER = %s\nand OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s",
+        )
+
+        conn = get_tourplan_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(supplier_sql, (sup_code, p1, p2))
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        if not rows:
+            return JsonResponse({'updated': 0, 'skipped': 0,
+                                 'message': 'Sin datos en Tourplan para este proveedor'})
+
+        changes, stats = _process_db_svs_rows(rows, today, start_date)
+
+        applicable = [
+            c for c in changes
+            if c.get('action') in ('Update', 'UpdateCI', 'UpdateFixedCost')
+        ]
+        if applicable:
+            apply_confirmed_changes(applicable)
+
+        return JsonResponse({
+            'updated': len(applicable),
+            'skipped': stats.get('rows_read', 0) - len(applicable),
+            'up_to_date': stats.get('up_to_date', 0),
+        })
+
+    except Exception as e:
+        logger.exception('quick_sync_supplier error: %s', e)
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
 def hotel_comparison(request):
     client_id      = request.GET.get('client')
     date_ins       = request.GET.getlist('date_in')
@@ -3112,6 +3696,15 @@ def hotel_comparison(request):
         if is_internal else Client.objects.none()
     )
 
+    special_dates = list(
+        ExternalCalendarEntry.objects
+        .select_related("location")
+        .values("date_from", "date_to", "name", "notes", "category", "location_id")
+    )
+    for sd in special_dates:
+        sd["date_from"] = sd["date_from"].isoformat()
+        sd["date_to"]   = sd["date_to"].isoformat()
+
     context = {
         "locations":         Location.objects.all().order_by("order"),
         "all_suppliers":     all_suppliers,
@@ -3120,6 +3713,7 @@ def hotel_comparison(request):
         "selected_client":   int(client_id) if client_id else None,
         "is_internal":       is_internal,
         "searched":          False,
+        "special_dates":     special_dates,
         # First-slot pre-fill
         "first_date_in":    date_ins[0]       if date_ins       else "",
         "first_date_out":   date_outs[0]      if date_outs      else "",
@@ -3170,6 +3764,11 @@ def hotel_comparison(request):
         .select_related("group__product__supplier__group__location", "group__product__group")
         .prefetch_related("line_rates")
     )
+    if not is_internal:
+        base_qs = base_qs.filter(
+            is_revised=True,
+            group__product__supplier__is_provisional=False,
+        )
 
     rows = []
     seen_keys = set()
@@ -3277,3 +3876,209 @@ def hotel_comparison(request):
     })
 
     return render(request, "tariff/hotel_comparison.html", context)
+
+
+@login_required
+def aliwen_green(request):
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('tariff'))
+    location_id = request.GET.get('location', '')
+    ranking_min = request.GET.get('ranking', '')
+
+    qs = (
+        Supplier.objects
+        .filter(group__type_service="AC")
+        .filter(sustainable_actions__isnull=False)
+        .distinct()
+        .select_related('group__location')
+        .prefetch_related('sustainable_actions')
+        .order_by('group__location__name', 'order', 'name')
+    )
+
+    if location_id:
+        qs = qs.filter(group__location_id=location_id)
+    if ranking_min:
+        try:
+            qs = qs.filter(sustentability_ranking__gte=int(ranking_min))
+        except ValueError:
+            pass
+
+    cat_keys = [c[0] for c in SUSTAINABLE_ACTION_CATEGORIES]
+    grouped = defaultdict(list)
+    for supplier in qs:
+        loc = supplier.group.location
+        actions_by_cat = {k: [] for k in cat_keys}
+        for action in supplier.sustainable_actions.all():
+            if action.category in actions_by_cat:
+                actions_by_cat[action.category].append(action.description)
+        # Ordered list of (cat_label, [descriptions]) matching SUSTAINABLE_ACTION_CATEGORIES order
+        actions_pairs = [
+            (cat_label, actions_by_cat[cat_key])
+            for cat_key, cat_label in SUSTAINABLE_ACTION_CATEGORIES
+        ]
+        grouped[loc].append({
+            'supplier': supplier,
+            'actions_pairs': actions_pairs,
+        })
+
+    grouped_sorted = dict(sorted(grouped.items(), key=lambda x: x[0].name))
+
+    all_locations = Location.objects.filter(
+        location_products__type_service="AC"
+    ).distinct().order_by('name')
+
+    return render(request, 'tariff/aliwen_green.html', {
+        'grouped': grouped_sorted,
+        'all_locations': all_locations,
+        'categories': SUSTAINABLE_ACTION_CATEGORIES,
+        'location_filter': location_id,
+        'ranking_filter': ranking_min,
+    })
+
+
+@login_required
+def aliwen_green_excel(request):
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('tariff'))
+    location_id = request.GET.get('location', '')
+    ranking_min = request.GET.get('ranking', '')
+
+    qs = (
+        Supplier.objects
+        .filter(group__type_service="AC")
+        .filter(sustainable_actions__isnull=False)
+        .distinct()
+        .select_related('group__location')
+        .prefetch_related('sustainable_actions')
+        .order_by('group__location__name', 'order', 'name')
+    )
+    if location_id:
+        qs = qs.filter(group__location_id=location_id)
+    if ranking_min:
+        try:
+            qs = qs.filter(sustentability_ranking__gte=int(ranking_min))
+        except ValueError:
+            pass
+
+    cat_keys   = [c[0] for c in SUSTAINABLE_ACTION_CATEGORIES]
+    cat_labels = [c[1] for c in SUSTAINABLE_ACTION_CATEGORIES]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sustainable Properties"
+
+    # ── Styles ──────────────────────────────────────────────────────────────
+    green_fill   = PatternFill("solid", fgColor="2E8B57")
+    header_fill  = PatternFill("solid", fgColor="E8F5E9")
+    dest_fill    = PatternFill("solid", fgColor="C8E6C9")
+    bold_white   = Font(bold=True, color="FFFFFF", size=11)
+    bold_green   = Font(bold=True, color="1A5C30", size=10)
+    bold_dark    = Font(bold=True, size=10)
+    normal_font  = Font(size=9)
+    wrap_align   = Alignment(wrap_text=True, vertical="top")
+    center_align = Alignment(horizontal="center", vertical="top")
+    thin         = Side(style="thin", color="BBBBBB")
+    border       = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    INTRO = (
+        "When you book with us, you are making a meaningful difference through travel. "
+        "As a certified B Corp, we are committed to using tourism as a force for good. "
+        "For every traveller, we plant 10 native trees in Patagonia to help restore forests "
+        "in damaged areas. Through our partnerships, we also support local communities, "
+        "empowering grassroots tourism initiatives and fostering sustainable economic growth. "
+        "By choosing Aliwen Incoming, you are not just booking a trip — you are actively "
+        "contributing to a more responsible and regenerative way of exploring the world."
+    )
+
+    num_cols = 2 + len(cat_labels)  # Destination + Property + 7 categories
+
+    # Title row
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=num_cols)
+    title_cell = ws.cell(row=1, column=1, value="🌿 Aliwen Green — Sustainable Properties")
+    title_cell.font = Font(bold=True, size=14, color="1A6B3B")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    # Intro text row
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=num_cols)
+    intro_cell = ws.cell(row=2, column=1, value=INTRO)
+    intro_cell.font = Font(size=9, italic=True, color="2C3E30")
+    intro_cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
+    ws.row_dimensions[2].height = 60
+
+    ws.append([])  # blank row 3
+
+    # Header row
+    headers = ["Destination", "Property"] + cat_labels
+    ws.append(headers)
+    header_row = ws.max_row
+    for col_idx, _ in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_idx)
+        cell.font   = bold_green
+        cell.fill   = header_fill
+        cell.border = border
+        cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    ws.row_dimensions[header_row].height = 28
+
+    # Data rows
+    current_location = None
+    for supplier in qs:
+        loc_name = supplier.group.location.name
+        actions_by_cat = {k: [] for k in cat_keys}
+        for action in supplier.sustainable_actions.all():
+            if action.category in actions_by_cat:
+                actions_by_cat[action.category].append(action.description)
+
+        # Destination separator row when location changes
+        if loc_name != current_location:
+            current_location = loc_name
+            ws.append([loc_name])
+            dest_row = ws.max_row
+            ws.merge_cells(start_row=dest_row, start_column=1, end_row=dest_row, end_column=num_cols)
+            dest_cell = ws.cell(row=dest_row, column=1)
+            dest_cell.font = bold_white
+            dest_cell.fill = green_fill
+            dest_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            ws.row_dimensions[dest_row].height = 18
+
+        # Build cell values for categories (join multiple actions with newline)
+        cat_cells = [
+            "\n".join(f"• {d}" for d in actions_by_cat[k]) if actions_by_cat[k] else ""
+            for k in cat_keys
+        ]
+        name_cell_val = supplier.name
+        if supplier.hotel_quality:
+            name_cell_val += f"\n{supplier.hotel_quality}"
+        if supplier.highlight:
+            name_cell_val += f"\n✦ {supplier.highlight}"
+
+        row_data = ["", name_cell_val] + cat_cells
+        ws.append(row_data)
+        data_row = ws.max_row
+        for col_idx, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=data_row, column=col_idx)
+            cell.font      = normal_font
+            cell.border    = border
+            cell.alignment = wrap_align
+        # Ranking in col 1 area (reuse empty dest col to show ranking)
+        ws.cell(row=data_row, column=1).value = f"{supplier.sustentability_ranking}★"
+        ws.cell(row=data_row, column=1).alignment = center_align
+        ws.cell(row=data_row, column=1).font = Font(size=9, bold=True, color="2E8B57")
+        # Estimate row height
+        max_lines = max((v.count('\n') + 1) for v in cat_cells + [name_cell_val] if v) or 1
+        ws.row_dimensions[data_row].height = max(15, min(max_lines * 14, 120))
+
+    # Column widths
+    ws.column_dimensions['A'].width = 6    # ranking
+    ws.column_dimensions['B'].width = 26   # property name
+    col_letter_map = {1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'F', 7: 'G', 8: 'H', 9: 'I'}
+    for i in range(3, num_cols + 1):
+        letter = get_column_letter(i)
+        ws.column_dimensions[letter].width = 22
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="Aliwen_Green_Sustainable_Properties.xlsx"'
+    wb.save(response)
+    return response

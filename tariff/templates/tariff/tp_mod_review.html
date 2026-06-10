@@ -119,7 +119,7 @@ function fmt(n) {
 }
 
 function rowHTML(item) {
-    const isUpdate  = item.action === "Update" || item.action === "UpdateCI";
+    const isUpdate  = item.action === "Update" || item.action === "UpdateCI" || item.action === "UpdateFixedCost";
     const isIgnored = item.ignored;
     const sellEdited = item.edited_sell !== item.sell_tourplan;
 
@@ -150,7 +150,15 @@ function rowHTML(item) {
     const sellAIPrev = isUpdate && item.current_sell != null
         ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>`
         : '';
-    const sellAICell = (isIgnored || item.has_items)
+    const sellAICell = isIgnored
+        ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
+        : item.has_items && item.sell_tourplan != null
+        ? `<div style="width:110px;text-align:right">
+               ${item.current_sell != null ? `<span class="text-decoration-line-through text-muted d-block" style="font-size:.75rem">${fmt(item.current_sell)}</span>` : ''}
+               <span class="fw-semibold text-warning-emphasis">${fmt(item.sell_tourplan)}</span>
+               <div class="text-muted" style="font-size:.60rem">auto</div>
+           </div>`
+        : item.has_items
         ? `<div style="width:110px;text-align:right" class="text-muted">—</div>`
         : `<div style="width:110px;text-align:right">
                <div id="sell-ai-display-${item._id}" class="${item.isEditing ? 'd-none' : ''}">
@@ -191,7 +199,7 @@ function rowHTML(item) {
             </div>
             <div class="flex-grow-1">
                 <div class="fw-semibold" style="font-size:.88rem">${item.product_name}
-                    ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Solo se actualiza el costo — venta no se modifica">ítems de costo</span>' : ""}
+                    ${item.has_items ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.62rem" title="Costo y venta se recalculan automáticamente desde la sumatoria de ítems">ítems de costo</span>' : ""}
                     ${item.status === "Provisional" ? '<span class="badge ms-1" style="background-color:#F59E0B;color:#000;font-size:.62rem;">Provisional</span>' : ""}
                 </div>
                 ${item.has_items && item.ci_name ? `<div class="text-info-emphasis" style="font-size:.70rem">↳ ${item.ci_name}</div>` : ""}
@@ -267,7 +275,7 @@ function renderAll() {
 function updateTopBar() {
     const active  = reviewState.filter(i => !i.ignored);
     const ignored = reviewState.filter(i => i.ignored);
-    document.getElementById("tb-count-update").textContent  = active.filter(i => i.action === "Update" || i.action === "UpdateCI").length;
+    document.getElementById("tb-count-update").textContent  = active.filter(i => i.action === "Update" || i.action === "UpdateCI" || i.action === "UpdateFixedCost").length;
     document.getElementById("tb-count-add").textContent     = active.filter(i => i.action === "Add").length;
     document.getElementById("tb-count-delete").textContent  = active.filter(i => i.action === "Delete").length;
     document.getElementById("tb-count-ignored").textContent = ignored.length;
@@ -277,20 +285,45 @@ function updateTopBar() {
     btn.disabled = n === 0;
 }
 
+// ─── Partial re-render helpers ────────────────────────────────────────────────
+function rerenderItem(id) {
+    const item = reviewState.find(i => i._id === id);
+    if (!item) return;
+    const el = document.getElementById(`row-${id}`);
+    if (!el) { renderAll(); return; }
+    // Replace only this row — avoids phantom re-click caused by full renderAll()
+    // when the browser fires a second click on the new element at the same coords.
+    const tmp = document.createElement('div');
+    tmp.innerHTML = (item.action === "Delete" ? rowHTMLDelete(item) : rowHTML(item)).trim();
+    el.replaceWith(tmp.firstElementChild);
+}
+
+function renderSupplier(supplierName) {
+    const cardIdx = supplierCardIndex[supplierName];
+    if (!cardIdx) return;
+    const items = reviewState.filter(i => (i.supplier_name || "Sin proveedor") === supplierName);
+    const container = document.getElementById(`supplier-rows-${cardIdx}`);
+    if (!container) return;
+    container.innerHTML = items.map(item =>
+        item.action === "Delete" ? rowHTMLDelete(item) : rowHTML(item)
+    ).join("") || `<p class="text-muted small fst-italic ps-2">Sin ítems.</p>`;
+}
+
 // ─── Item-level actions ───────────────────────────────────────────────────────
 function toggleIgnore(id) {
     const item = reviewState.find(i => i._id === id);
     if (!item) return;
     item.ignored   = !item.ignored;
     item.isEditing = false;
-    renderAll();
+    rerenderItem(id);
+    updateTopBar();
 }
 
 function toggleEdit(id) {
     const item = reviewState.find(i => i._id === id);
     if (!item) return;
     item.isEditing = !item.isEditing;
-    renderAll();
+    rerenderItem(id);
 }
 
 function setSell(id, val) {
@@ -306,7 +339,8 @@ function setSeason(id, val) {
 function ignoreSupplier(supplierName) {
     reviewState.filter(i => (i.supplier_name || "Sin proveedor") === supplierName)
                .forEach(i => { i.ignored = true; i.isEditing = false; });
-    renderAll();
+    renderSupplier(supplierName);
+    updateTopBar();
     // Collapse the card
     const cardIdx = supplierCardIndex[supplierName];
     if (cardIdx) {
@@ -322,7 +356,8 @@ function ignoreSupplier(supplierName) {
 function restoreSupplier(supplierName) {
     reviewState.filter(i => (i.supplier_name || "Sin proveedor") === supplierName)
                .forEach(i => { i.ignored = false; });
-    renderAll();
+    renderSupplier(supplierName);
+    updateTopBar();
 }
 
 // ─── Confirm ──────────────────────────────────────────────────────────────────

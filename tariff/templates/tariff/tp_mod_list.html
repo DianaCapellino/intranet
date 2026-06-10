@@ -303,11 +303,9 @@ function selectAll(key) {
     Array.from(el.options).forEach(o => o.selected = true);
 }
 
-// ─── Default sync start date: 2 months ago ────────────────────────────────────
+// ─── Default sync start date: today ──────────────────────────────────────────
 (function () {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 2);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = new Date().toISOString().slice(0, 10);
     document.getElementById('sync-date-ac').value = iso;
     document.getElementById('sync-date-na').value = iso;
 })();

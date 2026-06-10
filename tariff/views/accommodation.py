@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from tariff.models import Supplier, SupplierGroup, Product, ProductGroup, Location, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS
+from tariff.models import Supplier, SupplierGroup, Product, ProductGroup, Location, ATTRACTIONS, CHILDREN_RANKING_OPTIONS, DISABLED_RANKING_OPTIONS, SUSTENTABILITY_RANKING_OPTIONS, INTERESTS, HOTEL_QUALITY_OPTIONS, SUSTAINABLE_ACTION_CATEGORIES
 from intranet.models import Client
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -22,7 +22,7 @@ def supplier(request):
 
     suppliers = Supplier.objects.filter(
         group__type_service="AC"
-    ).prefetch_related("supplier_products")
+    ).prefetch_related("supplier_products", "sustainable_actions")
 
     if request.method == "POST":
 
@@ -45,8 +45,9 @@ def supplier(request):
                 "ATTRACTIONS": ATTRACTIONS,
                 "INTERESTS": INTERESTS,
                 "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-                "supplier_groups": supplier_groups .order_by("location__name", "name"),
+                "supplier_groups": supplier_groups.order_by("location__name", "name"),
                 "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
+                "SUSTAINABLE_ACTION_CATEGORIES": SUSTAINABLE_ACTION_CATEGORIES,
             })
 
         group = SupplierGroup.objects.get(pk=group_form)
@@ -80,6 +81,11 @@ def supplier(request):
             closing_note=request.POST.get("closing_note"),
             prepayment=request.POST.get("prepayment"),
             recommended=request.POST.get("recommended") == "on",
+            highlight=request.POST.get("highlight", ""),
+            highlight_sustentability=request.POST.get("highlight_sustentability", ""),
+            room_quantity=request.POST.get("room_quantity", ""),
+            inclusions=request.POST.get("inclusions", ""),
+            bedding=request.POST.get("bedding", ""),
             pic1_url=request.POST.get("pic1_url"),
             pic2_url=request.POST.get("pic2_url"),
             pic3_url=request.POST.get("pic3_url"),
@@ -117,8 +123,9 @@ def supplier(request):
             "ATTRACTIONS": ATTRACTIONS,
             "INTERESTS": INTERESTS,
             "HOTEL_QUALITY_OPTIONS": HOTEL_QUALITY_OPTIONS,
-            "supplier_groups": supplier_groups .order_by("location__name", "name"),
+            "supplier_groups": supplier_groups.order_by("location__name", "name"),
             "MARGIN_ACC_OPTIONS": MARGIN_ACC_OPTIONS,
+            "SUSTAINABLE_ACTION_CATEGORIES": SUSTAINABLE_ACTION_CATEGORIES,
         })
 
 @login_required

@@ -444,6 +444,33 @@
             <img class="mx-auto d-block mb-4" src="../../static/intranet/images/logo2.png" style="max-width:200px;">
         </div>
 
+        {% if client_holiday_alert %}{% with alert=client_holiday_alert %}
+        {% if alert.type == "weekend" %}
+        <div class="alert alert-secondary py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+            <span>The office is closed today. We will be back on Monday.</span>
+        </div>
+        {% elif alert.type == "upcoming_holiday" %}
+        <div class="alert alert-warning py-2 px-3 mb-3 d-flex align-items-center gap-2" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+            <span><strong>{{ alert.date_str }}</strong> will be a National Holiday in Argentina. Response times may be affected.</span>
+        </div>
+        {% elif alert.type == "today_holiday" %}
+        <div class="alert {% if alert.working_users %}alert-warning{% else %}alert-secondary{% endif %} py-2 px-3 mb-3 d-flex align-items-center flex-wrap gap-2" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="28" height="19" style="vertical-align:middle;flex-shrink:0;border-radius:2px;"><rect width="900" height="600" fill="#74ACDF"/><rect y="200" width="900" height="200" fill="#fff"/><circle cx="450" cy="300" r="55" fill="#F6B40E"/></svg>
+            <span>
+                Today is a National Holiday in Argentina.
+                {% if alert.working_users %}Staff working today:{% else %}The office is closed.{% endif %}
+            </span>
+            {% for u in alert.working_users %}
+            <span style="background-color:{{ u.color|default:'#6c757d' }};color:{{ u.color|default:'#6c757d'|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">
+                {{ u.other_name|default:u.username }}
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}{% endif %}
+
         <style>.accordion-body .text-muted strong { color: #1a1a1a !important; }</style>
 
         <div class="accordion" id="clientAccordion">
@@ -473,6 +500,7 @@
                                         <th>Date out</th>
                                         <th>Trip</th>
                                         <th>Pax</th>
+                                        <th>Contact</th>
                                         <th>Ref</th>
                                         <th>Sales</th>
                                         <th>Operations</th>
@@ -485,6 +513,7 @@
                                         <td>{{ trip.out_date|date:"d M Y" }}</td>
                                         <td>{{ trip.name }}</td>
                                         <td>{{ trip.quantity_pax }}</td>
+                                        <td class="text-muted small">{{ trip.contact }}</td>
                                         <td class="text-muted small">{{ trip.client_reference }}</td>
                                         <td>{% if trip.responsable_user %}<span style="background:{{ trip.responsable_user.color }};color:{{ trip.responsable_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.responsable_user.other_name }}</span>{% endif %}</td>
                                         <td>{% if trip.operations_user %}<span style="background:{{ trip.operations_user.color }};color:{{ trip.operations_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.operations_user.other_name }}</span>{% endif %}</td>
@@ -511,6 +540,7 @@
                                         <th>Date out</th>
                                         <th>Trip</th>
                                         <th>Pax</th>
+                                        <th>Contact</th>
                                         <th>Ref</th>
                                         <th>Sales</th>
                                         <th>Operations</th>
@@ -523,6 +553,7 @@
                                         <td>{{ trip.out_date|date:"d M Y" }}</td>
                                         <td>{{ trip.name }}</td>
                                         <td>{{ trip.quantity_pax }}</td>
+                                        <td class="text-muted small">{{ trip.contact }}</td>
                                         <td class="text-muted small">{{ trip.client_reference }}</td>
                                         <td>{% if trip.responsable_user %}<span style="background:{{ trip.responsable_user.color }};color:{{ trip.responsable_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.responsable_user.other_name }}</span>{% endif %}</td>
                                         <td>{% if trip.operations_user %}<span style="background:{{ trip.operations_user.color }};color:{{ trip.operations_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.operations_user.other_name }}</span>{% endif %}</td>
@@ -553,7 +584,8 @@
                     <div class="accordion-body pt-4">
 
                         <h6 class="fw-bold text-uppercase mb-3" style="letter-spacing:1px;font-size:0.75rem;color:#555;">Navigation</h6>
-                        <p class="small text-muted mb-4">Use the top navigation bar to access the two main sections of the portal: <strong>Entries</strong> and <strong>Tariff</strong>.</p>
+                        <p class="small text-muted mb-4">Use the top navigation bar to access the three main sections of the portal: <strong>Tariff</strong>, <strong>Entries</strong> and <strong>Calendar</strong>.
+                        You can always go back to this page pressing Aliwen Logo on the top navigation bar at the left.</p>
 
                         <hr>
 
@@ -598,9 +630,23 @@
                             <li class="fw-semibold" style="color:#1a1a1a; list-style:none; margin-left:-1.2em;">Additional features</li>
                             <li>Use the <i class="fa-solid fa-file-pdf"></i> <strong>PDF</strong> button to generate a printable rate sheet for accommodation or services.</li>
                             <li>Use the <i class="fa-solid fa-file-excel"></i> <strong>Excel</strong> button to download a spreadsheet of the rates currently displayed.</li>
-                            <li>Use the <i class="fa-solid fa-calendar"></i> <strong>Calendar</strong> button to visit the Special Dates section and download calendars by year.</li>
+                            <li>Use the <i class="fa-solid fa-calendar"></i> <strong>Calendar</strong> button to go directly to the Calendar section with Special Dates in Argentina.</li>
                             <li>Use the <i class="fa-solid fa-history"></i> <strong>History</strong> button to view the History of Changes and see the latest rate updates.</li>
                             <li>Use the <i class="fa-solid fa-dollar-sign"></i><i class="fa-solid fa-dollar-sign"></i> button to open the Hotel Rate Comparison tool and compare rooms across different properties.</li>
+                        </ul>
+
+                        <hr>
+
+                        <h6 class="fw-bold text-uppercase mb-3 mt-3" style="letter-spacing:1px;font-size:0.75rem;color:#555;">
+                            <i class="fa-solid fa-calendar me-2"></i>Calendar
+                        </h6>
+                        <p class="small text-muted mb-1">The Calendar page shows all public holidays, special dates, long weekends and dates not recommended for travel, organised by destination.</p>
+                        <ul class="small text-muted mb-4">
+                            <li><strong>Holiday</strong>: On these days, only a reduced team will be available, except on Christmas, New Year and Easter. Bookings in particular may experience delays, as many suppliers will not be operating. Some properties may also have special conditions.</li>
+                            <li><strong>Long Weekend</strong>: These weekends, combined with public holidays, may mean that some properties have special policies.</li>
+                            <li><strong>Other special dates</strong>: These dates generally apply to a specific destination and may result in operational changes or special conditions. Hover over any date to see a brief explanation.</li>
+                            <li><strong>Full Moon</strong>: In some destinations, such as Iguazú, there are tours specifically designed for this date (and a couple of days before and after). Contact the sales team for more details.</li>
+                            <li><strong>Not recommended</strong>: This generally applies to a specific destination that we do not recommend visiting on those particular dates — it could be an overly crowded holiday period or a time when most properties are closed.</li>
                         </ul>
 
                         <hr>

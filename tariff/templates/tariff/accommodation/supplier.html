@@ -176,6 +176,38 @@
 
                     <hr>
 
+                    <h5 class="mb-3">Destacados</h5>
+
+                    <div class="mb-2">
+                        <small class="text-muted">Highlight (característica destacada)</small>
+                        <textarea class="form-control" name="highlight" rows="2" placeholder="Ej: Rooftop pool with panoramic city views"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Highlight Sustentabilidad</small>
+                        <textarea class="form-control" name="highlight_sustentability" rows="2" placeholder="Ej: Solar panels cover 60% of energy needs"></textarea>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="mb-3">Notas alojamiento</h5>
+
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <small class="text-muted">Cantidad de habitaciones</small>
+                            <input class="form-control" name="room_quantity" placeholder="Ej: 45">
+                        </div>
+                        <div class="col-8">
+                            <small class="text-muted">Bedding</small>
+                            <input class="form-control" name="bedding" placeholder="Ej: All rooms with king bed, some twin available">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Incluido / No incluido</small>
+                        <textarea class="form-control" name="inclusions" rows="2" placeholder="Ej: Breakfast included. Transfers not included."></textarea>
+                    </div>
+
+                    <hr>
+
                     <h5 class="mb-3">Imágenes (URLs)</h5>
                     <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
 
@@ -464,6 +496,38 @@ High – 0.82 - Tarifas especiales negociadas
 
                                             <hr>
 
+                                            <h5 class="mb-3">Destacados</h5>
+
+                                            <div class="mb-2">
+                                                <small class="text-muted">Highlight (característica destacada)</small>
+                                                <textarea class="form-control" name="highlight" rows="2" placeholder="Ej: Rooftop pool with panoramic city views">{{ supplier.highlight|default:'' }}</textarea>
+                                            </div>
+                                            <div class="mb-3">
+                                                <small class="text-muted">Highlight Sustentabilidad</small>
+                                                <textarea class="form-control" name="highlight_sustentability" rows="2" placeholder="Ej: Solar panels cover 60% of energy needs">{{ supplier.highlight_sustentability|default:'' }}</textarea>
+                                            </div>
+
+                                            <hr>
+
+                                            <h5 class="mb-3">Notas alojamiento</h5>
+
+                                            <div class="row mb-3">
+                                                <div class="col-4">
+                                                    <small class="text-muted">Cantidad de habitaciones</small>
+                                                    <input class="form-control" name="room_quantity" placeholder="Ej: 45" value="{{ supplier.room_quantity|default:'' }}">
+                                                </div>
+                                                <div class="col-8">
+                                                    <small class="text-muted">Bedding</small>
+                                                    <input class="form-control" name="bedding" placeholder="Ej: All rooms with king bed, some twin available" value="{{ supplier.bedding|default:'' }}">
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <small class="text-muted">Incluido / No incluido</small>
+                                                <textarea class="form-control" name="inclusions" rows="2" placeholder="Ej: Breakfast included. Transfers not included.">{{ supplier.inclusions|default:'' }}</textarea>
+                                            </div>
+
+                                            <hr>
+
                                             <h5 class="mb-3">Imágenes (URLs)</h5>
                                             <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
 
@@ -475,11 +539,56 @@ High – 0.82 - Tarifas especiales negociadas
                                             </div>
                                             <div class="mb-3">
                                                 <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ supplier.pic3_url|default:'' }}">
-                                            </div>                                                        
+                                            </div>
 
                                             <input id="modify-supplier-{{ supplier.id }}" class="btn btn-dark btn-lg modify-supplier-btn" type="submit" value="MODIFICAR">
 
                                         </form>
+
+                                        {# ── Acciones Sustentables (fuera del form principal, usa AJAX) ── #}
+                                        <hr>
+                                        <h5 class="mb-3">Acciones Sustentables</h5>
+
+                                        <div id="sustainable-actions-list-{{ supplier.id }}" class="mb-3">
+                                            {% for action in supplier.sustainable_actions.all %}
+                                            <div class="d-flex align-items-start gap-2 mb-2 sustainable-action-row" data-action-id="{{ action.id }}">
+                                                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle" style="white-space:nowrap;min-width:130px;">{{ action.get_category_display }}</span>
+                                                <span class="flex-grow-1 small">{{ action.description }}</span>
+                                                {% if user.isAdmin %}
+                                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-action" data-action-id="{{ action.id }}" data-supplier-id="{{ supplier.id }}">&times;</button>
+                                                {% endif %}
+                                            </div>
+                                            {% empty %}
+                                            <p class="text-muted small" id="no-actions-msg-{{ supplier.id }}">No hay acciones cargadas aún.</p>
+                                            {% endfor %}
+                                        </div>
+
+                                        {% if user.isAdmin %}
+                                        <div class="border rounded p-3 bg-light">
+                                            <h6 class="mb-2">Agregar acción sustentable</h6>
+                                            <div class="row g-2 align-items-end">
+                                                <div class="col-4">
+                                                    <label class="form-label small mb-1">Categoría</label>
+                                                    <select class="form-select form-select-sm sa-category-select" data-supplier-id="{{ supplier.id }}">
+                                                        <option value="">— Seleccionar —</option>
+                                                        {% for val, label in SUSTAINABLE_ACTION_CATEGORIES %}
+                                                        <option value="{{ val }}">{{ label }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="form-label small mb-1">Descripción</label>
+                                                    <input type="text" class="form-control form-control-sm sa-description-input" data-supplier-id="{{ supplier.id }}" placeholder="Descripción de la acción">
+                                                </div>
+                                                <div class="col-2">
+                                                    <button type="button" class="btn btn-sm btn-dark w-100 btn-add-action" data-supplier-id="{{ supplier.id }}">
+                                                        <i class="fa-solid fa-plus"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="sa-error text-danger small mt-1 d-none" id="sa-error-{{ supplier.id }}"></div>
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>  
                             </div>
@@ -570,6 +679,74 @@ High – 0.82 - Tarifas especiales negociadas
                                             {% endfor %}
 
                                         </div>
+
+                                        {# ── Internal info: sustainability, highlights, notes ── #}
+                                        {% if user.userType != "Cliente" %}
+                                        {% if supplier.highlight or supplier.highlight_sustentability or supplier.room_quantity or supplier.inclusions or supplier.bedding or supplier.sustainable_actions.exists %}
+                                        <hr>
+                                        <h5 class="mb-3">
+                                            <i class="fa-solid fa-leaf text-success me-2"></i>Sustentabilidad & Destacados
+                                        </h5>
+
+                                        {# Rankings row #}
+                                        <div class="row g-3 mb-3">
+                                            <div class="col-auto">
+                                                <small class="text-muted d-block">Ranking sustentabilidad</small>
+                                                <span class="fw-bold text-success" style="font-size:1.1rem;">{{ supplier.sustentability_ranking }}★</span>
+                                            </div>
+                                            {% if supplier.highlight %}
+                                            <div class="col">
+                                                <small class="text-muted d-block">Highlight</small>
+                                                <span>{{ supplier.highlight }}</span>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+
+                                        {% if supplier.highlight_sustentability %}
+                                        <div class="mb-3">
+                                            <small class="text-muted d-block">Highlight Sustentabilidad</small>
+                                            <span>{{ supplier.highlight_sustentability }}</span>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if supplier.room_quantity or supplier.inclusions or supplier.bedding %}
+                                        <div class="row g-3 mb-3">
+                                            {% if supplier.room_quantity %}
+                                            <div class="col-auto">
+                                                <small class="text-muted d-block">Habitaciones</small>
+                                                <span>{{ supplier.room_quantity }}</span>
+                                            </div>
+                                            {% endif %}
+                                            {% if supplier.bedding %}
+                                            <div class="col">
+                                                <small class="text-muted d-block">Bedding</small>
+                                                <span>{{ supplier.bedding }}</span>
+                                            </div>
+                                            {% endif %}
+                                            {% if supplier.inclusions %}
+                                            <div class="col-12">
+                                                <small class="text-muted d-block">Incluido / No incluido</small>
+                                                <span>{{ supplier.inclusions }}</span>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+
+                                        {% if supplier.sustainable_actions.all %}
+                                        <div>
+                                            <small class="text-muted fw-semibold d-block mb-2">Acciones Sustentables</small>
+                                            {% for action in supplier.sustainable_actions.all %}
+                                            <div class="d-flex align-items-start gap-2 mb-2">
+                                                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle" style="white-space:nowrap;min-width:130px;font-size:.72rem;">{{ action.get_category_display }}</span>
+                                                <span class="small">{{ action.description }}</span>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+
+                                        {% endif %}
+                                        {% endif %}{# end non-client #}
+
                                         <br>
                                     </div>
                                 </div>
@@ -906,6 +1083,96 @@ High – 0.82 - Tarifas especiales negociadas
     // ── Warn on close with unsaved changes ────────────────────────────────────
     document.getElementById('reorderOffcanvas').addEventListener('hide.bs.offcanvas', function (e) {
         if (dirty && !confirm('¿Cerrar sin guardar los cambios de orden?')) e.preventDefault();
+    });
+})();
+</script>
+
+<script>
+(function () {
+    const CSRF = '{{ csrf_token }}';
+
+    function categoryBadgeHtml(display) {
+        return `<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle" style="white-space:nowrap;min-width:130px;">${display}</span>`;
+    }
+
+    function addActionRow(supplierId, actionId, categoryDisplay, description) {
+        const list = document.getElementById(`sustainable-actions-list-${supplierId}`);
+        const noMsg = document.getElementById(`no-actions-msg-${supplierId}`);
+        if (noMsg) noMsg.remove();
+
+        const row = document.createElement('div');
+        row.className = 'd-flex align-items-start gap-2 mb-2 sustainable-action-row';
+        row.dataset.actionId = actionId;
+        row.innerHTML = `
+            ${categoryBadgeHtml(categoryDisplay)}
+            <span class="flex-grow-1 small">${description}</span>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-action" data-action-id="${actionId}" data-supplier-id="${supplierId}">&times;</button>`;
+        list.appendChild(row);
+    }
+
+    // Add action
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-add-action');
+        if (!btn) return;
+        const supplierId = btn.dataset.supplierId;
+        const catSelect = document.querySelector(`.sa-category-select[data-supplier-id="${supplierId}"]`);
+        const descInput = document.querySelector(`.sa-description-input[data-supplier-id="${supplierId}"]`);
+        const errDiv = document.getElementById(`sa-error-${supplierId}`);
+        const category = catSelect.value.trim();
+        const description = descInput.value.trim();
+        errDiv.classList.add('d-none');
+        if (!category || !description) {
+            errDiv.textContent = 'Completá la categoría y la descripción.';
+            errDiv.classList.remove('d-none');
+            return;
+        }
+        btn.disabled = true;
+        fetch(`/tariff/modify/supplier/${supplierId}/sustainable-action/add/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify({ category, description }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.ok) {
+                addActionRow(supplierId, data.id, data.category_display, data.description);
+                catSelect.value = '';
+                descInput.value = '';
+            } else {
+                errDiv.textContent = data.error || 'Error al guardar';
+                errDiv.classList.remove('d-none');
+            }
+        })
+        .catch(() => { btn.disabled = false; errDiv.textContent = 'Error de conexión'; errDiv.classList.remove('d-none'); });
+    });
+
+    // Delete action
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-delete-action');
+        if (!btn) return;
+        if (!confirm('¿Eliminar esta acción sustentable?')) return;
+        const actionId = btn.dataset.actionId;
+        const supplierId = btn.dataset.supplierId;
+        fetch(`/tariff/modify/sustainable-action/${actionId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                const row = document.querySelector(`.sustainable-action-row[data-action-id="${actionId}"]`);
+                if (row) row.remove();
+                const list = document.getElementById(`sustainable-actions-list-${supplierId}`);
+                if (list && !list.querySelector('.sustainable-action-row')) {
+                    const p = document.createElement('p');
+                    p.className = 'text-muted small';
+                    p.id = `no-actions-msg-${supplierId}`;
+                    p.textContent = 'No hay acciones cargadas aún.';
+                    list.appendChild(p);
+                }
+            }
+        });
     });
 })();
 </script>

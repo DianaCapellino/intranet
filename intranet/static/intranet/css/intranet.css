@@ -125,3 +125,11 @@ nav ul li {
       font-size: 1.5rem;
     }
 }
+
+/* DataTables processing dots — Aliwen primary color */
+div.dt-processing > div > div {
+    background-color: var(--bs-primary) !important;
+}
+.dt-processing .spinner-border {
+    color: var(--bs-primary) !important;
+}

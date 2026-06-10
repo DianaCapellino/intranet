@@ -139,25 +139,49 @@
                         </div>
                     </div>
                     <div class="card-body p-2">
-                        <div class="row g-0">
-                            {% for product in products %}
-                            <div class="col-md-4 col-lg-3 p-2 supplier-item svs-item"
-                                 data-location="{{ location.id }}"
-                                 data-name="{{ product.name|lower }}">
-                                <div class="form-check">
-                                    <input class="form-check-input svs-check loc-svs-{{ location.id }}"
-                                           type="checkbox"
-                                           name="svs_products"
-                                           value="{{ product.id }}"
-                                           id="svs-prod-{{ product.id }}">
-                                    <label class="form-check-label" for="svs-prod-{{ product.id }}">
-                                        {{ product.name }}
-                                        <small class="text-muted d-block">{{ product.group.name }}</small>
+                        {% regroup products by group.id as product_groups %}
+                        {% for pg in product_groups %}
+                        <div class="svs-group-block mb-2">
+                            <div class="d-flex align-items-center justify-content-between px-2 py-1 mb-1"
+                                 style="background:#f0f0f0; border-left:3px solid #888; border-radius:2px;">
+                                <span class="fw-semibold small text-uppercase" style="letter-spacing:0.5px; color:#444;">
+                                    {{ pg.list.0.group.name }}
+                                </span>
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="svs-grp-{{ location.id }}-{{ pg.grouper }}"
+                                           onchange="toggleGroup('svs', '{{ location.id }}', '{{ pg.grouper }}', this.checked)">
+                                    <label class="form-check-label small" for="svs-grp-{{ location.id }}-{{ pg.grouper }}">
+                                        {% if is_client %}All{% else %}Todos{% endif %}
                                     </label>
                                 </div>
                             </div>
-                            {% endfor %}
+                            <div class="row g-0">
+                                {% for product in pg.list %}
+                                <div class="col-md-4 col-lg-3 p-2 supplier-item svs-item"
+                                     data-location="{{ location.id }}"
+                                     data-group="{{ pg.grouper }}"
+                                     data-name="{{ product.name|lower }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input svs-check loc-svs-{{ location.id }} grp-svs-{{ location.id }}-{{ pg.grouper }}"
+                                               type="checkbox"
+                                               name="svs_products"
+                                               value="{{ product.id }}"
+                                               id="svs-prod-{{ product.id }}">
+                                        <label class="form-check-label" for="svs-prod-{{ product.id }}">
+                                            {{ product.name }}
+                                            {% with rgs=product.rate_products.all %}
+                                            {% if rgs %}
+                                            <small class="text-muted d-block">{% for rg in rgs %}{{ rg.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>
+                                            {% endif %}
+                                            {% endwith %}
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
                         </div>
+                        {% endfor %}
                     </div>
                 </div>
                 {% endfor %}
@@ -180,25 +204,53 @@
 function selectAll(type, checked) {
     document.querySelectorAll('.' + type + '-check').forEach(cb => cb.checked = checked);
     document.querySelectorAll('[id^="' + type + '-all-"]').forEach(cb => cb.checked = checked);
+    document.querySelectorAll('[id^="' + type + '-grp-"]').forEach(cb => cb.checked = checked);
 }
 
 function toggleLocation(type, locId, checked) {
     document.querySelectorAll('.loc-' + type + '-' + locId).forEach(cb => cb.checked = checked);
+    document.querySelectorAll('[id^="' + type + '-grp-' + locId + '-"]').forEach(cb => cb.checked = checked);
     const allCb = document.getElementById(type + '-all-' + locId);
     if (allCb) allCb.checked = checked;
 }
 
-// Keep per-location "all" checkbox in sync
+function toggleGroup(type, locId, groupId, checked) {
+    document.querySelectorAll('.grp-' + type + '-' + locId + '-' + groupId).forEach(cb => cb.checked = checked);
+    syncLocationCheckbox(type, locId);
+}
+
+function syncLocationCheckbox(type, locId) {
+    const items = document.querySelectorAll('.loc-' + type + '-' + locId);
+    const allCb = document.getElementById(type + '-all-' + locId);
+    if (allCb) allCb.checked = items.length > 0 && [...items].every(cb => cb.checked);
+}
+
+function syncGroupCheckbox(type, locId, groupId) {
+    const items = document.querySelectorAll('.grp-' + type + '-' + locId + '-' + groupId);
+    const grpCb = document.getElementById(type + '-grp-' + locId + '-' + groupId);
+    if (grpCb) grpCb.checked = items.length > 0 && [...items].every(cb => cb.checked);
+}
+
+// Keep group and location checkboxes in sync when individual items change
 document.addEventListener('change', function(e) {
     const type = e.target.classList.contains('acc-check') ? 'acc'
                : e.target.classList.contains('svs-check') ? 'svs' : null;
     if (!type) return;
+
     const locId = [...e.target.classList]
         .find(c => c.startsWith('loc-' + type + '-'))?.replace('loc-' + type + '-', '');
     if (!locId) return;
-    const all = document.querySelectorAll('.loc-' + type + '-' + locId);
-    const allCb = document.getElementById(type + '-all-' + locId);
-    if (allCb) allCb.checked = [...all].every(cb => cb.checked);
+
+    syncLocationCheckbox(type, locId);
+
+    if (type === 'svs') {
+        const grpClass = [...e.target.classList]
+            .find(c => c.startsWith('grp-svs-' + locId + '-'));
+        if (grpClass) {
+            const groupId = grpClass.replace('grp-svs-' + locId + '-', '');
+            syncGroupCheckbox(type, locId, groupId);
+        }
+    }
 });
 
 // Search filter — searches whichever tab is active

@@ -124,7 +124,7 @@
                             <label for="user_working" class="form-label">Trabajado Por</label>
                             <select class="form-select" aria-label="user_working" name="user_working" id="user_working_select">
                                 {% for user in users %}
-                                    {% if user.isActivated %}
+                                    {% if user.isActivated and user.show_in_calendar or user.isActivated and user.id == entry.user_working.id %}
                                         {% if user.id == entry.user_working.id %}
                                             <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
                                         {% else %}
@@ -138,7 +138,7 @@
                             <label for="user_creator" class="form-label">Cotizado Por</label>
                             <select class="form-select" aria-label="user_creator" name="user_creator" id="user_creator_select">
                                 {% for user in users %}
-                                    {% if user.isActivated %}
+                                    {% if user.isActivated and user.show_in_calendar or user.isActivated and user.id == entry.user_creator.id %}
                                         {% if user.id == entry.user_creator.id %}
                                             <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
                                         {% else %}

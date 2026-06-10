@@ -25,11 +25,17 @@
             </div>
             <div class="card-body">
                 <div class="row mb-3">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Código *</label>
                         <input class="form-control" name="code" placeholder="Código (TP)" maxlength="6" value="{{ product.code }}" required>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-2">
+                        <label class="form-label">Cód. destino TP</label>
+                        <input class="form-control" name="tp_location_code" placeholder="{{ product.group.location.code }}" maxlength="10"
+                               value="{{ product.tp_location_code }}"
+                               title="Código de destino en Tourplan. Por defecto: {{ product.group.location.code }}">
+                    </div>
+                    <div class="col-md-5">
                         <label class="form-label">Nombre del Producto *</label>
                         <input class="form-control" name="name" placeholder="Nombre del producto" value="{{ product.name }}" required>
                     </div>

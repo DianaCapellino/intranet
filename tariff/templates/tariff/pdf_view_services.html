@@ -208,15 +208,22 @@
 
             .print-toolbar {
                 position: fixed;
-                top: 16px;
-                right: 20px;
+                top: 0;
+                left: 0;
+                right: 0;
                 z-index: 999;
+                background: #fff;
+                border-bottom: 1px solid #ddd;
+                padding: 10px 20px;
                 display: flex;
+                align-items: center;
+                flex-wrap: wrap;
                 gap: 8px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.08);
             }
 
             .btn-print {
-                padding: 9px 20px;
+                padding: 7px 18px;
                 font-size: 13px;
                 cursor: pointer;
                 background: #1a1a1a;
@@ -224,10 +231,11 @@
                 border: none;
                 border-radius: 4px;
                 font-family: Arial, sans-serif;
+                white-space: nowrap;
             }
 
             .btn-back {
-                padding: 9px 14px;
+                padding: 7px 12px;
                 font-size: 13px;
                 text-decoration: none;
                 background: #fff;
@@ -235,12 +243,57 @@
                 color: #333;
                 font-family: Arial, sans-serif;
                 border: 1px solid #ccc;
+                white-space: nowrap;
             }
+
+            .toolbar-sep {
+                width: 1px;
+                height: 28px;
+                background: #ddd;
+                margin: 0 4px;
+            }
+
+            .toolbar-label {
+                font-family: Arial, sans-serif;
+                font-size: 11px;
+                color: #888;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                white-space: nowrap;
+            }
+
+            .pg-pill {
+                display: none; /* shown by JS */
+            }
+
+            .pg-pill-label {
+                padding: 5px 12px;
+                font-size: 12px;
+                font-family: Arial, sans-serif;
+                border: 1px solid #ccc;
+                border-radius: 20px;
+                cursor: pointer;
+                background: #f8f8f8;
+                color: #333;
+                transition: background 0.15s, color 0.15s;
+                user-select: none;
+                white-space: nowrap;
+            }
+
+            .pg-pill:checked + .pg-pill-label {
+                background: #1a1a1a;
+                color: #fff;
+                border-color: #1a1a1a;
+            }
+
+            body { padding-top: 60px; }
         }
 
         @media print {
             .print-toolbar { display: none !important; }
-            body { background: #fff; }
+            .pg-block { display: revert; } /* let JS-hidden blocks print if checked */
+            body { background: #fff; padding-top: 0; }
             .destination-block { padding: 0; }
         }
     </style>
@@ -249,10 +302,16 @@
 
 <!-- Screen-only toolbar -->
 <div class="print-toolbar">
+    <button class="btn-back" onclick="window.close()">&#8592; {% if request.user.userType == "Cliente" %}Back{% else %}Volver{% endif %}</button>
+    <div class="toolbar-sep"></div>
+    <span class="toolbar-label">{% if request.user.userType == "Cliente" %}Groups:{% else %}Grupos:{% endif %}</span>
+    <button class="btn-back" id="btn-all" onclick="selectAllGroups(true)" style="font-size:11px;padding:5px 10px;">&#10003;&#10003; {% if request.user.userType == "Cliente" %}All{% else %}Todos{% endif %}</button>
+    <button class="btn-back" id="btn-none" onclick="selectAllGroups(false)" style="font-size:11px;padding:5px 10px;">&#215; {% if request.user.userType == "Cliente" %}None{% else %}Ninguno{% endif %}</button>
+    <div id="pg-pill-container" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;"></div>
+    <div class="toolbar-sep"></div>
     <button class="btn-print" onclick="window.print()">
         &#x1F4C4;&nbsp; {% if request.user.userType == "Cliente" %}Print / Save PDF{% else %}Imprimir / Guardar PDF{% endif %}
     </button>
-    <button class="btn-back" onclick="window.close()">&#8592; {% if request.user.userType == "Cliente" %}Back{% else %}Volver{% endif %}</button>
 </div>
 
 {% regroup rate_lines by group.product.supplier.group.location.id as location_groups %}
@@ -273,25 +332,26 @@
         <span class="location-season">Season {{ season }}/{{ season|add:1 }}</span>
     </div>
 
-    {% regroup lg.list by group.product.supplier.id as supplier_blocks %}
+    {% regroup lg.list by group.product.group.id as product_groups %}
 
-    {% for supplier_block in supplier_blocks %}
-    {% with supplier=supplier_block.list.0.group.product.supplier %}
+    {% for pg in product_groups %}
 
-        <div class="supplier-name">{{ supplier.name }}</div>
+        <div class="pg-block" data-group-id="{{ pg.grouper }}" data-group-name="{{ pg.list.0.group.product.group.name }}">
+        <div class="product-group-label">{{ pg.list.0.group.product.group.name }}</div>
 
-        {% if supplier.note %}
-            <div class="supplier-note">* {{ supplier.note }}</div>
-        {% endif %}
-        {% if supplier.child_note %}
-            <div class="supplier-note">&#9675; {{ supplier.child_note }}</div>
-        {% endif %}
+        {% regroup pg.list by group.product.supplier.id as supplier_blocks %}
 
-        {% regroup supplier_block.list by group.product.group.id as product_groups %}
+        {% for supplier_block in supplier_blocks %}
+        {% with supplier=supplier_block.list.0.group.product.supplier %}
 
-        {% for pg in product_groups %}
+            <div class="supplier-name">{{ supplier.name }}</div>
 
-            <div class="product-group-label">{{ pg.list.0.group.product.group.name }}</div>
+            {% if supplier.note %}
+                <div class="supplier-note">* {{ supplier.note }}</div>
+            {% endif %}
+            {% if supplier.child_note %}
+                <div class="supplier-note">&#9675; {{ supplier.child_note }}</div>
+            {% endif %}
 
             <table>
                 <thead>
@@ -308,12 +368,11 @@
                 </thead>
                 <tbody>
 
-                {% regroup pg.list by date_from as date_groups %}
+                {% regroup supplier_block.list by date_from as date_groups %}
                 {% for dg in date_groups %}
                     {% regroup dg.list by date_to as date_to_groups %}
                     {% for dtg in date_to_groups %}
                         {% for line in dtg.list %}
-                        {% if line.rates_by_column %}
                         <tr>
                             <td class="col-service">
                                 {{ line.group.product.name }}
@@ -331,7 +390,6 @@
                             <td class="col-pax">{{ line.rates_by_column.3|default:"–" }}</td>
                             <td class="col-pax">{{ line.rates_by_column.4|default:"–" }}</td>
                         </tr>
-                        {% endif %}
                         {% endfor %}
                         <tr class="separator-row"><td colspan="8"></td></tr>
                     {% endfor %}
@@ -340,10 +398,11 @@
                 </tbody>
             </table>
 
-        {% endfor %}{# product_groups #}
+        {% endwith %}
+        {% endfor %}{# supplier_blocks #}
 
-    {% endwith %}
-    {% endfor %}{# supplier_blocks #}
+        </div>{# /pg-block #}
+    {% endfor %}{# product_groups #}
 
     <div class="pdf-footer">All prices are per person, in US dollars (USD), inclusive of taxes.</div>
 
@@ -353,5 +412,55 @@
 
 </div>
 {% endfor %}{# location_groups #}
+<script>
+(function () {
+    // ── Collect unique groups from DOM ────────────────────────────────
+    const seen = new Map(); // groupId → name
+    document.querySelectorAll('.pg-block').forEach(function (el) {
+        const id   = el.dataset.groupId;
+        const name = el.dataset.groupName;
+        if (id && !seen.has(id)) seen.set(id, name);
+    });
+
+    // ── Render pill checkboxes in toolbar ─────────────────────────────
+    const container = document.getElementById('pg-pill-container');
+    if (!container) return;
+
+    seen.forEach(function (name, id) {
+        const cb = document.createElement('input');
+        cb.type      = 'checkbox';
+        cb.className = 'pg-pill';
+        cb.id        = 'pg-pill-' + id;
+        cb.value     = id;
+        cb.checked   = true;
+        cb.addEventListener('change', function () {
+            toggleGroup(id, cb.checked);
+        });
+
+        const lbl = document.createElement('label');
+        lbl.htmlFor   = 'pg-pill-' + id;
+        lbl.className = 'pg-pill-label';
+        lbl.textContent = name;
+
+        container.appendChild(cb);
+        container.appendChild(lbl);
+    });
+
+    // ── Toggle all .pg-block elements for a given groupId ─────────────
+    window.toggleGroup = function (groupId, visible) {
+        document.querySelectorAll('.pg-block[data-group-id="' + groupId + '"]').forEach(function (el) {
+            el.style.display = visible ? '' : 'none';
+        });
+    };
+
+    // ── Select / deselect all ─────────────────────────────────────────
+    window.selectAllGroups = function (checked) {
+        document.querySelectorAll('.pg-pill').forEach(function (cb) {
+            cb.checked = checked;
+            toggleGroup(cb.value, checked);
+        });
+    };
+})();
+</script>
 </body>
 </html>
