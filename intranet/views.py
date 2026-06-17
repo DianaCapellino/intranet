@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, Driver, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
@@ -3191,11 +3191,13 @@ def entries_data(request):
             'Quote':   ('#3b82f6', '#fff'),
             'Booking': ('#22c55e', '#fff'),
             'Final':   ('#f97316', '#fff'),
+            'Queja':   ('#ef4444', '#fff'),
         }
         _bg, _fg = _status_colors.get(status_raw, ('#6b7280', '#fff'))
+        status_label = ('Complaint' if status_raw == 'Queja' else status) if is_client_user else status
         status_display = (
             f'<span style="background:{_bg};color:{_fg};padding:2px 10px;'
-            f'border-radius:999px;font-size:.85em;white-space:nowrap;">{status}</span>'
+            f'border-radius:999px;font-size:.85em;white-space:nowrap;">{status_label}</span>'
         )
 
         # monto
@@ -3225,8 +3227,8 @@ def entries_data(request):
                 f'data-entry-id="{entry.id}" '
                 f'data-ref="{client_ref}" '
                 f'data-trip="{trip_display}" '
-                f'data-status="{status}" '
-                f'title="Send an email about this {entry.status.lower()}">'
+                f'data-status="{status_label}" '
+                f'title="Send an email about this {status_label.lower()}">'
                 f'<i class="fa-solid fa-envelope"></i>'
                 f'</button></div>'
             )
@@ -6480,6 +6482,15 @@ def calidad_fetch_inbox(request):
             return msg.text.strip()
         return ''
 
+    def _clean_subject(s):
+        """Decode literal \\uXXXX escapes that imap_tools emits for unusual header encodings."""
+        if not s:
+            return ''
+        s = _re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), s)
+        # Strip control characters (but keep normal whitespace)
+        s = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', s)
+        return s.strip()
+
     imported = 0
     skipped  = 0
     try:
@@ -6503,7 +6514,7 @@ def calidad_fetch_inbox(request):
                 try:
                     FeedbackInboxItem.objects.create(
                         received_at=received_at,
-                        email_subject=msg.subject or '',
+                        email_subject=_clean_subject(msg.subject),
                         email_body=_get_body(msg),
                         email_sender=sender,
                         gmail_label='INBOX',
@@ -6533,20 +6544,186 @@ def calidad_fetch_inbox(request):
 
 
 @login_required
+@login_required
+def calidad_open_trips_json(request):
+    """Return open quality entries grouped by trip with their negative feedbacks."""
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from tariff.models import Feedback
+    entries = (
+        Entry.objects
+        .filter(status='Queja', isClosed=False)
+        .select_related('trip', 'user_working')
+        .order_by('-starting_date')
+    )
+    result = []
+    for entry in entries:
+        fbs = list(
+            Feedback.objects.filter(trip=entry.trip, sentiment='negativo')
+            .select_related('supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity')
+            .order_by('creation_date')
+        )
+        fb_rows = []
+        all_closed = True
+        for fb in fbs:
+            missing = []
+            if not (fb.solution or '').strip(): missing.append('solución')
+            if not fb.cost:                     missing.append('costo')
+            if fb.status != 'cerrado':          all_closed = False
+            fb_rows.append({
+                'id':            fb.id,
+                'objective':     fb.target_display(),
+                'brief_summary': fb.brief_summary or '',
+                'solution':      fb.solution or '',
+                'cost':          float(fb.cost) if fb.cost else 0,
+                'status':        fb.status,
+                'missing':       missing,
+            })
+        trip = entry.trip
+        result.append({
+            'entry_id':    entry.id,
+            'trip_id':     trip.id,
+            'trip_name':   trip.name,
+            'tourplan_id': trip.tourplanId or '',
+            'pax':         trip.quantity_pax,
+            'travel_date': trip.travelling_date.strftime('%d/%m/%Y') if trip.travelling_date else '',
+            'responsable': (entry.user_working.other_name or entry.user_working.username) if entry.user_working else '',
+            'all_closed':  all_closed and bool(fb_rows),
+            'feedbacks':   fb_rows,
+        })
+    return JsonResponse({'trips': result})
+
+
+@login_required
+def calidad_close_trip(request, trip_id):
+    """Close all negative feedbacks for a trip + quality Entry + send closure notification."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    from tariff.models import Feedback
+    from intranet.utils import send_quality_closure_notification
+    from django.utils import timezone as tz
+
+    entry = Entry.objects.filter(trip_id=trip_id, status='Queja', isClosed=False).first()
+    if not entry:
+        return JsonResponse({'error': 'No hay gestión abierta para este viaje'}, status=404)
+
+    feedbacks = list(
+        Feedback.objects.filter(trip_id=trip_id, sentiment='negativo')
+        .select_related('supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity')
+    )
+
+    incomplete = []
+    for fb in feedbacks:
+        missing = []
+        if not (fb.solution or '').strip(): missing.append('solución')
+        if not fb.cost:                     missing.append('costo')
+        if fb.status != 'cerrado':          missing.append('estado cerrado')
+        if missing:
+            incomplete.append({'objective': fb.target_display(), 'missing': missing})
+
+    if incomplete:
+        return JsonResponse({'error': 'incomplete', 'incomplete': incomplete}, status=400)
+
+    entry.isClosed     = True
+    entry.closing_date = tz.now()
+    entry.progress     = PROGRESS_OPTIONS[-1][0]
+    entry.save(update_fields=['isClosed', 'closing_date', 'progress'])
+
+    try:
+        send_quality_closure_notification(entry, feedbacks)
+    except Exception:
+        pass
+
+    return JsonResponse({'success': True})
+
+
+def calidad_check_close_replies(request):
+    """Thin wrapper — delegates to utils.run_quality_close_check()."""
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from intranet.utils import run_quality_close_check
+    result = run_quality_close_check()
+    if 'error' in result and not result.get('processed'):
+        return JsonResponse({'error': result['error']}, status=500)
+    return JsonResponse({'ok': True, **result})
+
+
+@login_required
+def calidad_send_followups(request):
+    """Thin wrapper — delegates to utils.run_quality_followups()."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    from intranet.utils import run_quality_followups
+    return JsonResponse(run_quality_followups())
+
+
+@login_required
+def calidad_close_quality_entry(request, entry_id):
+    """Manually close a quality entry and send closure notification."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    from django.utils import timezone
+    from tariff.models import Feedback
+    from intranet.utils import send_quality_closure_notification
+
+    try:
+        entry = Entry.objects.select_related('trip', 'user_working').get(pk=entry_id)
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'Entry not found'}, status=404)
+
+    feedbacks = list(
+        Feedback.objects.filter(
+            trip=entry.trip, sentiment='negativo'
+        ).select_related('supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity')
+    )
+
+    # Validate: every negative feedback must have solution and cost before closing
+    incomplete = []
+    for fb in feedbacks:
+        missing = []
+        if not (fb.solution or '').strip():
+            missing.append('solución')
+        if not fb.cost:
+            missing.append('costo')
+        if missing:
+            incomplete.append({'objective': fb.target_display(), 'missing': missing})
+
+    if incomplete:
+        return JsonResponse({'error': 'incomplete', 'incomplete': incomplete}, status=400)
+
+    from django.utils import timezone as tz
+    entry.isClosed = True
+    entry.closing_date = tz.now()
+    entry.progress = PROGRESS_OPTIONS[-1][0]
+    entry.save(update_fields=['isClosed', 'closing_date', 'progress'])
+
+    try:
+        send_quality_closure_notification(entry, feedbacks)
+    except Exception:
+        pass
+
+    return JsonResponse({'success': True})
+
+
+@login_required
 def calidad(request):
     if not request.user.isAdmin:
         return HttpResponseRedirect(reverse('index'))
 
     from tariff.models import FeedbackInboxItem, Feedback, TYPE_QUALITY, FeedbackEntity, Supplier
+    from intranet.models import IMPORTANCE_OPTIONS, Driver
     from django.db.models import Count
 
-    inbox_items = FeedbackInboxItem.objects.filter(status='pendiente').order_by('-received_at')
+    inbox_items = list(FeedbackInboxItem.objects.filter(status='pendiente').order_by('-received_at'))
     feedbacks_qs = Feedback.objects.select_related(
         'supplier', 'supplier__group', 'supplier__group__location',
         'trip', 'target_user',
         'target_guide', 'target_guide__location',
         'target_dh', 'target_dh__location',
+        'target_driver', 'target_driver__location',
         'target_entity',
+        'responsable',
     ).order_by('-creation_date')
     feedbacks_open_count = feedbacks_qs.exclude(status='cerrado').count()
     feedbacks_total = feedbacks_qs.count()
@@ -6589,6 +6766,38 @@ def calidad(request):
     from tariff.models import Location
     locations = Location.objects.all().order_by('name')
 
+    internal_users = User.objects.filter(
+        isActivated=True,
+        show_in_calendar=True,
+        userType__in=['Ventas', 'Operaciones', 'Manager'],
+    ).order_by('other_name')
+
+    # Pre-resolve trip responsable for each inbox item (single bulk query)
+    trip_fids = [
+        (item.ai_analysis or {}).get('trip_file_id', '')
+        for item in inbox_items
+    ]
+    from intranet.models import Trip
+    trip_resp_map = {
+        t.tourplanId.upper(): t.responsable_user_id
+        for t in Trip.objects.filter(tourplanId__in=[f for f in trip_fids if f])
+    }
+    for item in inbox_items:
+        fid = (item.ai_analysis or {}).get('trip_file_id', '')
+        item.default_responsable_id = trip_resp_map.get(fid.upper()) if fid else None
+
+    drivers = Driver.objects.select_related('supplier').annotate(
+        pos_count=Count('feedback_drivers', filter=Q(feedback_drivers__sentiment='positivo'), distinct=True),
+        neu_count=Count('feedback_drivers', filter=Q(feedback_drivers__sentiment='neutral'), distinct=True),
+        neg_count=Count('feedback_drivers', filter=Q(feedback_drivers__sentiment='negativo'), distinct=True),
+    ).order_by('name')
+
+    # Build a map from trip_id → open quality Entry id for the "Cerrar gestión" button
+    quality_entries_qs = Entry.objects.filter(
+        status='Queja', isClosed=False
+    ).values('id', 'trip_id')
+    trip_to_quality_entry = {e['trip_id']: e['id'] for e in quality_entries_qs}
+
     return render(request, 'intranet/calidad.html', {
         'inbox_items':          inbox_items,
         'feedbacks':            feedbacks_qs,
@@ -6597,12 +6806,16 @@ def calidad(request):
         'entities':             entities,
         'guides':               guides,
         'dhs':                  dhs,
+        'drivers':              drivers,
         'locations':            locations,
         'suppliers_fb':         suppliers_fb,
         'users_fb':             users_fb,
         'itinerario_exists':    itinerario_exists,
         'itinerario_date':      itinerario_date,
-        'type_quality_choices': TYPE_QUALITY,
+        'type_quality_choices':   TYPE_QUALITY,
+        'internal_users':         internal_users,
+        'importance_options':     IMPORTANCE_OPTIONS,
+        'trip_to_quality_entry':  trip_to_quality_entry,
     })
 
 
@@ -6680,8 +6893,8 @@ def calidad_confirm_inbox(request, item_id):
         data = json.loads(request.body)
         confirmed_targets = data.get('targets', [])
         overrides = {k: v for k, v in data.items() if k != 'targets'}
-        feedbacks = create_feedbacks_from_inbox(item, confirmed_targets, overrides=overrides)
-        return JsonResponse({'ok': True, 'created': len(feedbacks)})
+        feedbacks, entry_created, entry_missing = create_feedbacks_from_inbox(item, confirmed_targets, overrides=overrides)
+        return JsonResponse({'ok': True, 'created': len(feedbacks), 'entry_created': entry_created, 'entry_missing': entry_missing})
     except FeedbackInboxItem.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
     except Exception as e:
@@ -6704,6 +6917,7 @@ def calidad_feedbacks_by_target(request):
         'dh':       {'target_dh_id': target_id},
         'supplier': {'supplier_id': target_id},
         'user':     {'target_user_id': target_id},
+        'chofer':   {'target_driver_id': target_id},
         'entity':   {'target_entity_id': target_id},
     }
     if target_type not in filter_map:
@@ -6853,6 +7067,70 @@ def calidad_edit_dh(request, dh_id):
 
 
 @login_required
+def calidad_search_drivers(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    qs = Driver.objects.select_related('supplier').filter(name__icontains=q) if q else Driver.objects.select_related('supplier').all()
+    results = [{'id': d.id, 'name': d.name, 'notes': d.notes,
+                'supplier_id': d.supplier_id, 'supplier_name': d.supplier.name if d.supplier else ''} for d in qs[:30]]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def calidad_create_driver(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    data = json.loads(request.body)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'Nombre requerido'}, status=400)
+    from tariff.models import Supplier
+    supplier_id = data.get('supplier_id') or None
+    supplier = Supplier.objects.filter(pk=supplier_id).first() if supplier_id else None
+    driver, created = Driver.objects.get_or_create(
+        name=name, defaults={'notes': data.get('notes', ''), 'supplier': supplier}
+    )
+    return JsonResponse({'ok': True, 'id': driver.id, 'name': driver.name, 'created': created,
+                         'supplier_id': driver.supplier_id, 'supplier_name': driver.supplier.name if driver.supplier else ''})
+
+
+@login_required
+def calidad_delete_driver(request, driver_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        d = Driver.objects.get(pk=driver_id)
+        if d.feedback_drivers.exists():
+            return JsonResponse({'error': 'Tiene feedbacks asociados, no se puede eliminar'}, status=400)
+        d.delete()
+        return JsonResponse({'ok': True})
+    except Driver.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@login_required
+def calidad_edit_driver(request, driver_id):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    try:
+        d = Driver.objects.select_related('supplier').get(pk=driver_id)
+    except Driver.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    data = json.loads(request.body)
+    d.name = (data.get('name') or d.name).strip()
+    d.email = data.get('email', d.email).strip()
+    d.notes = data.get('notes', d.notes).strip()
+    if 'supplier_id' in data:
+        from tariff.models import Supplier
+        sid = data.get('supplier_id') or None
+        d.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
+    d.save()
+    return JsonResponse({'ok': True, 'id': d.id, 'name': d.name,
+                         'supplier_id': d.supplier_id, 'supplier_name': d.supplier.name if d.supplier else ''})
+
+
+@login_required
 def calidad_search_suppliers(request):
     if not request.user.isAdmin:
         return JsonResponse({'error': 'Forbidden'}, status=403)
@@ -6949,14 +7227,19 @@ def calidad_edit_feedback(request, feedback_id):
         fb.status = data['status']
     if 'sentiment' in data:
         fb.sentiment = data['sentiment']
+    if 'type' in data:
+        fb.type = data['type']
+    if 'verbatim' in data:
+        fb.verbatim = data['verbatim']
     # Clear all targets first, then set only the chosen one
     target_type = data.get('target_type')
     if target_type:
-        fb.supplier      = None
-        fb.target_guide  = None
-        fb.target_dh     = None
-        fb.target_user   = None
-        fb.target_entity = None
+        fb.supplier       = None
+        fb.target_guide   = None
+        fb.target_dh      = None
+        fb.target_driver  = None
+        fb.target_user    = None
+        fb.target_entity  = None
         if target_type == 'supplier':
             sid = data.get('supplier_id')
             fb.supplier = Supplier.objects.filter(pk=sid).first() if sid else None
@@ -6968,6 +7251,10 @@ def calidad_edit_feedback(request, feedback_id):
             from intranet.models import DestinationHost
             dhid = data.get('dh_id')
             fb.target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
+        elif target_type == 'chofer':
+            from intranet.models import Driver
+            did = data.get('driver_id')
+            fb.target_driver = Driver.objects.filter(pk=did).first() if did else None
         elif target_type == 'user':
             uid = data.get('user_id')
             fb.target_user = User.objects.filter(pk=uid).first() if uid else None
@@ -6989,6 +7276,11 @@ def calidad_edit_feedback(request, feedback_id):
         trip = Trip.objects.filter(tourplanId__iexact=data['trip_file'].strip()).first()
         if trip:
             fb.trip = trip
+    if 'responsable_id' in data:
+        rid = data['responsable_id']
+        fb.responsable = User.objects.filter(pk=rid).first() if rid else None
+    if 'priority' in data:
+        fb.priority = data['priority'] or ''
     fb.save()
     return JsonResponse({'ok': True})
 
@@ -7000,13 +7292,14 @@ def calidad_feedback_json(request, feedback_id):
     from tariff.models import Feedback
     try:
         fb = Feedback.objects.select_related(
-            'supplier', 'target_guide', 'target_dh', 'target_user', 'target_entity', 'trip'
+            'supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity', 'trip', 'responsable'
         ).get(pk=feedback_id)
     except Feedback.DoesNotExist:
         return JsonResponse({'error': 'Not found'}, status=404)
     if fb.supplier:          target_type = 'supplier'
     elif fb.target_guide:    target_type = 'guide'
     elif fb.target_dh:       target_type = 'dh'
+    elif fb.target_driver:   target_type = 'chofer'
     elif fb.target_user:     target_type = 'user'
     elif fb.target_entity:   target_type = 'entity'
     else:                    target_type = 'supplier'
@@ -7014,12 +7307,16 @@ def calidad_feedback_json(request, feedback_id):
         'id': fb.id,
         'brief_summary': fb.brief_summary or '',
         'content':       fb.content or '',
+        'verbatim':      fb.verbatim or '',
         'solution':      fb.solution or '',
         'cost':          fb.cost or 0,
         'status':        fb.status,
         'sentiment':     fb.sentiment,
         'type':          fb.type or '',
+        'source':        fb.source or '',
+        'email_sender':  fb.email_sender or '',
         'trip_file':     fb.trip.tourplanId if fb.trip else '',
+        'trip_name':     fb.trip.name if fb.trip else '',
         'target_type':   target_type,
         'supplier_id':   fb.supplier_id or '',
         'supplier_name': fb.supplier.name if fb.supplier else '',
@@ -7027,10 +7324,16 @@ def calidad_feedback_json(request, feedback_id):
         'guide_name':    fb.target_guide.name if fb.target_guide else '',
         'dh_id':         fb.target_dh_id or '',
         'dh_name':       fb.target_dh.name if fb.target_dh else '',
+        'driver_id':     fb.target_driver_id or '',
+        'driver_name':   fb.target_driver.name if fb.target_driver else '',
         'user_id':       fb.target_user_id or '',
         'user_name':     (fb.target_user.get_full_name() or fb.target_user.username) if fb.target_user else '',
         'entity_id':     fb.target_entity_id or '',
         'entity_name':   fb.target_entity.name if fb.target_entity else '',
+        'responsable_id':   fb.responsable_id or '',
+        'responsable_name': (fb.responsable.other_name or fb.responsable.username) if fb.responsable else '',
+        'priority':         fb.priority or '',
+        'creation_date':    fb.creation_date.strftime('%d/%m/%Y') if fb.creation_date else '',
     })
 
 
@@ -7041,7 +7344,7 @@ def calidad_create_feedback(request):
     from tariff.models import Feedback, FeedbackEntity
     data = json.loads(request.body)
     target_type = data.get('target_type', 'supplier')
-    supplier = target_user = target_guide = target_dh = target_entity = None
+    supplier = target_user = target_guide = target_dh = target_driver = target_entity = None
     if target_type == 'supplier':
         sid = data.get('supplier_id')
         supplier = Supplier.objects.filter(pk=sid).first() if sid else None
@@ -7053,6 +7356,10 @@ def calidad_create_feedback(request):
         from intranet.models import DestinationHost
         dhid = data.get('dh_id')
         target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
+    elif target_type == 'chofer':
+        from intranet.models import Driver
+        did = data.get('driver_id')
+        target_driver = Driver.objects.select_related('supplier').filter(pk=did).first() if did else None
     elif target_type == 'user':
         uid = data.get('user_id')
         target_user = User.objects.filter(pk=uid).first() if uid else None
@@ -7067,6 +7374,10 @@ def calidad_create_feedback(request):
         cost = float(data.get('cost') or 0)
     except (ValueError, TypeError):
         cost = 0
+    responsable = None
+    if data.get('responsable_id'):
+        responsable = User.objects.filter(pk=data['responsable_id']).first()
+    priority = data.get('priority', '')
     fb = Feedback.objects.create(
         user=request.user,
         trip=trip,
@@ -7074,16 +7385,43 @@ def calidad_create_feedback(request):
         target_user=target_user,
         target_guide=target_guide,
         target_dh=target_dh,
+        target_driver=target_driver,
         target_entity=target_entity,
         sentiment=data.get('sentiment', 'neutral'),
         status=data.get('status', 'abierto'),
         type=data.get('type', 'Otro'),
         brief_summary=(data.get('brief_summary') or '')[:120],
         content=data.get('content', ''),
+        verbatim=data.get('verbatim', ''),
         solution=data.get('solution', ''),
         cost=cost,
         source='manual',
+        responsable=responsable,
+        priority=priority,
     )
+    # If driver has a linked supplier, also create a supplier feedback
+    sup_fb = None
+    if target_driver and target_driver.supplier_id:
+        sup_fb = Feedback.objects.create(
+            user=request.user,
+            trip=trip,
+            supplier=target_driver.supplier,
+            sentiment=data.get('sentiment', 'neutral'),
+            status=data.get('status', 'abierto'),
+            type=data.get('type', 'Otro'),
+            brief_summary=(data.get('brief_summary') or '')[:120],
+            content=data.get('content', ''),
+            solution=data.get('solution', ''),
+            cost=cost,
+            source='manual',
+            responsable=responsable,
+            priority=priority,
+        )
+    # Auto-create Entry for manual negative feedbacks with responsable and priority
+    if fb.sentiment == 'negativo' and trip and responsable and priority:
+        from tariff.quality_ai import _create_quality_entry
+        all_negative = [fb] + ([sup_fb] if sup_fb else [])
+        _create_quality_entry(trip, responsable, priority, all_negative, request.user)
     return JsonResponse({'ok': True, 'id': fb.id})
 
 

@@ -1,7 +1,7 @@
 {% extends "intranet/layout.html" %}
 
 {% block body %}
-<div class="container py-4" style="max-width:1100px;">
+<div class="container-fluid py-4 px-4">
 
   <div class="d-flex align-items-center justify-content-between mb-4">
     <div>
@@ -10,11 +10,17 @@
     </div>
     <div>
       <input type="file" id="itinerario-input" accept=".csv" class="d-none">
+      <button class="btn btn-outline-danger btn-sm me-1" onclick="openCierreFeedbacksTab()">
+        <i class="fa-solid fa-lock-open me-1"></i>Cerrar Feedbacks
+      </button>
       <button class="btn btn-outline-secondary btn-sm me-1" onclick="document.getElementById('itinerario-input').click()">
         <i class="fa-solid fa-file-csv me-1"></i>Actualizar itinerarios
       </button>
       <button class="btn btn-outline-primary btn-sm" id="fetch-inbox-btn" onclick="fetchInbox(this)">
         <i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja
+      </button>
+      <button class="btn btn-sm btn-outline-success ms-1" id="send-followups-btn" onclick="sendFollowupsAndCheck(this)">
+        <i class="fa-solid fa-rotate me-1"></i>Enviar seguimientos
       </button>
       <div class="text-muted small mt-1 text-end" id="itinerario-status">
         {% if itinerario_exists %}
@@ -42,6 +48,12 @@
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-catalogos">
         Gestión y Resumen
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="tab-cierre-btn" data-bs-toggle="tab" data-bs-target="#tab-cierre">
+        <i class="fa-solid fa-lock-open me-1"></i>Cerrar Feedbacks
+        <span class="badge bg-danger ms-1 d-none" id="cierre-badge"></span>
       </button>
     </li>
   </ul>
@@ -104,6 +116,24 @@
                 <input type="text" class="form-control form-control-sm" id="trip-{{ item.id }}"
                        value="{{ item.ai_analysis.trip_file_id|default:'' }}" placeholder="ALAL100052">
               </div>
+              <div class="col-md-4">
+                <label class="form-label small mb-1">Responsable del feedback</label>
+                <select class="form-select form-select-sm" id="responsable-{{ item.id }}">
+                  <option value="">— Sin asignar —</option>
+                  {% for u in internal_users %}
+                  <option value="{{ u.id }}" {% if u.id == item.default_responsable_id %}selected{% endif %}>{{ u.other_name|default:u.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small mb-1">Prioridad <span class="text-muted">(crea entrada si hay negativos)</span></label>
+                <select class="form-select form-select-sm" id="priority-{{ item.id }}">
+                  <option value="">— Sin prioridad —</option>
+                  {% for val, label in importance_options %}
+                  <option value="{{ val }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
 
             <!-- Targets -->
@@ -116,6 +146,7 @@
                     <option value="user"        {% if t.target_type == "user"        %}selected{% endif %}>👤 Usuario Aliwen</option>
                     <option value="guide"       {% if t.target_type == "guide"       %}selected{% endif %}>🧭 Guía</option>
                     <option value="dh"          {% if t.target_type == "dh"          %}selected{% endif %}>🌍 DH</option>
+                    <option value="chofer"      {% if t.target_type == "chofer"      %}selected{% endif %}>🚗 Chofer</option>
                     <option value="aliwen_team" {% if t.target_type == "aliwen_team" %}selected{% endif %}>🏠 Equipo Aliwen</option>
                     <option value="entity"      {% if t.target_type == "entity"      %}selected{% endif %}>📋 Otros</option>
                   </select>
@@ -171,6 +202,18 @@
                     </div>
                     <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
                     <div class="t-link-status mt-1">{% if t.dh_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
+                  </div>
+
+                  <!-- Chofer -->
+                  <div class="target-selector" data-for="chofer" data-suggested="{{ t.name }}"
+                       {% if t.target_type != "chofer" %}style="display:none"{% endif %}>
+                    <div class="input-group input-group-sm">
+                      <input type="text" class="form-control search-input" placeholder="Buscar chofer..." data-type="chofer"
+                             value="{{ t.name }}" oninput="searchTarget(this)">
+                      <input type="hidden" class="t-driver-id" value="{{ t.driver_id|default:'' }}">
+                    </div>
+                    <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+                    <div class="t-link-status mt-1">{% if t.driver_id %}<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: {{ t.name }}</span>{% endif %}</div>
                   </div>
 
                   <!-- Aliwen team -->
@@ -287,7 +330,7 @@
       <div class="table-responsive">
         <table class="table table-hover align-middle" id="feedbacks-table" style="cursor:pointer;">
           <thead class="table-light">
-            <tr><th>Sentiment</th><th>Destinatario</th><th>Destino</th><th>Tipo</th><th>Viaje</th><th>Resumen</th><th>Estado</th><th>Fecha</th><th></th></tr>
+            <tr><th>Sentiment</th><th>Objetivo</th><th>Destino</th><th>Tipo</th><th>Viaje</th><th>Resumen</th><th>Responsable</th><th>Estado</th><th>Fecha</th><th></th></tr>
           </thead>
           <tbody>
             {% for fb in feedbacks %}
@@ -304,11 +347,15 @@
                 data-fb-guide-name="{{ fb.target_guide.name|default:''|escapejs }}"
                 data-fb-dh-id="{{ fb.target_dh_id|default:'' }}"
                 data-fb-dh-name="{{ fb.target_dh.name|default:''|escapejs }}"
+                data-fb-driver-id="{{ fb.target_driver_id|default:'' }}"
+                data-fb-driver-name="{{ fb.target_driver.name|default:''|escapejs }}"
                 data-fb-user-id="{{ fb.target_user_id|default:'' }}"
                 data-fb-user-name="{{ fb.target_user.username|default:''|escapejs }}"
                 data-fb-entity-id="{{ fb.target_entity_id|default:'' }}"
                 data-fb-entity-name="{{ fb.target_entity.name|default:''|escapejs }}"
-                data-fb-trip-file="{{ fb.trip.tourplanId|default:''|escapejs }}">
+                data-fb-trip-file="{{ fb.trip.tourplanId|default:''|escapejs }}"
+                data-fb-responsable-id="{{ fb.responsable_id|default:'' }}"
+                data-fb-responsable-name="{% if fb.responsable %}{{ fb.responsable.other_name|default:fb.responsable.username|escapejs }}{% endif %}">
               <td>
                 {% if fb.sentiment == "positivo" %}<span class="badge text-bg-success">Positivo</span>
                 {% elif fb.sentiment == "negativo" %}<span class="badge text-bg-danger">Negativo</span>
@@ -319,6 +366,7 @@
                 {% elif fb.target_user %}<i class="fa-solid fa-user me-1 text-success"></i>{{ fb.target_user.get_full_name|default:fb.target_user.username }}
                 {% elif fb.target_guide %}<i class="fa-solid fa-compass me-1 text-warning"></i>{{ fb.target_guide.name }}
                 {% elif fb.target_dh %}<i class="fa-solid fa-earth-americas me-1 text-info"></i>{{ fb.target_dh.name }}
+                {% elif fb.target_driver %}<i class="fa-solid fa-car me-1 text-secondary"></i>{{ fb.target_driver.name }}
                 {% elif fb.target_entity %}<i class="fa-solid fa-layer-group me-1 text-muted"></i>{{ fb.target_entity.name }}
                 {% else %}<span class="text-muted">—</span>{% endif %}
               </td>
@@ -331,9 +379,9 @@
               <td class="small text-muted">{{ fb.type }}</td>
               <td class="small text-muted">{% if fb.trip %}{{ fb.trip.name }}{% else %}—{% endif %}</td>
               <td class="small">{{ fb.brief_summary|default:fb.content|truncatechars:120 }}</td>
+              <td class="small text-muted">{% if fb.responsable %}{{ fb.responsable.other_name|default:fb.responsable.username }}{% else %}—{% endif %}</td>
               <td>
                 {% if fb.status == "cerrado" %}<span class="badge text-bg-success">Cerrado</span>
-                {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
                 {% else %}<span class="badge text-bg-secondary">Abierto</span>{% endif %}
               </td>
               <td class="small text-muted text-nowrap" data-order="{{ fb.creation_date|date:'Y-m-d' }}">{{ fb.creation_date|date:"d/m/Y" }}</td>
@@ -357,25 +405,28 @@
 
       {# Hidden detail panels — one per feedback, cloned into the detail modal on click #}
       {% for fb in feedbacks %}
-      <div id="fb-detail-{{ fb.id }}" class="d-none">
+      <div id="fb-detail-{{ fb.id }}" class="d-none"
+           data-quality-entry-id="{% for trip_id, entry_id in trip_to_quality_entry.items %}{% if trip_id == fb.trip_id %}{{ entry_id }}{% endif %}{% endfor %}">
         <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
           {% if fb.sentiment == "positivo" %}<span class="badge text-bg-success fs-6">Positivo</span>
           {% elif fb.sentiment == "negativo" %}<span class="badge text-bg-danger fs-6">Negativo</span>
           {% else %}<span class="badge text-bg-secondary fs-6">Neutral</span>{% endif %}
           {% if fb.status == "cerrado" %}<span class="badge text-bg-success">Cerrado</span>
-          {% elif fb.status == "en_seguimiento" %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
           {% else %}<span class="badge bg-secondary">Abierto</span>{% endif %}
+          {% if fb.source == "email" %}<span class="badge text-bg-light border text-muted"><i class="fa-solid fa-envelope me-1"></i>Email</span>
+          {% else %}<span class="badge text-bg-light border text-muted"><i class="fa-solid fa-pencil me-1"></i>Manual</span>{% endif %}
           <span class="text-muted small ms-auto">{{ fb.creation_date|date:"d/m/Y" }}</span>
         </div>
 
         <div class="row g-3 mb-3">
           <div class="col-sm-6">
-            <div class="small text-muted fw-semibold mb-1">Destinatario</div>
+            <div class="small text-muted fw-semibold mb-1">Objetivo</div>
             <div>
               {% if fb.supplier %}<i class="fa-solid fa-building me-1 text-primary"></i><strong>{{ fb.supplier.name }}</strong>
               {% elif fb.target_user %}<i class="fa-solid fa-user me-1 text-success"></i><strong>{{ fb.target_user.get_full_name|default:fb.target_user.username }}</strong>
               {% elif fb.target_guide %}<i class="fa-solid fa-compass me-1 text-warning"></i><strong>{{ fb.target_guide.name }}</strong>
               {% elif fb.target_dh %}<i class="fa-solid fa-earth-americas me-1 text-info"></i><strong>{{ fb.target_dh.name }}</strong>
+              {% elif fb.target_driver %}<i class="fa-solid fa-car me-1 text-secondary"></i><strong>{{ fb.target_driver.name }}</strong>
               {% elif fb.target_entity %}<i class="fa-solid fa-layer-group me-1 text-muted"></i><strong>{{ fb.target_entity.name }}</strong>
               {% else %}<span class="text-muted">—</span>{% endif %}
             </div>
@@ -386,8 +437,18 @@
           </div>
           <div class="col-sm-3">
             <div class="small text-muted fw-semibold mb-1">Viaje</div>
-            <div class="small">{% if fb.trip %}{{ fb.trip.name }}{% else %}—{% endif %}</div>
+            <div class="small">{% if fb.trip %}{{ fb.trip.name }}{% if fb.trip.tourplanId %} <span class="text-muted">({{ fb.trip.tourplanId }})</span>{% endif %}{% else %}—{% endif %}</div>
           </div>
+          {% if fb.responsable or fb.priority %}
+          <div class="col-sm-6">
+            <div class="small text-muted fw-semibold mb-1">Responsable</div>
+            <div class="small">{% if fb.responsable %}{{ fb.responsable.other_name|default:fb.responsable.username }}{% else %}—{% endif %}</div>
+          </div>
+          <div class="col-sm-6">
+            <div class="small text-muted fw-semibold mb-1">Prioridad</div>
+            <div class="small">{% if fb.priority %}{{ fb.priority }}{% else %}—{% endif %}</div>
+          </div>
+          {% endif %}
         </div>
 
         {% if fb.brief_summary %}
@@ -421,7 +482,7 @@
 
         <div class="row g-2 text-muted small mt-1">
           {% if fb.email_sender %}<div class="col-auto"><i class="fa-solid fa-envelope me-1"></i>{{ fb.email_sender }}</div>{% endif %}
-          <div class="col-auto"><i class="fa-solid fa-user-pen me-1"></i>{{ fb.user.get_full_name|default:fb.user.username }}</div>
+          <div class="col-auto"><i class="fa-solid fa-user-pen me-1"></i>Creado por {{ fb.user.get_full_name|default:fb.user.username }}</div>
         </div>
       </div>
       {% endfor %}
@@ -442,8 +503,28 @@
           <div class="modal-body" id="feedbackDetailBody"></div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-danger btn-sm me-auto" id="detail-delete-btn"><i class="fa-solid fa-trash me-1"></i>Eliminar</button>
+            <button type="button" class="btn btn-outline-warning btn-sm" id="detail-close-quality-btn" style="display:none;"><i class="fa-solid fa-lock me-1"></i>Cerrar gestión</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="detail-edit-btn"><i class="fa-solid fa-pencil me-1"></i>Editar</button>
             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quality close — incomplete feedback warning modal -->
+    <div class="modal fade" id="qualityCloseIncompleteModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header bg-warning-subtle">
+            <h5 class="modal-title"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>No se puede cerrar la gestión</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2">Para cerrar la gestión todos los feedbacks negativos deben tener <strong>solución</strong> y <strong>costo</strong> cargados. Los siguientes aún están incompletos:</p>
+            <ul id="qc-incomplete-list" class="mb-0"></ul>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Entendido</button>
           </div>
         </div>
       </div>
@@ -472,7 +553,6 @@
                 <label class="form-label small fw-semibold">Estado</label>
                 <select class="form-select form-select-sm" id="fb-edit-status">
                   <option value="abierto">Abierto</option>
-                  <option value="en_seguimiento">En seguimiento</option>
                   <option value="cerrado">Cerrado</option>
                 </select>
               </div>
@@ -486,16 +566,35 @@
                 <label class="form-label small fw-semibold">File / Viaje</label>
                 <input type="text" class="form-control form-control-sm" id="fb-edit-trip-file" placeholder="ALAL100052">
               </div>
+              <div class="col-sm-6">
+                <label class="form-label small fw-semibold">Responsable</label>
+                <select class="form-select form-select-sm" id="fb-edit-responsable-id">
+                  <option value="">— Sin asignar —</option>
+                  {% for u in internal_users %}
+                  <option value="{{ u.id }}">{{ u.other_name|default:u.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label small fw-semibold">Prioridad</label>
+                <select class="form-select form-select-sm" id="fb-edit-priority">
+                  <option value="">— Sin prioridad —</option>
+                  {% for val, label in importance_options %}
+                  <option value="{{ val }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
 
             <!-- Target type selector -->
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Tipo de destinatario</label>
+              <label class="form-label small fw-semibold">Objetivo</label>
               <select class="form-select form-select-sm" id="fb-edit-target-type" onchange="onFbEditTargetTypeChange(this)">
                 <option value="supplier">🏢 Proveedor</option>
                 <option value="user">👤 Usuario Aliwen</option>
                 <option value="guide">🧭 Guía</option>
                 <option value="dh">🌍 DH</option>
+                <option value="chofer">🚗 Chofer</option>
                 <option value="aliwen_team">🏠 Equipo Aliwen</option>
                 <option value="entity">📋 Otros</option>
               </select>
@@ -523,6 +622,14 @@
                      placeholder="Buscar DH..." oninput="searchFbEditTarget('dh', this)">
               <input type="hidden" id="fb-edit-dh-id">
               <div id="fb-edit-dh-results" class="list-group mt-1"
+                   style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
+            </div>
+            <!-- Chofer -->
+            <div id="fb-edit-target-chofer" class="mb-3 position-relative" style="display:none">
+              <input type="text" class="form-control form-control-sm" id="fb-edit-chofer-name"
+                     placeholder="Buscar chofer..." oninput="searchFbEditTarget('chofer', this)">
+              <input type="hidden" id="fb-edit-chofer-id">
+              <div id="fb-edit-chofer-results" class="list-group mt-1"
                    style="display:none;position:absolute;z-index:200;width:100%;max-height:160px;overflow-y:auto;"></div>
             </div>
             <!-- User -->
@@ -554,6 +661,10 @@
               <label class="form-label small fw-semibold">Contenido</label>
               <textarea class="form-control form-control-sm" id="fb-edit-content" rows="3"></textarea>
             </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Texto original del pasajero <span class="text-muted fw-normal">(verbatim — opcional)</span></label>
+              <textarea class="form-control form-control-sm" id="fb-edit-verbatim" rows="2" placeholder="Palabras exactas del cliente, si aplica..."></textarea>
+            </div>
             <div id="fb-edit-negative-fields">
               <div class="mb-3">
                 <label class="form-label small fw-semibold text-danger"><i class="fa-solid fa-wrench me-1"></i>Solución</label>
@@ -581,6 +692,7 @@
         <ul class="nav nav-pills mb-0">
           <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cat-guides">🧭 Guías <span class="badge bg-secondary ms-1">{{ guides|length }}</span></button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-dhs">🌍 DHs <span class="badge bg-secondary ms-1">{{ dhs|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-drivers">🚗 Choferes <span class="badge bg-secondary ms-1">{{ drivers|length }}</span></button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-entities">📋 Otros <span class="badge bg-secondary ms-1">{{ entities|length }}</span></button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-suppliers">🏢 Proveedores <span class="badge bg-secondary ms-1">{{ suppliers_fb|length }}</span></button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cat-users">👤 Usuarios <span class="badge bg-secondary ms-1">{{ users_fb|length }}</span></button></li>
@@ -731,6 +843,74 @@
           </div>
         </div>
 
+        <!-- ── Choferes ── -->
+        <div class="tab-pane fade" id="cat-drivers">
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-4"><input type="text" class="form-control form-control-sm" id="new-driver-name" placeholder="Nombre del chofer"></div>
+                <div class="col-md-4"><input type="text" class="form-control form-control-sm" id="new-driver-notes" placeholder="Notas (opcional)"></div>
+              </div>
+              <div class="row g-2 align-items-end">
+                <div class="col-md-8 position-relative">
+                  <input type="text" class="form-control form-control-sm" id="new-driver-supplier-name" placeholder="Proveedor/transportista (opcional)" oninput="searchDriverSupplier(this, 'new')">
+                  <input type="hidden" id="new-driver-supplier-id">
+                  <div id="new-driver-supplier-results" class="list-group mt-1" style="display:none;position:absolute;z-index:200;width:100%;max-height:180px;overflow-y:auto;"></div>
+                </div>
+                <div class="col-md-4"><button class="btn btn-sm btn-primary w-100" onclick="createDriverItem()"><i class="fa-solid fa-plus me-1"></i>Agregar Chofer</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" id="drivers-table">
+              <thead class="table-light">
+                <tr><th>Nombre</th><th>Proveedor</th><th>Notas</th><th class="text-center">Feedbacks</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for d in drivers %}
+                <tr id="driver-row-{{ d.id }}" style="cursor:pointer" onclick="toggleCatalogFeedbacks('chofer', {{ d.id }}, this)">
+                  <td class="small fw-semibold">{{ d.name }}</td>
+                  <td class="small text-muted">{% if d.supplier %}<span class="badge text-bg-light border">{{ d.supplier.name }}</span>{% else %}—{% endif %}</td>
+                  <td class="small text-muted">{{ d.notes|default:"—" }}</td>
+                  <td class="text-center">
+                    {% if d.pos_count %}<span class="badge text-bg-success">{{ d.pos_count }}</span> {% endif %}
+                    {% if d.neu_count %}<span class="badge text-bg-secondary">{{ d.neu_count }}</span> {% endif %}
+                    {% if d.neg_count %}<span class="badge text-bg-danger">{{ d.neg_count }}</span>{% endif %}
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count %}—{% endif %}
+                  </td>
+                  <td class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="event.stopPropagation(); editCatalogItem('driver',{{ d.id }})"><i class="fa-solid fa-pencil"></i></button>
+                    {% if not d.pos_count and not d.neu_count and not d.neg_count %}<button class="btn btn-sm btn-outline-danger p-1" onclick="event.stopPropagation(); deleteCatalogItem('driver',{{ d.id }})"><i class="fa-solid fa-trash"></i></button>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tbody class="dt-aux">
+                {% for d in drivers %}
+                <tr id="cat-fb-row-chofer-{{ d.id }}" class="d-none">
+                  <td colspan="5" class="p-0"><div id="cat-fb-panel-chofer-{{ d.id }}" class="px-3 py-2 bg-light border-bottom"></div></td>
+                </tr>
+                <tr id="driver-edit-row-{{ d.id }}" class="d-none table-warning">
+                  <td><input type="text" class="form-control form-control-sm" id="edit-driver-name-{{ d.id }}" value="{{ d.name }}"></td>
+                  <td class="position-relative">
+                    <input type="text" class="form-control form-control-sm" id="edit-driver-supplier-name-{{ d.id }}"
+                           value="{% if d.supplier %}{{ d.supplier.name }}{% endif %}"
+                           placeholder="Proveedor..." oninput="searchDriverSupplier(this, {{ d.id }})">
+                    <input type="hidden" id="edit-driver-supplier-id-{{ d.id }}" value="{{ d.supplier_id|default:'' }}">
+                    <div id="edit-driver-supplier-results-{{ d.id }}" class="list-group mt-1" style="display:none;position:absolute;z-index:200;width:100%;max-height:150px;overflow-y:auto;"></div>
+                  </td>
+                  <td><input type="text" class="form-control form-control-sm" id="edit-driver-notes-{{ d.id }}" value="{{ d.notes|default:'' }}"></td>
+                  <td colspan="2" class="text-nowrap">
+                    <button class="btn btn-sm btn-success p-1 me-1" onclick="saveDriverItem({{ d.id }})"><i class="fa-solid fa-check"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary p-1" onclick="cancelEditCatalogItem('driver',{{ d.id }})"><i class="fa-solid fa-xmark"></i></button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── Otros (FeedbackEntity) ── -->
         <div class="tab-pane fade" id="cat-entities">
           <p class="text-muted small mb-3">Para categorías que no son Proveedor, Usuario, Guía ni DH. Ej: "Aliwen - Empresa", aerolínea genérica, etc.</p>
@@ -871,12 +1051,36 @@
       </div><!-- /tab-content catálogos -->
     </div><!-- /tab-pane tab-catalogos -->
 
+    <!-- ── CERRAR FEEDBACKS ── -->
+    <div class="tab-pane fade" id="tab-cierre">
+      <div id="cierre-loading" class="text-center py-5 text-muted d-none">
+        <div class="spinner-border spinner-border-sm me-2"></div>Cargando gestiones abiertas…
+      </div>
+      <div id="cierre-empty" class="alert alert-success d-none">
+        <i class="fa-solid fa-circle-check me-2"></i>No hay gestiones de calidad abiertas.
+      </div>
+      <div id="cierre-accordion" class="accordion"></div>
+    </div>
+
   </div>
 </div>
 
 <script>
 const csrfToken = "{{ csrf_token }}";
 let searchTimer = null;
+
+function _showCalidadToast(msg, type) {
+  const bg = type === 'success' ? 'bg-success' : 'bg-warning text-dark';
+  const el = document.createElement('div');
+  el.className = `toast align-items-center text-white ${bg} border-0 position-fixed bottom-0 end-0 m-3`;
+  el.style.zIndex = 9999;
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  document.body.appendChild(el);
+  const t = new bootstrap.Toast(el, {delay: 4000});
+  t.show();
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+}
 
 // ── Catalog feedback panels ─────────────────────────────────────────────────
 const _catFbUrl = "{% url 'calidad_feedbacks_by_target' %}";
@@ -912,8 +1116,6 @@ function toggleCatalogFeedbacks(type, id, clickedRow) {
               : '<span class="badge text-bg-secondary me-1">Neutral</span>';
             const statusBadge = fb.status === 'cerrado'
               ? '<span class="badge text-bg-dark me-1">Cerrado</span>'
-              : fb.status === 'en_seguimiento'
-              ? '<span class="badge text-bg-warning text-dark me-1">En seguimiento</span>'
               : '<span class="badge text-bg-info text-dark me-1">Abierto</span>';
             const sourceBadge = fb.source === 'email'
               ? '<span class="badge text-bg-secondary me-1"><i class="fa-solid fa-envelope me-1"></i>Email</span>'
@@ -974,12 +1176,14 @@ const searchUrls = {
   user:     "{% url 'calidad_search_users' %}",
   guide:    "{% url 'calidad_search_guides' %}",
   dh:       "{% url 'calidad_search_dhs' %}",
+  chofer:   "{% url 'calidad_search_drivers' %}",
   entity:   "{% url 'calidad_search_entities' %}",
 };
 const createUrls = {
   supplier: "{% url 'calidad_create_supplier' %}",
   guide:    "{% url 'calidad_create_guide' %}",
   dh:       "{% url 'calidad_create_dh' %}",
+  chofer:   "{% url 'calidad_create_driver' %}",
   entity:   "{% url 'calidad_entities' %}",
 };
 const hiddenFieldMap = {
@@ -987,6 +1191,7 @@ const hiddenFieldMap = {
   user:     '.t-user-id',
   guide:    '.t-guide-id',
   dh:       '.t-dh-id',
+  chofer:   '.t-driver-id',
   entity:   '.t-entity-id',
 };
 
@@ -1032,8 +1237,8 @@ function setLinked(statusEl, name) {
   statusEl.innerHTML = `<span class="badge bg-success"><i class="fa-solid fa-link me-1"></i>Vinculado: ${name}</span>`;
 }
 function setUnlinked(statusEl, suggestedName, type) {
-  const labels = {supplier:'proveedor provisional', guide:'guía', dh:'DH', entity:'entidad'};
-  const canCreate = ['supplier','guide','dh','entity'].includes(type);
+  const labels = {supplier:'proveedor provisional', guide:'guía', dh:'DH', chofer:'chofer', entity:'entidad'};
+  const canCreate = ['supplier','guide','dh','chofer','entity'].includes(type);
   let html = `<span class="badge bg-warning text-dark"><i class="fa-solid fa-triangle-exclamation me-1"></i>No encontrado en el sistema</span>`;
   if (canCreate && suggestedName) {
     const label = labels[type] || type;
@@ -1230,32 +1435,36 @@ function confirmInbox(id, btn) {
       solution:      tc.querySelector('.t-solution')?.value || '',
       cost:          parseFloat(tc.querySelector('.t-cost')?.value || 0) || 0,
     };
-    if (type === 'supplier') t.supplier_id = tc.querySelector('.t-supplier-id')?.value || null;
-    else if (type === 'user')  t.user_id    = tc.querySelector('.t-user-id')?.value    || null;
-    else if (type === 'guide') t.guide_id   = tc.querySelector('.t-guide-id')?.value   || null;
-    else if (type === 'dh')    t.dh_id      = tc.querySelector('.t-dh-id')?.value      || null;
-    else if (type === 'entity') t.entity_id = tc.querySelector('.t-entity-id')?.value  || null;
+    if (type === 'supplier')  t.supplier_id = tc.querySelector('.t-supplier-id')?.value || null;
+    else if (type === 'user')   t.user_id    = tc.querySelector('.t-user-id')?.value    || null;
+    else if (type === 'guide')  t.guide_id   = tc.querySelector('.t-guide-id')?.value   || null;
+    else if (type === 'dh')     t.dh_id      = tc.querySelector('.t-dh-id')?.value      || null;
+    else if (type === 'chofer') t.driver_id  = tc.querySelector('.t-driver-id')?.value  || null;
+    else if (type === 'entity') t.entity_id  = tc.querySelector('.t-entity-id')?.value  || null;
     targets.push(t);
   });
 
   if (!targets.length) { alert('No hay targets para guardar.'); return; }
 
-  const needsId = ['supplier','user','guide','dh','entity'];
+  const needsId = ['supplier','user','guide','dh','chofer','entity'];
   const missing = targets.filter(t => {
     if (!needsId.includes(t.target_type)) return false;
     const idKey = t.target_type === 'supplier' ? 'supplier_id'
                 : t.target_type === 'user'     ? 'user_id'
                 : t.target_type === 'guide'    ? 'guide_id'
                 : t.target_type === 'dh'       ? 'dh_id'
+                : t.target_type === 'chofer'   ? 'driver_id'
                 : 'entity_id';
     return !t[idKey];
   });
-  if (missing.length && !confirm(`${missing.length} target(s) no están vinculados al sistema. ¿Confirmar igual? (quedarán sin destinatario asignado)`)) return;
+  if (missing.length && !confirm(`${missing.length} target(s) no están vinculados al sistema. ¿Confirmar igual? (quedarán sin objetivo asignado)`)) return;
 
   const payload = {
     targets,
-    trip_file_id: document.getElementById(`trip-${id}`)?.value || '',
-    verbatim:     document.getElementById(`verbatim-${id}`)?.value || '',
+    trip_file_id:   document.getElementById(`trip-${id}`)?.value || '',
+    verbatim:       document.getElementById(`verbatim-${id}`)?.value || '',
+    responsable_id: document.getElementById(`responsable-${id}`)?.value || null,
+    priority:       document.getElementById(`priority-${id}`)?.value || '',
   };
 
   const orig = btn.innerHTML;
@@ -1266,7 +1475,17 @@ function confirmInbox(id, btn) {
     body: JSON.stringify(payload),
   })
   .then(r=>r.json()).then(d=>{
-    if (d.ok) { card.remove(); }
+    if (d.ok) {
+      card.remove();
+      const hasNegative = payload.targets.some(t => t.sentiment === 'negativo');
+      if (hasNegative) {
+        if (d.entry_created) {
+          _showCalidadToast('Feedback guardado y entrada creada.', 'success');
+        } else if (d.entry_missing && d.entry_missing.length) {
+          _showCalidadToast('Feedback guardado. Sin entrada — falta: ' + d.entry_missing.join(', ') + '.', 'warning');
+        }
+      }
+    }
     else { alert('Error: '+(d.error||'desconocido')); btn.disabled=false; btn.innerHTML=orig; }
   }).catch(()=>{ btn.disabled=false; btn.innerHTML=orig; });
 }
@@ -1312,7 +1531,8 @@ function createCatalogItem(type) {
 }
 
 function deleteCatalogItem(type, id) {
-  const label = type === 'guide' ? 'guía' : 'DH';
+  const labels = {guide: 'guía', dh: 'DH', driver: 'chofer'};
+  const label = labels[type] || type;
   if (!confirm(`¿Eliminás este ${label}?`)) return;
   fetch(`/calidad/${type}s/${id}/delete`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
     .then(r=>r.json()).then(d=>{
@@ -1356,6 +1576,88 @@ function saveCatalogItem(type, id) {
     cells[1].textContent = d.location_name || '—';
     cells[2].textContent = notes || '—';
     cancelEditCatalogItem(type, id);
+  });
+}
+
+// ── Choferes (driver + supplier) ────────────────────────────────────────────
+function searchDriverSupplier(input, context) {
+  const q = input.value.trim();
+  const isNew = context === 'new';
+  const resultsId = isNew ? 'new-driver-supplier-results' : `edit-driver-supplier-results-${context}`;
+  const hiddenId  = isNew ? 'new-driver-supplier-id'      : `edit-driver-supplier-id-${context}`;
+  const results = document.getElementById(resultsId);
+  document.getElementById(hiddenId).value = '';
+  if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+  fetch(`{% url 'calidad_search_suppliers' %}?q=${encodeURIComponent(q)}`)
+    .then(r => r.json()).then(d => {
+      results.innerHTML = '';
+      if (!d.results || !d.results.length) { results.style.display = 'none'; return; }
+      d.results.slice(0, 8).forEach(s => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'list-group-item list-group-item-action py-1 px-2 small';
+        btn.textContent = s.name;
+        btn.onclick = () => {
+          input.value = s.name;
+          document.getElementById(hiddenId).value = s.id;
+          results.style.display = 'none';
+        };
+        results.appendChild(btn);
+      });
+      results.style.display = 'block';
+    });
+}
+
+function createDriverItem() {
+  const name = document.getElementById('new-driver-name').value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  const notes = document.getElementById('new-driver-notes')?.value.trim() || '';
+  const supplier_id = document.getElementById('new-driver-supplier-id').value || null;
+  const supplier_name = document.getElementById('new-driver-supplier-name').value.trim();
+  fetch("{% url 'calidad_create_driver' %}", {
+    method: 'POST', headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: JSON.stringify({name, notes, supplier_id}),
+  })
+  .then(r => r.json()).then(d => {
+    if (!d.ok) { alert(d.error || 'Error'); return; }
+    if (!d.created) { alert('Ya existe un chofer con ese nombre'); return; }
+    const tbody = document.querySelector('#drivers-table tbody');
+    const tr = document.createElement('tr');
+    tr.id = `driver-row-${d.id}`;
+    const supDisplay = d.supplier_name ? `<span class="badge text-bg-light border">${d.supplier_name}</span>` : '—';
+    tr.innerHTML = `<td class="small fw-semibold">${d.name}</td>
+      <td class="small text-muted">${supDisplay}</td>
+      <td class="small text-muted">${notes || '—'}</td>
+      <td class="text-center">—</td>
+      <td class="text-nowrap">
+        <button class="btn btn-sm btn-outline-secondary p-1 me-1" onclick="editCatalogItem('driver',${d.id})"><i class="fa-solid fa-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger p-1" onclick="deleteCatalogItem('driver',${d.id})"><i class="fa-solid fa-trash"></i></button>
+      </td>`;
+    tbody.appendChild(tr);
+    document.getElementById('new-driver-name').value = '';
+    document.getElementById('new-driver-notes').value = '';
+    document.getElementById('new-driver-supplier-name').value = '';
+    document.getElementById('new-driver-supplier-id').value = '';
+  });
+}
+
+function saveDriverItem(id) {
+  const name = document.getElementById(`edit-driver-name-${id}`).value.trim();
+  if (!name) { alert('El nombre es obligatorio'); return; }
+  const notes = document.getElementById(`edit-driver-notes-${id}`)?.value.trim() || '';
+  const supplier_id = document.getElementById(`edit-driver-supplier-id-${id}`).value || null;
+  fetch(`/calidad/drivers/${id}/edit`, {
+    method: 'POST', headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+    body: JSON.stringify({name, notes, supplier_id}),
+  })
+  .then(r => r.json()).then(d => {
+    if (!d.ok) { alert(d.error || 'Error'); return; }
+    const row = document.getElementById(`driver-row-${id}`);
+    const cells = row.querySelectorAll('td');
+    cells[0].textContent = d.name;
+    cells[1].innerHTML = d.supplier_name ? `<span class="badge text-bg-light border">${d.supplier_name}</span>` : '—';
+    cells[2].textContent = notes || '—';
+    cancelEditCatalogItem('driver', id);
   });
 }
 
@@ -1445,8 +1747,320 @@ function fetchInbox(btn) {
     .catch(() => { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-envelope-open-text me-1"></i>Leer bandeja'; });
 }
 
+function sendFollowupsAndCheck(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Procesando…';
+  // First check close replies, then send followups
+  fetch("{% url 'calidad_check_close_replies' %}", { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r => r.json())
+    .then(checkResult => {
+      return fetch("{% url 'calidad_send_followups' %}", { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+        .then(r => r.json())
+        .then(followupResult => ({ checkResult, followupResult }));
+    })
+    .then(({ checkResult, followupResult }) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Enviar seguimientos';
+      const parts = [];
+      if (checkResult.closed > 0) parts.push(`${checkResult.closed} gestión(es) cerrada(s) automáticamente`);
+      if (checkResult.replied > 0) parts.push(`${checkResult.replied} respuesta(s) incompleta(s) contestadas`);
+      if (followupResult.sent > 0) parts.push(`${followupResult.sent} seguimiento(s) enviado(s)`);
+      if (parts.length === 0) {
+        alert('Sin novedades: no hay respuestas nuevas ni seguimientos pendientes.');
+      } else {
+        alert('✓ ' + parts.join(' · ') + (checkResult.closed > 0 ? '. Recargando…' : ''));
+        if (checkResult.closed > 0) location.reload();
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Enviar seguimientos';
+      alert('Error al procesar seguimientos.');
+    });
+}
+
+// ── Cerrar Feedbacks tab ────────────────────────────────────────────────────
+
+function openCierreFeedbacksTab() {
+  const tabEl = document.getElementById('tab-cierre-btn');
+  bootstrap.Tab.getOrCreateInstance(tabEl).show();
+  loadCierreTab();
+}
+
+// Triggered when the tab is shown via Bootstrap tab event
+document.addEventListener('DOMContentLoaded', function () {
+  const tabEl = document.getElementById('tab-cierre-btn');
+  if (tabEl) {
+    tabEl.addEventListener('shown.bs.tab', loadCierreTab);
+  }
+});
+
+function loadCierreTab() {
+  const loading = document.getElementById('cierre-loading');
+  const empty   = document.getElementById('cierre-empty');
+  const accordion = document.getElementById('cierre-accordion');
+  loading.classList.remove('d-none');
+  empty.classList.add('d-none');
+  accordion.innerHTML = '';
+
+  fetch("{% url 'calidad_open_trips_json' %}")
+    .then(r => r.json())
+    .then(data => {
+      loading.classList.add('d-none');
+      const trips = data.trips || [];
+      if (trips.length === 0) {
+        empty.classList.remove('d-none');
+        return;
+      }
+      trips.forEach((trip, idx) => {
+        accordion.insertAdjacentHTML('beforeend', buildTripAccordionItem(trip, idx));
+      });
+    })
+    .catch(() => {
+      loading.classList.add('d-none');
+      accordion.innerHTML = '<div class="alert alert-danger">Error al cargar las gestiones abiertas.</div>';
+    });
+}
+
+function buildTripAccordionItem(trip, idx) {
+  const collapseId = `cierre-collapse-${trip.trip_id}`;
+  const headingId  = `cierre-heading-${trip.trip_id}`;
+  const allComplete = trip.all_closed;
+  const badge = allComplete
+    ? '<span class="badge bg-success ms-2">Listo para cerrar</span>'
+    : `<span class="badge bg-warning text-dark ms-2">${trip.feedbacks.filter(f => f.missing.length > 0 || f.status !== 'cerrado').length} pendiente(s)</span>`;
+
+  const travelDate = trip.travel_date || '—';
+  const tp = trip.tourplan_id ? `<span class="text-muted ms-2 small">${trip.tourplan_id}</span>` : '';
+  const pax = trip.pax ? `<span class="text-muted ms-2 small"><i class="fa-solid fa-users me-1"></i>${trip.pax}</span>` : '';
+  const responsable = trip.responsable ? `<span class="text-muted ms-2 small"><i class="fa-solid fa-user me-1"></i>${trip.responsable}</span>` : '';
+
+  const fbRows = trip.feedbacks.map(fb => buildFeedbackRow(fb, trip.trip_id)).join('');
+
+  const closeBtn = allComplete
+    ? `<button class="btn btn-sm btn-danger" id="close-trip-btn-${trip.trip_id}" onclick="closeTripFeedbacks(${trip.trip_id})">
+         <i class="fa-solid fa-lock me-1"></i>Cerrar viaje
+       </button>`
+    : `<button class="btn btn-sm btn-danger" id="close-trip-btn-${trip.trip_id}" onclick="closeTripFeedbacks(${trip.trip_id})" disabled>
+         <i class="fa-solid fa-lock me-1"></i>Cerrar viaje
+       </button>`;
+
+  return `
+  <div class="accordion-item" id="cierre-trip-${trip.trip_id}">
+    <h2 class="accordion-header" id="${headingId}">
+      <button class="accordion-button ${idx === 0 ? '' : 'collapsed'}" type="button"
+              data-bs-toggle="collapse" data-bs-target="#${collapseId}"
+              aria-expanded="${idx === 0 ? 'true' : 'false'}" aria-controls="${collapseId}">
+        <span class="fw-semibold">${trip.trip_name}</span>${tp}${pax}${responsable}
+        <span class="ms-2 text-muted small">${travelDate}</span>
+        ${badge}
+      </button>
+    </h2>
+    <div id="${collapseId}" class="accordion-collapse collapse ${idx === 0 ? 'show' : ''}"
+         aria-labelledby="${headingId}">
+      <div class="accordion-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th style="min-width:160px">Objetivo</th>
+                <th>Resumen</th>
+                <th style="min-width:200px">Solución</th>
+                <th style="min-width:100px">Costo</th>
+                <th style="min-width:120px">Estado</th>
+                <th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="cierre-tbody-${trip.trip_id}">
+              ${fbRows}
+            </tbody>
+          </table>
+        </div>
+        <div class="d-flex justify-content-end p-2 border-top">
+          ${closeBtn}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildFeedbackRow(fb, tripId) {
+  const statusOpts = ['pendiente','en proceso','cerrado'].map(s =>
+    `<option value="${s}" ${fb.status === s ? 'selected' : ''}>${s}</option>`
+  ).join('');
+  const missingBadge = fb.missing.length > 0
+    ? `<span class="badge bg-danger ms-1" title="Falta: ${fb.missing.join(', ')}"><i class="fa-solid fa-circle-exclamation"></i></span>`
+    : '';
+  const costVal = fb.cost != null && fb.cost !== 0 ? fb.cost : '';
+
+  return `
+  <tr id="cierre-row-${fb.id}" data-fb-id="${fb.id}" data-trip-id="${tripId}">
+    <td class="fw-semibold small">${escapeHtml(fb.objective || '')}${missingBadge}</td>
+    <td class="small text-muted">${escapeHtml(fb.brief_summary || '')}</td>
+    <td>
+      <textarea class="form-control form-control-sm" id="cierre-solution-${fb.id}" rows="2"
+                placeholder="Describir solución…">${escapeHtml(fb.solution || '')}</textarea>
+    </td>
+    <td>
+      <input type="number" class="form-control form-control-sm" id="cierre-cost-${fb.id}"
+             placeholder="0" min="0" step="0.01" value="${costVal}">
+    </td>
+    <td>
+      <select class="form-select form-select-sm" id="cierre-status-${fb.id}">
+        ${statusOpts}
+      </select>
+    </td>
+    <td class="text-center">
+      <button class="btn btn-sm btn-outline-primary" onclick="saveFeedbackClose(${fb.id}, ${tripId})"
+              title="Guardar">
+        <i class="fa-solid fa-floppy-disk"></i>
+      </button>
+    </td>
+  </tr>`;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function saveFeedbackClose(fbId, tripId) {
+  const solution = document.getElementById(`cierre-solution-${fbId}`)?.value || '';
+  const costRaw  = document.getElementById(`cierre-cost-${fbId}`)?.value;
+  const status   = document.getElementById(`cierre-status-${fbId}`)?.value || 'pendiente';
+  const cost     = costRaw !== '' ? parseFloat(costRaw) : 0;
+
+  const btn = document.querySelector(`#cierre-row-${fbId} button`);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+
+  fetch(`/calidad/feedbacks/${fbId}/edit`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ solution, cost, status })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>'; }
+      if (!d.ok) { alert('Error al guardar: ' + (d.error || 'desconocido')); return; }
+      // Update missing badge in the row
+      const isSolutionOk = solution.trim().length > 0;
+      const isCostOk     = cost > 0;
+      const isStatusOk   = status === 'cerrado';
+      const missingCell  = document.querySelector(`#cierre-row-${fbId} td:first-child`);
+      if (missingCell) {
+        const existingBadge = missingCell.querySelector('.badge');
+        if (existingBadge) existingBadge.remove();
+        const missing = [];
+        if (!isSolutionOk) missing.push('solución');
+        if (!isCostOk)     missing.push('costo');
+        if (!isStatusOk)   missing.push('estado cerrado');
+        if (missing.length > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'badge bg-danger ms-1';
+          badge.title = 'Falta: ' + missing.join(', ');
+          badge.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
+          missingCell.appendChild(badge);
+        }
+      }
+      // Check if all feedbacks in this trip are now complete
+      checkTripCloseReady(tripId);
+    })
+    .catch(() => {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>'; }
+      alert('Error de conexión al guardar.');
+    });
+}
+
+function checkTripCloseReady(tripId) {
+  const tbody = document.getElementById(`cierre-tbody-${tripId}`);
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll('tr');
+  let allReady = true;
+  rows.forEach(row => {
+    const fbId = row.dataset.fbId;
+    if (!fbId) return;
+    const solution = document.getElementById(`cierre-solution-${fbId}`)?.value || '';
+    const cost     = parseFloat(document.getElementById(`cierre-cost-${fbId}`)?.value || '0');
+    const status   = document.getElementById(`cierre-status-${fbId}`)?.value || '';
+    if (!solution.trim() || cost <= 0 || status !== 'cerrado') allReady = false;
+  });
+  const closeBtn = document.getElementById(`close-trip-btn-${tripId}`);
+  if (closeBtn) closeBtn.disabled = !allReady;
+}
+
+function closeTripFeedbacks(tripId) {
+  if (!confirm('¿Cerrar todos los feedbacks de este viaje y enviar la notificación de cierre?')) return;
+  const btn = document.getElementById(`close-trip-btn-${tripId}`);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Cerrando…'; }
+
+  fetch(`/calidad/trips/${tripId}/close`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrfToken }
+  })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (ok && data.success) {
+        // Remove accordion item for closed trip
+        const item = document.getElementById(`cierre-trip-${tripId}`);
+        if (item) item.remove();
+        // If accordion is now empty, show empty state
+        const accordion = document.getElementById('cierre-accordion');
+        if (accordion && !accordion.querySelector('.accordion-item')) {
+          document.getElementById('cierre-empty').classList.remove('d-none');
+        }
+        // Show badge on main tab count
+        alert('Viaje cerrado correctamente. Se envió la notificación de cierre.');
+      } else if (!ok && data.error === 'incomplete') {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-lock me-1"></i>Cerrar viaje'; }
+        const list = document.getElementById('qc-incomplete-list');
+        list.innerHTML = '';
+        (data.incomplete || []).forEach(fb => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>${fb.objective}</strong> — falta: ${fb.missing.join(', ')}`;
+          list.appendChild(li);
+        });
+        bootstrap.Modal.getOrCreate(document.getElementById('qualityCloseIncompleteModal')).show();
+      } else {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-lock me-1"></i>Cerrar viaje'; }
+        alert('Error al cerrar el viaje: ' + (data.error || 'desconocido'));
+      }
+    })
+    .catch(() => {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-lock me-1"></i>Cerrar viaje'; }
+      alert('Error de conexión al cerrar el viaje.');
+    });
+}
+
+function closeQualityEntry(entryId) {
+  if (!entryId) { alert('ID de gestión no disponible.'); return; }
+  if (!confirm('¿Cerrar esta gestión de calidad y enviar notificación de cierre?')) return;
+  fetch(`/calidad/entries/${entryId}/close`, { method:'POST', headers:{'X-CSRFToken':csrfToken} })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (ok && data.success) {
+        alert('Gestión cerrada correctamente.');
+        location.reload();
+      } else if (!ok && data.error === 'incomplete') {
+        // Show which feedbacks are missing solution/cost
+        const list = document.getElementById('qc-incomplete-list');
+        list.innerHTML = '';
+        (data.incomplete || []).forEach(fb => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>${fb.objective}</strong> — falta: ${fb.missing.join(', ')}`;
+          list.appendChild(li);
+        });
+        bootstrap.Modal.getOrCreate(document.getElementById('qualityCloseIncompleteModal')).show();
+      } else {
+        alert('Error al cerrar la gestión.');
+      }
+    })
+    .catch(() => alert('Error al cerrar la gestión'));
+}
+
 // ── Feedback detail (row click) ─────────────────────────────────────────────
 let _currentFbId = null;
+let _currentQualityEntryId = null;
 
 document.addEventListener('click', function(e) {
   if (e.target.closest('button')) return;  // don't open detail when clicking action buttons
@@ -1455,6 +2069,11 @@ document.addEventListener('click', function(e) {
   _currentFbId = row.dataset.fbId;
   const src = document.getElementById('fb-detail-' + _currentFbId);
   if (!src) return;
+  _currentQualityEntryId = src.dataset.qualityEntryId || null;
+  const closeBtn = document.getElementById('detail-close-quality-btn');
+  if (closeBtn) {
+    closeBtn.style.display = _currentQualityEntryId ? '' : 'none';
+  }
   document.getElementById('feedbackDetailBody').innerHTML = src.innerHTML;
   new bootstrap.Modal(document.getElementById('feedbackDetailModal')).show();
 });
@@ -1471,8 +2090,17 @@ document.getElementById('detail-delete-btn').addEventListener('click', function(
   deleteFeedback(_currentFbId, null);
 });
 
+const _detailCloseQualityBtn = document.getElementById('detail-close-quality-btn');
+if (_detailCloseQualityBtn) {
+  _detailCloseQualityBtn.addEventListener('click', function() {
+    if (!_currentQualityEntryId) return;
+    bootstrap.Modal.getInstance(document.getElementById('feedbackDetailModal'))?.hide();
+    closeQualityEntry(_currentQualityEntryId);
+  });
+}
+
 // ── Feedback edit ───────────────────────────────────────────────────────────
-const FB_EDIT_TARGET_TYPES = ['supplier','guide','dh','user','entity','aliwen_team'];
+const FB_EDIT_TARGET_TYPES = ['supplier','guide','dh','chofer','user','entity','aliwen_team'];
 
 function onFbEditTargetTypeChange(sel) {
   FB_EDIT_TARGET_TYPES.forEach(t => {
@@ -1484,6 +2112,7 @@ function _populateFeedbackEditModal(d) {
   document.getElementById('fb-edit-id').value        = d.id;
   document.getElementById('fb-edit-summary').value   = d.brief_summary || '';
   document.getElementById('fb-edit-content').value   = d.content || '';
+  document.getElementById('fb-edit-verbatim').value  = d.verbatim || '';
   document.getElementById('fb-edit-solution').value  = d.solution || '';
   document.getElementById('fb-edit-cost').value      = d.cost || '';
   document.getElementById('fb-edit-status').value    = d.status || 'abierto';
@@ -1498,6 +2127,8 @@ function _populateFeedbackEditModal(d) {
   document.getElementById('fb-edit-guide-id').value      = d.guide_id      || '';
   document.getElementById('fb-edit-dh-name').value       = d.dh_name       || '';
   document.getElementById('fb-edit-dh-id').value         = d.dh_id         || '';
+  document.getElementById('fb-edit-chofer-name').value   = d.driver_name   || '';
+  document.getElementById('fb-edit-chofer-id').value     = d.driver_id     || '';
   document.getElementById('fb-edit-user-name').value     = d.user_name     || '';
   document.getElementById('fb-edit-user-id').value       = d.user_id       || '';
   document.getElementById('fb-edit-entity-name').value   = d.entity_name   || '';
@@ -1508,6 +2139,8 @@ function _populateFeedbackEditModal(d) {
   });
   document.getElementById('fb-edit-negative-fields').style.display =
     d.sentiment === 'negativo' ? '' : 'none';
+  document.getElementById('fb-edit-responsable-id').value = d.responsable_id || '';
+  document.getElementById('fb-edit-priority').value        = d.priority        || '';
   document.getElementById('feedbackEditModalTitle').textContent = 'Editar feedback';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('feedbackEditModal')).show();
 }
@@ -1568,6 +2201,7 @@ function openNewFeedback() {
   document.getElementById('fb-edit-id').value        = '';
   document.getElementById('fb-edit-summary').value   = '';
   document.getElementById('fb-edit-content').value   = '';
+  document.getElementById('fb-edit-verbatim').value  = '';
   document.getElementById('fb-edit-solution').value  = '';
   document.getElementById('fb-edit-cost').value      = '';
   document.getElementById('fb-edit-trip-file').value = '';
@@ -1576,7 +2210,7 @@ function openNewFeedback() {
   document.getElementById('fb-edit-type').value      = '{{ type_quality_choices.0.0 }}';
   document.getElementById('fb-edit-target-type').value = 'supplier';
   onFbEditTargetTypeChange(document.getElementById('fb-edit-target-type'));
-  ['supplier','guide','dh','user','entity'].forEach(t => {
+  ['supplier','guide','dh','chofer','user','entity'].forEach(t => {
     const n = document.getElementById('fb-edit-'+t+'-name');
     const i = document.getElementById('fb-edit-'+t+'-id');
     const r = document.getElementById('fb-edit-'+t+'-results');
@@ -1585,6 +2219,8 @@ function openNewFeedback() {
     if (r) r.style.display = 'none';
   });
   document.getElementById('fb-edit-negative-fields').style.display = 'none';
+  document.getElementById('fb-edit-responsable-id').value = '';
+  document.getElementById('fb-edit-priority').value        = '';
   document.getElementById('feedbackEditModalTitle').textContent = 'Nuevo feedback';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('feedbackEditModal')).show();
 }
@@ -1593,20 +2229,24 @@ function saveFeedbackEdit() {
   const id = document.getElementById('fb-edit-id').value;
   const targetType = document.getElementById('fb-edit-target-type').value;
   const payload = {
-    brief_summary: document.getElementById('fb-edit-summary').value,
-    content:       document.getElementById('fb-edit-content').value,
-    solution:      document.getElementById('fb-edit-solution').value,
-    cost:          document.getElementById('fb-edit-cost').value,
-    status:        document.getElementById('fb-edit-status').value,
-    sentiment:     document.getElementById('fb-edit-sentiment').value,
-    type:          document.getElementById('fb-edit-type').value,
-    trip_file:     document.getElementById('fb-edit-trip-file').value.trim(),
-    target_type:   targetType,
-    supplier_id:   document.getElementById('fb-edit-supplier-id').value  || null,
-    guide_id:      document.getElementById('fb-edit-guide-id').value     || null,
-    dh_id:         document.getElementById('fb-edit-dh-id').value        || null,
-    user_id:       document.getElementById('fb-edit-user-id').value      || null,
-    entity_id:     document.getElementById('fb-edit-entity-id').value    || null,
+    brief_summary:  document.getElementById('fb-edit-summary').value,
+    content:        document.getElementById('fb-edit-content').value,
+    verbatim:       document.getElementById('fb-edit-verbatim').value,
+    solution:       document.getElementById('fb-edit-solution').value,
+    cost:           document.getElementById('fb-edit-cost').value,
+    status:         document.getElementById('fb-edit-status').value,
+    sentiment:      document.getElementById('fb-edit-sentiment').value,
+    type:           document.getElementById('fb-edit-type').value,
+    trip_file:      document.getElementById('fb-edit-trip-file').value.trim(),
+    target_type:    targetType,
+    supplier_id:    document.getElementById('fb-edit-supplier-id').value  || null,
+    guide_id:       document.getElementById('fb-edit-guide-id').value     || null,
+    dh_id:          document.getElementById('fb-edit-dh-id').value        || null,
+    driver_id:      document.getElementById('fb-edit-chofer-id').value    || null,
+    user_id:        document.getElementById('fb-edit-user-id').value      || null,
+    entity_id:      document.getElementById('fb-edit-entity-id').value    || null,
+    responsable_id: document.getElementById('fb-edit-responsable-id').value || null,
+    priority:       document.getElementById('fb-edit-priority').value        || '',
   };
   const url = id ? `/calidad/feedbacks/${id}/edit` : '/calidad/feedbacks/create';
   fetch(url, {
@@ -1635,6 +2275,7 @@ function addManualTarget(itemId) {
         <option value="user">👤 Usuario Aliwen</option>
         <option value="guide">🧭 Guía</option>
         <option value="dh">🌍 DH</option>
+        <option value="chofer">🚗 Chofer</option>
         <option value="aliwen_team">🏠 Equipo Aliwen</option>
         <option value="entity">📋 Otros</option>
       </select>
@@ -1669,6 +2310,14 @@ function addManualTarget(itemId) {
         <div class="input-group input-group-sm">
           <input type="text" class="form-control search-input" placeholder="Buscar DH..." data-type="dh" oninput="searchTarget(this)">
           <input type="hidden" class="t-dh-id" value="">
+        </div>
+        <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
+        <div class="t-link-status mt-1"></div>
+      </div>
+      <div class="target-selector" data-for="chofer" style="display:none">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control search-input" placeholder="Buscar chofer..." data-type="chofer" oninput="searchTarget(this)">
+          <input type="hidden" class="t-driver-id" value="">
         </div>
         <div class="search-results list-group mt-1" style="display:none;position:absolute;z-index:100;width:100%;max-height:180px;overflow-y:auto;"></div>
         <div class="t-link-status mt-1"></div>
@@ -1731,7 +2380,7 @@ function addManualTarget(itemId) {
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof $.fn !== 'undefined' && typeof $.fn.DataTable !== 'undefined') {
     $('#feedbacks-table').DataTable({
-      order: [[7, 'desc']],
+      order: [[8, 'desc']],
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100],
       language: {
@@ -1746,7 +2395,7 @@ document.addEventListener('DOMContentLoaded', function() {
         buttons:      { excel: 'Descargar Excel' },
       },
       columnDefs: [
-        { orderable: false, targets: [5, 8] },
+        { orderable: false, targets: [5] },
         // Columna "Resumen" (índice 5): en pantalla trunca a 120 chars,
         // pero en el Excel exportamos el texto completo desde data-fb-summary
         {

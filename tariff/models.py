@@ -131,7 +131,6 @@ SENTIMENT = [
 
 FEEDBACK_STATUS = [
     ("abierto", "Abierto"),
-    ("en_seguimiento", "En seguimiento"),
     ("cerrado", "Cerrado"),
 ]
 
@@ -500,6 +499,7 @@ class Feedback(models.Model):
     target_user = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="feedback_targets", null=True, blank=True)
     target_guide = models.ForeignKey('intranet.Guide', on_delete=models.SET_NULL, related_name="feedback_guides", null=True, blank=True)
     target_dh = models.ForeignKey('intranet.DestinationHost', on_delete=models.SET_NULL, related_name="feedback_dhs", null=True, blank=True)
+    target_driver = models.ForeignKey('intranet.Driver', on_delete=models.SET_NULL, related_name="feedback_drivers", null=True, blank=True)
     target_entity = models.ForeignKey(FeedbackEntity, on_delete=models.SET_NULL, related_name="feedback_entities", null=True, blank=True)
 
     type = models.CharField(max_length=64, choices=TYPE_QUALITY)
@@ -512,6 +512,28 @@ class Feedback(models.Model):
     status = models.CharField(max_length=20, choices=FEEDBACK_STATUS, default="abierto")
     source = models.CharField(max_length=10, choices=FEEDBACK_SOURCE, default="manual")
     email_sender = models.EmailField(blank=True, default="")
+    responsable = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='responsible_feedbacks',
+        verbose_name='Responsable del feedback',
+    )
+    priority = models.CharField(
+        max_length=64, blank=True, default='',
+        verbose_name='Prioridad',
+        choices=[
+            ("1 - BAJA - min", "BAJA - min"),
+            ("2 - BAJA - standard", "BAJA - standard"),
+            ("3 - BAJA - plus", "BAJA - plus"),
+            ("4 - MED - min", "MED - min"),
+            ("5 - MED - standard", "MED - standard"),
+            ("6 - MED - pide urgente", "MED - pide urgente"),
+            ("7 - ALTA - standard", "ALTA - standard"),
+            ("8 - ALTA - pide urgente", "ALTA - pide urgente"),
+            ("9 - ALTA - cliente nuevo", "ALTA - cliente nuevo"),
+            ("10 - ALTA - last minute", "ALTA - last minute"),
+        ],
+    )
 
     def target_display(self):
         if self.supplier:
@@ -522,9 +544,11 @@ class Feedback(models.Model):
             return f'Guía: {self.target_guide.name}'
         if self.target_dh:
             return f'DH: {self.target_dh.name}'
+        if self.target_driver:
+            return f'Chofer: {self.target_driver.name}'
         if self.target_entity:
             return self.target_entity.name
-        return "Sin destinatario"
+        return "Sin objetivo"
 
     def __str__(self):
         return f"{self.get_sentiment_display()} – {self.target_display()} ({self.creation_date.date()})"

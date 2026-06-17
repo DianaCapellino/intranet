@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups
 
 
 class Command(BaseCommand):
@@ -46,6 +46,26 @@ class Command(BaseCommand):
         self.stdout.write("-" * 30)
         self.stdout.write("Procesando bandeja de calidad...")
         call_command("process_quality_inbox")
+
+        # Quality close-reply check — every day
+        self.stdout.write("-" * 30)
+        self.stdout.write("Verificando respuestas de cierre de calidad...")
+        try:
+            r = run_quality_close_check(stdout=self.stdout)
+            self.stdout.write(self.style.SUCCESS(
+                f"Respuestas procesadas: {r['processed']} | Cerradas: {r['closed']} | Respondidas: {r['replied']}"
+            ))
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error en close-check de calidad: {exc}"))
+
+        # Quality follow-ups — every day (sends only if >2 days since last)
+        self.stdout.write("-" * 30)
+        self.stdout.write("Enviando seguimientos de calidad...")
+        try:
+            r = run_quality_followups(stdout=self.stdout)
+            self.stdout.write(self.style.SUCCESS(f"Seguimientos enviados: {r['sent']}"))
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error en seguimientos de calidad: {exc}"))
 
         # Margin warnings to sellers — every Wednesday
         if is_wednesday:

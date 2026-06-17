@@ -13,6 +13,7 @@ STATUS_OPTIONS = [
     ("Final Itinerary", "Final Itinerary"),
     ("Void", "Void"),
     ("Cancelado", "Cancelado"),
+    ("Queja", "Queja"),
     ("Programa", "Programa"),
     ("Bloqueo", "Bloqueo"),
     ("Otro", "Otro")
@@ -236,6 +237,22 @@ class DestinationHost(models.Model):
         verbose_name_plural = 'Destination Hosts'
 
 
+class Driver(models.Model):
+    name = models.CharField(max_length=200)
+    location = models.ForeignKey('tariff.Location', on_delete=models.SET_NULL, null=True, blank=True, related_name='drivers')
+    supplier = models.ForeignKey('tariff.Supplier', on_delete=models.SET_NULL, null=True, blank=True, related_name='drivers', verbose_name='Proveedor/Transportista')
+    email = models.EmailField(blank=True, default='')
+    notes = models.CharField(max_length=300, blank=True, default='')
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Chofer'
+        verbose_name_plural = 'Choferes'
+
+
 class Trip(models.Model):
     name = models.CharField(max_length=64)
     status = models.CharField(max_length=64, choices=STATUS_OPTIONS)
@@ -322,6 +339,7 @@ class Entry(models.Model):
     timingStatus = models.CharField(max_length=64, choices=TIMING_STATUS, default="light")
     exception = models.BooleanField(default=False)
     response_speed = models.IntegerField(null=True, blank=True)
+    last_followup_sent = models.DateTimeField(null=True, blank=True, verbose_name='Último seguimiento enviado')
 
     @property
     def response_days(self):
@@ -540,6 +558,7 @@ NOTIFICATION_TYPES = [
     ('margin_manager', 'Margin Report (Manager)'),
     ('weekly_roster', 'Weekly Roster'),
     ('holiday_reminder', 'Holiday Reminder'),
+    ('quality_closure', 'Calidad – Resumen de cierre'),
 ]
 
 # Types whose base recipient list is auto-derived from user type queries

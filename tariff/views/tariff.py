@@ -3921,7 +3921,10 @@ def aliwen_green(request):
             'actions_pairs': actions_pairs,
         })
 
-    grouped_sorted = dict(sorted(grouped.items(), key=lambda x: x[0].name))
+    # Destinations: by Location.order; hotels within each: by ranking desc then name asc
+    for loc in grouped:
+        grouped[loc].sort(key=lambda e: (-( e['supplier'].sustentability_ranking or 0), e['supplier'].name.lower()))
+    grouped_sorted = dict(sorted(grouped.items(), key=lambda x: x[0].order))
 
     all_locations = Location.objects.filter(
         location_products__type_service="AC"

@@ -1214,6 +1214,7 @@ def _get_week_data(monday, friday):
             type_absence__in=["Feriado trabajado", "Feriado trabajado 1/2"],
             date_from__lte=h_end,
             date_to__gte=h_start,
+            absence_user__isActivated=True,
         ).select_related("absence_user")
         workers = [
             {
@@ -1237,6 +1238,7 @@ def _get_week_data(monday, friday):
     absences_qs = Absence.objects.filter(
         date_from__lte=friday,
         date_to__gte=monday,
+        absence_user__isActivated=True,
     ).exclude(
         type_absence__in=EXCLUDE_ABSENCE
     ).select_related("absence_user").order_by("absence_user__other_name", "date_from")
@@ -1258,6 +1260,7 @@ def _get_week_data(monday, friday):
         type_absence__in=["Semana home", "FAM/Trabajando fuera ofi"],
         date_from__lte=friday,
         date_to__gte=monday,
+        absence_user__isActivated=True,
     ).select_related("absence_user").order_by("absence_user__other_name")
 
     home_data = []
@@ -1282,6 +1285,7 @@ def _get_week_data(monday, friday):
             type_absence="Cumpleaños",
             date_from__lte=day,
             date_to__gte=day,
+            absence_user__isActivated=True,
         ).select_related("absence_user")
         for b in bday_absences:
             birthdays_data.append({
@@ -1638,3 +1642,487 @@ def send_holiday_reminder(today=None):
     subject, to_emails, template, context = result
     send_templated_email(subject, to_emails, template, context)
     print(f"Holiday reminder sent to {to_emails}")
+
+
+def send_quality_closure_notification(entry, feedbacks):
+    """Send closure summary email to quality_closure notification subscribers."""
+    from intranet.models import NotificationPreference
+    from django.utils import timezone as _tz
+
+    recipients = list(
+        NotificationPreference.objects
+        .filter(notification_type='quality_closure', is_active=True)
+        .exclude(user__email='')
+        .values_list('user__email', flat=True)
+    )
+    if not recipients:
+        return
+
+    _site_url = getattr(settings, 'SITE_URL', 'https://intranet.aliwenincoming.com')
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip('/')
+    static_url = settings.STATIC_URL.strip('/')
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    trip = entry.trip
+    feedback_rows = []
+    for fb in feedbacks:
+        feedback_rows.append({
+            'objective': fb.target_display(),
+            'brief_summary': fb.brief_summary or '',
+            'solution': fb.solution or '',
+            'cost': fb.cost or 0,
+        })
+
+    closed_date = ''
+    if entry.closing_date:
+        closed_date = entry.closing_date.strftime('%d/%m/%Y')
+
+    entry_url = f"{site_url}/calidad"
+
+    context = {
+        'entry': entry,
+        'trip': trip,
+        'feedbacks': feedback_rows,
+        'closed_date': closed_date,
+        'entry_url': entry_url,
+        'logo_url': logo_url,
+        'icons_base_url': icons_base_url,
+    }
+
+    subject = f"[Calidad] Gestión cerrada — {trip.name} [ref:QE-{entry.id}]"
+
+    html_content = render_to_string('emails/quality_closure_notification.html', context)
+
+    extra_headers = {}
+    quality_inbox = getattr(settings, 'QUALITY_INBOX_EMAIL', None)
+    if quality_inbox:
+        extra_headers['Reply-To'] = quality_inbox
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body='Este email requiere HTML.',
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=recipients,
+        headers=extra_headers,
+    )
+    msg.attach_alternative(html_content, 'text/html')
+    msg.send()
+
+
+def send_quality_followup(entry, feedbacks):
+    """Send a plain-text follow-up email to the responsable of a quality entry."""
+    import logging as _log
+    from django.utils import timezone as _tz
+    from tariff.quality_ai import generate_quality_followup_text
+
+    responsable = entry.user_working
+    if not responsable or not getattr(responsable, 'email', None):
+        return
+
+    days_elapsed = (_tz.now() - entry.starting_date).days
+
+    try:
+        ai_body = generate_quality_followup_text(entry, feedbacks, days_elapsed)
+    except Exception as exc:
+        _log.getLogger(__name__).warning("generate_quality_followup_text raised: %s", exc)
+        fb_list = '; '.join(fb.brief_summary or fb.target_display() for fb in feedbacks)
+        ai_body = (
+            f"Te escribimos para hacer seguimiento del case de calidad correspondiente al viaje "
+            f"{entry.trip.name}, que lleva {days_elapsed} días abierto.\n\n"
+            f"Feedbacks pendientes: {fb_list}\n\n"
+            f"Por favor informanos el estado de la gestión, cómo se resolvió cada punto "
+            f"y si hubo algún costo asociado."
+        )
+
+    full_name = (responsable.other_name or responsable.username or '').strip()
+    first_name = full_name.split()[0] if full_name else responsable.username
+
+    subject = f"Re: [Calidad] Queja asignada — {entry.trip.name} [ref:QE-{entry.id}]"
+
+    quality_inbox = getattr(settings, 'QUALITY_INBOX_EMAIL', 'calidad@aliwenincoming.com.ar')
+
+    body = f"Hola {first_name},\n\n{ai_body}\n\n— Aliwen Calidad"
+
+    try:
+        msg = EmailMultiAlternatives(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[responsable.email],
+            headers={'Reply-To': quality_inbox},
+        )
+        msg.send()
+
+        entry.last_followup_sent = _tz.now()
+        entry.save(update_fields=['last_followup_sent'])
+    except Exception as exc:
+        _log.getLogger(__name__).warning("send_quality_followup failed for entry %s: %s", entry.id, exc)
+
+
+def run_quality_close_check(stdout=None):
+    """
+    Check INBOX for replies to quality notification emails ([ref:QE-N] in subject).
+    For each reply: run AI, close the Entry if info is complete, or auto-reply if not.
+    Returns dict with keys: processed, closed, replied, error.
+    Extracted from calidad_check_close_replies view so daily_tasks can call it directly.
+    """
+    import os, re as _re
+    from dotenv import load_dotenv
+    from imap_tools import MailBox
+    from django.core.mail import EmailMultiAlternatives
+    from django.utils import timezone as tz
+    from tariff.models import Feedback
+    from intranet.models import Entry, PROGRESS_OPTIONS
+    from tariff.quality_ai import process_quality_close_reply, generate_incomplete_reply_text
+
+    load_dotenv(override=True)
+    username = os.environ.get('MAIL_USERNAME')
+    password = os.environ.get('MAIL_PASSWORD')
+    server   = os.environ.get('MAIL_SERVER')
+
+    def _log(msg):
+        if stdout:
+            stdout.write(msg)
+
+    if not all([username, password, server]):
+        return {'error': 'Faltan variables de entorno de correo', 'processed': 0, 'closed': 0, 'replied': 0}
+
+    _QE_PATTERN = _re.compile(r'\[ref:QE-(\d+)\]', _re.IGNORECASE)
+    processed = closed = replied = 0
+    seen_ids = set()
+
+    def _get_message_id(msg):
+        raw = msg.headers.get('message-id') or msg.headers.get('Message-ID') or []
+        if isinstance(raw, list) and raw:
+            return raw[0].strip()
+        return raw.strip() if isinstance(raw, str) else f'uid-{msg.uid}'
+
+    def _close_entry_action(entry, result, feedbacks):
+        global_sol  = (result.get('global_solution') or '').strip()
+        global_cost = float(result.get('global_cost') or 0)
+        per_fb_map  = {item['feedback_id']: item for item in (result.get('per_feedback') or [])}
+        for fb in feedbacks:
+            sol  = (per_fb_map.get(fb.id, {}).get('solution') or global_sol).strip()
+            cost = float(per_fb_map.get(fb.id, {}).get('cost') or global_cost or 0)
+            fields = []
+            if sol and not fb.solution:  fb.solution = sol;  fields.append('solution')
+            if cost and not fb.cost:     fb.cost = cost;     fields.append('cost')
+            if fb.status != 'cerrado':   fb.status = 'cerrado'; fields.append('status')
+            if fields:
+                fb.save(update_fields=fields)
+        entry.isClosed     = True
+        entry.closing_date = tz.now()
+        entry.progress     = PROGRESS_OPTIONS[-1][0]
+        entry.save(update_fields=['isClosed', 'closing_date', 'progress'])
+        try:
+            send_quality_closure_notification(entry, feedbacks)
+        except Exception:
+            pass
+
+    def _incomplete_reply(sender, orig_subject, orig_msg_id, missing_labels,
+                          entry=None, missing_fbs=None, body_excerpt=''):
+        reply_subject = f"Re: {orig_subject}" if not orig_subject.startswith('Re:') else orig_subject
+        body = None
+        if entry and missing_fbs:
+            try:
+                body = generate_incomplete_reply_text(entry, missing_fbs, body_excerpt)
+            except Exception:
+                pass
+        if not body:
+            body = (
+                "Gracias por tu respuesta.\n\n"
+                "Para poder cerrar el case de calidad nos falta información de solución para los siguientes feedbacks:\n"
+                + ', '.join(str(m) for m in missing_labels)
+                + "\n\nPor favor respondé a este email indicando cómo se resolvió cada uno y el costo si hubo alguno.\n\n— Aliwen Calidad"
+            )
+        headers = {}
+        if orig_msg_id:
+            mid = orig_msg_id if orig_msg_id.startswith('<') else f'<{orig_msg_id}>'
+            headers['In-Reply-To'] = mid
+            headers['References']  = mid
+        EmailMultiAlternatives(
+            subject=reply_subject, body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL, to=[sender], headers=headers,
+        ).send()
+
+    try:
+        with MailBox(server).login(username, password, 'INBOX') as mb:
+            to_archive = []
+            for msg in mb.fetch('SUBJECT "[ref:QE-"', mark_seen=False, bulk=True):
+                msg_id       = _get_message_id(msg)
+                subject      = msg.subject or ''
+                body         = (msg.text or '').strip()
+                from_raw     = msg.from_ or ''
+                m_addr       = _re.search(r'<([^>]+)>', from_raw)
+                sender_email = m_addr.group(1).lower() if m_addr else from_raw.lower().strip()
+
+                m = _QE_PATTERN.search(subject)
+                if not m:
+                    continue
+
+                if msg_id in seen_ids:
+                    to_archive.append(msg.uid)
+                    continue
+                seen_ids.add(msg_id)
+
+                own = {e.lower() for e in getattr(settings, 'ALIWEN_OWN_EMAILS', set())}
+                own.add((settings.DEFAULT_FROM_EMAIL or '').lower())
+                if sender_email in own:
+                    to_archive.append(msg.uid)
+                    continue
+
+                entry_id = int(m.group(1))
+                try:
+                    entry = Entry.objects.select_related('trip').get(pk=entry_id)
+                except Entry.DoesNotExist:
+                    to_archive.append(msg.uid)
+                    continue
+
+                if entry.isClosed:
+                    to_archive.append(msg.uid)
+                    continue
+
+                feedbacks = list(
+                    Feedback.objects.filter(trip=entry.trip, sentiment='negativo')
+                    .select_related('supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity')
+                )
+                if not feedbacks:
+                    to_archive.append(msg.uid)
+                    continue
+
+                result = process_quality_close_reply(body, feedbacks)
+                processed += 1
+
+                if result is None or not result.get('is_close_request'):
+                    to_archive.append(msg.uid)
+                    continue
+
+                if result.get('complete'):
+                    _close_entry_action(entry, result, feedbacks)
+                    closed += 1
+                    _log(f"  ✓ Cerrado QE-{entry_id}")
+                else:
+                    missing = result.get('missing') or []
+                    if missing:
+                        fb_map = {fb.id: fb for fb in feedbacks}
+                        missing_labels = []
+                        missing_fbs = []
+                        for fb_id in missing:
+                            fb = fb_map.get(int(fb_id))
+                            if fb:
+                                missing_labels.append(fb.target_display())
+                                missing_fbs.append(fb)
+                        _incomplete_reply(
+                            sender_email, subject, msg_id, missing_labels,
+                            entry=entry, missing_fbs=missing_fbs, body_excerpt=body[:500],
+                        )
+                        replied += 1
+
+                to_archive.append(msg.uid)
+
+            if to_archive:
+                try:
+                    from intranet.management.commands.process_quality_inbox import _gmail_archive
+                    _gmail_archive(mb, to_archive)
+                except Exception:
+                    pass
+
+    except Exception as exc:
+        return {'error': str(exc), 'processed': processed, 'closed': closed, 'replied': replied}
+
+    return {'processed': processed, 'closed': closed, 'replied': replied}
+
+
+def run_quality_followups(stdout=None):
+    """
+    Send AI-generated follow-up emails to responsables of open quality entries older than 2 days.
+    Returns dict with key: sent.
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+    from tariff.models import Feedback
+    from intranet.models import Entry
+
+    def _log(msg):
+        if stdout:
+            stdout.write(msg)
+
+    open_entries = Entry.objects.filter(
+        status='Queja', isClosed=False
+    ).select_related('trip', 'user_working')
+
+    two_days_ago = timezone.now() - timedelta(days=2)
+    sent = 0
+
+    for entry in open_entries:
+        needs = (
+            (entry.last_followup_sent is None and entry.starting_date < two_days_ago)
+            or (entry.last_followup_sent is not None and entry.last_followup_sent < two_days_ago)
+        )
+        if not needs:
+            continue
+        feedbacks = list(
+            Feedback.objects.filter(trip=entry.trip, sentiment='negativo')
+            .select_related('supplier', 'target_guide', 'target_dh', 'target_driver', 'target_user', 'target_entity')
+        )
+        if not feedbacks:
+            continue
+        try:
+            send_quality_followup(entry, feedbacks)
+            sent += 1
+            _log(f"  ↪ Seguimiento enviado a {entry.user_working} — QE-{entry.id}")
+        except Exception as exc:
+            _log(f"  ! Error en QE-{entry.id}: {exc}")
+
+    return {'sent': sent}
+
+
+def send_quality_update_notification(entry, trip, responsable, priority, new_feedbacks):
+    """
+    Send 'new feedbacks added' email to responsable when new negative feedbacks
+    arrive for a trip that already has an open quality Entry.
+    Reuses the same template as the opening notification but with an 'Actualización' banner.
+    """
+    from django.utils import timezone
+    if not responsable or not getattr(responsable, 'email', None):
+        return
+
+    _site_url = getattr(settings, 'SITE_URL', 'https://intranet.aliwenincoming.com')
+    static_url = settings.STATIC_URL.strip('/')
+    icons_base_url = f"{_site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    full_name = (responsable.other_name or responsable.username or '').strip()
+    first_name = full_name.split()[0] if full_name else responsable.username
+
+    import re as _re
+    priority_display = _re.sub(r'^\d+ - ', '', priority or '')
+    trip_id_str = f' ({trip.tourplanId})' if getattr(trip, 'tourplanId', None) else ''
+
+    feedback_rows = []
+    for fb in new_feedbacks:
+        feedback_rows.append({
+            'objective':     fb.target_display(),
+            'brief_summary': fb.brief_summary or '',
+            'content':       fb.content or '',
+            'verbatim':      fb.verbatim or '',
+        })
+
+    context = {
+        'entry':            entry,
+        'trip':             trip,
+        'first_name':       first_name,
+        'priority_display': priority_display,
+        'feedback_rows':    feedback_rows,
+        'supplier_rows':    [],
+        'deadline':         timezone.now() + __import__('datetime').timedelta(days=2),
+        'entry_url':        f"{_site_url}/calidad",
+        'logo_url':         logo_url,
+        'icons_base_url':   icons_base_url,
+        'is_update':        True,
+    }
+
+    subject = f"[Calidad] Actualización de queja — {trip.name}{trip_id_str} [ref:QE-{entry.id}]"
+    html_content = render_to_string('emails/quality_entry_notification.html', context)
+
+    extra_headers = {'Reply-To': getattr(settings, 'QUALITY_INBOX_EMAIL', settings.DEFAULT_FROM_EMAIL)}
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body='Este email requiere HTML.',
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[responsable.email],
+        headers=extra_headers,
+    )
+    msg.attach_alternative(html_content, 'text/html')
+    msg.send()
+
+
+def send_quality_entry_notification(entry, trip, responsable, priority, negative_feedbacks):
+    """Send assignment email to responsable when a Queja Entry is created."""
+    from django.utils import timezone
+
+    if not responsable or not getattr(responsable, 'email', None):
+        return
+
+    _site_url = getattr(settings, 'SITE_URL', 'https://intranet.aliwenincoming.com')
+    static_url = settings.STATIC_URL.strip('/')
+    icons_base_url = f"{_site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    full_name = (responsable.other_name or responsable.username or '').strip()
+    first_name = full_name.split()[0] if full_name else responsable.username
+
+    priority_display = re.sub(r'^\d+ - ', '', priority) if priority else priority
+
+    feedback_rows = []
+    for fb in negative_feedbacks:
+        feedback_rows.append({
+            'objective': fb.target_display(),
+            'sentiment_label': fb.get_sentiment_display(),
+            'brief_summary': fb.brief_summary or '',
+            'content': fb.content or '',
+            'verbatim': fb.verbatim or '',
+        })
+
+    supplier_rows = []
+    for fb in negative_feedbacks:
+        if getattr(fb, 'supplier_id', None) and getattr(fb, 'supplier', None):
+            supplier_rows.append({
+                'supplier_name': fb.supplier.name,
+                'content': fb.content or '',
+                'verbatim': fb.verbatim or '',
+            })
+
+    deadline = (timezone.now() + timedelta(days=2)).date()
+    entry_url = f"{_site_url}/entries"
+
+    trip_id_str = f" · {trip.tourplanId}" if trip.tourplanId else ''
+    # Token [ref:QE-{id}] lets us identify this Entry when a reply comes in
+    subject = f"[Calidad] Queja asignada — {trip.name}{trip_id_str} [ref:QE-{entry.id}]"
+
+    context = {
+        'first_name': first_name,
+        'trip': trip,
+        'priority': priority,
+        'priority_display': priority_display,
+        'feedback_rows': feedback_rows,
+        'supplier_rows': supplier_rows,
+        'deadline': deadline,
+        'entry_url': entry_url,
+        'logo_url': logo_url,
+        'icons_base_url': icons_base_url,
+        'today': timezone.now().date(),
+    }
+
+    html_content = render_to_string('emails/quality_entry_notification.html', context)
+
+    # Look up the original client email so we can reply on the same thread
+    extra_headers = {}
+    for fb in negative_feedbacks:
+        inbox_items = list(fb.inbox_source.all()[:1])
+        if inbox_items:
+            orig_mid = inbox_items[0].gmail_message_id or ''
+            if orig_mid:
+                if not orig_mid.startswith('<'):
+                    orig_mid = f'<{orig_mid}>'
+                extra_headers['In-Reply-To'] = orig_mid
+                extra_headers['References'] = orig_mid
+            break
+
+    # Replies from responsable should come back to the quality inbox
+    quality_inbox = getattr(settings, 'QUALITY_INBOX_EMAIL', settings.DEFAULT_FROM_EMAIL)
+    if quality_inbox:
+        extra_headers['Reply-To'] = quality_inbox
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body='Este email requiere HTML.',
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[responsable.email],
+        headers=extra_headers,
+    )
+    msg.attach_alternative(html_content, 'text/html')
+    msg.send()

@@ -394,7 +394,6 @@
                                                     <div class="small flex-grow-1">{{ feedback.brief_summary|default:feedback.content|truncatechars:120 }}</div>
                                                     <div style="min-width:90px;" class="text-end">
                                                       {% if feedback.status == 'cerrado' %}<span class="badge text-bg-success">Cerrado</span>
-                                                      {% elif feedback.status == 'en_seguimiento' %}<span class="badge text-bg-warning text-dark">Seguimiento</span>
                                                       {% else %}<span class="badge text-bg-secondary">Abierto</span>{% endif %}
                                                     </div>
                                                     <div><i class="fa-solid fa-chevron-down trip-fb-chevron" style="transition:transform .2s;"></i></div>

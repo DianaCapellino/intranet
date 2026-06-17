@@ -34,6 +34,12 @@ ALLOWED_HOSTS = ['*']
 # Absolute base URL used to build image links in outgoing emails
 SITE_URL = "https://intranet.aliwenincoming.com"
 
+# Email address that receives quality close replies (Reply-To on notification emails)
+QUALITY_INBOX_EMAIL = "calidad@aliwenincoming.com.ar"
+
+# All addresses belonging to Aliwen accounts (to avoid email loop detection)
+ALIWEN_OWN_EMAILS = {"aliwen@aliwenincoming.com.ar", "calidad@aliwenincoming.com.ar"}
+
 
 # Application definition
 

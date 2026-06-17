@@ -22,6 +22,12 @@ from datetime import datetime, timedelta
 import anthropic
 from dotenv import load_dotenv
 
+def _decode_ai_text(s):
+    """Decode literal \\uXXXX escapes that LLMs sometimes emit inside JSON string values."""
+    if not s:
+        return s
+    return re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), s)
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 ITINERARIO_PATH = os.path.normpath(
@@ -53,16 +59,25 @@ REGLAS CRÍTICAS:
 - Si el pasajero elogia "el equipo de Aliwen", "el servicio de Aliwen", "su agencia" → target_type="aliwen_team"
 - Si mencionan un guía por nombre (persona que acompañó el viaje, no empleado de Aliwen) → target_type="guide"
 - Si mencionan un Destination Host (DH) por nombre → target_type="dh"
+- Si mencionan un chofer/conductor por nombre → target_type="chofer"
 - Si mencionan a alguien que claramente es empleado interno de Aliwen (vendedor, operador) → target_type="user"
-- Si no podés identificar el proveedor exacto → target_type="entity", name="Servicio no registrado"
+- Si no podés identificar el proveedor exacto → target_type="entity"
 
 TIPOS DE TARGET:
-- "supplier": un proveedor del itinerario (hotel, restaurante, excursión, transfer, etc.)
+- "supplier": ÚNICAMENTE si el servicio aparece en el itinerario de Aliwen (hotel, excursión, transfer contratado, etc.) y podés identificarlo por destino + fecha + tipo de servicio. NO uses supplier para aerolíneas, para servicios genéricos o para lo que no está en el itinerario.
+- "entity": todo lo que no es una persona ni un supplier identificable en el itinerario. Usalo para: aerolíneas (nunca forman parte del itinerario de Aliwen), destinos o atracciones genéricas, restaurantes no contratados por Aliwen, fallas en procesos internos (reconfirmaciones, documentación, comunicaciones, logística), servicios fuera del control de Aliwen, o cualquier cosa que no puedas identificar como supplier del itinerario.
 - "user": un empleado interno de Aliwen (vendedor, operador) mencionado por nombre o rol
 - "guide": un guía de viaje mencionado por nombre (puede ser freelance o externo)
 - "dh": un Destination Host (DH) mencionado por nombre
+- "chofer": un chofer o conductor mencionado por nombre
 - "aliwen_team": elogio/queja al equipo Aliwen sin nombre específico → se asignará al vendedor y operador del file
-- "entity": categoría general que no encaja en las anteriores
+
+NOMBRES PARA target_type="entity" — usá nombres descriptivos, nunca genéricos:
+- Aerolínea: "Aerolínea: [nombre]" (ej: "Aerolínea: LATAM", "Aerolínea: Aerolíneas Argentinas")
+- Falla de proceso interno: "Proceso: [qué falló]" (ej: "Proceso: reconfirmación de servicios", "Proceso: comunicación pre-viaje", "Proceso: documentación")
+- Destino o atracción no contratada: nombre del lugar tal como lo menciona el pasajero (ej: "Glaciar Perito Moreno", "Puerto Madryn")
+- Servicio externo no contratado: nombre del servicio (ej: "Restaurante La Cabrera", "Bus público")
+- Si realmente no se puede identificar nada: "Servicio no registrado"
 
 CONTENT vs VERBATIM:
 - "content": resumen propio de TODO el feedback relevante a este target, incluyendo el contexto de cadenas de emails o comunicaciones con proveedores. Redactalo en español, en forma de resumen.
@@ -86,11 +101,11 @@ Respondé ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
 {
   "targets": [
     {
-      "target_type": "supplier" | "user" | "guide" | "dh" | "aliwen_team" | "entity",
+      "target_type": "supplier" | "user" | "guide" | "dh" | "chofer" | "aliwen_team" | "entity",
       "existing_feedback_id": null,
       "is_provider_update": false,
       "name": "nombre exacto del proveedor/guía/DH según itinerario, o nombre mencionado",
-      "destination": "ciudad/destino donde trabajó el guía o DH según el itinerario (ej: 'Bariloche', 'Buenos Aires') — solo para guide y dh, null para el resto",
+      "destination": "ciudad/destino donde trabajó el guía, DH o chofer según el itinerario (ej: 'Bariloche', 'Buenos Aires') — solo para guide, dh y chofer, null para el resto",
       "sentiment": "positivo" | "neutral" | "negativo",
       "type": "Calidad del servicio" | "Demora/rapidez" | "Salud/higiene" | "Inclusiones" | "Otro",
       "brief_summary": "máximo 120 caracteres, frase completa y coherente",
@@ -105,9 +120,74 @@ Respondé ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
   "missing_fields": ["lista de campos faltantes"]
 }"""
 
-# ── CSV loading ────────────────────────────────────────────────────────────────
+# ── Itinerary loading ──────────────────────────────────────────────────────────
+
+def fetch_itinerary_from_tourplan(booking_ref):
+    """
+    Query Tourplan SQL Server for itinerary rows of a specific booking.
+    Date window: 4 months back to 12 months forward from today.
+    Returns list of dicts ready for format_rows_for_prompt / get_relevant_rows.
+    Returns [] if booking_ref is None or the connection fails.
+    """
+    if not booking_ref:
+        return []
+
+    from datetime import date, timedelta
+    from intranet.utils import get_tourplan_connection
+
+    today     = date.today()
+    date_from = (today - timedelta(days=120)).strftime('%Y%m%d')
+    date_to   = (today + timedelta(days=365)).strftime('%Y%m%d')
+
+    sql = """
+        SELECT
+            Booking_Reference  NumeroDeFile,
+            Booking_name       NombreDelViaje,
+            Product_Location,
+            Service_Date,
+            Pax + Children + Infants  Total_Pax,
+            CAST(Day_Number AS VARCHAR) + ' / ' + CAST(Sequence_Number AS VARCHAR)  [Dia/Sec.],
+            Product_Option_name  Product_name,
+            Product_service,
+            Supplier_Name        Proveedor,
+            supplier_confirmation,
+            Service_status,
+            sst.NAME             Service_StatusName,
+            pickup_time, dropoff_time, pickup_date, pickup, dropoff,
+            Booking_Analysis1_Name   Operador,
+            Booking_Consultant_Name  Consultant,
+            Booking_Analysis3_Name   GR
+        FROM OPSView
+        JOIN sst ON sst.code = opsview.service_status
+        JOIN CRC  ON CRC.CODE = OPSVIEW.Supplier_Code
+                 AND crc.CURRENCY = opsview.Service_Cost_Currency
+        WHERE opsview.Booking_Branch IN ('AL')
+          AND OPSView.Booking_Travel_Date >= %s
+          AND OPSView.Booking_Travel_Date <= %s
+          AND Booking_Reference = %s
+    """
+    try:
+        conn   = get_tourplan_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, (date_from, date_to, booking_ref.upper()))
+        rows = []
+        for row in cursor.fetchall():
+            svc = (row.get('Product_service') or '').strip().upper()
+            if svc in SKIP_SERVICE_TYPES:
+                continue
+            if hasattr(row.get('Service_Date'), 'strftime'):
+                row['Service_Date'] = row['Service_Date'].strftime('%d/%m/%Y')
+            rows.append(dict(row))
+        conn.close()
+        return rows
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("Tourplan itinerary fetch failed for %s: %s", booking_ref, exc)
+        return []
+
 
 def load_itinerario_csv():
+    """Legacy CSV fallback — used only when Tourplan DB is unreachable."""
     if not os.path.exists(ITINERARIO_PATH):
         return []
     with open(ITINERARIO_PATH, encoding='utf-8-sig') as f:
@@ -455,12 +535,25 @@ def process_inbox_item_with_ai(item):
     if not api_key:
         raise ValueError("EXPO_PUBLIC_ANTHROPIC_API_KEY no configurada")
 
-    all_rows = load_itinerario_csv()
     email_text = f"{item.email_subject}\n\n{item.email_body}"
 
     # --- Strict trip matching before calling AI ---
     matched_trip = find_matching_trip(item.email_subject, item.email_body, item.received_at)
-    relevant_rows = get_relevant_rows(all_rows, email_text, item.received_at, matched_trip=matched_trip)
+
+    # Determine booking_ref: matched trip first, then any code found in the email
+    booking_ref = None
+    if matched_trip and matched_trip.tourplanId:
+        booking_ref = matched_trip.tourplanId
+    else:
+        codes = _extract_tourplan_codes(email_text)
+        if codes:
+            booking_ref = codes[0]
+
+    relevant_rows = fetch_itinerary_from_tourplan(booking_ref)
+    # CSV fallback if DB unreachable and a CSV exists
+    if not relevant_rows and booking_ref is None:
+        all_rows = load_itinerario_csv()
+        relevant_rows = get_relevant_rows(all_rows, email_text, item.received_at, matched_trip=matched_trip)
     itinerary_text = format_rows_for_prompt(relevant_rows)
 
     # Build trip context note for the AI prompt
@@ -529,6 +622,52 @@ def process_inbox_item_with_ai(item):
     return analysis
 
 
+def _can_auto_confirm(item, analysis):
+    """
+    Returns True if every target in the AI analysis already has a matching
+    Feedback (same trip + same target ID), meaning the email is a follow-up
+    to an existing record and can be auto-confirmed without human review.
+    Returns False if the trip is unknown, any target is unresolved, or any
+    target would create a brand-new Feedback.
+    """
+    from tariff.models import Feedback
+    trip_file_id = analysis.get('trip_file_id')
+    if not trip_file_id:
+        return False
+    trip = try_match_trip(trip_file_id)
+    if not trip:
+        return False
+    targets = analysis.get('targets', [])
+    if not targets:
+        return False
+    for t in targets:
+        # AI detected an explicit existing feedback → counts as known
+        if t.get('existing_feedback_id'):
+            continue
+        target_type = t.get('target_type')
+        # aliwen_team always needs human review (creates multiple feedbacks)
+        if target_type == 'aliwen_team':
+            return False
+        dedup_filter = None
+        if target_type == 'supplier' and t.get('supplier_id'):
+            dedup_filter = {'supplier_id': t['supplier_id']}
+        elif target_type == 'user' and t.get('user_id'):
+            dedup_filter = {'target_user_id': t['user_id']}
+        elif target_type == 'guide' and t.get('guide_id'):
+            dedup_filter = {'target_guide_id': t['guide_id']}
+        elif target_type == 'dh' and t.get('dh_id'):
+            dedup_filter = {'target_dh_id': t['dh_id']}
+        elif target_type == 'chofer' and t.get('driver_id'):
+            dedup_filter = {'target_driver_id': t['driver_id']}
+        elif target_type == 'entity' and t.get('entity_id'):
+            dedup_filter = {'target_entity_id': t['entity_id']}
+        if dedup_filter is None:
+            return False  # target not resolved or type not recognised
+        if not Feedback.objects.filter(trip=trip, **dedup_filter).exists():
+            return False  # would create a new feedback → needs human eye
+    return True
+
+
 def process_all_pending(stdout=None, force=False):
     from tariff.models import FeedbackInboxItem
     if force:
@@ -548,6 +687,15 @@ def process_all_pending(stdout=None, force=False):
             targets = analysis.get('targets', [])
             if stdout:
                 stdout.write(f"  ✓ {item.email_subject[:50]} → {len(targets)} target(s)")
+            # Auto-confirm if all targets already exist in the system
+            if _can_auto_confirm(item, analysis):
+                try:
+                    create_feedbacks_from_inbox(item, targets)
+                    if stdout:
+                        stdout.write(f"    ↻ Auto-confirmado (ya existía en historial)")
+                except Exception as ae:
+                    if stdout:
+                        stdout.write(f"    ✗ Error en auto-confirmación: {ae}")
         except Exception as e:
             errors += 1
             if stdout:
@@ -792,6 +940,18 @@ def _resolve_dh_for_target(suggested_name, trip):
     return None
 
 
+def _resolve_driver_for_target(suggested_name):
+    from intranet.models import Driver
+    if not suggested_name:
+        return None
+    d = Driver.objects.filter(name__iexact=suggested_name).first()
+    if d:
+        return d
+    # Partial overlap → create with the suggested name
+    d, _ = Driver.objects.get_or_create(name=suggested_name)
+    return d
+
+
 def _destination_hint_for_target(t, relevant_rows, trip_file_id):
     """
     Return the best destination string for a guide/dh target.
@@ -840,6 +1000,10 @@ def enrich_targets_from_trip(analysis, relevant_rows=None, matched_trip=None):
             if supplier:
                 t['supplier_id'] = supplier.id
                 t['name'] = supplier.name
+            else:
+                # Not found in our catalog → treat as external/unmanaged entity
+                t['target_type'] = 'entity'
+                # Keep name as-is; get_or_create_entity will use it
 
         elif target_type == 'user':
             # Verify the name actually exists as a User; if not, reclassify
@@ -886,11 +1050,197 @@ def enrich_targets_from_trip(analysis, relevant_rows=None, matched_trip=None):
                     trip.dh_fk = dh
                     trip.save(update_fields=['dh_fk'])
 
+        elif target_type == 'chofer':
+            driver = _resolve_driver_for_target(suggested)
+            if driver:
+                t['driver_id'] = driver.id
+                t['name'] = driver.name
+
 
 def get_or_create_entity(name):
     from tariff.models import FeedbackEntity
     obj, _ = FeedbackEntity.objects.get_or_create(name=name)
     return obj
+
+
+_CLOSE_REPLY_PROMPT = """Sos un asistente que procesa respuestas internas de gestión de calidad para Aliwen, una agencia de turismo.
+
+Alguien respondió a un email de notificación de queja. Tu trabajo es:
+1. Detectar si la persona indica que el caso/file puede cerrarse o ya fue resuelto.
+2. Si es un cierre, extraer la solución y el costo para CADA feedback listado.
+
+FEEDBACKS DEL CASE:
+{feedbacks_context}
+
+EMAIL RECIBIDO:
+{email_body}
+
+Respondé ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
+{{
+  "is_close_request": true | false,
+  "global_solution": "texto de solución general si aplica a todos los feedbacks, o vacío",
+  "global_cost": 0,
+  "per_feedback": [
+    {{
+      "feedback_id": <id>,
+      "solution": "solución específica para este feedback, o vacío si usa la global",
+      "cost": 0
+    }}
+  ],
+  "missing": ["lista de feedback_ids que no tienen solución informada"]
+}}"""
+
+
+def process_quality_close_reply(email_body, feedbacks):
+    """
+    Use Claude to parse a close reply email.
+    Returns dict: {is_close_request, global_solution, global_cost, per_feedback, missing, complete}
+    """
+    load_dotenv()
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return None
+
+    feedbacks_context = '\n'.join(
+        f'- ID {fb.id}: {fb.target_display()} — {fb.brief_summary or fb.content[:80]}'
+        for fb in feedbacks
+    )
+
+    prompt = _CLOSE_REPLY_PROMPT.format(
+        feedbacks_context=feedbacks_context,
+        email_body=email_body[:3000],
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=1024,
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        raw = response.content[0].text.strip()
+        result = json.loads(raw)
+        # Determine completeness: all feedbacks must have solution (global or per-feedback)
+        has_global = bool((result.get('global_solution') or '').strip())
+        missing = result.get('missing') or []
+        if has_global:
+            missing = []
+        result['missing'] = missing
+        result['complete'] = result.get('is_close_request', False) and not missing
+        return result
+    except Exception:
+        return None
+
+
+_FOLLOWUP_SYSTEM_PROMPT = (
+    "Sos un consultor de gestión de calidad profesional para Aliwen Incoming, una DMC argentina. "
+    "Tu rol es hacer seguimiento de quejas de clientes de manera empática, directa y profesional. "
+    "Redactás en español rioplatense. Nunca usés el verbo 'tener' como auxiliar. "
+    "Tu respuesta debe ser SOLO el cuerpo del email en texto plano, sin saludos de apertura ni firma."
+)
+
+
+def generate_quality_followup_text(entry, feedbacks, days_elapsed):
+    """
+    Generate a plain-text follow-up email body using Claude Haiku.
+    Falls back to static text if AI fails.
+    """
+    load_dotenv(override=True)
+    api_key = os.environ.get('EXPO_PUBLIC_ANTHROPIC_API_KEY')
+    if not api_key:
+        fb_list = '; '.join(fb.brief_summary or fb.target_display() for fb in feedbacks)
+        return (
+            f"Te escribimos para hacer seguimiento del case de calidad correspondiente al viaje "
+            f"{entry.trip.name}, que lleva {days_elapsed} días abierto.\n\n"
+            f"Feedbacks pendientes: {fb_list}\n\n"
+            f"Por favor informanos el estado de la gestión, cómo se resolvió cada punto "
+            f"y si hubo algún costo asociado."
+        )
+
+    fb_lines = '\n'.join(
+        f"- {fb.target_display()}: {fb.brief_summary or (fb.content or '')[:100]}"
+        for fb in feedbacks
+    )
+
+    user_prompt = (
+        f"Viaje: {entry.trip.name}\n"
+        f"Días transcurridos desde la apertura del case: {days_elapsed}\n\n"
+        f"Feedbacks negativos registrados:\n{fb_lines}\n\n"
+        f"Redactá un email de seguimiento pidiendo:\n"
+        f"- El estado de resolución de cada feedback\n"
+        f"- Cómo se resolvió cada situación\n"
+        f"- Si hubo algún costo asociado (compensación, reembolso, etc.)"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=1024,
+            system=_FOLLOWUP_SYSTEM_PROMPT,
+            messages=[{'role': 'user', 'content': user_prompt}],
+        )
+        raw = response.content[0].text.strip()
+        return _decode_ai_text(raw)
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("generate_quality_followup_text failed: %s", exc)
+        fb_list = '; '.join(fb.brief_summary or fb.target_display() for fb in feedbacks)
+        return (
+            f"Te escribimos para hacer seguimiento del case de calidad correspondiente al viaje "
+            f"{entry.trip.name}, que lleva {days_elapsed} días abierto.\n\n"
+            f"Feedbacks pendientes: {fb_list}\n\n"
+            f"Por favor informanos el estado de la gestión, cómo se resolvió cada punto "
+            f"y si hubo algún costo asociado."
+        )
+
+
+def generate_incomplete_reply_text(entry, missing_feedbacks, original_reply_excerpt):
+    """
+    Generate a plain-text auto-reply asking for missing info for specific feedbacks.
+    Falls back to static text if AI fails.
+    """
+    load_dotenv(override=True)
+    api_key = os.environ.get('EXPO_PUBLIC_ANTHROPIC_API_KEY')
+
+    fb_lines = '\n'.join(
+        f"- {fb.target_display()}: {fb.brief_summary or (fb.content or '')[:100]}"
+        for fb in missing_feedbacks
+    )
+    static_body = (
+        f"Gracias por tu respuesta.\n\n"
+        f"Para poder cerrar el case de calidad nos falta información de solución "
+        f"para los siguientes feedbacks:\n{fb_lines}\n\n"
+        f"Por favor respondé a este email indicando cómo se resolvió cada uno "
+        f"y el costo si hubo alguno.\n\n"
+        f"— Aliwen Calidad"
+    )
+
+    if not api_key:
+        return static_body
+
+    user_prompt = (
+        f"Viaje: {entry.trip.name}\n\n"
+        f"Recibimos una respuesta pero faltó información de solución para estos feedbacks:\n"
+        f"{fb_lines}\n\n"
+        f"Extracto de la respuesta recibida:\n{original_reply_excerpt[:500]}\n\n"
+        f"Redactá un email pidiendo específicamente la solución y el costo para cada uno de esos feedbacks."
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=1024,
+            system=_FOLLOWUP_SYSTEM_PROMPT,
+            messages=[{'role': 'user', 'content': user_prompt}],
+        )
+        raw = response.content[0].text.strip()
+        return _decode_ai_text(raw)
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("generate_incomplete_reply_text failed: %s", exc)
+        return static_body
 
 
 def check_sender_is_internal(sender_email):
@@ -917,6 +1267,16 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
     verbatim     = overrides.get('verbatim', (item.ai_analysis or {}).get('verbatim', ''))
     trip         = try_match_trip(trip_file_id)
 
+    responsable = None
+    responsable_id = overrides.get('responsable_id')
+    if responsable_id:
+        try:
+            responsable = User.objects.get(pk=responsable_id)
+        except User.DoesNotExist:
+            pass
+
+    priority = overrides.get('priority', '')
+
     # Use service date from itinerario if available, otherwise fall back to email received date
     service_date_str = (item.ai_analysis or {}).get('service_date')
     if service_date_str:
@@ -933,14 +1293,15 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
         creator = User.objects.filter(userType='Internal').first()
 
     created = []
+    new_feedbacks = []  # only truly new Feedback objects (not dedup-appended)
 
     for t in confirmed_targets:
         target_type   = t.get('target_type', 'entity')
         sentiment     = t.get('sentiment', 'neutral')
         fb_type       = t.get('type', 'Otro')
-        brief_summary = (t.get('brief_summary') or '')[:120]
-        content       = t.get('content', '')
-        solution      = (t.get('solution') or '')
+        brief_summary = _decode_ai_text((t.get('brief_summary') or ''))[:120]
+        content       = _decode_ai_text(t.get('content', ''))
+        solution      = _decode_ai_text((t.get('solution') or ''))
         cost          = t.get('cost') or 0
         fb_status     = 'abierto' if sentiment == 'negativo' else 'cerrado'
 
@@ -964,17 +1325,21 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
                     update_fields.append('solution')
                 if cost and not existing_fb.cost:
                     update_fields.append('cost')
+                if responsable and not existing_fb.responsable:
+                    existing_fb.responsable = responsable
+                    update_fields.append('responsable')
                 existing_fb.save(update_fields=update_fields)
                 created.append(existing_fb)
                 continue
             except Feedback.DoesNotExist:
                 pass  # Fall through to create new
 
-        supplier     = None
-        target_user  = None
-        target_guide = None
-        target_dh    = None
-        entity       = None
+        supplier      = None
+        target_user   = None
+        target_guide  = None
+        target_dh     = None
+        target_driver = None
+        entity        = None
 
         # Build reference label for traceability (email subject + trip info)
         ref_parts = []
@@ -1010,6 +1375,19 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             target_dh = DestinationHost.objects.filter(pk=dhid).first() if dhid else None
             dedup_filter = {'target_dh': target_dh} if target_dh else None
 
+        elif target_type == 'chofer':
+            from intranet.models import Driver
+            did = t.get('driver_id')
+            target_driver = Driver.objects.select_related('supplier').filter(pk=did).first() if did else None
+            if not target_driver:
+                suggested = (t.get('name') or '').strip()
+                if suggested:
+                    target_driver, _ = Driver.objects.get_or_create(name=suggested)
+                    if target_driver.supplier_id is None:
+                        # refresh to get supplier via select_related
+                        target_driver = Driver.objects.select_related('supplier').get(pk=target_driver.pk)
+            dedup_filter = {'target_driver': target_driver} if target_driver else None
+
         elif target_type == 'aliwen_team':
             seller, operator = get_trip_staff(trip_file_id)
             staff_members = [u for u in [seller, operator] if u]
@@ -1028,8 +1406,11 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
                     verbatim=verbatim, source='email',
                     email_sender=item.email_sender, status=fb_status,
                     creation_date=creation_date,
+                    responsable=responsable,
+                    priority=priority,
                 )
                 created.append(fb)
+                new_feedbacks.append(fb)
             continue
 
         else:  # entity / otros
@@ -1056,6 +1437,9 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
                 if cost and not existing_fb.cost:
                     existing_fb.cost = cost
                     update_fields.append('cost')
+                if responsable and not existing_fb.responsable:
+                    existing_fb.responsable = responsable
+                    update_fields.append('responsable')
                 existing_fb.save(update_fields=update_fields)
                 created.append(existing_fb)
                 continue
@@ -1067,6 +1451,7 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             target_user=target_user,
             target_guide=target_guide,
             target_dh=target_dh,
+            target_driver=target_driver,
             target_entity=entity,
             sentiment=sentiment, type=fb_type,
             brief_summary=brief_summary, content=content_with_ref,
@@ -1074,12 +1459,93 @@ def create_feedbacks_from_inbox(item, confirmed_targets, overrides=None):
             verbatim=verbatim, source='email',
             email_sender=item.email_sender, status=fb_status,
             creation_date=item.received_at,
+            responsable=responsable,
+            priority=priority,
         )
         created.append(fb)
+        new_feedbacks.append(fb)
+
+        # If this chofer has a linked supplier, also create a supplier feedback
+        if target_driver and getattr(target_driver, 'supplier_id', None):
+            sup = target_driver.supplier
+            sup_exists = trip and Feedback.objects.filter(trip=trip, supplier=sup).exists()
+            if not sup_exists:
+                sup_fb = Feedback.objects.create(
+                    user=creator, trip=trip,
+                    supplier=sup,
+                    sentiment=sentiment, type=fb_type,
+                    brief_summary=brief_summary, content=content_with_ref,
+                    solution=solution, cost=cost,
+                    verbatim=verbatim, source='email',
+                    email_sender=item.email_sender, status=fb_status,
+                    creation_date=item.received_at,
+                    responsable=responsable,
+                    priority=priority,
+                )
+                created.append(sup_fb)
+                new_feedbacks.append(sup_fb)
 
     if created:
         item.status = 'confirmado'
         item.resolved_feedback = created[0]
         item.save(update_fields=['status', 'resolved_feedback'])
 
-    return created
+    # Auto-create an Entry if there are new negative feedbacks with trip + responsable + priority
+    negative_new = [fb for fb in new_feedbacks if fb.sentiment == 'negativo']
+    entry_created = False
+    entry_missing = []
+    if negative_new:
+        if not trip:        entry_missing.append('viaje')
+        if not responsable: entry_missing.append('responsable')
+        if not priority:    entry_missing.append('prioridad')
+        if not entry_missing:
+            _create_quality_entry(trip, responsable, priority, negative_new, creator)
+            entry_created = True
+
+    return created, entry_created, entry_missing
+
+
+def _create_quality_entry(trip, responsable, priority, negative_feedbacks, creator):
+    """
+    Create a quality Entry for a trip if none exists yet, or send an update
+    notification if there's already an open Entry for the same trip.
+    """
+    from intranet.models import Entry, PROGRESS_OPTIONS
+    from django.utils import timezone
+
+    # Check for existing open quality Entry for this trip
+    existing_entry = Entry.objects.filter(trip=trip, status='Queja', isClosed=False).first()
+    if existing_entry:
+        try:
+            from intranet.utils import send_quality_update_notification
+            send_quality_update_notification(existing_entry, trip, responsable, priority, negative_feedbacks)
+        except Exception:
+            pass
+        return existing_entry
+
+    summaries = [fb.brief_summary or (fb.content or '')[:80] for fb in negative_feedbacks]
+    note_body = '; '.join(s for s in summaries if s)
+    note = f"Calidad — Feedbacks negativos: {note_body}"[:500]
+
+    entry = Entry.objects.create(
+        trip=trip,
+        starting_date=timezone.now(),
+        status='Queja',
+        importance=priority,
+        user_working=responsable,
+        user_creator=responsable,
+        version_quote=trip.version_quote or 'A',
+        version=0,
+        progress=PROGRESS_OPTIONS[0][0],
+        amount=0,
+        creation_user=creator,
+        note=note,
+        tourplanId=trip.tourplanId or '',
+    )
+
+    try:
+        from intranet.utils import send_quality_entry_notification
+        send_quality_entry_notification(entry, trip, responsable, priority, negative_feedbacks)
+    except Exception:
+        pass
+    return entry

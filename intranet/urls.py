@@ -110,6 +110,11 @@ urlpatterns = [
     # Calidad
     path("calidad", views.calidad, name="calidad"),
     path("calidad/fetch_inbox", views.calidad_fetch_inbox, name="calidad_fetch_inbox"),
+    path("calidad/check_close_replies", views.calidad_check_close_replies, name="calidad_check_close_replies"),
+    path("calidad/send_followups", views.calidad_send_followups, name="calidad_send_followups"),
+    path("calidad/entries/<int:entry_id>/close", views.calidad_close_quality_entry, name="calidad_close_quality_entry"),
+    path("calidad/open_trips", views.calidad_open_trips_json, name="calidad_open_trips_json"),
+    path("calidad/trips/<int:trip_id>/close", views.calidad_close_trip, name="calidad_close_trip"),
     path("calidad/upload_itinerario", views.calidad_upload_itinerario, name="calidad_upload_itinerario"),
     path("calidad/inbox/<int:item_id>/discard", views.calidad_discard_inbox, name="calidad_discard_inbox"),
     path("calidad/inbox/<int:item_id>/process", views.calidad_process_ai, name="calidad_process_ai"),
@@ -123,14 +128,18 @@ urlpatterns = [
     path("calidad/search/users", views.calidad_search_users, name="calidad_search_users"),
     path("calidad/search/guides", views.calidad_search_guides, name="calidad_search_guides"),
     path("calidad/search/dhs", views.calidad_search_dhs, name="calidad_search_dhs"),
+    path("calidad/search/drivers", views.calidad_search_drivers, name="calidad_search_drivers"),
     path("calidad/search/entities", views.calidad_search_entities, name="calidad_search_entities"),
-    # Guide / DH create & delete
+    # Guide / DH / Driver create, edit & delete
     path("calidad/guides/create", views.calidad_create_guide, name="calidad_create_guide"),
     path("calidad/guides/<int:guide_id>/delete", views.calidad_delete_guide, name="calidad_delete_guide"),
     path("calidad/guides/<int:guide_id>/edit", views.calidad_edit_guide, name="calidad_edit_guide"),
     path("calidad/dhs/create", views.calidad_create_dh, name="calidad_create_dh"),
     path("calidad/dhs/<int:dh_id>/delete", views.calidad_delete_dh, name="calidad_delete_dh"),
     path("calidad/dhs/<int:dh_id>/edit", views.calidad_edit_dh, name="calidad_edit_dh"),
+    path("calidad/drivers/create", views.calidad_create_driver, name="calidad_create_driver"),
+    path("calidad/drivers/<int:driver_id>/delete", views.calidad_delete_driver, name="calidad_delete_driver"),
+    path("calidad/drivers/<int:driver_id>/edit", views.calidad_edit_driver, name="calidad_edit_driver"),
     # FeedbackEntity CRUD
     path("calidad/entities", views.calidad_entities, name="calidad_entities"),
     path("calidad/entities/<int:entity_id>/edit",   views.calidad_edit_entity,   name="calidad_edit_entity"),
