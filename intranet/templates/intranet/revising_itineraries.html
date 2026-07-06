@@ -1,0 +1,443 @@
+{% extends 'intranet/layout.html' %}
+{% load static %}
+
+{% block title %}Correcciones de Itinerarios{% endblock %}
+
+{% block extra_head %}
+<style>
+  .revision-day-col {
+    min-width: 160px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 12px 10px;
+  }
+  .revision-day-col h6 {
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 10px;
+  }
+  .revision-user-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 20px;
+    padding: 4px 10px 4px 6px;
+    margin-bottom: 6px;
+    cursor: grab;
+    font-size: .85rem;
+  }
+  .revision-user-chip:active { cursor: grabbing; }
+  .revision-user-chip.dragging { opacity: .4; }
+  .revision-day-col.drag-over { background: #e8f4fd; border-color: #86b7fe; }
+  .chip-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .btn-add-to-day {
+    width: 100%;
+    font-size: .78rem;
+    padding: 3px 0;
+    border-style: dashed;
+    margin-top: 4px;
+  }
+  .seniority-badge {
+    font-size: .65rem;
+    padding: 1px 5px;
+    border-radius: 10px;
+    margin-left: auto;
+  }
+  .badge-junior { background:#dbeafe; color:#1e40af; }
+  .badge-senior { background:#fef9c3; color:#713f12; }
+  .revision-day-col.today-col {
+    border: 2.5px solid #1a1a1a;
+    background: #f0f4ff;
+  }
+  .revision-day-col.today-col h6 { color: #1a1a1a; }
+  #schedule-grid.schedule-readonly .revision-user-chip { cursor: default; }
+  #schedule-grid.schedule-readonly .remove-chip { display: none; }
+  #schedule-grid.schedule-readonly .add-user-select { display: none; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid py-4">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="mb-0 fw-semibold">Esquema de Correcciones</h4>
+    {% if user.isAdmin %}
+    <button class="btn btn-outline-secondary btn-sm" id="edit-schedule-btn">
+      <i class="fa-solid fa-pencil me-1"></i>Editar esquema
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Weekly schedule grid -->
+  <div class="d-flex gap-3 mb-5 flex-wrap schedule-readonly" id="schedule-grid">
+    {% for wd, wd_label, day_users in grid_rows %}
+    <div class="revision-day-col{% if wd == today_weekday %} today-col{% endif %}" data-weekday="{{ wd }}">
+      <h6>{{ wd_label }}</h6>
+      <div class="day-users" data-weekday="{{ wd }}">
+        {% for u in day_users %}
+        <div class="revision-user-chip{% if u.id in absent_ids and wd == today_weekday %} opacity-50{% endif %}" draggable="true" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">
+          <span class="chip-dot" style="background-color:{{ u.color|default:'#6c757d' }};"></span>
+          <span>{{ u.username }}</span>
+          {% if u.seniority %}<span class="seniority-badge {% if u.seniority == 'Junior' %}badge-junior{% else %}badge-senior{% endif %}">{{ u.seniority }}</span>{% endif %}
+          {% if u.id in absent_ids and wd == today_weekday %}
+          <span title="Ausente hoy – no se le asignarán correcciones" style="font-size:.8em;margin-left:2px;">🏖️</span>
+          {% endif %}
+          {% if user.isAdmin %}<button class="btn btn-link btn-sm p-0 ms-1 text-muted remove-chip" title="Quitar" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">&times;</button>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if user.isAdmin %}
+      <select class="form-select form-select-sm mt-2 add-user-select" data-weekday="{{ wd }}" style="font-size:.8rem;">
+        <option value="">+ Agregar usuario</option>
+        {% for u in all_dept_users %}
+        <option value="{{ u.id }}" data-color="{{ u.color|default:'#6c757d' }}" data-username="{{ u.username }}" data-seniority="{{ u.seniority }}">{{ u.username }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pending revision entries table -->
+  <h5 class="fw-semibold mb-3">Pendientes de revisión</h5>
+  {% if pending_entries %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle" id="pending-revision-table">
+      <thead class="table-light">
+        <tr>
+          <th>Viaje</th>
+          <th>Cliente</th>
+          <th>Fecha viaje</th>
+          <th>Dificultad</th>
+          <th>Trabaja por</th>
+          <th>Revisor</th>
+          <th>Link</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in pending_entries %}
+        <tr data-entry-id="{{ e.id }}">
+          <td><strong>{{ e.trip.name }}</strong></td>
+          <td>{{ e.trip.client.name|default:"—" }}</td>
+          <td>{{ e.trip.travelling_date|date:"d/m/Y"|default:"—" }}</td>
+          <td>{{ e.trip.difficulty|default:"—" }}</td>
+          <td>{{ e.user_working.username|default:"—" }}</td>
+          <td>
+            {% if e.revising_user %}
+              {% with c=e.revising_user.color|default:"#6c757d" %}
+              <span style="display:inline-flex;align-items:center;gap:5px;background:{{ c }};color:#222;padding:2px 10px 2px 6px;border-radius:999px;font-size:.82em;font-weight:500;">
+                <span style="width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,0.15);flex-shrink:0;"></span>
+                {{ e.revising_user.username }}
+              </span>
+              {% endwith %}
+              <button class="btn btn-link btn-sm p-0 ms-1 change-reviewer-btn"
+                      data-entry-id="{{ e.id }}" data-user-id="{{ e.revising_user.id }}"
+                      data-link="{{ e.revision_link|default:'' }}"
+                      title="Editar revisión"><i class="fa-solid fa-pen fa-xs"></i></button>
+            {% else %}
+              <span class="text-muted small">⚠️ Sin asignar</span>
+              <button class="btn btn-link btn-sm p-0 ms-1 change-reviewer-btn"
+                      data-entry-id="{{ e.id }}" data-user-id=""
+                      data-link="{{ e.revision_link|default:'' }}"
+                      title="Editar revisión"><i class="fa-solid fa-plus fa-xs"></i></button>
+            {% endif %}
+          </td>
+          <td>
+            {% if e.revision_link %}
+            <div class="position-relative" style="display:inline-block;">
+              <button class="btn btn-sm btn-outline-secondary copy-link-btn"
+                      data-link="{{ e.revision_link }}" title="Copiar link">
+                <i class="fa-regular fa-copy fa-xs"></i> Link
+              </button>
+            </div>
+            {% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-success mark-revised-btn"
+                    data-entry-id="{{ e.id }}" title="Marcar como revisado">
+              <i class="fa-solid fa-check"></i>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted fst-italic">No hay itinerarios pendientes de revisión.</p>
+  {% endif %}
+
+</div>
+
+<!-- Edit revision modal (reviewer + link) -->
+<div class="modal fade" id="pageChangeReviewerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-pen me-2"></i>Editar revisión</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3">
+        <div>
+          <label class="form-label small text-muted mb-1">Revisor</label>
+          <select id="page-crm-select" class="form-select">
+            <option value="">Sin asignar</option>
+            {% for u in all_dept_users %}
+            <option value="{{ u.id }}">{{ u.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Link / Ruta del itinerario</label>
+          <input type="text" id="page-crm-link" class="form-control" placeholder="Ruta o link del itinerario..." />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-dark" id="page-crm-confirm">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const csrf = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+  const isAdmin = {{ user.isAdmin|yesno:"true,false" }};
+
+  // ── Build the grid state from DOM ────────────────────────────────────────
+  function getGridData() {
+    const data = {};
+    document.querySelectorAll('.day-users').forEach(col => {
+      const wd = col.dataset.weekday;
+      data[wd] = [...col.querySelectorAll('.revision-user-chip')].map(c => c.dataset.userId);
+    });
+    return data;
+  }
+
+  // ── Add chip to a day column ──────────────────────────────────────────────
+  function addChip(col, uid, username, color, seniority) {
+    // Prevent duplicates within same day
+    if (col.querySelector(`.revision-user-chip[data-user-id="${uid}"]`)) return;
+    const wd = col.dataset.weekday;
+    const chip = document.createElement('div');
+    chip.className = 'revision-user-chip';
+    chip.draggable = true;
+    chip.dataset.userId = uid;
+    chip.dataset.weekday = wd;
+    const badgeCls = seniority === 'Junior' ? 'badge-junior' : seniority === 'Senior' ? 'badge-senior' : '';
+    const badgeHtml = seniority ? `<span class="seniority-badge ${badgeCls}">${seniority}</span>` : '';
+    const removeHtml = isAdmin ? `<button class="btn btn-link btn-sm p-0 ms-1 text-muted remove-chip" data-user-id="${uid}" data-weekday="${wd}">&times;</button>` : '';
+    chip.innerHTML = `<span class="chip-dot" style="background-color:${color};"></span><span>${username}</span>${badgeHtml}${removeHtml}`;
+    attachChipDrag(chip);
+    col.insertBefore(chip, col.querySelector('.add-user-select'));
+  }
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────────────
+  let draggedChip = null;
+
+  function attachChipDrag(chip) {
+    chip.addEventListener('dragstart', e => {
+      if (document.getElementById('schedule-grid').classList.contains('schedule-readonly')) {
+        e.preventDefault(); return;
+      }
+      draggedChip = chip;
+      chip.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    chip.addEventListener('dragend', () => {
+      chip.classList.remove('dragging');
+      draggedChip = null;
+    });
+  }
+
+  document.querySelectorAll('.revision-day-col').forEach(col => {
+    col.addEventListener('dragover', e => {
+      e.preventDefault();
+      col.classList.add('drag-over');
+    });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', e => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      if (!draggedChip) return;
+      const targetDay = col.querySelector('.day-users');
+      const uid = draggedChip.dataset.userId;
+      // Remove from same-day if duplicate would happen
+      if (targetDay.querySelector(`.revision-user-chip[data-user-id="${uid}"]`) && draggedChip.closest('.day-users') !== targetDay) return;
+      draggedChip.dataset.weekday = col.dataset.weekday;
+      // Update remove button weekday
+      const removeBtn = draggedChip.querySelector('.remove-chip');
+      if (removeBtn) removeBtn.dataset.weekday = col.dataset.weekday;
+      targetDay.insertBefore(draggedChip, targetDay.querySelector('.add-user-select'));
+    });
+  });
+
+  // Attach drag to existing chips
+  document.querySelectorAll('.revision-user-chip').forEach(attachChipDrag);
+
+  // ── Add user select ────────────────────────────────────────────────────────
+  document.querySelectorAll('.add-user-select').forEach(sel => {
+    sel.addEventListener('change', function () {
+      const opt = this.options[this.selectedIndex];
+      if (!opt.value) return;
+      const col = this.closest('.revision-day-col').querySelector('.day-users');
+      addChip(col, opt.value, opt.dataset.username, opt.dataset.color || '#6c757d', opt.dataset.seniority || '');
+      this.value = '';
+    });
+  });
+
+  // ── Remove chip ────────────────────────────────────────────────────────────
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.remove-chip')) {
+      e.target.closest('.revision-user-chip').remove();
+    }
+  });
+
+  // ── Edit / Save schedule toggle ────────────────────────────────────────────
+  const editBtn = document.getElementById('edit-schedule-btn');
+  const grid    = document.getElementById('schedule-grid');
+  let _editing  = false;
+
+  if (editBtn) {
+    editBtn.addEventListener('click', function () {
+      if (!_editing) {
+        // Enter edit mode
+        _editing = true;
+        grid.classList.remove('schedule-readonly');
+        editBtn.className = 'btn btn-dark btn-sm';
+        editBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar';
+      } else {
+        // Save and return to readonly
+        fetch('/revision/schedule/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+          body: JSON.stringify(getGridData()),
+        }).then(r => r.json()).then(d => {
+          if (d.ok) {
+            _editing = false;
+            grid.classList.add('schedule-readonly');
+            editBtn.className = 'btn btn-outline-secondary btn-sm';
+            editBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Guardado';
+            setTimeout(() => {
+              editBtn.innerHTML = '<i class="fa-solid fa-pencil me-1"></i>Editar esquema';
+            }, 2000);
+          }
+        });
+      }
+    });
+  }
+
+  // ── Mark as revised ────────────────────────────────────────────────────────
+  document.querySelectorAll('.mark-revised-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const entryId = this.dataset.entryId;
+      fetch(`/entries/${entryId}/mark_revised`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrf() },
+      }).then(r => r.json()).then(d => {
+        if (d.ok) this.closest('tr').remove();
+      });
+    });
+  });
+
+  // ── Change reviewer ────────────────────────────────────────────────────────
+  let _crmEntryId = null;
+  const crmModal = new bootstrap.Modal(document.getElementById('pageChangeReviewerModal'));
+
+  document.querySelectorAll('.change-reviewer-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      _crmEntryId = this.dataset.entryId;
+      document.getElementById('page-crm-select').value = this.dataset.userId || '';
+      document.getElementById('page-crm-link').value   = this.dataset.link   || '';
+      crmModal.show();
+    });
+  });
+
+  // ── Copy link ────────────────────────────────────────────────────────────
+  function forceCopy(text) {
+    // Uses a visible input briefly to guarantee execCommand works across browsers
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.top = '0';
+    el.style.left = '0';
+    el.style.width = '1px';
+    el.style.height = '1px';
+    el.style.fontSize = '12px'; // some iOS versions need a visible size
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    el.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(el);
+    return ok;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard) {
+      return navigator.clipboard.writeText(text)
+        .then(() => true)
+        .catch(() => { forceCopy(text); return true; });
+    }
+    forceCopy(text);
+    return Promise.resolve(true);
+  }
+
+  document.querySelectorAll('.copy-link-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const url = this.dataset.link || '';
+      const self = this;
+      copyToClipboard(url).then(() => {
+        const origHtml = self.innerHTML;
+        self.innerHTML = '<i class="fa-solid fa-check fa-xs"></i> Link';
+        self.classList.add('text-success');
+        let fb = self.parentElement.querySelector('.copy-feedback');
+        if (!fb) {
+          fb = document.createElement('div');
+          fb.className = 'copy-feedback';
+          fb.style.cssText = 'font-size:.7rem;color:#6c757d;line-height:1;margin-top:3px;';
+          self.parentElement.appendChild(fb);
+        }
+        fb.textContent = 'link copiado';
+        setTimeout(() => {
+          self.innerHTML = origHtml;
+          self.classList.remove('text-success');
+          fb.textContent = '';
+        }, 2000);
+      });
+    });
+  });
+
+  document.getElementById('page-crm-confirm')?.addEventListener('click', function () {
+    const userId = document.getElementById('page-crm-select').value || null;
+    const link   = document.getElementById('page-crm-link').value.trim();
+    fetch(`/entries/${_crmEntryId}/revising_user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ user_id: userId, revision_link: link }),
+    }).then(r => r.json()).then(d => {
+      if (d.ok) { crmModal.hide(); location.reload(); }
+    });
+  });
+
+})();
+</script>
+{% endblock %}
+

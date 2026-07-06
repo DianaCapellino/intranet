@@ -1,0 +1,707 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container">
+    <br>
+    <div class="d-flex align-items-center justify-content-between">
+        <h2>Alquiler de Vehículo</h2>
+        <div class="d-flex gap-2">
+            {% if user.isAdmin %}
+            <button type="button" class="btn btn-outline-secondary btn-lg" data-bs-toggle="modal" data-bs-target="#manageFixedCostsModal" title="Gestionar costos fijos">
+                <i class="fa-solid fa-coins me-1"></i> Costos fijos
+            </button>
+            <button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#newCategoryModal" title="Agregar modelo de vehículo">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            {% endif %}
+            <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+        </div>
+    </div>
+
+    {# ─── Configuración general ───────────────────────────────────────────── #}
+    <div class="d-flex align-items-center gap-3 my-3 p-3 bg-light rounded flex-wrap">
+        <label class="fw-bold mb-0">Markup general:</label>
+        <input type="number" step="0.01" id="cfg_markup" class="form-control form-control-sm" style="width:90px;" value="{{ config.markup }}">
+
+        <label class="fw-bold mb-0">Tipo de cambio (ARS x USD):</label>
+        <input type="number" id="cfg_exchange" class="form-control form-control-sm" style="width:100px;" value="{{ config.exchange }}">
+
+        <label class="fw-bold mb-0">Aumento general %:</label>
+        <input type="number" step="0.1" id="cfg_increase" class="form-control form-control-sm" style="width:90px;" value="{{ config.increase }}">
+
+        <label class="fw-bold mb-0">Airport % default:</label>
+        <input type="number" step="0.1" id="cfg_airport_pct" class="form-control form-control-sm" style="width:80px;" value="{{ config.default_airport_pct }}">
+
+        <label class="fw-bold mb-0">Smart % default:</label>
+        <input type="number" step="0.1" id="cfg_smart_pct" class="form-control form-control-sm" style="width:80px;" value="{{ config.default_smart_pct }}">
+
+        <label class="fw-bold mb-0">Cover % default:</label>
+        <input type="number" step="0.1" id="cfg_cover_pct" class="form-control form-control-sm" style="width:80px;" value="{{ config.default_cover_pct }}">
+
+        <label class="fw-bold mb-0">Comisión %:</label>
+        <input type="number" step="0.1" id="cfg_commission" class="form-control form-control-sm" style="width:80px;" value="{{ config.commission }}">
+
+        <label class="fw-bold mb-0">Descuento adicional %:</label>
+        <input type="number" step="0.1" id="cfg_extra_discount" class="form-control form-control-sm" style="width:80px;" value="{{ config.extra_discount }}">
+
+        <button class="btn btn-sm btn-primary" id="saveConfigBtn">Guardar</button>
+        <small class="text-muted w-100">Airport/Smart/Cover se calculan como % de la venta RACK. Precio sugerido: costo × (1−comisión%) × (1−descuento%) ÷ markup.</small>
+    </div>
+
+    {# ─── Condiciones generales ────────────────────────────────────────────── #}
+    <div class="mb-3 p-3 bg-light rounded">
+        <label class="fw-bold mb-2 d-block">Condiciones generales <small class="text-muted fw-normal">(se mostrarán al pie del cotizador)</small></label>
+        <textarea id="cfg_conditions" class="form-control mb-2" rows="4"
+                  placeholder="Ej: Rates are subject to availability. A valid driver's licence and credit card are required at pick-up…">{{ config.conditions_text }}</textarea>
+        <button class="btn btn-sm btn-primary" id="saveConditionsBtn">Guardar condiciones</button>
+    </div>
+
+    {# ─── Tabs ─────────────────────────────────────────────────────────────── #}
+    <ul class="nav nav-tabs mb-3" id="carHireTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-destinos" data-bs-toggle="tab" data-bs-target="#panel-destinos" type="button" role="tab">
+                <i class="fa-solid fa-map-location-dot me-1"></i> Destinos
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-modelos" data-bs-toggle="tab" data-bs-target="#panel-modelos" type="button" role="tab">
+                <i class="fa-solid fa-car me-1"></i> Modelos
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+
+        {# ── Tab Destinos ────────────────────────────────────────────────── #}
+        <div class="tab-pane fade show active" id="panel-destinos" role="tabpanel">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Destino</th>
+                        <th>Categorías cargadas</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for location in locations %}
+                    <tr class="dest-row" style="cursor:pointer;" data-href="{% url 'car_hire_destination_rates' location.id %}">
+                        <td><strong>{{ location.code }}</strong> — {{ location.name }}</td>
+                        <td>{{ location.car_categories.count }}</td>
+                        <td class="text-end">
+                            <a href="{% url 'car_hire_destination_rates' location.id %}" class="btn btn-sm btn-dark" title="Gestionar tarifas" onclick="event.stopPropagation()">
+                                <i class="fa-solid fa-dollar-sign"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-muted text-center py-3">No hay destinos con categorías cargadas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# ── Tab Modelos ─────────────────────────────────────────────────── #}
+        <div class="tab-pane fade" id="panel-modelos" role="tabpanel">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th style="width:90px;">Foto</th>
+                        <th>Código</th>
+                        <th>Modelo</th>
+                        <th>Destinos</th>
+                        <th>Pasajeros</th>
+                        <th>Valijas</th>
+                        <th>Tracción</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in vehicle_models %}
+                    <tr>
+                        <td>
+                            {% if m.pic1_url %}
+                            <img src="{{ m.pic1_url }}" alt="{{ m.name }}" style="width:80px;height:55px;object-fit:cover;border-radius:4px;">
+                            {% else %}
+                            <div style="width:80px;height:55px;background:#e9ecef;border-radius:4px;display:flex;align-items:center;justify-content:center;">
+                                <i class="fa-regular fa-image text-muted"></i>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td><strong>{{ m.code }}</strong></td>
+                        <td>{{ m.name }}</td>
+                        <td>
+                            {% for loc in m.locations %}
+                            <span class="badge bg-secondary me-1">{{ loc.code }}</span>
+                            {% endfor %}
+                        </td>
+                        <td>{{ m.max_passengers|default:"—" }}</td>
+                        <td>{{ m.max_luggage|default:"—" }}</td>
+                        <td>
+                            {% if m.transmission == 'M' %}Manual
+                            {% elif m.transmission == 'A' %}Automático
+                            {% else %}—
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary edit-model-btn me-1"
+                                    data-code="{{ m.code }}"
+                                    data-name="{{ m.name }}"
+                                    data-passengers="{{ m.max_passengers|default:'' }}"
+                                    data-luggage="{{ m.max_luggage|default:'' }}"
+                                    data-transmission="{{ m.transmission }}"
+                                    data-note="{{ m.note|default:'' }}"
+                                    data-pic="{{ m.pic1_url|default:'' }}"
+                                    data-location-ids="{{ m.location_ids|join:',' }}"
+                                    title="Editar modelo">
+                                <i class="fa-solid fa-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger delete-model-btn"
+                                    data-ids="{{ m.ids|join:',' }}"
+                                    data-name="{{ m.name }}"
+                                    title="Eliminar modelo">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-muted text-center py-3">No hay modelos cargados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>{# end tab-content #}
+</div>
+
+{# ─── Modal: nueva categoría / modelo ────────────────────────────────────── #}
+<div class="modal fade" id="newCategoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nueva categoría de vehículo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+
+                <div class="mb-3 d-flex align-items-center gap-3">
+                    <div id="photo-preview-box"
+                         style="width:120px;height:90px;border:2px dashed #adb5bd;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;"
+                         title="Clic para subir foto">
+                        <span id="photo-placeholder" class="text-muted" style="font-size:.75rem;text-align:center;padding:6px;">
+                            <i class="fa-regular fa-image fa-2x d-block mb-1"></i>Subir foto
+                        </span>
+                        <img id="photo-preview-img" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;">
+                    </div>
+                    <input type="file" id="new_cat_photo" accept="image/*" style="display:none;">
+                    <small class="text-muted">Clic en el cuadro para seleccionar imagen</small>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Código (ej: H1, K1)</label>
+                        <input type="text" class="form-control" id="new_cat_code" placeholder="H1">
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label">Modelo</label>
+                        <input type="text" class="form-control" id="new_cat_name" placeholder="Ford EcoSport Automático">
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Máx. pasajeros</label>
+                        <input type="number" min="1" max="20" class="form-control" id="new_cat_passengers" placeholder="5">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Máx. valijas</label>
+                        <input type="number" min="0" max="20" class="form-control" id="new_cat_luggage" placeholder="3">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Tracción</label>
+                        <select class="form-select" id="new_cat_transmission">
+                            <option value="">— Sin especificar —</option>
+                            <option value="M">Manual</option>
+                            <option value="A">Automático</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">Destinos donde aplica</label>
+                    <div class="d-flex flex-wrap gap-2" id="new_cat_locations_wrap">
+                        {% for location in all_locations %}
+                        <div class="form-check border rounded px-3 py-2" style="min-width:120px;">
+                            <input class="form-check-input new-cat-location-cb" type="checkbox"
+                                   value="{{ location.id }}" id="loc_cb_{{ location.id }}">
+                            <label class="form-check-label" for="loc_cb_{{ location.id }}">
+                                <strong>{{ location.code }}</strong> {{ location.name }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="saveCategoryBtn">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ─── Modal: editar modelo ────────────────────────────────────────────────── #}
+<div class="modal fade" id="editModelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Editar modelo de vehículo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit_old_code">
+                <input type="hidden" id="edit_old_name">
+
+                <div class="mb-3 d-flex align-items-center gap-3">
+                    <div id="edit-photo-preview-box"
+                         style="width:120px;height:90px;border:2px dashed #adb5bd;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8f9fa;"
+                         title="Clic para cambiar foto">
+                        <span id="edit-photo-placeholder" class="text-muted" style="font-size:.75rem;text-align:center;padding:6px;">
+                            <i class="fa-regular fa-image fa-2x d-block mb-1"></i>Sin foto
+                        </span>
+                        <img id="edit-photo-preview-img" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;">
+                    </div>
+                    <input type="file" id="edit_cat_photo" accept="image/*" style="display:none;">
+                    <small class="text-muted">Clic para cambiar la foto (opcional)</small>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Código</label>
+                        <input type="text" class="form-control" id="edit_cat_code">
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label">Modelo</label>
+                        <input type="text" class="form-control" id="edit_cat_name">
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Máx. pasajeros</label>
+                        <input type="number" min="1" max="20" class="form-control" id="edit_cat_passengers">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Máx. valijas</label>
+                        <input type="number" min="0" max="20" class="form-control" id="edit_cat_luggage">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Tracción</label>
+                        <select class="form-select" id="edit_cat_transmission">
+                            <option value="">— Sin especificar —</option>
+                            <option value="M">Manual</option>
+                            <option value="A">Automático</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Franchise and Guarantee <small class="text-muted">(se mostrará en el cotizador)</small></label>
+                    <textarea class="form-control" id="edit_cat_note" rows="3" placeholder="Ej: Franchise USD 1500, depósito con tarjeta de crédito…"></textarea>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">Destinos donde aplica</label>
+                    <div class="d-flex flex-wrap gap-2" id="edit_cat_locations_wrap">
+                        {% for location in all_locations %}
+                        <div class="form-check border rounded px-3 py-2" style="min-width:120px;">
+                            <input class="form-check-input edit-cat-location-cb" type="checkbox"
+                                   value="{{ location.id }}" id="edit_loc_cb_{{ location.id }}">
+                            <label class="form-check-label" for="edit_loc_cb_{{ location.id }}">
+                                <strong>{{ location.code }}</strong> {{ location.name }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="saveEditModelBtn">Guardar cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ─── Modal: costos fijos generales ───────────────────────────────────── #}
+<div class="modal fade" id="manageFixedCostsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-coins me-2"></i>Costos fijos — Alquiler de vehículo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-sm table-hover align-middle" id="frcTable">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Destino</th>
+                            <th>Valor</th>
+                            <th>Por</th>
+                            <th>Tipo</th>
+                            <th>Recomendado</th>
+                            <th>USD</th>
+                            <th>T/C</th>
+                            <th>Aumento %</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="frcTableBody"></tbody>
+                </table>
+
+                {# ── Panel compartido agregar / editar ── #}
+                <div id="frcFormPanel" style="display:none;" class="border rounded p-3 bg-light mt-3">
+                    <input type="hidden" id="frc_edit_id">
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Nombre</label>
+                            <input type="text" class="form-control form-control-sm" id="new_frc_name">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Destino</label>
+                            <select class="form-select form-select-sm" id="new_frc_location">
+                                <option value="">Todos los destinos</option>
+                                {% for location in all_locations %}
+                                <option value="{{ location.id }}">{{ location.code }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Valor</label>
+                            <input type="number" step="0.01" class="form-control form-control-sm" id="new_frc_value">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Por</label>
+                            <select class="form-select form-select-sm" id="new_frc_fcu">
+                                {% for v, label in FCU_OPTIONS %}
+                                <option value="{{ v }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end gap-3 pb-1 flex-wrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="new_frc_usd" checked>
+                                <label class="form-check-label" for="new_frc_usd">USD</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="new_frc_per_day" checked>
+                                <label class="form-check-label" for="new_frc_per_day">Por día</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="new_frc_recommended" checked>
+                                <label class="form-check-label" for="new_frc_recommended">Recomendado</label>
+                            </div>
+                        </div>
+                        <div class="col-md-2" id="new_frc_exchange_wrap" style="display:none;">
+                            <label class="form-label">T/C</label>
+                            <input type="number" class="form-control form-control-sm" id="new_frc_exchange" value="1">
+                        </div>
+                    </div>
+                    <div class="mt-2 d-flex gap-2">
+                        <button class="btn btn-sm btn-success" id="confirmFrcBtn"><i class="fa-solid fa-check"></i> <span id="frcBtnLabel">Agregar</span></button>
+                        <button class="btn btn-sm btn-secondary" id="cancelFrcBtn">Cancelar</button>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-success mt-3" id="showAddFrcBtn"><i class="fa-solid fa-plus me-1"></i> Agregar costo fijo</button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+let ALL_FIXED_COSTS = {{ fixed_costs_json|safe }};
+
+async function postJSON(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+
+// ─── Config general ───────────────────────────────────────────────────
+document.getElementById('saveConfigBtn').addEventListener('click', async () => {
+    const body = {
+        markup: parseFloat(document.getElementById('cfg_markup').value),
+        exchange: parseInt(document.getElementById('cfg_exchange').value),
+        increase: parseFloat(document.getElementById('cfg_increase').value) || 0,
+        default_airport_pct: parseFloat(document.getElementById('cfg_airport_pct').value) || 0,
+        default_smart_pct: parseFloat(document.getElementById('cfg_smart_pct').value) || 0,
+        default_cover_pct: parseFloat(document.getElementById('cfg_cover_pct').value) || 0,
+        commission: parseFloat(document.getElementById('cfg_commission').value) || 0,
+        extra_discount: parseFloat(document.getElementById('cfg_extra_discount').value) || 0,
+    };
+    await postJSON('{% url "car_hire_update_config" %}', body);
+    const btn = document.getElementById('saveConfigBtn');
+    btn.textContent = '✓ Guardado';
+    setTimeout(() => btn.textContent = 'Guardar', 1500);
+});
+
+document.getElementById('saveConditionsBtn').addEventListener('click', async () => {
+    const text = document.getElementById('cfg_conditions').value;
+    await postJSON('{% url "car_hire_update_config" %}', { conditions_text: text });
+    const btn = document.getElementById('saveConditionsBtn');
+    btn.textContent = '✓ Guardado';
+    setTimeout(() => btn.textContent = 'Guardar condiciones', 1500);
+});
+
+// ─── Nueva categoría ──────────────────────────────────────────────────
+document.getElementById('photo-preview-box').addEventListener('click', () => {
+    document.getElementById('new_cat_photo').click();
+});
+document.getElementById('new_cat_photo').addEventListener('change', function () {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        document.getElementById('photo-preview-img').src = e.target.result;
+        document.getElementById('photo-preview-img').style.display = '';
+        document.getElementById('photo-placeholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('saveCategoryBtn').addEventListener('click', async () => {
+    const code = document.getElementById('new_cat_code').value.trim();
+    const name = document.getElementById('new_cat_name').value.trim();
+    const locationIds = [...document.querySelectorAll('.new-cat-location-cb:checked')].map(cb => cb.value);
+    if (!code || !name) { alert('Completá código y modelo.'); return; }
+    if (!locationIds.length) { alert('Seleccioná al menos un destino.'); return; }
+
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+    fd.append('code', code);
+    fd.append('name', name);
+    fd.append('max_passengers', document.getElementById('new_cat_passengers').value || '');
+    fd.append('max_luggage', document.getElementById('new_cat_luggage').value || '');
+    fd.append('transmission', document.getElementById('new_cat_transmission').value);
+    locationIds.forEach(id => fd.append('location_ids', id));
+    const photoFile = document.getElementById('new_cat_photo').files[0];
+    if (photoFile) fd.append('photo', photoFile);
+
+    const res = await fetch('{% url "car_hire_category_create" %}', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) location.reload();
+    else alert(data.error || 'Error al guardar');
+});
+
+// ─── Editar modelo ────────────────────────────────────────────────────
+document.getElementById('edit-photo-preview-box').addEventListener('click', () => {
+    document.getElementById('edit_cat_photo').click();
+});
+document.getElementById('edit_cat_photo').addEventListener('change', function () {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        document.getElementById('edit-photo-preview-img').src = e.target.result;
+        document.getElementById('edit-photo-preview-img').style.display = '';
+        document.getElementById('edit-photo-placeholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+});
+
+document.querySelectorAll('.edit-model-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const code = btn.dataset.code;
+        const name = btn.dataset.name;
+        const locationIds = btn.dataset.locationIds.split(',').map(s => s.trim());
+        const pic = btn.dataset.pic;
+
+        document.getElementById('edit_old_code').value = code;
+        document.getElementById('edit_old_name').value = name;
+        document.getElementById('edit_cat_code').value = code;
+        document.getElementById('edit_cat_name').value = name;
+        document.getElementById('edit_cat_passengers').value = btn.dataset.passengers;
+        document.getElementById('edit_cat_luggage').value = btn.dataset.luggage;
+        document.getElementById('edit_cat_transmission').value = btn.dataset.transmission;
+        document.getElementById('edit_cat_note').value = btn.dataset.note || '';
+
+        const img = document.getElementById('edit-photo-preview-img');
+        const ph  = document.getElementById('edit-photo-placeholder');
+        if (pic) {
+            img.src = pic;
+            img.style.display = '';
+            ph.style.display = 'none';
+        } else {
+            img.src = '';
+            img.style.display = 'none';
+            ph.style.display = '';
+        }
+        document.getElementById('edit_cat_photo').value = '';
+
+        document.querySelectorAll('.edit-cat-location-cb').forEach(cb => {
+            cb.checked = locationIds.includes(cb.value);
+        });
+
+        new bootstrap.Modal(document.getElementById('editModelModal')).show();
+    });
+});
+
+document.getElementById('saveEditModelBtn').addEventListener('click', async () => {
+    const code = document.getElementById('edit_cat_code').value.trim();
+    const name = document.getElementById('edit_cat_name').value.trim();
+    const locationIds = [...document.querySelectorAll('.edit-cat-location-cb:checked')].map(cb => cb.value);
+    if (!code || !name) { alert('Completá código y modelo.'); return; }
+    if (!locationIds.length) { alert('Seleccioná al menos un destino.'); return; }
+
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF_TOKEN);
+    fd.append('old_code', document.getElementById('edit_old_code').value);
+    fd.append('old_name', document.getElementById('edit_old_name').value);
+    fd.append('code', code);
+    fd.append('name', name);
+    fd.append('max_passengers', document.getElementById('edit_cat_passengers').value || '');
+    fd.append('max_luggage', document.getElementById('edit_cat_luggage').value || '');
+    fd.append('transmission', document.getElementById('edit_cat_transmission').value);
+    fd.append('note', document.getElementById('edit_cat_note').value.trim());
+    locationIds.forEach(id => fd.append('location_ids', id));
+    const photoFile = document.getElementById('edit_cat_photo').files[0];
+    if (photoFile) fd.append('photo', photoFile);
+
+    const res = await fetch('{% url "car_hire_category_update_model" %}', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) location.reload();
+    else alert(data.error || 'Error al guardar');
+});
+
+document.querySelectorAll('.delete-model-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm(`¿Eliminar el modelo "${btn.dataset.name}" de todos los destinos?`)) return;
+        const ids = btn.dataset.ids.split(',').map(Number);
+        for (const id of ids) {
+            await fetch(`/tariff/modify/car-hire/category/${id}/delete/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF_TOKEN },
+            });
+        }
+        location.reload();
+    });
+});
+
+// ─── Costos fijos ─────────────────────────────────────────────────────
+function renderFrcTable() {
+    const tbody = document.getElementById('frcTableBody');
+    if (!ALL_FIXED_COSTS.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-muted text-center py-3">Sin costos fijos cargados.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = ALL_FIXED_COSTS.map(f => `
+        <tr>
+            <td>${f.name}</td>
+            <td>${f.location_id ? '' : '<span class="badge bg-secondary">Todos</span>'}</td>
+            <td>$${f.value}</td>
+            <td>${f.fcu}</td>
+            <td><span class="badge ${f.per_day ? 'bg-primary' : 'bg-warning text-dark'}">${f.per_day ? 'Por día' : 'Único'}</span></td>
+            <td>${f.recommended ? '<i class="fa-solid fa-check text-success"></i>' : '<i class="fa-solid fa-xmark text-muted"></i>'}</td>
+            <td>${f.usd ? 'Sí' : 'No'}</td>
+            <td>${f.usd ? '—' : f.exchange}</td>
+            <td>${f.increase || 0}%</td>
+            <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary edit-frc-btn me-1" data-id="${f.id}"><i class="fa-solid fa-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-danger delete-frc-btn" data-id="${f.id}"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+
+    tbody.querySelectorAll('.delete-frc-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('¿Eliminar este costo fijo?')) return;
+            await postJSON(`/tariff/modify/car-hire/fixed-cost/${btn.dataset.id}/delete/`, {});
+            ALL_FIXED_COSTS = ALL_FIXED_COSTS.filter(f => String(f.id) !== btn.dataset.id);
+            renderFrcTable();
+        });
+    });
+
+    tbody.querySelectorAll('.edit-frc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const f = ALL_FIXED_COSTS.find(x => String(x.id) === btn.dataset.id);
+            if (!f) return;
+            openFrcForm('edit', f);
+        });
+    });
+}
+document.getElementById('manageFixedCostsModal').addEventListener('show.bs.modal', renderFrcTable);
+
+// Panel compartido agregar/editar
+function openFrcForm(mode, f = null) {
+    document.getElementById('frc_edit_id').value   = f ? f.id : '';
+    document.getElementById('new_frc_name').value  = f ? f.name : '';
+    document.getElementById('new_frc_location').value = f ? (f.location_id || '') : '';
+    document.getElementById('new_frc_value').value = f ? f.value : '';
+    document.getElementById('new_frc_fcu').value   = f ? f.fcu : 'Group';
+    document.getElementById('new_frc_usd').checked         = f ? f.usd : true;
+    document.getElementById('new_frc_per_day').checked     = f ? f.per_day : true;
+    document.getElementById('new_frc_recommended').checked = f ? f.recommended : true;
+    document.getElementById('new_frc_exchange').value      = f ? (f.exchange || 1) : 1;
+    document.getElementById('new_frc_exchange_wrap').style.display = (f && !f.usd) ? '' : 'none';
+    document.getElementById('frcBtnLabel').textContent = mode === 'edit' ? 'Guardar cambios' : 'Agregar';
+    document.getElementById('frcFormPanel').style.display = '';
+    document.getElementById('showAddFrcBtn').style.display = 'none';
+}
+
+document.getElementById('showAddFrcBtn').addEventListener('click', () => openFrcForm('add'));
+
+document.getElementById('cancelFrcBtn').addEventListener('click', () => {
+    document.getElementById('frcFormPanel').style.display = 'none';
+    document.getElementById('showAddFrcBtn').style.display = '';
+});
+
+document.getElementById('new_frc_usd').addEventListener('change', function () {
+    document.getElementById('new_frc_exchange_wrap').style.display = this.checked ? 'none' : '';
+});
+
+document.getElementById('confirmFrcBtn').addEventListener('click', async () => {
+    const editId = document.getElementById('frc_edit_id').value;
+    const body = {
+        name:        document.getElementById('new_frc_name').value.trim(),
+        location_id: document.getElementById('new_frc_location').value || null,
+        value:       parseFloat(document.getElementById('new_frc_value').value),
+        fcu:         document.getElementById('new_frc_fcu').value,
+        usd:         document.getElementById('new_frc_usd').checked,
+        per_day:     document.getElementById('new_frc_per_day').checked,
+        recommended: document.getElementById('new_frc_recommended').checked,
+        exchange:    parseInt(document.getElementById('new_frc_exchange').value) || 1,
+    };
+    if (!body.name || isNaN(body.value)) { alert('Completá nombre y valor.'); return; }
+
+    if (editId) {
+        // Editar
+        await postJSON('{% url "car_hire_update_fixed_cost" %}', { id: parseInt(editId), ...body });
+        const idx = ALL_FIXED_COSTS.findIndex(f => String(f.id) === editId);
+        if (idx !== -1) ALL_FIXED_COSTS[idx] = { id: parseInt(editId), ...body };
+    } else {
+        // Agregar nuevo
+        const res = await postJSON('{% url "car_hire_create_fixed_cost" %}', body);
+        ALL_FIXED_COSTS.push({ id: res.id, ...body });
+    }
+
+    renderFrcTable();
+    document.getElementById('frcFormPanel').style.display = 'none';
+    document.getElementById('showAddFrcBtn').style.display = '';
+});
+
+// ─── Destinos: click row ─────────────────────────────────────────────
+document.querySelectorAll('.dest-row').forEach(row => {
+    row.addEventListener('click', () => { window.location = row.dataset.href; });
+});
+</script>
+{% endblock %}

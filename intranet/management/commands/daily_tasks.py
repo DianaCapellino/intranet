@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly
 
 
 class Command(BaseCommand):
@@ -84,9 +84,19 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Mail de rentabilidad enviado a manager"))
         elif is_wednesday:
             self.stdout.write(f"Miércoles {today.day}, no es el primero del mes, se omite el mail al manager.")
-        if is_monday:  # Monday - warnings for Marisol
+        if is_monday:
             from intranet.utils import send_weekly_roster
             send_weekly_roster()
+
+            self.stdout.write("-" * 30)
+            self.stdout.write("Enviando actualizaciones de tarifas a clientes...")
+            try:
+                r = send_tariff_client_weekly(stdout=self.stdout)
+                self.stdout.write(self.style.SUCCESS(
+                    f"Tarifas enviadas: {r['sent']} | Omitidos: {r['skipped']} | Errores: {r['errors']}"
+                ))
+            except Exception as exc:
+                self.stdout.write(self.style.ERROR(f"Error al enviar tarifas a clientes: {exc}"))
 
         # Holiday reminder — every day, fires only when a holiday starts in exactly 7 days
         self.stdout.write("-" * 30)

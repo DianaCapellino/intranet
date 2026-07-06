@@ -27,6 +27,11 @@
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
         <h2 class="fw-semibold mb-0" style="color:#1a6b3b;">Sustainable Properties</h2>
         <div class="d-flex gap-2">
+          {% if request.user.isAdmin %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalGreenImport">
+            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Import with AI
+          </button>
+          {% endif %}
           <a id="excel-link" href="{% url 'aliwen_green_excel' %}{% if location_filter or ranking_filter %}?{% if location_filter %}location={{ location_filter }}{% endif %}{% if location_filter and ranking_filter %}&amp;{% endif %}{% if ranking_filter %}ranking={{ ranking_filter }}{% endif %}{% endif %}"
              class="btn btn-sm btn-success">
             <i class="fa-solid fa-file-excel me-1"></i>Excel
@@ -53,7 +58,7 @@
           <select name="ranking" class="form-select form-select-sm" onchange="this.form.submit()">
             <option value="">— Any —</option>
             {% for v in "12345" %}
-              <option value="{{ v }}" {% if ranking_filter == v %}selected{% endif %}>{{ v }}★ or higher</option>
+              <option value="{{ v }}" {% if ranking_filter == v %}selected{% endif %}>{{ v }}🌿 or higher</option>
             {% endfor %}
           </select>
         </div>
@@ -80,7 +85,7 @@
             <thead style="background:#e8f5e9;">
               <tr>
                 <th style="min-width:170px;max-width:200px;">Property</th>
-                <th style="min-width:30px;text-align:center;" title="Sustainability Ranking">★</th>
+                <th style="min-width:30px;text-align:center;" title="Sustainability Ranking">🌿</th>
                 {% for cat_key, cat_label in categories %}
                   <th style="min-width:140px;">{{ cat_label }}</th>
                 {% endfor %}
@@ -122,6 +127,396 @@
     </div>
   </div>
 </div>
+
+{% if request.user.isAdmin %}
+<!-- ── AI Import Modal ──────────────────────────────────────────────────── -->
+<div class="modal fade" id="modalGreenImport" tabindex="-1" aria-labelledby="labelGreenImport">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#f0f7f0; border-bottom:2px solid #2e8b57;">
+        <h5 class="modal-title" id="labelGreenImport">
+          <i class="fa-solid fa-wand-magic-sparkles me-2" style="color:#2e8b57;"></i>Import Sustainability Info with AI
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Step 1: Input -->
+      <div id="gi-step1" class="modal-body">
+        <p class="text-muted small mb-3">Paste the text from the property's sustainability document, or upload a PDF. The AI will extract the actions and suggest the matching property.</p>
+        <ul class="nav nav-tabs mb-3" id="gi-input-tabs">
+          <li class="nav-item">
+            <button class="nav-link active" id="gi-tab-text-btn" onclick="giSwitchInput('text')">
+              <i class="fa-solid fa-align-left me-1"></i>Paste text
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" id="gi-tab-pdf-btn" onclick="giSwitchInput('pdf')">
+              <i class="fa-solid fa-file-pdf me-1"></i>Upload PDF
+            </button>
+          </li>
+        </ul>
+        <div id="gi-input-text">
+          <textarea id="gi-text-input" class="form-control" rows="10"
+                    placeholder="Paste the sustainability document text here…"></textarea>
+        </div>
+        <div id="gi-input-pdf" class="d-none">
+          <input type="file" id="gi-pdf-input" class="form-control" accept=".pdf">
+          <div id="gi-pdf-status" class="small text-muted mt-2"></div>
+          <textarea id="gi-pdf-extracted" class="form-control mt-2 d-none" rows="6" readonly
+                    placeholder="Extracted text will appear here…"></textarea>
+        </div>
+        <div id="gi-extract-error" class="alert alert-danger mt-3 d-none"></div>
+      </div>
+
+      <!-- Step 2: Review -->
+      <div id="gi-step2" class="modal-body d-none">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Property</label>
+          <div class="input-group">
+            <input type="text" id="gi-supplier-search" class="form-control"
+                   placeholder="Search property name…" oninput="giSearchSupplier(this.value)">
+            <span class="input-group-text bg-white">
+              <i class="fa-solid fa-magnifying-glass text-muted"></i>
+            </span>
+          </div>
+          <div id="gi-supplier-dropdown" class="list-group mt-1 shadow-sm d-none"
+               style="position:absolute;z-index:1055;max-height:200px;overflow-y:auto;min-width:400px;"></div>
+          <input type="hidden" id="gi-supplier-id">
+          <div id="gi-supplier-matched" class="small mt-1"></div>
+        </div>
+
+        <div class="mb-3 p-3 rounded-2" style="background:#f0f7f0;border-left:4px solid #2e8b57;">
+          <label class="form-label fw-semibold mb-1">Sustainability Ranking</label>
+          <div class="d-flex align-items-start gap-3 flex-wrap">
+            <select id="gi-ranking-select" class="form-select form-select-sm" style="max-width:80px;">
+              <option value="">—</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+            <div class="small text-muted" style="line-height:1.5;">
+              <span class="fw-semibold text-dark">1</span> Recycling, dispensers &nbsp;·&nbsp;
+              <span class="fw-semibold text-dark">2</span> + local buying, composting &nbsp;·&nbsp;
+              <span class="fw-semibold text-dark">3</span> + renewable energy, community &nbsp;·&nbsp;
+              <span class="fw-semibold text-dark">4</span> + certification / all groups &nbsp;·&nbsp;
+              <span class="fw-semibold text-dark">5</span> All groups incl. staff/guests + cert.
+            </div>
+          </div>
+          <div id="gi-ranking-note" class="small text-muted mt-1 d-none">
+            <i class="fa-solid fa-wand-magic-sparkles me-1" style="color:#2e8b57;"></i>AI suggested: <strong id="gi-ranking-suggested"></strong>
+          </div>
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <label class="form-label fw-semibold mb-0">Extracted actions</label>
+          <button class="btn btn-sm btn-outline-success" onclick="giAddAction()">
+            <i class="fa-solid fa-plus me-1"></i>Add action
+          </button>
+        </div>
+        <div id="gi-actions-list"></div>
+        <div id="gi-save-error" class="alert alert-danger mt-3 d-none"></div>
+
+        <div class="alert alert-info mt-3 small d-none" id="gi-replace-warning">
+          <i class="fa-solid fa-circle-info me-1"></i>
+          This property already has sustainability actions. New actions will be <strong>added</strong> to the existing ones.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <!-- Step 1 footer -->
+        <div id="gi-footer1" class="w-100 d-flex justify-content-between align-items-center">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-success" id="gi-extract-btn" onclick="giExtract()">
+            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Extract with AI
+          </button>
+        </div>
+        <!-- Step 2 footer -->
+        <div id="gi-footer2" class="w-100 d-flex justify-content-between align-items-center d-none">
+          <button class="btn btn-outline-secondary" onclick="giBackToStep1()">
+            <i class="fa-solid fa-arrow-left me-1"></i>Back
+          </button>
+          <button class="btn btn-success" id="gi-save-btn" onclick="giSave()">
+            <i class="fa-solid fa-floppy-disk me-1"></i>Save actions
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+const _giCsrf = "{{ csrf_token }}";
+const _giCats = [{% for k, label in categories %}["{{ k }}", "{{ label }}"]{% if not forloop.last %},{% endif %}{% endfor %}];
+let _giSearchTimeout = null;
+
+function giSwitchInput(tab) {
+  document.getElementById('gi-input-text').classList.toggle('d-none', tab !== 'text');
+  document.getElementById('gi-input-pdf').classList.toggle('d-none', tab !== 'pdf');
+  document.getElementById('gi-tab-text-btn').classList.toggle('active', tab === 'text');
+  document.getElementById('gi-tab-pdf-btn').classList.toggle('active', tab === 'pdf');
+}
+
+// PDF extraction via pdf.js
+document.getElementById('gi-pdf-input').addEventListener('change', async function () {
+  const file = this.files[0];
+  if (!file) return;
+  const status = document.getElementById('gi-pdf-status');
+  const extracted = document.getElementById('gi-pdf-extracted');
+  status.textContent = 'Extracting text from PDF…';
+  extracted.classList.add('d-none');
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(s => s.str).join(' ') + '\n';
+    }
+    extracted.value = text.trim();
+    extracted.classList.remove('d-none');
+    status.textContent = `✓ ${pdf.numPages} page(s) extracted.`;
+  } catch (e) {
+    status.textContent = 'Error reading PDF: ' + e.message;
+  }
+});
+
+function giGetText() {
+  const tab = document.getElementById('gi-tab-text-btn').classList.contains('active') ? 'text' : 'pdf';
+  if (tab === 'text') return document.getElementById('gi-text-input').value.trim();
+  return document.getElementById('gi-pdf-extracted').value.trim();
+}
+
+async function giExtract() {
+  const text = giGetText();
+  const err = document.getElementById('gi-extract-error');
+  err.classList.add('d-none');
+  if (!text) { err.textContent = 'Please provide text or upload a PDF first.'; err.classList.remove('d-none'); return; }
+  const btn = document.getElementById('gi-extract-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Analyzing…';
+  try {
+    const res = await fetch("{% url 'aliwen_green_ai_extract' %}", {
+      method: 'POST',
+      headers: { 'X-CSRFToken': _giCsrf, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Extraction failed.'; err.classList.remove('d-none'); return; }
+    giShowStep2(data);
+  } catch (e) {
+    err.textContent = 'Connection error.';
+    err.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles me-1"></i>Extract with AI';
+  }
+}
+
+function giShowStep2(data) {
+  document.getElementById('gi-step1').classList.add('d-none');
+  document.getElementById('gi-footer1').classList.add('d-none');
+  document.getElementById('gi-step2').classList.remove('d-none');
+  document.getElementById('gi-footer2').classList.remove('d-none');
+
+  // Supplier
+  document.getElementById('gi-supplier-id').value = data.supplier_id || '';
+  const search = document.getElementById('gi-supplier-search');
+  const matched = document.getElementById('gi-supplier-matched');
+  if (data.supplier_id) {
+    search.value = data.supplier_name_matched || data.property_name;
+    matched.innerHTML = `<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>Matched: <strong>${data.supplier_name_matched}</strong></span>`;
+    giSetReplaceWarning(data.has_actions);
+  } else {
+    search.value = data.property_name || '';
+    matched.innerHTML = `<span class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>Could not auto-match. Please search and select the property.</span>`;
+    giSetReplaceWarning(false);
+  }
+
+  // Ranking
+  const rankingSelect = document.getElementById('gi-ranking-select');
+  const rankingNote   = document.getElementById('gi-ranking-note');
+  const rankingSugg   = document.getElementById('gi-ranking-suggested');
+  if (data.suggested_ranking) {
+    rankingSelect.value = data.suggested_ranking;
+    rankingSugg.textContent = data.suggested_ranking;
+    rankingNote.classList.remove('d-none');
+  } else {
+    rankingSelect.value = '';
+    rankingNote.classList.add('d-none');
+  }
+
+  // Actions
+  giRenderActions(data.actions || []);
+}
+
+function giRenderActions(actions) {
+  const container = document.getElementById('gi-actions-list');
+  container.innerHTML = '';
+  actions.forEach((a, i) => giRenderActionRow(a, i));
+}
+
+function giRenderActionRow(a, i) {
+  const container = document.getElementById('gi-actions-list');
+  const catOptions = _giCats.map(([k, label]) =>
+    `<option value="${k}" ${a.category === k ? 'selected' : ''}>${label}</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'card mb-2 border-0 shadow-sm';
+  row.dataset.index = i;
+  row.innerHTML = `
+    <div class="card-body p-2">
+      <div class="row g-2 align-items-start">
+        <div class="col-4">
+          <select class="form-select form-select-sm gi-cat-select">
+            ${catOptions}
+          </select>
+        </div>
+        <div class="col-7">
+          <textarea class="form-control form-control-sm gi-desc-input" rows="2">${a.description || ''}</textarea>
+        </div>
+        <div class="col-1 text-end">
+          <button class="btn btn-sm btn-outline-danger" onclick="giRemoveAction(this)" title="Remove">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  container.appendChild(row);
+}
+
+function giAddAction() {
+  const container = document.getElementById('gi-actions-list');
+  const i = container.children.length;
+  giRenderActionRow({ category: 'OTHER', description: '' }, i);
+}
+
+function giRemoveAction(btn) {
+  btn.closest('.card').remove();
+}
+
+function giSearchSupplier(q) {
+  clearTimeout(_giSearchTimeout);
+  const dropdown = document.getElementById('gi-supplier-dropdown');
+  if (!q) { dropdown.classList.add('d-none'); return; }
+  _giSearchTimeout = setTimeout(async () => {
+    const res = await fetch(`{% url 'aliwen_green_supplier_search' %}?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    dropdown.innerHTML = '';
+    if (!data.results.length) {
+      dropdown.innerHTML = '<span class="list-group-item list-group-item-action text-muted small">No results</span>';
+    } else {
+      data.results.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'list-group-item list-group-item-action small py-1';
+        btn.textContent = s.name;
+        btn.onclick = () => {
+          document.getElementById('gi-supplier-id').value = s.id;
+          document.getElementById('gi-supplier-search').value = s.name;
+          document.getElementById('gi-supplier-matched').innerHTML =
+            `<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>Selected: <strong>${s.name}</strong></span>`;
+          dropdown.classList.add('d-none');
+          giSetReplaceWarning(s.has_actions);
+        };
+        dropdown.appendChild(btn);
+      });
+    }
+    dropdown.classList.remove('d-none');
+  }, 300);
+}
+
+function giSetReplaceWarning(hasActions) {
+  document.getElementById('gi-replace-warning').classList.toggle('d-none', !hasActions);
+}
+
+// Hide dropdown on click outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#gi-supplier-search') && !e.target.closest('#gi-supplier-dropdown')) {
+    document.getElementById('gi-supplier-dropdown').classList.add('d-none');
+  }
+});
+
+function giCollectActions() {
+  const rows = document.querySelectorAll('#gi-actions-list .card');
+  const actions = [];
+  rows.forEach(row => {
+    const cat = row.querySelector('.gi-cat-select')?.value;
+    const desc = row.querySelector('.gi-desc-input')?.value.trim();
+    if (cat && desc) actions.push({ category: cat, description: desc });
+  });
+  return actions;
+}
+
+async function giSave() {
+  const supplierId = document.getElementById('gi-supplier-id').value;
+  const err = document.getElementById('gi-save-error');
+  err.classList.add('d-none');
+  if (!supplierId) {
+    err.textContent = 'Please select a property before saving.';
+    err.classList.remove('d-none');
+    return;
+  }
+  const actions = giCollectActions();
+  if (!actions.length) {
+    err.textContent = 'No actions to save. Add at least one action.';
+    err.classList.remove('d-none');
+    return;
+  }
+  const btn = document.getElementById('gi-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Saving…';
+  try {
+    const res = await fetch("{% url 'aliwen_green_ai_save' %}", {
+      method: 'POST',
+      headers: { 'X-CSRFToken': _giCsrf, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        supplier_id: supplierId,
+        actions,
+        replace: false,
+        sustentability_ranking: document.getElementById('gi-ranking-select').value || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Save failed.'; err.classList.remove('d-none'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalGreenImport')).hide();
+    alert(`✓ ${data.created} action(s) saved for ${data.supplier}. Reloading…`);
+    location.reload();
+  } catch (e) {
+    err.textContent = 'Connection error.';
+    err.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Save actions';
+  }
+}
+
+function giBackToStep1() {
+  document.getElementById('gi-step1').classList.remove('d-none');
+  document.getElementById('gi-footer1').classList.remove('d-none');
+  document.getElementById('gi-step2').classList.add('d-none');
+  document.getElementById('gi-footer2').classList.add('d-none');
+}
+
+// Reset modal when closed
+document.getElementById('modalGreenImport').addEventListener('hidden.bs.modal', function () {
+  document.getElementById('gi-text-input').value = '';
+  document.getElementById('gi-pdf-input').value = '';
+  document.getElementById('gi-pdf-extracted').value = '';
+  document.getElementById('gi-pdf-status').textContent = '';
+  document.getElementById('gi-pdf-extracted').classList.add('d-none');
+  document.getElementById('gi-extract-error').classList.add('d-none');
+  document.getElementById('gi-save-error').classList.add('d-none');
+  document.getElementById('gi-ranking-select').value = '';
+  document.getElementById('gi-ranking-note').classList.add('d-none');
+  giBackToStep1();
+  giSwitchInput('text');
+});
+</script>
+{% endif %}
 
 <style>
   table.table-bordered th, table.table-bordered td {
@@ -188,6 +583,7 @@ document.getElementById('btn-download-pdf').addEventListener('click', function (
         // Build table data from DOM
         const headCells = Array.from(table.querySelectorAll('thead th'));
         const headLabels = headCells.map(function (th) { return th.textContent.trim(); });
+        headLabels[1] = 'Rank'; // emoji 🌿 doesn't render in jsPDF
 
         const rows = [];
         table.querySelectorAll('tbody tr').forEach(function (tr) {

@@ -92,9 +92,15 @@
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
                       color:#5A5A5A;margin:0 0 14px;">
               We hope this message finds you well. On behalf of the Aliwen team, we are pleased
-              to share the latest updates to our rates and product portfolio. Whether you are
-              planning a new programme or revisiting an existing one, we trust this information
-              will be a valuable reference for your upcoming proposals.
+              to share the latest updates to our rates and product portfolio that have been
+              introduced into our platform
+              {% if since_date %}
+              since <strong style="color:#1C1C1C;">{{ since_date }}</strong>.
+              {% else %}
+              recently.
+              {% endif %}
+              Whether you are planning a new programme or revisiting an existing one, we trust
+              this information will be a valuable reference for your upcoming proposals.
             </p>
 
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;

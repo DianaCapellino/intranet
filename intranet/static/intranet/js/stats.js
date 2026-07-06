@@ -285,6 +285,7 @@ async function generatePresentationEntriesData(filters = {}) {
         monthlyBreakdownEntries = result.monthly_breakdown || [];
         monthlyByVendorEntries  = result.monthly_by_vendor || {};
         monthlyByClientEntries  = result.monthly_by_client || {};
+        window.vendorTypes      = result.vendor_types || {};
 
         // ⚠️ Asignar a la variable que usa renderReport Quotes
         // Normalizar el objeto y asegurarnos que los montos sean números
@@ -595,7 +596,7 @@ const sectionsLoaded = {
     general: false,
     vendor: false,
     speed: false,
-    client: false
+    client: false,
 };
 
 // ==================== Cargar sección específica Entries ====================
@@ -620,6 +621,7 @@ async function loadSection(sectionName) {
                 renderVendorTableQuote();
                 renderVendorTableBooking();
                 renderMonthlyByVendorEntries();
+                renderMonthlySummaryTable();
                 renderChartsQuotes();
                 renderChartsBookings();
                 renderInsightsQuotes();
@@ -640,6 +642,7 @@ async function loadSection(sectionName) {
                 renderChartsClients();
                 sectionsLoaded.client = true;
                 break;
+
         }
         
         console.log(`✅ Sección ${sectionName} cargada correctamente`);
@@ -945,6 +948,270 @@ function _buildMonthlyMultiDatasets(dataByKey, field, colorOffset) {
         };
     });
     return { labels, datasets };
+}
+
+function _statsContrastColor(hex) {
+    hex = (hex || '#6c757d').replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const r = parseInt(hex.substr(0, 2), 16) / 255;
+    const g = parseInt(hex.substr(2, 2), 16) / 255;
+    const b = parseInt(hex.substr(4, 2), 16) / 255;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.45 ? '#000' : '#fff';
+}
+
+function renderMonthlySummaryTable() {
+    const container = document.getElementById('monthly-summary-table-container');
+    if (!container) return;
+
+    const data = monthlyByVendorEntries;
+    if (!data || !Object.keys(data).length) {
+        container.innerHTML = '<p class="text-muted">Sin datos mensuales disponibles para este período.</p>';
+        return;
+    }
+
+    // Full Spanish month names
+    const MONTH_NAMES = {
+        '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio',
+        '07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre'
+    };
+    function monthLabel(mk) { return MONTH_NAMES[mk.split('-')[1]] || mk; }
+
+    // Generate all months from URL date_from → date_to (May → April for seasons)
+    const params = new URLSearchParams(window.location.search);
+    const dfStr = params.get('date_from');
+    const dtStr = params.get('date_to');
+    let months = [];
+    if (dfStr && dtStr) {
+        const [dfY, dfM] = dfStr.split('-').map(Number);
+        const [dtY, dtM] = dtStr.split('-').map(Number);
+        let y = dfY, m = dfM;
+        while (y < dtY || (y === dtY && m <= dtM)) {
+            months.push(`${y}-${String(m).padStart(2,'0')}`);
+            m++; if (m > 12) { m = 1; y++; }
+        }
+    } else {
+        // Fallback: collect from data
+        const monthSet = new Set();
+        Object.values(data).forEach(arr => arr.forEach(r => monthSet.add(r.month_key)));
+        months = Array.from(monthSet).sort();
+    }
+
+    // Backend already filters to Ventas users only
+    const vendors = Object.keys(data).sort();
+
+    // Vendor colors from vendorQuoteData / vendorBookingData
+    function vendorColor(v) {
+        const q = window.vendorQuoteData && window.vendorQuoteData[v];
+        const b = window.vendorBookingData && window.vendorBookingData[v];
+        return (q && q.color) || (b && b.color) || '#6c757d';
+    }
+
+    // Build lookup: vendor → month_key → {q, b}
+    const lookup = {};
+    vendors.forEach(v => {
+        lookup[v] = {};
+        (data[v] || []).forEach(m => {
+            lookup[v][m.month_key] = { q: m.quotes_count || 0, b: m.bookings_count || 0 };
+        });
+    });
+
+    // Style constants
+    const HDR_BG    = '#1a3558';
+    const COTI_BG   = '#f8d7da';
+    const COTI_FG   = '#721c24';
+    const BOOK_BG   = '#d4edda';
+    const BOOK_FG   = '#155724';
+    const TOTQ_BG   = '#155724';
+    const TOTB_BG   = '#0d3318';
+
+    let h = `<table class="table table-bordered table-sm text-center align-middle mb-0" style="font-size:.82rem;">`;
+    h += `<thead>`;
+
+    // Row 1: title spanning all cols
+    const totalCols = 1 + vendors.length * 2 + 2;
+    h += `<tr><th colspan="${totalCols}" style="background:${HDR_BG};color:#fff;font-size:.95rem;padding:9px 12px;">
+            Resumen por Mes — Cotizaciones y Reservas
+          </th></tr>`;
+
+    // Row 2: Mes + vendor names (colspan 2) + TOTAL headers
+    h += `<tr>`;
+    h += `<th style="background:${HDR_BG};color:#fff;white-space:nowrap;">Mes</th>`;
+    vendors.forEach(v => {
+        const bg = vendorColor(v);
+        const fg = _statsContrastColor(bg);
+        h += `<th colspan="2" style="background:${bg};color:${fg};">${v}</th>`;
+    });
+    h += `<th style="background:${TOTQ_BG};color:#fff;">TOTAL<br>Coti</th>`;
+    h += `<th style="background:${TOTB_BG};color:#fff;">TOTAL<br>Book</th>`;
+    h += `</tr>`;
+
+    // Row 3: Coti / Book sub-headers
+    h += `<tr>`;
+    h += `<th style="background:#f1f3f5;"></th>`;
+    vendors.forEach(() => {
+        h += `<th style="background:${COTI_BG};color:${COTI_FG};font-weight:600;">Coti</th>`;
+        h += `<th style="background:${BOOK_BG};color:${BOOK_FG};font-weight:600;">Book</th>`;
+    });
+    h += `<th style="background:${COTI_BG};color:${COTI_FG};font-weight:600;">—</th>`;
+    h += `<th style="background:${BOOK_BG};color:${BOOK_FG};font-weight:600;">—</th>`;
+    h += `</tr>`;
+    h += `</thead><tbody>`;
+
+    // Data rows
+    let grandCoti = 0, grandBook = 0;
+    const vtQ = {}, vtB = {};
+    vendors.forEach(v => { vtQ[v] = 0; vtB[v] = 0; });
+
+    months.forEach(mk => {
+        let rowQ = 0, rowB = 0;
+        h += `<tr>`;
+        h += `<td style="text-align:left;font-weight:600;white-space:nowrap;padding-left:8px;">${monthLabel(mk)}</td>`;
+        vendors.forEach(v => {
+            const c = (lookup[v] && lookup[v][mk]) || { q: 0, b: 0 };
+            vtQ[v] += c.q; vtB[v] += c.b;
+            rowQ += c.q; rowB += c.b;
+            h += `<td style="background:${COTI_BG}55;">${c.q || '—'}</td>`;
+            h += `<td style="background:${BOOK_BG}55;${c.b ? `color:${BOOK_FG};font-weight:600;` : ''}">${c.b || '—'}</td>`;
+        });
+        grandCoti += rowQ; grandBook += rowB;
+        h += `<td style="background:${COTI_BG};color:${COTI_FG};font-weight:700;">${rowQ || '—'}</td>`;
+        h += `<td style="background:${BOOK_BG};color:${BOOK_FG};font-weight:700;">${rowB || '—'}</td>`;
+        h += `</tr>`;
+    });
+
+    // Totals row
+    h += `<tr style="font-weight:700;">`;
+    h += `<td style="text-align:left;padding-left:8px;background:#f1f3f5;">TOTAL</td>`;
+    vendors.forEach(v => {
+        h += `<td style="background:${COTI_BG};color:${COTI_FG};">${vtQ[v]}</td>`;
+        h += `<td style="background:${BOOK_BG};color:${BOOK_FG};">${vtB[v]}</td>`;
+    });
+    h += `<td style="background:${TOTQ_BG};color:#fff;">${grandCoti}</td>`;
+    h += `<td style="background:${TOTB_BG};color:#fff;">${grandBook}</td>`;
+    h += `</tr>`;
+
+    h += `</tbody></table>`;
+
+    // Store computed data on container for CSV export
+    container._msData = { vendors, months, lookup, vtQ, vtB, grandCoti, grandBook };
+
+    const btn = `<div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-sm btn-outline-success" onclick="downloadMonthlySummaryExcel()">
+        <i class="fas fa-file-excel me-1"></i>Descargar Excel
+      </button>
+    </div>`;
+    container.innerHTML = btn + h;
+}
+
+function downloadMonthlySummaryExcel() {
+    const container = document.getElementById('monthly-summary-table-container');
+    if (!container || !container._msData) return;
+    if (typeof XLSX === 'undefined') { alert('Librería Excel no disponible'); return; }
+
+    const { vendors, months, lookup, vtQ, vtB, grandCoti, grandBook } = container._msData;
+
+    const MONTH_NAMES = {
+        '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio',
+        '07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre'
+    };
+    function monthLabel(mk) { return MONTH_NAMES[mk.split('-')[1]] || mk; }
+
+    // Style helpers
+    function cell(v, s) { return { v, t: typeof v === 'number' ? 'n' : 's', s }; }
+    const HDR  = { fill:{fgColor:{rgb:'1A3558'}}, font:{bold:true,color:{rgb:'FFFFFF'},sz:11}, alignment:{horizontal:'center',vertical:'center'} };
+    const COTI = { fill:{fgColor:{rgb:'F8D7DA'}}, font:{bold:false,color:{rgb:'721C24'}}, alignment:{horizontal:'center'} };
+    const BOOK = { fill:{fgColor:{rgb:'D4EDDA'}}, font:{bold:false,color:{rgb:'155724'}}, alignment:{horizontal:'center'} };
+    const COTI_B = { ...COTI, font:{bold:true,color:{rgb:'721C24'}} };
+    const BOOK_B = { ...BOOK, font:{bold:true,color:{rgb:'155724'}} };
+    const TOTQ = { fill:{fgColor:{rgb:'155724'}}, font:{bold:true,color:{rgb:'FFFFFF'}}, alignment:{horizontal:'center'} };
+    const TOTB = { fill:{fgColor:{rgb:'0D3318'}}, font:{bold:true,color:{rgb:'FFFFFF'}}, alignment:{horizontal:'center'} };
+    const ROWH = { fill:{fgColor:{rgb:'F1F3F5'}}, font:{bold:true}, alignment:{horizontal:'left'} };
+    const COTI_D = { fill:{fgColor:{rgb:'FDF2F3'}}, font:{color:{rgb:'721C24'}}, alignment:{horizontal:'center'} };
+    const BOOK_D = { fill:{fgColor:{rgb:'EEF7EE'}}, font:{color:{rgb:'155724'}}, alignment:{horizontal:'center'} };
+    const PLAIN  = { alignment:{horizontal:'center'} };
+
+    function vendorStyle(v) {
+        const color = (window.vendorQuoteData?.[v]?.color || window.vendorBookingData?.[v]?.color || '6c757d').replace('#','');
+        const r = parseInt(color.substr(0,2),16)/255, g = parseInt(color.substr(2,2),16)/255, b = parseInt(color.substr(4,2),16)/255;
+        const fg = (0.2126*r+0.7152*g+0.0722*b) > 0.45 ? '000000' : 'FFFFFF';
+        return { fill:{fgColor:{rgb:color.toUpperCase()}}, font:{bold:true,color:{rgb:fg}}, alignment:{horizontal:'center'} };
+    }
+
+    const totalCols = 1 + vendors.length * 2 + 2;
+    const ws = {};
+    const merges = [];
+    let R = 0;
+
+    function setCell(r, c, v, s) {
+        const addr = XLSX.utils.encode_cell({r, c});
+        ws[addr] = cell(v, s);
+    }
+
+    // Row 0: title (merged across all cols)
+    setCell(R, 0, 'Resumen por Mes — Cotizaciones y Reservas', HDR);
+    merges.push({s:{r:R,c:0}, e:{r:R,c:totalCols-1}});
+    R++;
+
+    // Row 1: Mes | vendor names (colspan 2 each) | TOTAL Coti | TOTAL Book
+    setCell(R, 0, 'Mes', HDR);
+    let C = 1;
+    vendors.forEach(v => {
+        setCell(R, C, v, vendorStyle(v));
+        merges.push({s:{r:R,c:C}, e:{r:R,c:C+1}});
+        C += 2;
+    });
+    setCell(R, C,   'TOTAL Coti', TOTQ); C++;
+    setCell(R, C,   'TOTAL Book', TOTB); C++;
+    R++;
+
+    // Row 2: sub-headers Coti / Book
+    setCell(R, 0, '', PLAIN);
+    C = 1;
+    vendors.forEach(() => {
+        setCell(R, C,   'Coti', COTI_B); C++;
+        setCell(R, C,   'Book', BOOK_B); C++;
+    });
+    setCell(R, C, '', TOTQ); C++;
+    setCell(R, C, '', TOTB);
+    R++;
+
+    // Data rows
+    months.forEach(mk => {
+        let rowQ = 0, rowB = 0;
+        setCell(R, 0, monthLabel(mk), ROWH);
+        C = 1;
+        vendors.forEach(v => {
+            const c = (lookup[v]?.[mk]) || {q:0,b:0};
+            rowQ += c.q; rowB += c.b;
+            setCell(R, C, c.q || 0, COTI_D); C++;
+            setCell(R, C, c.b || 0, BOOK_D); C++;
+        });
+        setCell(R, C, rowQ, COTI_B); C++;
+        setCell(R, C, rowB, BOOK_B);
+        R++;
+    });
+
+    // Totals row
+    setCell(R, 0, 'TOTAL', ROWH);
+    C = 1;
+    vendors.forEach(v => {
+        setCell(R, C, vtQ[v], COTI_B); C++;
+        setCell(R, C, vtB[v], BOOK_B); C++;
+    });
+    setCell(R, C, grandCoti, TOTQ); C++;
+    setCell(R, C, grandBook, TOTB);
+
+    // Column widths
+    const colWidths = [{ wch: 14 }, ...vendors.flatMap(() => [{wch:8},{wch:8}]), {wch:12}, {wch:12}];
+
+    ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:R,c:totalCols-1}});
+    ws['!merges'] = merges;
+    ws['!cols'] = colWidths;
+    ws['!rows'] = Array(R + 1).fill({ hpt: 18 });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen Mensual');
+    XLSX.writeFile(wb, 'resumen_mensual_consultores.xlsx', { cellStyles: true });
 }
 
 function renderMonthlyByVendorEntries() {
@@ -3287,9 +3554,9 @@ function inicialize_presentations() {
                 const season = document.getElementById('season-select').value;
                 const season_to = Number(season) + 1
                 
-                const date_from_obj = new Date(Number(season), 5, 1);
+                const date_from_obj = new Date(Number(season), 4, 1);
                 const date_from = date_from_obj.toISOString().split('T')[0];
-                const date_to_obj = new Date(season_to, 4, 30)
+                const date_to_obj = new Date(season_to, 3, 30)
                 const date_to = date_to_obj.toISOString().split('T')[0];
                 
                 // 2. Subir las fechas a los parámetros

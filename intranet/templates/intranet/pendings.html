@@ -6,6 +6,17 @@
 
 <div id="entry_list">
     {% if user.userType != "Cliente" %}
+    {% if today_absences %}
+    <div class="alert alert-warning py-2 px-3 mb-2 mt-2 d-flex align-items-center flex-wrap gap-2" role="alert">
+      <span class="me-1"><i class="fa-solid fa-user-slash me-1"></i><strong>Ausentes hoy:</strong></span>
+      {% for a in today_absences %}
+      <span class="badge rounded-pill px-2 py-1"
+            style="background-color:{{ a.color }};color:{{ a.color|contrast_color }};font-size:.82em;font-weight:500;">
+        {{ a.name }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
     <br>
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div>
@@ -24,11 +35,21 @@
                 {% endfor %}
             </select>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary"
-                data-bs-toggle="modal" data-bs-target="#staffReferencesModal"
-                style="font-size:0.78rem;">
-            <i class="fa-solid fa-circle-info me-1"></i>Referencias
-        </button>
+        <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    data-bs-toggle="modal" data-bs-target="#staffReferencesModal"
+                    style="font-size:0.78rem;">
+                <i class="fa-solid fa-circle-info me-1"></i>Referencias
+            </button>
+            <a href="{% url 'revising_itineraries' %}" class="btn btn-sm btn-outline-secondary position-relative" style="font-size:0.78rem;">
+                <i class="fa-solid fa-magnifying-glass me-1"></i>Correcciones
+                {% if my_revision_pending_count %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;">
+                    {{ my_revision_pending_count }}
+                </span>
+                {% endif %}
+            </a>
+        </div>
     </div>
     <br>
     {% endif %}
@@ -104,6 +125,7 @@
                                 <th>Observación</th>
                                 <th>Fecha Viaje</th>
                                 <th>Acciones</th>
+                                <th>✓</th>
                             </tr>
                         {% else %}
                             <tr>
@@ -135,6 +157,54 @@
 </div>
 
 {% if user.userType != "Cliente" %}
+<!-- Send-for-revision modal -->
+<div class="modal fade" id="sendRevisionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-magnifying-glass me-2"></i>Mandar a revisar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-1">¿Querés mandar <strong id="srm-trip-name"></strong> a revisión?</p>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Link del itinerario a revisar</label>
+                    <input type="text" id="srm-link" class="form-control" placeholder="Ruta o link del itinerario..." />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-dark" id="srm-confirm">Mandar a revisar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Change-reviewer modal -->
+<div class="modal fade" id="changeReviewerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-user-pen me-2"></i>Cambiar revisor</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label small text-muted">Asignar revisor</label>
+                <select id="crm-user-select" class="form-select">
+                    <option value="">Sin asignar</option>
+                    {% for u in dept_users_for_revision %}
+                    <option value="{{ u.id }}">{{ u.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-dark" id="crm-confirm">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- References modal (staff) -->
 <div class="modal fade" id="staffReferencesModal" tabindex="-1" aria-labelledby="staffReferencesModalLabel">
     <div class="modal-dialog">

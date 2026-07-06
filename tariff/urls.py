@@ -1,5 +1,5 @@
 from django.urls import path
-from tariff.views import tariff, modify, accommodation, service
+from tariff.views import tariff, modify, accommodation, service, car_hire
 
 urlpatterns = [
     # General urls
@@ -76,10 +76,14 @@ urlpatterns = [
 
     path("aliwen-green/", tariff.aliwen_green, name="aliwen_green"),
     path("aliwen-green/excel/", tariff.aliwen_green_excel, name="aliwen_green_excel"),
+    path("aliwen-green/ai-extract/", tariff.aliwen_green_ai_extract, name="aliwen_green_ai_extract"),
+    path("aliwen-green/ai-save/", tariff.aliwen_green_ai_save, name="aliwen_green_ai_save"),
+    path("aliwen-green/supplier-search/", tariff.aliwen_green_supplier_search, name="aliwen_green_supplier_search"),
     path("pdf/select/", tariff.pdf_select, name="pdf_select"),
     path("pdf/view/", tariff.pdf_view, name="pdf_view"),
 
     path("changes/data/", tariff.history_of_changes_data, name="history_of_changes_data"),
+    path("changes/bulk-delete/", tariff.bulk_delete_changes, name="bulk_delete_changes"),
     path("tp/apply-changes/",  tariff.apply_changes,   name="apply_changes"),
     path("tp/discard-changes/", tariff.discard_changes, name="discard_changes"),
     path("tp/review/",          tariff.tp_mod_review,   name="tp_mod_review"),
@@ -90,4 +94,42 @@ urlpatterns = [
     path("tp/quick-sync/<int:supplier_id>/", tariff.quick_sync_supplier, name="quick_sync_supplier"),
     path("rateline/<int:line_id>/mark-revised/",   tariff.mark_rate_line_revised,   name="mark_rate_line_revised"),
     path("rateline/<int:line_id>/mark-unrevised/", tariff.mark_rate_line_unrevised, name="mark_rate_line_unrevised"),
+
+    # Car hire urls
+    path("modify/car-hire", car_hire.destinations, name="car_hire_destinations"),
+    path("modify/car-hire/config/", car_hire.update_config, name="car_hire_update_config"),
+ 
+    path("modify/car-hire/category/create/", car_hire.category_create, name="car_hire_category_create"),
+    path("modify/car-hire/category/<int:category_id>/delete/", car_hire.category_delete, name="car_hire_category_delete"),
+    path("modify/car-hire/category/<int:category_id>/update-pct/", car_hire.category_update_pct, name="car_hire_category_update_pct"),
+    path("modify/car-hire/category/<int:category_id>/rates/", car_hire.category_rates, name="car_hire_category_rates"),
+ 
+    path("modify/car-hire/rate-block/create/", car_hire.create_rate_block, name="car_hire_create_rate_block"),
+    path("modify/car-hire/rate-block/delete/", car_hire.delete_rate_block, name="car_hire_delete_rate_block"),
+    path("modify/car-hire/rate/update/", car_hire.update_rate, name="car_hire_update_rate"),
+    path("modify/car-hire/extra/update/", car_hire.update_extra, name="car_hire_update_extra"),
+    path("modify/car-hire/extra/reset-auto/", car_hire.reset_extra_auto, name="car_hire_reset_extra_auto"),
+ 
+    path("modify/car-hire/fixed-cost/create/", car_hire.create_fixed_cost, name="car_hire_create_fixed_cost"),
+    path("modify/car-hire/fixed-cost/update/", car_hire.update_fixed_cost, name="car_hire_update_fixed_cost"),
+    path("modify/car-hire/fixed-cost/<int:frc_id>/delete/", car_hire.delete_fixed_cost, name="car_hire_delete_fixed_cost"),
+
+    # Destination rates page
+    path("modify/car-hire/destination/<int:location_id>/rates/", car_hire.destination_rates, name="car_hire_destination_rates"),
+    path("modify/car-hire/destination/block/create/", car_hire.create_destination_block, name="car_hire_create_destination_block"),
+    path("modify/car-hire/destination/category-rate/create/", car_hire.create_category_rate_in_block, name="car_hire_create_category_rate_in_block"),
+    path("modify/car-hire/destination/block/delete/", car_hire.delete_destination_block, name="car_hire_delete_destination_block"),
+    path("modify/car-hire/destination/block/currency/", car_hire.update_block_currency, name="car_hire_update_block_currency"),
+    path("modify/car-hire/destination/block/increase/", car_hire.update_block_increase, name="car_hire_update_block_increase"),
+
+    # Vehicle model editing
+    path("modify/car-hire/model/update/", car_hire.category_update_model, name="car_hire_category_update_model"),
+
+    # Cotizador online
+    path("car-hire/quoter/", car_hire.quoter_page, name="car_hire_quoter"),
+    path("car-hire/quoter/calculate/", car_hire.quoter_calculate, name="car_hire_quoter_calculate"),
+    path("car-hire/quoter/list-categories/", car_hire.quoter_list_categories, name="car_hire_quoter_list_categories"),
+    path("car-hire/quoter/parse-email/", car_hire.quoter_parse_email, name="car_hire_quoter_parse_email"),
+    path("car-hire/quoter/category-info/", car_hire.quoter_category_info, name="car_hire_quoter_category_info"),
+
 ]

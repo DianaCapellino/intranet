@@ -80,6 +80,13 @@ urlpatterns = [
     path("tourplan_files/create", views.tourplan_create_trips, name="tourplan_create_trips"),
     path("tourplan_files/discard", views.tourplan_discard_trips, name="tourplan_discard_trips"),
     path("tourplan_files/assign", views.tourplan_assign_tp, name="tourplan_assign_tp"),
+    path("booking_sheet", views.booking_sheet, name="booking_sheet"),
+    path("booking_sheet/create", views.booking_sheet_create, name="booking_sheet_create"),
+    path("booking_sheet/set_vr", views.booking_sheet_set_vr, name="booking_sheet_set_vr"),
+    path("booking_sheet/auto_assign_vr", views.booking_sheet_auto_assign_vr, name="booking_sheet_auto_assign_vr"),
+    path("booking_sheet/request_vr", views.booking_sheet_request_vr, name="booking_sheet_request_vr"),
+    path("booking_sheet/bulk_set_vr", views.booking_sheet_bulk_set_vr, name="booking_sheet_bulk_set_vr"),
+    path("booking_sheet/test_vr_email", views.booking_sheet_test_vr_email, name="booking_sheet_test_vr_email"),
     path("intranet_files", views.intranet_files, name="intranet_files"),
     path("advanced_search", views.advanced_search, name="advanced_search"),
     path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),
@@ -95,6 +102,13 @@ urlpatterns = [
     path("filter_trips", views.trip_filter, name="trip_filter"),
     path("filter_trips/clients", views.trip_filter_clients, name="trip_filter_clients"),
     path("filter_trips/results", views.trip_filter_results, name="trip_filter_results"),
+
+    # Revision / Correcciones
+    path("revising_itineraries", views.revising_itineraries, name="revising_itineraries"),
+    path("revision/schedule/update", views.revision_schedule_update, name="revision_schedule_update"),
+    path("entries/<int:entry_id>/send_for_revision", views.entry_send_for_revision, name="entry_send_for_revision"),
+    path("entries/<int:entry_id>/revising_user", views.entry_update_revising_user, name="entry_update_revising_user"),
+    path("entries/<int:entry_id>/mark_revised", views.entry_mark_revised, name="entry_mark_revised"),
 
     # Notification management
     path("notifications", views.notifications_management, name="notifications_management"),

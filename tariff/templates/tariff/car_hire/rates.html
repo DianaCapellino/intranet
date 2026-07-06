@@ -1,0 +1,249 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container">
+    <br>
+    <div class="d-flex align-items-center justify-content-between">
+        <h2>{{ location.code }} — {{ category.code }} {{ category.name }}</h2>
+        <div>
+            {% if user.isAdmin %}
+            <button type="button" id="newBlockBtn" class="btn btn-dark btn-lg" title="Agregar nueva vigencia">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            {% endif %}
+            <a href="{% url 'car_hire_destinations' %}"><button class="btn btn-dark btn-lg" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
+        </div>
+    </div>
+    <small class="text-muted">
+        Markup general: {{ config.markup }} — T.C.: {{ config.exchange }} — Venta expresada en USD<br>
+        % aplicado a esta categoría → Airport: {{ effective_pct.AIRPORT }}% · Smart: {{ effective_pct.SMART }}% · Cover: {{ effective_pct.COVER }}%
+        <a href="#" data-bs-toggle="modal" data-bs-target="#editPctModal">(editar % de esta categoría)</a>
+    </small>
+
+    {% for block in rate_blocks %}
+    <div class="my-4">
+        <div class="d-flex align-items-center gap-3 bg-secondary bg-opacity-25 p-2 rounded">
+            <strong>Vigencia: {{ block.date_from|date:"d M Y" }} - {{ block.date_to|date:"d M Y" }}</strong>
+            <span class="text-primary fw-bold">{{ block.season }}</span>
+            {% if user.isAdmin %}
+            <button class="btn btn-sm btn-danger ms-auto delete-block-btn" data-rateline-id="{{ block.rows.0.rate_line_id }}">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+            {% endif %}
+        </div>
+
+        <table class="table table-sm table-hover align-middle mt-2">
+            <thead class="table-light">
+                <tr>
+                    <th>Concepto</th>
+                    <th style="width:120px;">Costo x día</th>
+                    <th style="width:120px;">Venta x día (USD)</th>
+                    <th style="width:110px;" class="text-success">Sug. venta</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in block.rows %}
+                <tr class="table-primary">
+                    <td><strong>Alquiler base</strong></td>
+                    <td>
+                        <input type="number" step="0.01" class="form-control form-control-sm rate-cost-input"
+                               data-rate-id="{{ row.rate.id }}" value="{{ row.rate.cost }}">
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm rate-sell-input"
+                               data-rate-id="{{ row.rate.id }}" value="{{ row.rate.sell }}">
+                    </td>
+                    <td class="text-success fw-semibold suggested-cell" data-rate-id="{{ row.rate.id }}">
+                        {{ row.suggested_sell }}
+                    </td>
+                </tr>
+                {% for extra in row.extras %}
+                <tr>
+                    <td class="ps-4 text-muted">
+                        ↳ {{ extra.label }}
+                        {% if extra.obj.manual_override %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">manual</span>{% endif %}
+                    </td>
+                    <td>
+                        <input type="number" step="0.01" class="form-control form-control-sm extra-cost-input"
+                               data-rate-id="{{ row.rate.id }}" data-type="{{ extra.type }}"
+                               value="{{ extra.obj.cost|default:0 }}">
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm extra-sell-input"
+                               data-rate-id="{{ row.rate.id }}" data-type="{{ extra.type }}"
+                               value="{{ extra.obj.sell|default:0 }}">
+                    </td>
+                    <td class="text-muted small">
+                        <span class="extra-suggested-cell" data-rate-id="{{ row.rate.id }}" data-type="{{ extra.type }}"></span>
+                        {% if extra.obj.manual_override %}
+                        <button class="btn btn-sm btn-link p-0 reset-extra-btn" data-rate-id="{{ row.rate.id }}" data-type="{{ extra.type }}" title="Volver a cálculo automático">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+    <div class="text-muted my-4">Esta categoría no tiene vigencias cargadas todavía.</div>
+    {% endfor %}
+</div>
+
+{# ─── Modal: nueva vigencia ───────────────────────────────────────────── #}
+<div class="modal fade" id="newBlockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nueva vigencia</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Desde</label>
+                    <input type="date" class="form-control" id="new_block_from">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Hasta</label>
+                    <input type="date" class="form-control" id="new_block_to">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Temporada / etiqueta</label>
+                    <input type="text" class="form-control" id="new_block_season" placeholder="ej: Hasta 30/11">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="saveBlockBtn">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ─── Modal: editar % de esta categoría ───────────────────────────────── #}
+<div class="modal fade" id="editPctModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">% propios de {{ category.code }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <small class="text-muted">Dejar vacío para usar el default general de la página de Destinos.</small>
+                <div class="row g-2 mt-2">
+                    <div class="col-4">
+                        <label class="form-label">Airport %</label>
+                        <input type="number" step="0.1" class="form-control form-control-sm" id="pct_airport" value="{{ category.airport_pct|default_if_none:'' }}" placeholder="{{ config.default_airport_pct }}">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Smart %</label>
+                        <input type="number" step="0.1" class="form-control form-control-sm" id="pct_smart" value="{{ category.smart_pct|default_if_none:'' }}" placeholder="{{ config.default_smart_pct }}">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Cover %</label>
+                        <input type="number" step="0.1" class="form-control form-control-sm" id="pct_cover" value="{{ category.cover_pct|default_if_none:'' }}" placeholder="{{ config.default_cover_pct }}">
+                    </div>
+                </div>
+                <small class="text-muted d-block mt-2">Al guardar se recalculan todos los extras que no estén marcados como "manual".</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="savePctBtn">Guardar y recalcular</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+const CATEGORY_ID = {{ category.id }};
+
+async function postJSON(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+
+document.getElementById('newBlockBtn')?.addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('newBlockModal')).show();
+});
+
+document.getElementById('saveBlockBtn').addEventListener('click', async () => {
+    const body = {
+        category_id: CATEGORY_ID,
+        date_from: document.getElementById('new_block_from').value,
+        date_to: document.getElementById('new_block_to').value,
+        season: document.getElementById('new_block_season').value.trim(),
+    };
+    if (!body.date_from || !body.date_to) { alert('Completá las fechas.'); return; }
+    await postJSON('{% url "car_hire_create_rate_block" %}', body);
+    location.reload();
+});
+
+document.querySelectorAll('.delete-block-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta vigencia completa?')) return;
+        await postJSON('{% url "car_hire_delete_rate_block" %}', { rateline_id: btn.dataset.ratelineId });
+        location.reload();
+    });
+});
+
+// ─── Guardar tarifa base (dispara recálculo automático de extras) ────
+document.querySelectorAll('.rate-cost-input, .rate-sell-input').forEach(input => {
+    input.addEventListener('change', async () => {
+        const rateId = input.dataset.rateId;
+        const cost = document.querySelector(`.rate-cost-input[data-rate-id="${rateId}"]`).value;
+        const sell = document.querySelector(`.rate-sell-input[data-rate-id="${rateId}"]`).value;
+        const res = await postJSON('{% url "car_hire_update_rate" %}', { rate_id: rateId, cost, sell });
+        const cell = document.querySelector(`.suggested-cell[data-rate-id="${rateId}"]`);
+        if (cell) cell.textContent = res.suggested_sell;
+        // Refresca los extras que se recalcularon en el servidor (los que no son manuales)
+        if (res.extras) {
+            Object.entries(res.extras).forEach(([type, vals]) => {
+                const costInput = document.querySelector(`.extra-cost-input[data-rate-id="${rateId}"][data-type="${type}"]`);
+                const sellInput = document.querySelector(`.extra-sell-input[data-rate-id="${rateId}"][data-type="${type}"]`);
+                if (costInput) costInput.value = vals.cost;
+                if (sellInput) sellInput.value = vals.sell;
+            });
+        }
+    });
+});
+
+// ─── Guardar extras a mano (queda marcado manual, no se recalcula solo) ─
+document.querySelectorAll('.extra-cost-input, .extra-sell-input').forEach(input => {
+    input.addEventListener('change', async () => {
+        const rateId = input.dataset.rateId;
+        const type = input.dataset.type;
+        const cost = document.querySelector(`.extra-cost-input[data-rate-id="${rateId}"][data-type="${type}"]`).value;
+        const sell = document.querySelector(`.extra-sell-input[data-rate-id="${rateId}"][data-type="${type}"]`).value;
+        await postJSON('{% url "car_hire_update_extra" %}', { rate_id: rateId, type, cost, sell });
+        location.reload(); // para mostrar el badge "manual" y el botón de reset
+    });
+});
+
+// ─── Volver un extra a cálculo automático ─────────────────────────────
+document.querySelectorAll('.reset-extra-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        await postJSON('{% url "car_hire_reset_extra_auto" %}', { rate_id: btn.dataset.rateId, type: btn.dataset.type });
+        location.reload();
+    });
+});
+
+// ─── Editar % propios de la categoría ─────────────────────────────────
+document.getElementById('savePctBtn').addEventListener('click', async () => {
+    const body = {
+        airport_pct: document.getElementById('pct_airport').value || null,
+        smart_pct: document.getElementById('pct_smart').value || null,
+        cover_pct: document.getElementById('pct_cover').value || null,
+    };
+    await postJSON(`/tariff/modify/car-hire/category/${CATEGORY_ID}/update-pct/`, body);
+    location.reload();
+});
+</script>
+{% endblock %}

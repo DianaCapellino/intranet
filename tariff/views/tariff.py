@@ -8,6 +8,7 @@ from intranet.utils import report_tariff_error_hotel, send_templated_email, repo
 from intranet.models import Client, Holidays, ExternalCalendarEntry
 import csv
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt
 from datetime import date, datetime, timedelta
 import logging
 from django.conf import settings
@@ -3498,6 +3499,19 @@ def history_of_changes_data(request):
 
 
 @login_required
+@csrf_exempt
+def bulk_delete_changes(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "Forbidden"}, status=403)
+    import json as _json
+    ids = [int(i) for i in _json.loads(request.body).get("ids", []) if i]
+    deleted, _ = Change.objects.filter(pk__in=ids).delete()
+    return JsonResponse({"ok": True, "deleted": deleted})
+
+
+@login_required
 def sync_tariff_from_db_accommodation(request):
     if request.method != 'POST':
         return HttpResponseRedirect(reverse("tp_mod_list"))
@@ -3937,6 +3951,193 @@ def aliwen_green(request):
         'location_filter': location_id,
         'ranking_filter': ranking_min,
     })
+
+
+@login_required
+def aliwen_green_supplier_search(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    q = request.GET.get('q', '').strip()
+    qs = Supplier.objects.filter(group__type_service='AC').order_by('name')
+    if q:
+        qs = qs.filter(name__icontains=q)
+    suppliers = list(qs[:30])
+    ids_with_actions = set(
+        Supplier.objects.filter(
+            id__in=[s.id for s in suppliers],
+            sustainable_actions__isnull=False
+        ).values_list('id', flat=True).distinct()
+    )
+    results = [{'id': s.id, 'name': s.name, 'has_actions': s.id in ids_with_actions} for s in suppliers]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def aliwen_green_ai_extract(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    data = json.loads(request.body)
+    text = (data.get('text') or '').strip()
+    if not text:
+        return JsonResponse({'error': 'No text provided'}, status=400)
+
+    cat_list = '\n'.join(f'- {k}: {label}' for k, label in SUSTAINABLE_ACTION_CATEGORIES)
+
+    ranking_criteria = (
+        "1 – Small contributions: recycling, replacing disposables with dispensers.\n"
+        "2 – All of the above + donations to foundations, purchasing from local shops, efficiency actions, composting.\n"
+        "3 – All of the above + alternative energy systems (solar, wind, etc.), active relations with local communities.\n"
+        "4 – All of the above + sustainability certification(s) and/or participation across all action groups.\n"
+        "5 – Participation across ALL action groups including staff and guest involvement, plus certification(s)."
+    )
+
+    system_prompt = (
+        "You are an assistant that extracts sustainability information from property documents. "
+        "You respond ONLY with valid JSON, no markdown, no explanation."
+    )
+    user_prompt = (
+        f"Extract the sustainability actions from the following property document.\n\n"
+        f"Return a JSON object with exactly these fields:\n"
+        f"- property_name: string (the name of the property/hotel as written in the document)\n"
+        f"- suggested_ranking: integer 1–5 based on the criteria below\n"
+        f"- actions: array of objects, each with:\n"
+        f"    - category: one of the following keys ONLY:\n{cat_list}\n"
+        f"    - description: a concise English description of the action (1-2 sentences)\n\n"
+        f"Ranking criteria (assign the highest level that is fully met by the document):\n{ranking_criteria}\n\n"
+        f"Rules:\n"
+        f"1. Only include actions explicitly mentioned in the document. Do NOT invent or complete missing categories.\n"
+        f"2. Write all descriptions in English.\n"
+        f"3. If a category has multiple actions, include one entry per action.\n"
+        f"4. If you cannot determine the property name, use an empty string.\n"
+        f"5. If you cannot determine the ranking, use null.\n\n"
+        f"DOCUMENT:\n{text[:8000]}"
+    )
+
+    api_key = os.environ.get('EXPO_PUBLIC_ANTHROPIC_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return JsonResponse({'error': 'AI API key not configured'}, status=500)
+
+    try:
+        import anthropic as _anthropic
+        import re as _re
+        client = _anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{'role': 'user', 'content': user_prompt}],
+        )
+        raw = response.content[0].text.strip()
+        raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = _re.sub(r'\s*```$', '', raw)
+        result = json.loads(raw)
+    except Exception as exc:
+        return JsonResponse({'error': f'AI extraction failed: {exc}'}, status=500)
+
+    property_name = (result.get('property_name') or '').strip()
+    actions = result.get('actions') or []
+    raw_ranking = result.get('suggested_ranking')
+    try:
+        suggested_ranking = int(raw_ranking) if raw_ranking is not None else None
+        if suggested_ranking not in (1, 2, 3, 4, 5):
+            suggested_ranking = None
+    except (ValueError, TypeError):
+        suggested_ranking = None
+
+    valid_cats = {k for k, _ in SUSTAINABLE_ACTION_CATEGORIES}
+    actions = [
+        {'category': a['category'], 'description': (a.get('description') or '').strip()}
+        for a in actions
+        if isinstance(a, dict) and a.get('category') in valid_cats and a.get('description')
+    ]
+
+    # Try to match property name to a Supplier
+    _HOTEL_STOPWORDS = {
+        'hotel', 'hostería', 'hosteria', 'posada', 'lodge', 'inn', 'resort',
+        'hostel', 'boutique', 'casa', 'estancia', 'finca', 'cabaña', 'cabañas',
+        'cabana', 'cabanas', 'apart', 'aparthotel', 'suites', 'suite', 'eco',
+        'the', 'de', 'del', 'la', 'las', 'los', 'el',
+    }
+
+    def _meaningful_words(name):
+        return [w for w in name.lower().split() if w not in _HOTEL_STOPWORDS and len(w) > 2]
+
+    supplier_id = None
+    supplier_name_matched = ''
+    has_actions = False
+    if property_name:
+        ac_qs = Supplier.objects.filter(group__type_service='AC')
+        # 1. Full name match
+        match = ac_qs.filter(name__icontains=property_name).first()
+        # 2. Match on meaningful words (skip generic hospitality terms)
+        if not match:
+            words = _meaningful_words(property_name)
+            for word in words:
+                match = ac_qs.filter(name__icontains=word).first()
+                if match:
+                    break
+        if match:
+            supplier_id = match.id
+            supplier_name_matched = match.name
+            has_actions = match.sustainable_actions.exists()
+
+    return JsonResponse({
+        'property_name': property_name,
+        'supplier_id': supplier_id,
+        'supplier_name_matched': supplier_name_matched,
+        'has_actions': has_actions,
+        'suggested_ranking': suggested_ranking,
+        'actions': actions,
+    })
+
+
+@login_required
+def aliwen_green_ai_save(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    data = json.loads(request.body)
+    supplier_id = data.get('supplier_id')
+    actions = data.get('actions') or []
+    replace = data.get('replace', False)
+    new_ranking = data.get('sustentability_ranking')
+
+    if not supplier_id:
+        return JsonResponse({'error': 'supplier_id required'}, status=400)
+    try:
+        supplier = Supplier.objects.get(pk=supplier_id, group__type_service='AC')
+    except Supplier.DoesNotExist:
+        return JsonResponse({'error': 'Supplier not found'}, status=404)
+
+    from tariff.models import SustainableAction
+    valid_cats = {k for k, _ in SUSTAINABLE_ACTION_CATEGORIES}
+
+    if replace:
+        supplier.sustainable_actions.all().delete()
+
+    created = 0
+    for a in actions:
+        cat = (a.get('category') or '').strip()
+        desc = (a.get('description') or '').strip()
+        if cat in valid_cats and desc:
+            SustainableAction.objects.create(supplier=supplier, category=cat, description=desc)
+            created += 1
+
+    if new_ranking is not None:
+        try:
+            ranking_int = int(new_ranking)
+            if 1 <= ranking_int <= 5:
+                supplier.sustentability_ranking = ranking_int
+                supplier.save(update_fields=['sustentability_ranking'])
+        except (ValueError, TypeError):
+            pass
+
+    return JsonResponse({'ok': True, 'created': created, 'supplier': supplier.name})
 
 
 @login_required

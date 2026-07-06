@@ -1,6 +1,21 @@
 from django import template
+import json as _json
 
 register = template.Library()
+
+
+@register.filter
+def bs_row_json(row):
+    """Serialize booking-sheet row creation fields to JSON, HTML-escaped for use in data attributes."""
+    from django.utils.html import conditional_escape
+    keys = [
+        'tp_id', 'name', 'client_name', 'client_reference',
+        'travelling_date', 'out_date', 'dh_type', 'dh_name', 'guide',
+        'vendedor_tp', 'operations_tp', 'quantity_pax',
+        'rent_perc_raw', 'amount_raw', 'contact_name',
+    ]
+    data = {k: row.get(k, '') for k in keys}
+    return conditional_escape(_json.dumps(data, ensure_ascii=False))
 
 @register.filter
 def contrast_color(hex_color):

@@ -12,6 +12,17 @@
     <link href="{% static 'intranet/css/intranet.css' %}" rel="stylesheet">
     {% block extra_head %}
     {% endblock %}
+    <style>
+      .nav-submenu-parent { position: relative; }
+      .nav-submenu-parent .nav-submenu {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 100%;
+        min-width: 180px;
+      }
+      .nav-submenu-parent:hover > .nav-submenu { display: block; }
+    </style>
   </head>
   <body>
     <div id="header">
@@ -49,6 +60,12 @@
                       <li><a class="dropdown-item" href="{% url 'trip_filter' %}">Filtrar viajes</a></li>
                       <li><a class="dropdown-item" href="{% url 'trips' %}">Resultado búsqueda</a></li>
                       <li><a class="dropdown-item" href="{% url 'margin_management' %}">Revisión de rentabilidad</a></li>
+                      <li><a class="dropdown-item" href="{% url 'booking_sheet' %}"><i class="fa-solid fa-table-list me-2"></i>Planilla de Reservas</a></li>
+                      {% if user.isAdmin %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li><a class="dropdown-item" href="{% url 'tourplan_files' %}"><i class="fa-solid fa-rotate me-2"></i>Sincronizar Tourplan</a></li>
+                      <li><a class="dropdown-item" href="{% url 'email_processor' %}"><i class="fa-solid fa-envelope me-2"></i>Revisar emails</a></li>
+                      {% endif %}
                     </ul>
                   </li>
                   <li class="nav-item">
@@ -76,17 +93,21 @@
                       Gestionar
                     </a>
                     <ul class="dropdown-menu">
-                      <div class="dropdown show">
-                        <li><a class="dropdown-item" href="{% url 'countries' %}">Países</a></li>
-                        <li><a class="dropdown-item" href="{% url 'clients' %}">Clientes</a></li>
-                        <li><a class="dropdown-item" href="{% url 'contacts' %}">Contacto Clientes</a></li>
-                        <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
-                        <li><a class="dropdown-item" href="{% url 'holidays' %}">Calendario</a></li>
-                        <li><a class="dropdown-item" href="{% url 'modify_tariff' %}">Tarifario</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'notifications_management' %}"><i class="fa-solid fa-bell me-2"></i>Notificaciones</a></li>
-                        <li><a class="dropdown-item" href="{% url 'email_processor' %}"><i class="fa-solid fa-envelope-open-text me-2"></i>Procesar Emails</a></li>
-                      </div>
+                      <li class="nav-submenu-parent">
+                        <a class="dropdown-item dropdown-toggle" href="#">
+                          <i class="fa-solid fa-layer-group me-2"></i>Campos
+                        </a>
+                        <ul class="dropdown-menu nav-submenu">
+                          <li><a class="dropdown-item" href="{% url 'countries' %}">Países</a></li>
+                          <li><a class="dropdown-item" href="{% url 'clients' %}">Clientes</a></li>
+                          <li><a class="dropdown-item" href="{% url 'contacts' %}">Contacto Clientes</a></li>
+                          <li><a class="dropdown-item" href="{% url 'users' %}">Usuarios</a></li>
+                        </ul>
+                      </li>
+                      <li><a class="dropdown-item" href="{% url 'holidays' %}"><i class="fa-solid fa-calendar-days me-2"></i>Calendario</a></li>
+                      <li><a class="dropdown-item" href="{% url 'modify_tariff' %}"><i class="fa-solid fa-file-invoice-dollar me-2"></i>Tarifario</a></li>
+                      <li><hr class="dropdown-divider"></li>
+                      <li><a class="dropdown-item" href="{% url 'notifications_management' %}"><i class="fa-solid fa-bell me-2"></i>Notificaciones</a></li>
                     </ul>
                   </li>
                   {% endif %}
@@ -166,6 +187,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="{% static 'intranet/js/trip.js' %}?n=1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="{% static 'intranet/js/stats.js' %}?n=1"></script>
     {% block extra_js %}
     {% endblock %}

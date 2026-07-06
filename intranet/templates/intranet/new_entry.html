@@ -166,9 +166,15 @@
 <br>
 {{ absence_alerts|json_script:"absence-alerts-data" }}
 <script>
-  const ABSENCE_ALERTS = JSON.parse(document.getElementById('absence-alerts-data').textContent);
-  const absenceAlertEl = document.getElementById('absence-alert');
-  document.getElementById('user_working_select').addEventListener('change', function () {
+  const ABSENCE_ALERTS  = JSON.parse(document.getElementById('absence-alerts-data').textContent);
+  const absenceAlertEl  = document.getElementById('absence-alert');
+  const userWorkingSel  = document.getElementById('user_working_select');
+  const statusSel       = document.querySelector('select[name="status"]');
+  const RESPONSABLE_USR = '{{ trip.responsable_user.username|default:"" }}';
+  const OPERATIONS_USR  = '{{ trip.operations_user.username|default:"" }}';
+  const LAST_WORKING    = '{{ last_user_working }}';
+
+  userWorkingSel.addEventListener('change', function () {
     const username = this.value;
     const when = ABSENCE_ALERTS[username];
     if (when) {
@@ -181,6 +187,18 @@
       absenceAlertEl.classList.add('d-none');
     }
   });
+
+  function applyUserDefault() {
+    const target = statusSel.value === 'Final Itinerary'
+        ? OPERATIONS_USR
+        : (RESPONSABLE_USR || LAST_WORKING);
+    if (target && userWorkingSel.querySelector(`option[value="${target}"]`)) {
+      userWorkingSel.value = target;
+      userWorkingSel.dispatchEvent(new Event('change'));
+    }
+  }
+  statusSel.addEventListener('change', applyUserDefault);
+  if (statusSel.value) applyUserDefault();
 </script>
 {% endif %}
 {% endblock %}

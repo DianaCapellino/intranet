@@ -21,10 +21,21 @@
     </div>
     <hr>
 
+    {% if user.isAdmin %}
+    <div id="bulkToolbar" class="mb-2 d-none">
+        <button class="btn btn-danger btn-sm" id="bulkDeleteBtn">
+            <i class="fa-solid fa-trash me-1"></i> Eliminar seleccionados (<span id="selectedCount">0</span>)
+        </button>
+    </div>
+    {% endif %}
+
     <div class="table-responsive">
     <table id="changesTable" class="table table-hover" style="font-size:.85rem">
         <thead>
             <tr>
+                {% if user.isAdmin %}
+                <th><input type="checkbox" class="form-check-input" id="checkAll"></th>
+                {% endif %}
                 <th>Date</th>
                 <th>Supplier/Destination</th>
                 <th>Product</th>
@@ -50,12 +61,22 @@
     const CSRF_TOKEN = "{{ csrf_token }}";
     const TYPE_HISTORY = JSON.parse(document.getElementById('type-history-data').textContent);
 
+    // Column shift: admin has checkbox as col 0, shifting all others +1
+    const COL = IS_ADMIN ? (i => i + 1) : (i => i);
+
     const table = $("#changesTable").DataTable({
         ajax: {
             url: "{% url 'history_of_changes_data' %}",
             dataSrc: "data",
         },
         columns: [
+            ...(IS_ADMIN ? [{
+                data: null,
+                orderable: false,
+                searchable: false,
+                className: 'dt-body-center',
+                render: d => `<input type="checkbox" class="form-check-input row-cb" data-id="${d.id}">`,
+            }] : []),
             {
                 data: "date",
                 render: d => `<span style="white-space:nowrap;font-size:.8rem">${d}</span>`,
@@ -111,15 +132,18 @@
         ],
         responsive: true,
         columnDefs: [
-            { responsivePriority: 1, targets: [0, 1] },   // Date, Supplier — always visible
-            { responsivePriority: 2, targets: [4] },       // Type
-            { responsivePriority: 3, targets: [2] },       // Product
-            { responsivePriority: 4, targets: [5] },       // Percentage
-            { responsivePriority: 5, targets: [3] },       // Validity
-            ...(IS_ADMIN ? [{ responsivePriority: 1, targets: [6] }] : []),
+            { responsivePriority: 1, targets: [COL(0), COL(1)] },  // Date, Supplier
+            { responsivePriority: 2, targets: [COL(4)] },           // Type
+            { responsivePriority: 3, targets: [COL(2)] },           // Product
+            { responsivePriority: 4, targets: [COL(5)] },           // Percentage
+            { responsivePriority: 5, targets: [COL(3)] },           // Validity
+            ...(IS_ADMIN ? [
+                { responsivePriority: 1, targets: [0, 7] },         // Checkbox, Actions
+                { orderable: false, targets: [0] },
+            ] : []),
         ],
         pageLength: 25,
-        order: [[0, "desc"]],
+        order: [[IS_ADMIN ? 1 : 0, "desc"]],
 
         // Inyectar modales en el DOM cuando se renderizan las filas
         rowCallback: function(row, data) {
@@ -181,6 +205,61 @@
             document.getElementById("modals-container").insertAdjacentHTML("beforeend", modalsHTML);
         }
     });
+
+    if (IS_ADMIN) {
+        // Select-all checkbox
+        document.getElementById('checkAll').addEventListener('change', function() {
+            document.querySelectorAll('.row-cb').forEach(cb => cb.checked = this.checked);
+            updateBulkToolbar();
+        });
+
+        // Row checkbox changes (delegated via table container)
+        document.getElementById('changesTable').addEventListener('change', e => {
+            if (!e.target.classList.contains('row-cb')) return;
+            updateBulkToolbar();
+            const all     = document.querySelectorAll('.row-cb');
+            const checked = document.querySelectorAll('.row-cb:checked');
+            const ca = document.getElementById('checkAll');
+            ca.indeterminate = checked.length > 0 && checked.length < all.length;
+            ca.checked = all.length > 0 && checked.length === all.length;
+        });
+
+        // Reset checkboxes when table redraws
+        table.on('draw', () => {
+            document.querySelectorAll('.row-cb').forEach(cb => cb.checked = false);
+            document.getElementById('checkAll').checked = false;
+            document.getElementById('checkAll').indeterminate = false;
+            updateBulkToolbar();
+        });
+
+        function updateBulkToolbar() {
+            const count = document.querySelectorAll('.row-cb:checked').length;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('bulkToolbar').classList.toggle('d-none', count === 0);
+        }
+
+        document.getElementById('bulkDeleteBtn').addEventListener('click', async () => {
+            const ids = Array.from(document.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.id);
+            if (!ids.length) return;
+            if (!confirm(`¿Eliminar ${ids.length} cambio${ids.length !== 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return;
+            try {
+                const res  = await fetch('{% url "bulk_delete_changes" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                    body: JSON.stringify({ ids }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    table.ajax.reload(() => {
+                        document.getElementById('checkAll').checked = false;
+                        document.getElementById('bulkToolbar').classList.add('d-none');
+                    });
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        });
+    }
 </script>
 
 {% endblock %}

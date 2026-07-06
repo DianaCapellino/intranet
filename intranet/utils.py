@@ -17,6 +17,18 @@ def strip_html(text):
     return ' '.join(text.split()).strip()
 
 
+def strip_html_keep_newlines(text):
+    """Strip HTML tags but convert block-level/break tags to newlines first."""
+    if not text:
+        return ""
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</(?:p|div|li|tr|h[1-6])>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = unescape(text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 def update_entries():
 
     # All entries
@@ -92,6 +104,7 @@ _ABSENCE_TYPES_REDUCE_WORK = frozenset({
     'Vacaciones', 'Beneficio Vacaciones', 'Compensatorios',
     'Enfermedad', 'Exámenes/Día de Estudio',
     'Sin goce de sueldo', 'Viernes OFF alta', 'Viernes OFF',
+    'FAM/Trabajando fuera ofi',
 })
 
 
@@ -582,11 +595,19 @@ def build_tariff_client_news_context(client, date_from=None):
     )
     unsubscribe_url = site_url + reverse('notification_unsubscribe', kwargs={'token': pref.unsubscribe_token})
 
+    if date_from:
+        day   = date_from.day
+        suffix = "th" if 11 <= day <= 13 else {1:"st",2:"nd",3:"rd"}.get(day % 10, "th")
+        since_date = date_from.strftime(f"%A, {day}{suffix} of %B %Y")
+    else:
+        since_date = None
+
     subject = f"Aliwen Incoming – Rate Update"
     template = "emails/tariff_client_news.html"
     context = {
         "client_name": client.other_name,
         "today": date.today().strftime("%B %d, %Y"),
+        "since_date": since_date,
         "locations": locations,
         "logo_url": logo_url,
         "icons_base_url": icons_base_url,
@@ -594,6 +615,43 @@ def build_tariff_client_news_context(client, date_from=None):
     }
 
     return subject, to_emails, template, context
+
+
+def send_tariff_client_weekly(stdout=None):
+    """Send the weekly rate-update email to all opted-in clients. Called every Monday."""
+    from datetime import timedelta
+    today      = date.today()
+    date_from  = today - timedelta(days=7)
+
+    clients = (
+        User.objects.filter(isActivated=True, userType='Cliente')
+        .exclude(email='')
+    )
+
+    sent = skipped = errors = 0
+    for client in clients:
+        pref = NotificationPreference.objects.filter(
+            user=client, notification_type='tariff_client'
+        ).first()
+        # Default is opted-in; only skip if explicitly deactivated
+        if pref and not pref.is_active:
+            skipped += 1
+            continue
+        try:
+            subject, to_emails, template, context = build_tariff_client_news_context(
+                client, date_from=date_from
+            )
+            if not context.get('locations'):
+                skipped += 1
+                continue
+            send_templated_email(subject, [to_emails] if isinstance(to_emails, str) else to_emails, template, context)
+            sent += 1
+        except Exception as exc:
+            errors += 1
+            if stdout:
+                stdout.write(f"  Error enviando a {client.username}: {exc}")
+
+    return {'sent': sent, 'skipped': skipped, 'errors': errors}
 
 
 def build_tariff_team_news_context(date_from=None):
@@ -721,7 +779,7 @@ SELECT DISTINCT
     BHD.SALE3             AS dh_name,
     BHD.CONSULTANT        AS responsable_code,
     BHD.SALE1             AS operations_code,
-    DRM.NAME              AS agent_name,
+    ISNULL(DRM.NAME, '')  AS agent_name,
     BHD.AGENT_REFERENCE   AS client_reference,
     ISNULL(RTRIM(LTRIM((
         SELECT STUFF((
@@ -738,13 +796,13 @@ SELECT DISTINCT
     ))), '') AS guide,
     CASE BHD.STATUS
         WHEN 'HL' THEN 0 WHEN 'XC' THEN 0 WHEN 'XX' THEN 0
-        ELSE BSD.PAX
+        ELSE ISNULL(BSD.PAX, 0)
     END AS num_pax,
     CASE BHD.STATUS
         WHEN 'HL' THEN 0
-        ELSE (BSD.AGENT - BSD.COST) / CASE BSD.AGENT WHEN 0 THEN 1 ELSE BSD.AGENT END
+        ELSE (ISNULL(BSD.AGENT, 0) - ISNULL(BSD.COST, 0)) / CASE ISNULL(BSD.AGENT, 0) WHEN 0 THEN 1 ELSE ISNULL(BSD.AGENT, 0) END
     END AS rent_perc,
-    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE BSD.AGENT END AS amount,
+    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE ISNULL(BSD.AGENT, 0) END AS amount,
     ISNULL((
         SELECT STUFF((
             SELECT ' | ' + RTRIM(LTRIM(CAST(N2.MESSAGE_TEXT AS NVARCHAR(MAX))))
@@ -752,16 +810,72 @@ SELECT DISTINCT
             WHERE N2.BHD_ID = BHD.BHD_ID AND N2.CATEGORY = 'REN'
             FOR XML PATH (''), TYPE
         ).value('.', 'NVARCHAR(MAX)'), 1, 3, '')
-    ), '') AS tp_notes
+    ), '') AS tp_notes,
+    BHD.SALE4 AS cotizado_code,
+    ISNULL((
+        SELECT STUFF((
+            SELECT ' | ' + RTRIM(LTRIM(CAST(N3.MESSAGE_TEXT AS NVARCHAR(MAX))))
+            FROM NTS N3
+            WHERE N3.BHD_ID = BHD.BHD_ID AND N3.CATEGORY = 'PNR'
+            FOR XML PATH (''), TYPE
+        ).value('.', 'NVARCHAR(MAX)'), 1, 3, '')
+    ), '') AS pnr_notes,
+    CASE BHD.STATUS WHEN 'HL' THEN 0 ELSE
+        CASE BHD.CURRENCY WHEN 'ARS' THEN
+            CASE ISNULL((SELECT CRT_RATE FROM CRT
+                WHERE CUR_CODE_TO = 'USD'
+                  AND CRT_DATE    = CONVERT(date, BHD.UDTEXT5)
+                  AND CUR_CODE_FM = BHD.CURRENCY
+                  AND CSC_CODE    = BHD.CURR_SC), 0)
+            WHEN 0 THEN 0
+            ELSE ROUND(ISNULL((
+                SELECT SUM(CASE
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='VAL') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='TAX') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='COM') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='TOC') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='VAL') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='TAX') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='COM') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='TOC') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                END)
+                FROM TRL JOIN TRH ON TRH.TRH_ID = TRL.TRH_ID
+                    AND TRH.LEDGER = 'R'
+                    AND (TRH.TRAN_TYPE = 1 OR TRH.TRAN_TYPE = 2)
+                WHERE TRL.TRANSACTION_ITEM = BHD.FULL_REFERENCE), 0), 2)
+            / ISNULL((SELECT CRT_RATE FROM CRT
+                WHERE CUR_CODE_TO = 'USD'
+                  AND CRT_DATE    = CONVERT(date, BHD.UDTEXT5)
+                  AND CUR_CODE_FM = BHD.CURRENCY
+                  AND CSC_CODE    = BHD.CURR_SC), 0)
+            END
+        ELSE
+            ROUND(ISNULL((
+                SELECT SUM(CASE
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='VAL') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='TAX') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='COM') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=1 AND TRL.LINE_CATEGORY='TOC') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='VAL') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='TAX') THEN -(TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='COM') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                    WHEN (TRH.TRAN_TYPE=2 AND TRL.LINE_CATEGORY='TOC') THEN  (TRL.TRANSACTION_VALUE + TRL.BASE_INCREMENT_VALUE)
+                END)
+                FROM TRL JOIN TRH ON TRH.TRH_ID = TRL.TRH_ID
+                    AND TRH.LEDGER = 'R'
+                    AND (TRH.TRAN_TYPE = 1 OR TRH.TRAN_TYPE = 2)
+                WHERE TRL.TRANSACTION_ITEM = BHD.FULL_REFERENCE), 0), 2)
+        END
+    END AS invoiced
 FROM BHD
-JOIN DRM ON DRM.CODE = BHD.AGENT
-JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
+LEFT JOIN DRM ON DRM.CODE = BHD.AGENT
+LEFT JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
 WHERE BHD.BRANCH = 'AL'
   AND BHD.TRAVELDATE >= %s
   AND BHD.TRAVELDATE <= %s
 """
 
-_BOOKING_STATUSES  = {"OK", "FI", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
+_BOOKING_STATUSES  = {"OK", "FI", "CT", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
 _CANCELLED_STATUSES = {"RX", "XC", "XX"}
 
 
@@ -924,10 +1038,10 @@ def sync_from_tourplan_db():
 
         responsable_code = _s(row, "responsable_code")
         if responsable_code in users_by_other_tp:
-            trip.responsable_user = users_by_other_tp[responsable_code]
+            trip.consultant_tp = users_by_other_tp[responsable_code]
         elif responsable_code:
             try:
-                trip.responsable_user = User.objects.get(username=responsable_code)
+                trip.consultant_tp = User.objects.get(username=responsable_code)
             except User.DoesNotExist:
                 pass
 
@@ -967,7 +1081,7 @@ def sync_from_tourplan_db():
     if trips_to_update:
         Trip.objects.bulk_update(trips_to_update, [
             "travelling_date", "out_date", "dh_type",
-            "responsable_user", "operations_user", "dh",
+            "consultant_tp", "operations_user", "dh",
             "guide", "rent_perc", "amount", "tp_notes",
         ])
 
@@ -1057,6 +1171,85 @@ def backfill_conversion_dates():
 
     print(f"Updated: {len(to_update)} | No booking entry found: {skipped}")
     return len(to_update), skipped
+
+
+def copy_consultant_to_responsable(date_from, date_to):
+    """
+    For trips whose travelling_date falls within [date_from, date_to],
+    copy consultant_tp → responsable_user where consultant_tp is set.
+
+    Useful for backfilling historical records where both fields should match.
+
+    Usage from Django shell:
+        from intranet.utils import copy_consultant_to_responsable
+        from datetime import date
+        updated, skipped = copy_consultant_to_responsable(date(2024, 1, 1), date(2026, 6, 30))
+        print(f"Updated: {updated} | Skipped (no consultant_tp): {skipped}")
+    """
+    trips_qs = Trip.objects.filter(
+        travelling_date__gte=date_from,
+        travelling_date__lte=date_to,
+        consultant_tp__isnull=False,
+    ).select_related("consultant_tp")
+
+    to_update = []
+    skipped = 0
+    for trip in trips_qs:
+        if trip.consultant_tp_id:
+            trip.responsable_user_id = trip.consultant_tp_id
+            to_update.append(trip)
+        else:
+            skipped += 1
+
+    if to_update:
+        Trip.objects.bulk_update(to_update, ["responsable_user"])
+
+    print(f"Updated: {len(to_update)} | Skipped (no consultant_tp): {skipped}")
+    return len(to_update), skipped
+
+
+def clear_responsable_from_date(cutoff_date, dry_run=True):
+    """
+    Clears responsable_user (sets to None) for all trips whose travelling_date
+    is >= cutoff_date, so they can be reassigned later.
+
+    Trips with travelling_date < cutoff_date are left untouched.
+
+    Usage from Django shell (dry run first):
+        from intranet.utils import clear_responsable_from_date
+        from datetime import date
+        count, trips = clear_responsable_from_date(date(2026, 7, 1), dry_run=True)
+        # Review the list, then execute:
+        count, trips = clear_responsable_from_date(date(2026, 7, 1), dry_run=False)
+        print(f"Cleared: {count}")
+    """
+    trips_qs = Trip.objects.filter(
+        travelling_date__gte=cutoff_date,
+        responsable_user__isnull=False,
+    ).select_related("responsable_user").order_by("travelling_date")
+
+    preview = [
+        {
+            "id": t.id,
+            "name": t.name,
+            "travelling_date": t.travelling_date.strftime("%d/%m/%Y"),
+            "responsable_user": t.responsable_user.username if t.responsable_user else "",
+        }
+        for t in trips_qs
+    ]
+
+    if dry_run:
+        print(f"DRY RUN — would clear responsable_user on {len(preview)} trips (travelling_date >= {cutoff_date})")
+        for p in preview:
+            print(f"  [{p['travelling_date']}] {p['name']} (id={p['id']}) — was: {p['responsable_user']}")
+        return len(preview), preview
+
+    for t in trips_qs:
+        t.responsable_user = None
+    Trip.objects.bulk_update(list(trips_qs), ["responsable_user"])
+
+    print(f"Cleared responsable_user on {len(preview)} trips (travelling_date >= {cutoff_date})")
+    return len(preview), preview
 
 
 def sync_trip_statuses_from_tourplan():
@@ -1156,6 +1349,177 @@ def sync_trip_statuses_from_tourplan():
 
     print(f"Updated: {len(updated)} | Not found in Tourplan: {len(not_found)} | Skipped: {skipped}")
     return updated, not_found, skipped
+
+def booking_sheet_season_year():
+    """Returns the start year of the current season (May–April)."""
+    today = date.today()
+    return today.year if today.month >= 5 else today.year - 1
+
+
+def get_booking_sheet_data(date_from_str, date_to_str):
+    """
+    Returns all confirmed Tourplan bookings (status in _BOOKING_STATUSES),
+    excluding Personal Trip (ALPP) and Sites (ALSI) prefixes,
+    filtered to the given date range (YYYYMMDD strings).
+    Each dict includes in_intranet (bool) and intranet_trip_id (int or None).
+    """
+    conn = get_tourplan_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(_TOURPLAN_SYNC_QUERY, (date_from_str, date_to_str))
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    def _s(row, key):
+        v = row.get(key)
+        return str(v).strip() if v is not None else ""
+
+    _intranet_trips = list(
+        Trip.objects.select_related("responsable_user", "vr_requested_by")
+        .exclude(tourplanId="").exclude(tourplanId__isnull=True)
+    )
+    trips_by_tp = {t.tourplanId: t.id for t in _intranet_trips}
+    _difficulty_by_tp = {t.tourplanId: (t.difficulty or "") for t in _intranet_trips}
+    _vr_by_tp = {}
+    _vr_requested_by_tp = {}
+    for _t in _intranet_trips:
+        if _t.responsable_user:
+            _vr_by_tp[_t.tourplanId] = {
+                "id": _t.responsable_user.id,
+                "username": _t.responsable_user.username,
+                "color": str(_t.responsable_user.color) if _t.responsable_user.color else "#6c757d",
+            }
+        else:
+            _vr_by_tp[_t.tourplanId] = None
+        if _t.vr_requested_by:
+            _vr_requested_by_tp[_t.tourplanId] = {
+                "id": _t.vr_requested_by.id,
+                "username": _t.vr_requested_by.username,
+            }
+        else:
+            _vr_requested_by_tp[_t.tourplanId] = None
+
+    _all_users = list(User.objects.all())
+    users_by_other_tp_bs = {
+        u.other_tp.strip(): u
+        for u in _all_users
+        if u.other_tp and u.other_tp.strip()
+    }
+    users_by_username_bs = {
+        u.username.strip(): u
+        for u in _all_users
+        if u.username and u.username.strip()
+    }
+
+    def _fmt_amount(val):
+        if val is None:
+            return ""
+        try:
+            return str(round(float(val)))
+        except (ValueError, TypeError):
+            return ""
+
+    def _user_pill(code):
+        if not code:
+            return None
+        code = code.strip()
+        u = users_by_other_tp_bs.get(code) or users_by_username_bs.get(code)
+        if not u:
+            return None
+        return {"name": u.other_name or u.username, "color": str(u.color) if u.color else "#6c757d"}
+
+
+    _bs_prefix_re = re.compile(r'^AL([A-Z]+)', re.IGNORECASE)
+
+    result = []
+    for row in rows:
+        tp_id = _s(row, "tourplan_id")
+        if not tp_id:
+            continue
+        raw_status = _s(row, "status")
+        if not raw_status:
+            continue
+
+        m = _bs_prefix_re.match(tp_id)
+        tp_prefix = m.group(1).upper() if m else tp_id[:4].upper()
+
+        td = row.get("travelling_date")
+        od = row.get("out_date")
+
+        rent_perc_raw = row.get("rent_perc")
+        rent_perc_display = ""
+        rent_perc_for_create = ""
+        if rent_perc_raw is not None:
+            try:
+                pct = round(float(rent_perc_raw) * 100, 2)
+                rent_perc_display = f"{pct}%"
+                rent_perc_for_create = rent_perc_display
+            except (ValueError, TypeError):
+                pass
+
+        amount_raw = row.get("amount")
+        amount_display = ""
+        if amount_raw:
+            try:
+                amount_display = str(round(float(amount_raw)))
+            except (ValueError, TypeError):
+                pass
+
+        dh_name = _s(row, "dh_name")
+        if dh_name.upper().startswith("DH "):
+            dh_name = dh_name[3:].strip()
+
+        num_pax = 2
+        try:
+            num_pax = int(row.get("num_pax") or 2)
+        except (ValueError, TypeError):
+            pass
+
+        trip_id = trips_by_tp.get(tp_id)
+        result.append({
+            "tp_id":              tp_id,
+            "name":               _s(row, "pax_name"),
+            "client_name":        _s(row, "agent_name"),
+            "client_reference":   _s(row, "client_reference"),
+            "travelling_date":    td.strftime("%d/%m/%Y") if td else "",
+            "travelling_date_sort": td.strftime("%Y%m%d") if td else "00000000",
+            "travelling_date_month": td.strftime("%Y-%m") if td else "",
+            "out_date":           od.strftime("%d/%m/%Y") if od else "",
+            "raw_status":         raw_status,
+            "num_pax":            num_pax,
+            "amount":             amount_display,
+            "rent_perc":          rent_perc_display,
+            "responsable_code":   _s(row, "responsable_code"),
+            "responsable_user":   _user_pill(_s(row, "responsable_code")),
+            "operations_code":    _s(row, "operations_code"),
+            "operations_user":    _user_pill(_s(row, "operations_code")),
+            "dh_type":            _s(row, "dh_type"),
+            "dh_name":            dh_name,
+            "guide":              _s(row, "guide"),
+            "tp_prefix":          tp_prefix,
+            "tp_notes":           strip_html_keep_newlines(_s(row, "tp_notes")),
+            "pnr_notes":          strip_html_keep_newlines(_s(row, "pnr_notes")),
+            "cotizado_code":      _s(row, "cotizado_code"),
+            "cotizado_user":      _user_pill(_s(row, "cotizado_code")),
+            "invoiced":           _fmt_amount(row.get("invoiced")),
+            "in_intranet":        trip_id is not None,
+            "intranet_trip_id":   trip_id,
+            "intranet_vr":        _vr_by_tp.get(tp_id) if trip_id else None,
+            "vr_requested_by":    _vr_requested_by_tp.get(tp_id) if trip_id else None,
+            "difficulty":         _difficulty_by_tp.get(tp_id, "") if trip_id else "",
+            # Fields needed for single-trip creation
+            "contact_name":       "",
+            "vendedor_tp":        _s(row, "responsable_code"),
+            "operations_tp":      _s(row, "operations_code"),
+            "quantity_pax":       num_pax,
+            "rent_perc_raw":      rent_perc_for_create,
+            "amount_raw":         amount_display,
+        })
+
+    result.sort(key=lambda r: r["travelling_date_sort"], reverse=True)
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Weekly roster email para todos
@@ -1489,7 +1853,7 @@ def _get_holiday_workers(group):
     return result
 
 
-def _build_ooo_text(group, workers):
+def _build_ooo_text(group, workers, office_closed=False):
     dates_en = [_holiday_range_en(h) for h in group]
     if len(dates_en) == 1:
         dates_phrase, verb = dates_en[0], "is"
@@ -1498,6 +1862,29 @@ def _build_ooo_text(group, workers):
     else:
         dates_phrase = ", ".join(dates_en[:-1]) + f" and {dates_en[-1]}"
         verb = "are"
+
+    if office_closed:
+        para1 = (
+            f"Kindly note that next {dates_phrase} {verb} national "
+            "holidays in Argentina and our office will be closed. "
+            "We will reply to your emails on the next working day."
+        )
+        paragraphs = [
+            "Dear friends & colleagues,",
+            "",
+            para1,
+            "",
+            "As usual you can contact quote@aliwenincoming.com.ar for any questions or new requests. "
+            "Your mail will not be automatically forwarded.",
+            "",
+            "Please take into account that most of our suppliers will not be working, "
+            "so there might be delays with confirmations and special requests.",
+            "",
+            "For any emergencies do not hesitate to contact us at our emergency telephone: + 54 911 6991 7018.",
+            "",
+            "Regards,",
+        ]
+        return "\n".join(paragraphs)
 
     para1 = (
         f"Kindly note that next {dates_phrase} {verb} national "
@@ -1556,6 +1943,7 @@ def build_holiday_reminder_context(today=None):
         return None
 
     workers = _get_holiday_workers(group)
+    office_closed = all(h.type_holidays == "Día no laborable" for h in group) and not workers
 
     holidays_info = []
     for h in group:
@@ -1574,7 +1962,12 @@ def build_holiday_reminder_context(today=None):
 
     # Signature line
     dates_en = [_holiday_range_en(h) for h in group]
-    if len(dates_en) == 1:
+    if office_closed:
+        if len(dates_en) == 1:
+            sig = f"Please bear in mind that our office will be closed on {dates_en[0]} (Argentine national holiday). We will reply to your emails on the next working day."
+        else:
+            sig = f"Please bear in mind that our office will be closed from {dates_en[0]} to {dates_en[-1]} (Argentine national holidays). We will reply to your emails on the next working day."
+    elif len(dates_en) == 1:
         sig = f"Please bear in mind that {dates_en[0]} is a national holiday in Argentina."
     elif len(dates_en) == 2:
         sig = f"Please bear in mind that {dates_en[0]} and {dates_en[1]} are national holidays in Argentina."
@@ -1621,8 +2014,9 @@ def build_holiday_reminder_context(today=None):
         "today":          today.strftime("%d/%m/%Y"),
         "holidays":       holidays_info,
         "workers":        workers,
+        "office_closed":  office_closed,
         "signature_line": sig,
-        "ooo_text":       _build_ooo_text(group, workers),
+        "ooo_text":       _build_ooo_text(group, workers, office_closed=office_closed),
     }
 
 

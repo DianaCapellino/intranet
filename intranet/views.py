@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, Driver, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, Driver, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES, RevisionScheduleDay
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
 import json
@@ -37,7 +37,7 @@ _ABSENT_TYPES = frozenset({
     'Vacaciones', 'Beneficio Vacaciones', 'Compensatorios',
     'Enfermedad', 'Exámenes/Día de Estudio',
     'Sin goce de sueldo', 'Viernes OFF alta', 'Viernes OFF',
-    'Cumpleaños en baja',
+    'Cumpleaños en baja', 'FAM/Trabajando fuera ofi',
 })
 
 def _absences_on_day(target_date, department):
@@ -268,7 +268,7 @@ def get_filtered_trips(user):
         search = None
 
     base_qs = Trip.objects.filter(department=user.department).select_related(
-        'client', 'contact', 'responsable_user', 'operations_user'
+        'client', 'contact', 'responsable_user', 'operations_user', 'consultant_tp'
     )
 
     if search:
@@ -665,6 +665,8 @@ def modify_user(request, user_id):
         user.color = color
         user.show_in_client_team = show_in_client_team
         user.client_id = client_id or None
+        user.chat_webhook_url = request.POST.get('chat_webhook_url', '').strip()
+        user.chat_user_id = request.POST.get('chat_user_id', '').strip()
 
         user.save()
 
@@ -1148,7 +1150,10 @@ def modify_trip(request, trip_id):
         if trip.status == "Booking":
             itId = request.POST["itId"]
             dh_type = request.POST["dh_type"]
-            responsable_user_form = request.POST["responsable_user"]
+            if request.user.isAdmin:
+                responsable_user_form = request.POST.get("responsable_user") or (trip.responsable_user.id if trip.responsable_user else User.objects.get(username="SD").id)
+            else:
+                responsable_user_form = trip.responsable_user.id if trip.responsable_user else User.objects.get(username="SD").id
             operations_user_form = request.POST["operations_user"]
             dh_form = request.POST.get("dh", "")
             guide = request.POST["guide"]
@@ -1306,6 +1311,18 @@ def create_feedback(request, trip_id):
 @login_required
 def pendings(request):
     ctx = get_return_page("entries", "", request.user)
+    if request.user.userType != "Cliente":
+        today = date.today()
+        ctx["today_absences"] = [
+            {
+                "name": a.absence_user.other_name or a.absence_user.username,
+                "color": a.absence_user.color or '#6c757d',
+                "type": a.type_absence,
+            }
+            for a in _absences_on_day(today, request.user.department)
+        ]
+    else:
+        ctx["today_absences"] = []
     ctx["progress_legend"] = [
         (
             f'<span style="background:{bg};color:{fg};padding:2px 10px;'
@@ -1323,6 +1340,16 @@ def pendings(request):
     ]
     if request.user.userType == "Cliente":
         ctx["client_holiday_alert"] = _get_client_holiday_alert(date.today())
+    if request.user.userType != "Cliente":
+        ctx["dept_users_for_revision"] = User.objects.filter(
+            department=request.user.department, isActivated=True,
+            show_in_calendar=True, userType='Ventas',
+        ).order_by('username')
+        ctx["my_revision_pending_count"] = Entry.objects.filter(
+            revising_user=request.user,
+            is_revised=False,
+            trip__department=request.user.department,
+        ).exclude(revision_link__isnull=True).exclude(revision_link='').count()
     return render(request, "intranet/pendings.html", ctx)
 
 @login_required
@@ -1390,14 +1417,14 @@ def create_entry(request, trip_id):
         # If the status is Final Itinerary the user creator is the responsable user
         elif status == "Final Itinerary":
             version = 1
-            user_creator = trip.responsable_user
+            user_creator = trip.responsable_user or user_working
             version_quote = trip.version_quote
 
         # If file is cancelled then the trip status change to "Cancelado"
         elif status == "Cancelado":
             version = 1
             version_quote = trip.version_quote
-            user_creator = trip.responsable_user
+            user_creator = trip.responsable_user or user_working
             trip.status = "Cancelado"
             trip.save()
         else:
@@ -1452,6 +1479,9 @@ def create_entry(request, trip_id):
                 if uname not in absence_alerts:
                     absence_alerts[uname] = label
 
+        last_entry = Entry.objects.filter(trip=trip).order_by('-id').first()
+        last_user_working = last_entry.user_working.username if last_entry and last_entry.user_working else ''
+
         return render(request, "intranet/new_entry.html", {
             "entries": filter_entries,
             "status": STATUS_OPTIONS,
@@ -1460,6 +1490,7 @@ def create_entry(request, trip_id):
             "users": User.objects.all(),
             "trip": trip,
             "absence_alerts": absence_alerts,
+            "last_user_working": last_user_working,
         })
 
 @login_required
@@ -2468,10 +2499,10 @@ def entry_tp_lookup(request):
             trip.dh_type = dh_type_val
         resp_code = (row.get("responsable_code") or "").strip()
         if resp_code in users_by_other_tp:
-            trip.responsable_user = users_by_other_tp[resp_code]
+            trip.consultant_tp = users_by_other_tp[resp_code]
         elif resp_code:
             try:
-                trip.responsable_user = User.objects.get(username=resp_code)
+                trip.consultant_tp = User.objects.get(username=resp_code)
             except User.DoesNotExist:
                 pass
         ops_code = (row.get("operations_code") or "").strip()
@@ -3090,7 +3121,9 @@ def entries_data(request):
         order_col = f"-{order_col}"
 
     # 🚩 Filtrar solo entradas del mismo departamento que el usuario
-    qs = Entry.objects.select_related("trip", "user_creator", "user_working", "trip__client", "trip__contact").filter(
+    qs = Entry.objects.select_related(
+        "trip", "user_creator", "user_working", "trip__client", "trip__contact", "revising_user"
+    ).filter(
         trip__department=request.user.department
     )
 
@@ -3268,6 +3301,33 @@ def entries_data(request):
         else:
             progress_display = _progress_select_html(entry.id, entry.progress)
 
+        # Revision column (non-client only)
+        if is_client_user:
+            revision_html = ""
+        elif entry.is_revised:
+            revision_html = '<span style="color:#16a34a;font-size:1.1em;" title="Revisado">✓</span>'
+        elif entry.revision_link:
+            if entry.revising_user:
+                revision_html = (
+                    f'<button class="btn btn-sm btn-link p-0 revision-user-btn" '
+                    f'data-entry-id="{entry.id}" data-user-id="{entry.revising_user.id}" '
+                    f'title="Revisor: {entry.revising_user.username} – click para cambiar">'
+                    f'{_user_pill(entry.revising_user)}</button>'
+                )
+            else:
+                revision_html = (
+                    f'<button class="btn btn-sm btn-link p-0 revision-user-btn" '
+                    f'data-entry-id="{entry.id}" data-user-id="" '
+                    f'title="Sin revisor asignado – click para asignar">⚠️</button>'
+                )
+        else:
+            trip_label = entry.trip.name if entry.trip else ""
+            revision_html = (
+                f'<button class="btn btn-sm btn-link p-0 text-muted send-revision-btn" '
+                f'data-entry-id="{entry.id}" data-trip="{trip_label}" '
+                f'title="Mandar a revisar">—</button>'
+            )
+
         data.append({
             "starting_date": starting_date,
             "closing_date": closing_date,
@@ -3286,6 +3346,7 @@ def entries_data(request):
             "note": entry.note or "n/a",
             "travelling_date": travelling_date,
             "acciones": acciones_html,
+            "revision": revision_html,
             "id": entry.id,
         })
 
@@ -4288,6 +4349,7 @@ def stats_presentation_entries(request):
         _MONTH_NAMES2 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
         vendor_rows = (
             qs
+            .filter(user_working__userType='Ventas')
             .annotate(_month=TruncMonth('starting_date'))
             .values('_month', 'user_working__other_name')
             .annotate(
@@ -4342,6 +4404,12 @@ def stats_presentation_entries(request):
                 'bookings_amount': float(r['bookings_amount'] or 0),
             })
 
+    vendor_types = {
+        r['user_working__other_name']: r['user_working__userType']
+        for r in qs.values('user_working__other_name', 'user_working__userType').distinct()
+        if r['user_working__other_name']
+    }
+
     return JsonResponse({
         "vendors_quote": vendors_quote,
         "vendors_bookings": vendors_bookings,
@@ -4356,6 +4424,7 @@ def stats_presentation_entries(request):
         "monthly_breakdown": monthly_breakdown,
         "monthly_by_vendor": monthly_by_vendor,
         "monthly_by_client": monthly_by_client,
+        "vendor_types": vendor_types,
     })
 
 
@@ -5024,14 +5093,14 @@ def upload_data(csv_obj):
                 if val in ("S", "B", "F"):
                     trip.dh_type = val
 
-            # col 10 (index 9) — responsable_user (lookup by other_tp)
+            # col 10 (index 9) — consultant_tp (Tourplan CONSULTANT code, lookup by other_tp)
             if len(row) > 9:
                 val = row[9].strip()
                 if val in users_by_other_tp:
-                    trip.responsable_user = users_by_other_tp[val]
+                    trip.consultant_tp = users_by_other_tp[val]
                 else:
                     try:
-                        trip.responsable_user = User.objects.get(username=val)
+                        trip.consultant_tp = User.objects.get(username=val)
                     except User.DoesNotExist:
                         pass
 
@@ -5079,7 +5148,7 @@ def upload_data(csv_obj):
     if trips_to_update:
         Trip.objects.bulk_update(trips_to_update, [
             "travelling_date", "out_date", "dh_type",
-            "responsable_user", "operations_user", "dh",
+            "consultant_tp", "operations_user", "dh",
             "guide", "rent_perc", "amount",
         ])
         # Update matching Entry amounts
@@ -5298,7 +5367,7 @@ def tourplan_create_trips(request):
             contact = default_contact
 
         # ── Users ────────────────────────────────────────────────────────
-        responsable = users_by_other_tp.get(row["vendedor_tp"]) or default_user
+        consultant  = users_by_other_tp.get(row["vendedor_tp"])
         operations  = users_by_other_tp.get(row["operations_tp"]) or default_user
 
         # ── Dates ────────────────────────────────────────────────────────
@@ -5339,7 +5408,7 @@ def tourplan_create_trips(request):
             dh_type=row["dh_type"] or "Sin definir",
             dh=row["dh_name"],
             guide=row["guide"],
-            responsable_user=responsable,
+            consultant_tp=consultant,
             operations_user=operations,
             creation_user=request.user,
             department=request.user.department,
@@ -5425,6 +5494,573 @@ def tourplan_assign_tp(request):
     request.session.modified = True
 
     return JsonResponse({"assigned": len(assigned_trip_ids)})
+
+
+@login_required
+def booking_sheet(request):
+    """Planilla de Reservas: all confirmed Tourplan bookings vs intranet."""
+    if request.user.userType == "Cliente":
+        return HttpResponseRedirect(reverse("index"))
+    from intranet.utils import get_booking_sheet_data, booking_sheet_season_year
+
+    current_year = booking_sheet_season_year()
+
+    try:
+        season_start = int(request.GET.get("season", current_year))
+    except (ValueError, TypeError):
+        season_start = current_year
+
+    date_from = date(season_start, 5, 1).strftime("%Y%m%d")
+    date_to   = date(season_start + 1, 4, 30).strftime("%Y%m%d")
+
+    season_options = [
+        {"year": y, "label": f"{y}/{y+1}", "selected": y == season_start}
+        for y in range(current_year - 3, current_year + 3)
+    ]
+
+    try:
+        rows = get_booking_sheet_data(date_from, date_to)
+        error = None
+    except Exception as e:
+        rows = []
+        error = str(e)
+
+    _BS_TYPE_LABELS = {
+        "FI":  "FIT's",
+        "FAM": "FAM Tours",
+        "GR":  "Grupales",
+        "PP":  "Personal Trips",
+        "SI":  "Sites",
+    }
+    _BS_DEFAULT_OFF = {"PP", "SI", "TE"}
+
+    _BS_STATUS_LABELS = {
+        "FI": "Final IT",
+        "OK": "OK",
+        "CT": "Cerrado",
+    }
+
+    seen_prefixes = sorted({r["tp_prefix"] for r in rows})
+    type_filters = [
+        {
+            "code": p,
+            "label": _BS_TYPE_LABELS.get(p, p),
+            "default_on": p not in _BS_DEFAULT_OFF,
+        }
+        for p in seen_prefixes
+    ]
+
+    _BS_STATUS_DEFAULT_ON = {"OK", "FI", "CT"}
+    seen_statuses = sorted({r["raw_status"] for r in rows})
+    status_filters = [
+        {"code": s, "label": _BS_STATUS_LABELS.get(s, s), "default_on": s in _BS_STATUS_DEFAULT_ON}
+        for s in seen_statuses
+    ]
+
+    # Totals only count types that are on by default
+    visible_rows = [r for r in rows if r["tp_prefix"] not in _BS_DEFAULT_OFF]
+    total_pax = sum(r.get("num_pax") or 0 for r in visible_rows)
+    total_amount = sum(int(r["amount"]) for r in visible_rows if r.get("amount"))
+    total_amount_display = f"{total_amount:,}".replace(",", ".")
+
+    import json as _json
+    ventas_users = list(
+        User.objects.filter(userType="Ventas", isActivated=True, department=request.user.department)
+        .values("id", "username", "other_name", "color")
+        .order_by("other_name")
+    )
+    for u in ventas_users:
+        u["color"] = str(u["color"]) if u["color"] else "#6c757d"
+
+    return render(request, "intranet/booking_sheet.html", {
+        "rows": rows,
+        "error": error,
+        "season_label": f"{season_start}/{season_start + 1}",
+        "season_options": season_options,
+        "season_start": season_start,
+        "total_files": len(visible_rows),
+        "total_pax": total_pax,
+        "total_amount": total_amount_display,
+        "type_filters": type_filters,
+        "status_filters": status_filters,
+        "current_user_tp": (request.user.other_tp or request.user.username or "").strip(),
+        "current_user_username": request.user.username or "",
+        "is_admin": request.user.isAdmin,
+        "ventas_users_json": _json.dumps(ventas_users),
+    })
+
+
+@login_required
+@csrf_exempt
+def booking_sheet_create(request):
+    """Create a single trip from a Tourplan booking row."""
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=400)
+    try:
+        row = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    tp_id = row.get("tp_id", "").strip()
+    if not tp_id:
+        return JsonResponse({"error": "No tp_id"}, status=400)
+
+    if Trip.objects.filter(tourplanId=tp_id).exists():
+        existing = Trip.objects.filter(tourplanId=tp_id).first()
+        return JsonResponse({"already_exists": True, "trip_id": existing.id})
+
+    users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
+    clients_by_name   = {c.name.strip().lower(): c for c in Client.objects.all()}
+    contacts_by_name  = {c.name.strip().lower(): c for c in ClientContact.objects.all()}
+    default_contact   = ClientContact.objects.filter(name="Sin Contacto").first()
+    default_client    = Client.objects.filter(name="Sin Cliente").first()
+    default_user      = User.objects.filter(username="SD").first()
+
+    csv_client_name  = row.get("client_name", "").strip()
+    csv_client_lower = csv_client_name.lower()
+    if csv_client_lower.startswith("consumidor final"):
+        normalized = csv_client_lower.replace(" aliwen", "").strip()
+        client = (
+            clients_by_name.get(csv_client_lower)
+            or clients_by_name.get(normalized)
+            or clients_by_name.get("consumidor final")
+            or default_client
+        )
+    else:
+        client = clients_by_name.get(csv_client_lower)
+        if not client:
+            client = next(
+                (c for name, c in clients_by_name.items()
+                 if csv_client_lower and (csv_client_lower in name or name in csv_client_lower)),
+                None
+            )
+        if not client:
+            client = default_client
+
+    csv_contact_lower = row.get("contact_name", "").strip().lower()
+    contact = contacts_by_name.get(csv_contact_lower)
+    if not contact and csv_contact_lower:
+        contact = next(
+            (c for name, c in contacts_by_name.items()
+             if csv_contact_lower in name or name in csv_contact_lower),
+            None
+        )
+    if not contact:
+        contact = default_contact
+
+    consultant  = users_by_other_tp.get(row.get("vendedor_tp", ""))
+    operations  = users_by_other_tp.get(row.get("operations_tp", "")) or default_user
+
+    try:
+        td = datetime.strptime(row["travelling_date"], "%d/%m/%Y").date() if row.get("travelling_date") else date.today()
+        od = datetime.strptime(row["out_date"], "%d/%m/%Y").date() if row.get("out_date") else td
+    except ValueError:
+        td = date.today()
+        od = td
+
+    rent_perc = None
+    raw_rent = row.get("rent_perc_raw", "")
+    if raw_rent:
+        try:
+            rent_perc = float(raw_rent.replace("%", "").replace(",", ".").strip()) / 100
+        except ValueError:
+            pass
+
+    amount = None
+    raw_amount = row.get("amount_raw", "").strip()
+    if raw_amount:
+        try:
+            amount = round(float(raw_amount.replace(".", "").replace(",", ".")))
+        except ValueError:
+            pass
+
+    trip = Trip.objects.create(
+        name=row.get("name") or tp_id,
+        tourplanId=tp_id,
+        status="Booking",
+        client=client,
+        contact=contact,
+        client_reference=row.get("client_reference", ""),
+        travelling_date=td,
+        out_date=od,
+        starting_date=td,
+        dh_type=row.get("dh_type") or "Sin definir",
+        dh=row.get("dh_name", ""),
+        guide=row.get("guide", ""),
+        consultant_tp=consultant,
+        operations_user=operations,
+        creation_user=request.user,
+        department=request.user.department,
+        quantity_pax=int(row.get("quantity_pax") or 2),
+        difficulty="1",
+        rent_perc=rent_perc,
+        amount=amount or 0,
+    )
+    return JsonResponse({"created": True, "trip_id": trip.id})
+
+
+@login_required
+@csrf_exempt
+def booking_sheet_set_vr(request):
+    """Admin-only: set or clear responsable_user on a Trip from the booking sheet."""
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        data = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    trip_id = data.get("trip_id")
+    user_id = data.get("user_id")
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Trip no encontrado"}, status=404)
+
+    if user_id:
+        try:
+            vr_user = User.objects.get(id=user_id)
+            trip.responsable_user = vr_user
+        except User.DoesNotExist:
+            return JsonResponse({"error": "Usuario no encontrado"}, status=404)
+    else:
+        trip.responsable_user = None
+
+    trip.save(update_fields=["responsable_user"])
+    vr_data = None
+    if trip.responsable_user:
+        vr_data = {
+            "id": trip.responsable_user.id,
+            "username": trip.responsable_user.username,
+            "color": str(trip.responsable_user.color) if trip.responsable_user.color else "#6c757d",
+        }
+    return JsonResponse({"ok": True, "vr": vr_data})
+
+
+@login_required
+@csrf_exempt
+def booking_sheet_auto_assign_vr(request):
+    """Admin-only: auto-assign responsable_user to unassigned trips, balanced by month."""
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    from collections import Counter
+    try:
+        data = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    tp_ids = data.get("tp_ids", [])
+    if not tp_ids:
+        return JsonResponse({"ok": True, "assigned": 0, "assignments": []})
+
+    ventas_users = list(User.objects.filter(
+        userType="Ventas", isActivated=True, department=request.user.department
+    ))
+    if not ventas_users:
+        return JsonResponse({"error": "No hay usuarios de Ventas"}, status=400)
+
+    trips_without_vr = list(
+        Trip.objects.filter(tourplanId__in=tp_ids, responsable_user__isnull=True)
+        .order_by("travelling_date")
+    )
+    if not trips_without_vr:
+        return JsonResponse({"ok": True, "assigned": 0, "assignments": [], "message": "No hay files sin VR"})
+
+    # Group by (year, month) and assign balanced within each month
+    from itertools import groupby as _groupby
+    user_id_map = {u.id: u for u in ventas_users}
+    ventas_ids = [u.id for u in ventas_users]
+    to_update = []
+    assignments = []
+
+    def _get_month(trip):
+        return (trip.travelling_date.year, trip.travelling_date.month)
+
+    trips_sorted = sorted(trips_without_vr, key=_get_month)
+    for (year, month), month_trips in _groupby(trips_sorted, key=_get_month):
+        month_trips = list(month_trips)
+        # Count existing VRs for this month
+        existing = Counter(
+            Trip.objects.filter(
+                travelling_date__year=year,
+                travelling_date__month=month,
+                responsable_user__in=ventas_users,
+            ).values_list("responsable_user_id", flat=True)
+        )
+        counts = {uid: existing.get(uid, 0) for uid in ventas_ids}
+        for trip in month_trips:
+            min_uid = min(counts, key=lambda uid: counts[uid])
+            user = user_id_map[min_uid]
+            trip.responsable_user = user
+            counts[min_uid] += 1
+            to_update.append(trip)
+            assignments.append({
+                "trip_id": trip.id,
+                "tp_id": trip.tourplanId,
+                "user_id": user.id,
+                "username": user.username,
+                "color": str(user.color) if user.color else "#6c757d",
+            })
+
+    if to_update:
+        Trip.objects.bulk_update(to_update, ["responsable_user"])
+
+    return JsonResponse({"ok": True, "assigned": len(to_update), "assignments": assignments})
+
+
+@login_required
+def booking_sheet_request_vr(request):
+    """Any logged-in user can request VR assignment for an intranet trip."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        data = _json.loads(request.body)
+        trip_id = int(data.get("trip_id"))
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+    try:
+        trip = Trip.objects.get(id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+    if trip.responsable_user:
+        return JsonResponse({"error": "El file ya tiene VR asignado"}, status=400)
+    trip.vr_requested_by = request.user
+    trip.save(update_fields=["vr_requested_by"])
+    return JsonResponse({"ok": True, "username": request.user.username, "user_id": request.user.id})
+
+
+@login_required
+def booking_sheet_bulk_set_vr(request):
+    """Admin-only: save checked VR assignments from the modal and send notification emails."""
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    from collections import defaultdict
+    from datetime import date as _date
+    from calendar import monthrange
+    try:
+        data = _json.loads(request.body)
+        assignments = data.get("assignments", [])
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    results = []
+    months_affected = set()
+    for asgn in assignments:
+        try:
+            trip = Trip.objects.select_related("client").get(id=int(asgn["trip_id"]))
+            user = User.objects.get(id=int(asgn["user_id"]))
+            trip.responsable_user = user
+            trip.vr_requested_by = None
+            trip.save(update_fields=["responsable_user", "vr_requested_by"])
+            if trip.travelling_date:
+                months_affected.add((trip.travelling_date.year, trip.travelling_date.month))
+            results.append({
+                "trip_id": trip.id,
+                "tp_id": trip.tourplanId,
+                "user_id": user.id,
+                "username": user.username,
+                "color": str(user.color) if user.color else "#6c757d",
+            })
+        except Exception:
+            continue
+
+    # Send one email per VR user per affected month
+    try:
+        from intranet.utils import send_templated_email
+        from django.conf import settings as _settings
+        from django.templatetags.static import static as _static
+        _static_url = getattr(_settings, "STATIC_URL", "static/")
+        _site_url = getattr(_settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+        if isinstance(_site_url, (list, tuple)):
+            _site_url = _site_url[0]
+        site_url = _site_url.rstrip("/")
+        icons_base_url = f"{site_url}/{_static_url.lstrip('/')}/intranet/images/"
+        logo_url = f"{icons_base_url}logo.png"
+
+        _MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+
+        for (yr, mo) in sorted(months_affected):
+            month_start = _date(yr, mo, 1)
+            last_day = monthrange(yr, mo)[1]
+            month_end = _date(yr, mo, last_day)
+            month_label = f"{_MESES[mo-1]} {yr}"
+
+            month_trips = (
+                Trip.objects
+                .filter(
+                    travelling_date__range=(month_start, month_end),
+                    responsable_user__userType="Ventas",
+                    responsable_user__isActivated=True,
+                    responsable_user__department=request.user.department,
+                )
+                .select_related("responsable_user", "client", "consultant_tp")
+                .order_by("travelling_date")
+            )
+
+            by_user = defaultdict(list)
+            for t in month_trips:
+                by_user[t.responsable_user].append(t)
+
+            for vr_user, trips in by_user.items():
+                if not vr_user.email:
+                    continue
+                trip_rows = []
+                mismatch_trips = []
+                for t in trips:
+                    row = {
+                        "tourplanId": t.tourplanId or "",
+                        "name": t.name or "",
+                        "client_name": t.client.name if t.client else "",
+                        "travelling_date": t.travelling_date,
+                        "quantity_pax": t.quantity_pax,
+                        "amount": int(t.amount) if t.amount else None,
+                        "difficulty": t.difficulty or "",
+                    }
+                    trip_rows.append(row)
+                    # Flag files where the Tourplan consultant is a different vendedor
+                    if (
+                        t.consultant_tp_id
+                        and t.consultant_tp_id != t.responsable_user_id
+                        and t.consultant_tp.userType == "Ventas"
+                    ):
+                        mismatch_trips.append({
+                            **row,
+                            "consultant_username": t.consultant_tp.username,
+                        })
+                send_templated_email(
+                    subject=f"Asignación VR – {month_label}",
+                    to_emails=[vr_user.email],
+                    template_name="emails/vr_assignment.html",
+                    context={
+                        "user_name": vr_user.other_name or vr_user.username,
+                        "month_label": month_label,
+                        "trips": trip_rows,
+                        "mismatch_trips": mismatch_trips,
+                        "total_files": len(trip_rows),
+                        "total_pax": sum(t["quantity_pax"] for t in trip_rows),
+                        "logo_url": logo_url,
+                        "icons_base_url": icons_base_url,
+                        "site_url": site_url,
+                    },
+                )
+    except Exception:
+        pass  # Email errors don't block the save response
+
+    return JsonResponse({"ok": True, "assigned": len(results), "assignments": results})
+
+
+@login_required
+def booking_sheet_test_vr_email(request):
+    """Admin-only: preview VR assignment emails (using draft state) sent to the requesting user's address."""
+    if not request.user.isAdmin:
+        return JsonResponse({"error": "No autorizado"}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    from collections import defaultdict
+    from datetime import date as _date
+    from calendar import monthrange
+    try:
+        data = _json.loads(request.body)
+        month_str = data.get("month", "")
+        assignments = data.get("assignments", [])  # [{trip_id, user_id}] from draft
+        yr, mo = int(month_str[:4]), int(month_str[5:7])
+    except Exception:
+        return JsonResponse({"error": "Datos inválidos"}, status=400)
+
+    if not assignments:
+        return JsonResponse({"error": "No hay asignaciones para este mes"}, status=400)
+
+    try:
+        from intranet.utils import send_templated_email
+        from django.conf import settings as _settings
+        _static_url = getattr(_settings, "STATIC_URL", "static/")
+        _site_url = getattr(_settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+        if isinstance(_site_url, (list, tuple)):
+            _site_url = _site_url[0]
+        site_url = _site_url.rstrip("/")
+        icons_base_url = f"{site_url}/{_static_url.lstrip('/')}/intranet/images/"
+        logo_url = f"{icons_base_url}logo.png"
+
+        _MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+        month_label = f"{_MESES[mo-1]} {yr}"
+
+        # Build trip→user map from the draft assignments
+        trip_ids = [int(a["trip_id"]) for a in assignments]
+        user_ids = {int(a["user_id"]) for a in assignments}
+        trip_user_map = {int(a["trip_id"]): int(a["user_id"]) for a in assignments}
+
+        trips_qs = (
+            Trip.objects
+            .filter(id__in=trip_ids)
+            .select_related("client", "consultant_tp")
+            .order_by("travelling_date")
+        )
+        users_qs = {u.id: u for u in User.objects.filter(id__in=user_ids)}
+
+        by_user = defaultdict(list)
+        for t in trips_qs:
+            uid = trip_user_map.get(t.id)
+            if uid and uid in users_qs:
+                by_user[users_qs[uid]].append(t)
+
+        test_email = request.user.email
+        sent = 0
+        for vr_user, trips in by_user.items():
+            trip_rows = []
+            mismatch_trips = []
+            for t in sorted(trips, key=lambda x: x.travelling_date or _date.min):
+                row = {
+                    "tourplanId": t.tourplanId or "",
+                    "name": t.name or "",
+                    "client_name": t.client.name if t.client else "",
+                    "travelling_date": t.travelling_date,
+                    "quantity_pax": t.quantity_pax,
+                    "amount": int(t.amount) if t.amount else None,
+                    "difficulty": t.difficulty or "",
+                }
+                trip_rows.append(row)
+                if (
+                    t.consultant_tp_id
+                    and t.consultant_tp_id != vr_user.id
+                    and t.consultant_tp.userType == "Ventas"
+                ):
+                    mismatch_trips.append({**row, "consultant_username": t.consultant_tp.username})
+            send_templated_email(
+                subject=f"[PRUEBA – {vr_user.username}] Asignación VR – {month_label}",
+                to_emails=[test_email],
+                template_name="emails/vr_assignment.html",
+                context={
+                    "user_name": vr_user.other_name or vr_user.username,
+                    "month_label": month_label,
+                    "trips": trip_rows,
+                    "mismatch_trips": mismatch_trips,
+                    "total_files": len(trip_rows),
+                    "total_pax": sum(t["quantity_pax"] for t in trip_rows),
+                    "logo_url": logo_url,
+                    "icons_base_url": icons_base_url,
+                    "site_url": site_url,
+                },
+            )
+            sent += 1
+
+        return JsonResponse({"ok": True, "sent": sent, "to": test_email})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 def compare_ref(ref1, ref2):
@@ -7691,3 +8327,237 @@ def notification_unsubscribe(request, token):
         'notification_label': pref.get_notification_type_display(),
         'already_done': already_done,
     })
+
+
+# ─── Revision / Correcciones ──────────────────────────────────────────────────
+
+def _send_gchat_notification(department, text, mention_user=None):
+    webhook_user = (
+        User.objects.filter(department=department)
+        .exclude(chat_webhook_url='').first()
+    )
+    if not webhook_user:
+        return
+    if mention_user and getattr(mention_user, 'chat_user_id', ''):
+        text = f"<users/{mention_user.chat_user_id}> {text}"
+    try:
+        import requests as _req
+        _req.post(webhook_user.chat_webhook_url, json={'text': text}, timeout=5)
+    except Exception:
+        pass
+
+
+def _auto_assign_reviewer(entry, department):
+    """Pick the best reviewer for an entry based on today's schedule and workload."""
+    from django.db.models import Count as _Count
+    today = date.today()
+    weekday = today.weekday()  # 0=Mon…4=Fri
+    if weekday > 4:
+        return None
+
+    absent_ids = set(
+        _absences_on_day(today, department).values_list('absence_user_id', flat=True)
+    )
+
+    schedule_qs = (
+        RevisionScheduleDay.objects
+        .filter(
+            weekday=weekday,
+            user__department=department,
+            user__isActivated=True,
+            user__show_in_calendar=True,
+            user__userType='Ventas',
+        )
+        .exclude(user_id__in=absent_ids)
+        .select_related('user')
+        .order_by('order')
+    )
+
+    # Junior itineraries can only be reviewed by Seniors
+    entry_user = entry.trip.responsable_user if entry.trip else None
+    if entry_user and entry_user.seniority == 'Junior':
+        schedule_qs = schedule_qs.filter(user__seniority='Senior')
+
+    eligible = [s for s in schedule_qs if s.user_id != (entry_user.id if entry_user else None)]
+    if not eligible:
+        return None
+
+    # Balance by pending revision count; use schedule order as tiebreaker
+    user_ids = [s.user_id for s in eligible]
+    pending = dict(
+        Entry.objects
+        .filter(revising_user_id__in=user_ids, is_revised=False)
+        .exclude(revision_link__isnull=True).exclude(revision_link='')
+        .values('revising_user_id')
+        .annotate(n=_Count('id'))
+        .values_list('revising_user_id', 'n')
+    )
+    best = min(eligible, key=lambda s: (pending.get(s.user_id, 0), s.order))
+    return best.user
+
+
+@login_required
+def revising_itineraries(request):
+    dept = request.user.department
+    WEEKDAYS = [(0, 'Lunes'), (1, 'Martes'), (2, 'Miércoles'), (3, 'Jueves'), (4, 'Viernes')]
+
+    schedule_days = (
+        RevisionScheduleDay.objects
+        .filter(user__department=dept, user__isActivated=True)
+        .select_related('user')
+        .order_by('weekday', 'order')
+    )
+    grid = {wd: [] for wd, _ in WEEKDAYS}
+    for sd in schedule_days:
+        grid[sd.weekday].append(sd.user)
+
+    dept_users = User.objects.filter(
+        department=dept, isActivated=True, show_in_calendar=True,
+        userType='Ventas',
+    ).order_by('username')
+
+    pending_entries = (
+        Entry.objects
+        .filter(trip__department=dept, is_revised=False)
+        .exclude(revision_link__isnull=True).exclude(revision_link='')
+        .select_related('trip', 'trip__client', 'trip__responsable_user', 'revising_user', 'user_working')
+        .order_by('trip__travelling_date')
+    )
+
+    grid_rows = [(wd, label, grid[wd]) for wd, label in WEEKDAYS]
+    today = date.today()
+    absent_ids = set(
+        _absences_on_day(today, dept).values_list('absence_user_id', flat=True)
+    )
+
+    return render(request, 'intranet/revising_itineraries.html', {
+        'grid_rows': grid_rows,
+        'all_dept_users': dept_users,
+        'pending_entries': pending_entries,
+        'absent_ids': absent_ids,
+        'today_weekday': today.weekday(),
+    })
+
+
+@login_required
+def revision_schedule_update(request):
+    if not request.user.isAdmin:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    import json as _json
+    try:
+        data = _json.loads(request.body)  # {"0": [uid, ...], "1": [...], ...}
+    except Exception:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+
+    dept = request.user.department
+    RevisionScheduleDay.objects.filter(user__department=dept).delete()
+    rows = []
+    for wd_str, uid_list in data.items():
+        wd = int(wd_str)
+        for order, uid in enumerate(uid_list):
+            try:
+                user = User.objects.get(id=int(uid), department=dept)
+                rows.append(RevisionScheduleDay(user=user, weekday=wd, order=order))
+            except User.DoesNotExist:
+                pass
+    RevisionScheduleDay.objects.bulk_create(rows)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def entry_send_for_revision(request, entry_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        link = body.get('link', '').strip()
+    except Exception:
+        link = ''
+    try:
+        entry = Entry.objects.select_related(
+            'trip', 'trip__responsable_user'
+        ).get(id=entry_id, trip__department=request.user.department)
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'Entrada no encontrada'}, status=404)
+
+    entry.revision_link = link
+    entry.is_revised = False
+    entry.progress = "5 - Finalised"
+    # Reload with trip relation needed for auto-assignment
+    entry_with_trip = Entry.objects.select_related(
+        'trip', 'trip__responsable_user'
+    ).get(id=entry.id)
+    reviewer = _auto_assign_reviewer(entry_with_trip, request.user.department)
+    entry.revising_user = reviewer
+    entry.save(update_fields=['revision_link', 'is_revised', 'revising_user', 'progress'])
+    if reviewer:
+        trip_name = entry_with_trip.trip.name if entry_with_trip.trip else '—'
+        client_name = entry_with_trip.trip.client.name if entry_with_trip.trip and entry_with_trip.trip.client else '—'
+        _send_gchat_notification(
+            request.user.department,
+            f"📋 *Nueva corrección asignada a {reviewer.other_name or reviewer.username}*\n*Viaje:* {trip_name}\n*Cliente:* {client_name}\n*Link:* {link or '—'}",
+            mention_user=reviewer,
+        )
+    return JsonResponse({
+        'ok': True,
+        'revising_user': reviewer.username if reviewer else None,
+        'revising_user_id': reviewer.id if reviewer else None,
+    })
+
+
+@login_required
+def entry_update_revising_user(request, entry_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        user_id = body.get('user_id')
+        revision_link = body.get('revision_link', None)
+    except Exception:
+        return JsonResponse({'error': 'JSON inválido'}, status=400)
+    try:
+        entry = Entry.objects.get(id=entry_id, trip__department=request.user.department)
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'Entrada no encontrada'}, status=404)
+    if user_id:
+        try:
+            reviewer = User.objects.get(id=int(user_id), department=request.user.department)
+            entry.revising_user = reviewer
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
+    else:
+        entry.revising_user = None
+    update_fields = ['revising_user']
+    if revision_link is not None:
+        entry.revision_link = revision_link.strip()
+        update_fields.append('revision_link')
+    entry.save(update_fields=update_fields)
+    if user_id and entry.revising_user:
+        entry_full = Entry.objects.select_related('trip', 'trip__client').get(id=entry.id)
+        trip_name = entry_full.trip.name if entry_full.trip else '—'
+        client_name = entry_full.trip.client.name if entry_full.trip and entry_full.trip.client else '—'
+        effective_link = entry.revision_link if revision_link is not None else (entry_full.revision_link or '—')
+        reviewer_name = entry.revising_user.other_name or entry.revising_user.username
+        _send_gchat_notification(
+            request.user.department,
+            f"📋 *Corrección asignada a {reviewer_name}*\n*Viaje:* {trip_name}\n*Cliente:* {client_name}\n*Link:* {effective_link}",
+            mention_user=entry.revising_user,
+        )
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def entry_mark_revised(request, entry_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    try:
+        entry = Entry.objects.get(id=entry_id, trip__department=request.user.department)
+    except Entry.DoesNotExist:
+        return JsonResponse({'error': 'Entrada no encontrada'}, status=404)
+    entry.is_revised = True
+    entry.save(update_fields=['is_revised'])
+    return JsonResponse({'ok': True})

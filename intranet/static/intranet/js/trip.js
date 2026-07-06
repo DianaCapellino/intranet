@@ -246,7 +246,8 @@ function create_datatable (type) {
                 { data: "difficulty" },      // 13
                 { data: "note" },            // 14
                 { data: "travelling_date" }, // 15
-                { data: "acciones", orderable: false } // 16
+                { data: "acciones", orderable: false }, // 16
+                { data: "revision", orderable: false }  // 17
             ],
             layout: {
                 topStart: _isClient ? {
@@ -306,12 +307,12 @@ function create_datatable (type) {
             responsive: _isClient,
             columnDefs: _isClient ? [
                 // Hidden and excluded from colvis: Type, Client, Quoted by,
-                // Priority, Difficulty, More info
-                { visible: false, className: 'no-colvis', targets: [3, 6, 9, 12, 13, 14] },
+                // Priority, Difficulty, More info, Revision (col 17)
+                { visible: false, className: 'no-colvis', targets: [3, 6, 9, 12, 13, 14, 17] },
                 // Date of Travel: hidden by default but toggleable via colvis
                 { visible: false, targets: [15] },
                 { width: '20%', targets: [2] },
-                { orderable: false, targets: [16] },
+                { orderable: false, targets: [16, 17] },
                 // Responsive priorities: lower = stays visible longer on small screens
                 { responsivePriority: 1, targets: [2, 16] },   // Trip, Actions — always visible
                 { responsivePriority: 2, targets: [4] },        // Status
@@ -323,7 +324,7 @@ function create_datatable (type) {
                 { responsivePriority: 8, targets: [0] },        // Date
                 { responsivePriority: 9, targets: [1] },        // Date Response
             ] : [
-                { orderable: false, targets: -1 },
+                { orderable: false, targets: [16, 17] },
                 { width: '20%', targets: [2] },
                 { width: '2px', targets: [13] },
                 { visible: false, targets: [5, 8, 12, 13, 14] }
@@ -404,6 +405,57 @@ function create_datatable (type) {
         $(document).on('click.progressPill', function () {
             $('.progress-pill-dropdown').hide();
         });
+
+        // ── Revision column handlers ─────────────────────────────────────────
+        if (!_isClient) {
+            let _srmEntryId = null;
+            let _crmEntryId = null;
+            const csrfToken = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+
+            // Send-for-revision: open modal
+            $('#entries').on('click', '.send-revision-btn', function () {
+                _srmEntryId = $(this).data('entry-id');
+                $('#srm-trip-name').text($(this).data('trip') || 'este file');
+                $('#srm-link').val('');
+                new bootstrap.Modal(document.getElementById('sendRevisionModal')).show();
+            });
+
+            // Send-for-revision: confirm
+            $('#srm-confirm').on('click', function () {
+                if (!_srmEntryId) return;
+                const link = $('#srm-link').val().trim();
+                fetch(`/entries/${_srmEntryId}/send_for_revision`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+                    body: JSON.stringify({ link }),
+                }).then(r => r.json()).then(d => {
+                    bootstrap.Modal.getInstance(document.getElementById('sendRevisionModal'))?.hide();
+                    entriesTable.ajax.reload(null, false);
+                });
+            });
+
+            // Change-reviewer: open modal
+            $('#entries').on('click', '.revision-user-btn', function () {
+                _crmEntryId = $(this).data('entry-id');
+                const currentUid = $(this).data('user-id');
+                $('#crm-user-select').val(currentUid || '');
+                new bootstrap.Modal(document.getElementById('changeReviewerModal')).show();
+            });
+
+            // Change-reviewer: confirm
+            $('#crm-confirm').on('click', function () {
+                if (!_crmEntryId) return;
+                const userId = $('#crm-user-select').val() || null;
+                fetch(`/entries/${_crmEntryId}/revising_user`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+                    body: JSON.stringify({ user_id: userId }),
+                }).then(r => r.json()).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('changeReviewerModal'))?.hide();
+                    entriesTable.ajax.reload(null, false);
+                });
+            });
+        }
 
     } else if (type == ("trips")){
         new DataTable(`#${type}`, {

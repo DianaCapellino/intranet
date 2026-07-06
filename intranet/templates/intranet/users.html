@@ -264,6 +264,22 @@
                                                             </select>
                                                         </div>
                                                     </div>
+                                                    <div class="row">
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_webhook{{user.id}}" class="form-label">
+                                                                <i class="fa-brands fa-google me-1"></i>Google Chat Webhook (espacio compartido de correcciones)
+                                                            </label>
+                                                            <input class="form-control" type="url" name="chat_webhook_url" id="modify_webhook{{user.id}}" value="{{ user.chat_webhook_url }}" placeholder="https://chat.googleapis.com/v1/spaces/...">
+                                                            <div class="form-text text-muted">Solo hace falta configurarlo en un usuario del departamento. Todos los avisos de corrección se envían a ese espacio.</div>
+                                                        </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_chat_user_id{{user.id}}" class="form-label">
+                                                                <i class="fa-brands fa-google me-1"></i>Google Chat User ID
+                                                            </label>
+                                                            <input class="form-control" type="text" name="chat_user_id" id="modify_chat_user_id{{user.id}}" value="{{ user.chat_user_id }}" placeholder="116842...">
+                                                            <div class="form-text text-muted">ID numérico de Google Chat. Se usa para mencionar al usuario en notificaciones.</div>
+                                                        </div>
+                                                    </div>
                                                     <input id="modify-user-{{ user.id }}" class="btn btn-dark btn-lg modify-users-btn" type="submit" value="MODIFICAR">
                                                 </div>
                                             </form>

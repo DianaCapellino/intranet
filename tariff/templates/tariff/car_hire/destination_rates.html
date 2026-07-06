@@ -1,0 +1,343 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container">
+    <br>
+    <div class="d-flex align-items-center justify-content-between">
+        <h2><strong>{{ location.code }}</strong> — {{ location.name }}</h2>
+        <div class="d-flex gap-2">
+            {% if user.isAdmin %}
+            <button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#newBlockModal" title="Agregar nueva vigencia">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            {% endif %}
+            <a href="{% url 'car_hire_destinations' %}">
+                <button class="btn btn-dark btn-lg" title="Volver"><i class="fa-solid fa-rotate-left"></i></button>
+            </a>
+        </div>
+    </div>
+    <small class="text-muted">
+        Markup: {{ config.markup }} — Comisión: {{ config.commission }}% — Descuento adicional: {{ config.extra_discount }}% — T.C.: {{ config.exchange }} — Precio de venta en USD
+    </small>
+
+    {% if not categories %}
+    <div class="alert alert-warning mt-4">Este destino no tiene categorías de vehículo asignadas.</div>
+    {% endif %}
+
+    {% for block in date_blocks %}
+    <div class="my-4 dest-block"
+         data-date-from="{{ block.date_from|date:'Y-m-d' }}"
+         data-date-to="{{ block.date_to|date:'Y-m-d' }}"
+         data-season="{{ block.season }}"
+         data-usd="{{ block.usd|yesno:'true,false' }}"
+         data-rate-line-ids="{{ block.rate_line_ids|join:',' }}">
+
+        <div class="d-flex align-items-center gap-3 bg-secondary bg-opacity-25 p-2 rounded flex-wrap">
+            <strong>Vigencia: {{ block.date_from|date:"d M Y" }} — {{ block.date_to|date:"d M Y" }}</strong>
+            {% if block.season %}<span class="text-primary fw-bold">{{ block.season }}</span>{% endif %}
+
+            {# Aumento adicional del período #}
+            <div class="d-flex align-items-center gap-1 ms-3">
+                <label class="mb-0 small text-nowrap">Aum.%</label>
+                <input type="number" step="0.1" min="0"
+                       class="form-control form-control-sm increase-input"
+                       style="width:70px;"
+                       value="{{ block.block_increase|floatformat:1 }}"
+                       placeholder="0">
+            </div>
+
+            {# Toggle moneda RACK #}
+            <div class="btn-group btn-group-sm ms-auto currency-toggle" role="group" aria-label="Moneda RACK">
+                <button type="button" class="btn cur-btn cur-ars {% if not block.usd %}btn-secondary{% else %}btn-outline-secondary{% endif %}">ARS</button>
+                <button type="button" class="btn cur-btn cur-usd {% if block.usd %}btn-secondary{% else %}btn-outline-secondary{% endif %}">USD</button>
+            </div>
+
+            {% if user.isAdmin %}
+            <button class="btn btn-sm btn-danger delete-block-btn" title="Eliminar esta vigencia">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+            {% endif %}
+        </div>
+
+        <table class="table table-sm table-hover align-middle mt-2">
+            <thead class="table-light">
+                <tr>
+                    <th>Categoría</th>
+                    <th style="width:150px;" class="rack-header">RACK (<span class="cur-label">{% if block.usd %}USD{% else %}ARS{% endif %}</span>/día)</th>
+                    <th style="width:130px;">Costo diario (USD)</th>
+                    <th style="width:130px;">Venta (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in block.rows %}
+                <tr data-category-id="{{ row.category.id }}">
+                    <td>
+                        <strong>{{ row.category.code }}</strong> {{ row.category.name }}
+                        {% if row.category.max_passengers %}<small class="text-muted ms-2"><i class="fa-solid fa-user"></i> {{ row.category.max_passengers }}</small>{% endif %}
+                        {% if row.category.max_luggage %}<small class="text-muted ms-1"><i class="fa-solid fa-suitcase"></i> {{ row.category.max_luggage }}</small>{% endif %}
+                    </td>
+                    <td>
+                        <input type="number" step="0.01" min="0"
+                               class="form-control form-control-sm rack-input"
+                               value="{{ row.rack|default:'' }}"
+                               data-rate-id="{{ row.rate.id|default:'' }}"
+                               data-rate-line-id="{{ row.rate_line_id|default:'' }}"
+                               placeholder="0.00">
+                    </td>
+                    <td class="daily-cost text-muted">
+                        {% if row.daily_cost is not None %}{{ row.daily_cost|floatformat:2 }}{% else %}—{% endif %}
+                    </td>
+                    <td class="sell-price fw-semibold">
+                        {% if row.sell is not None and row.sell > 0 %}{{ row.sell }}{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% empty %}
+    <div class="text-muted mt-4 text-center py-5">
+        <i class="fa-regular fa-calendar-xmark fa-2x mb-2 d-block"></i>
+        No hay vigencias cargadas para este destino.<br>
+        {% if user.isAdmin %}Usá el botón <strong>+</strong> para agregar la primera.{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{# ─── Modal: nueva vigencia ───────────────────────────────────────────────── #}
+<div class="modal fade" id="newBlockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nueva vigencia — {{ location.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label">Desde</label>
+                        <input type="date" class="form-control" id="new_date_from">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Hasta</label>
+                        <input type="date" class="form-control" id="new_date_to">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Temporada (opcional)</label>
+                        <input type="text" class="form-control" id="new_season" placeholder="Alta, Baja…">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="saveNewBlockBtn">Crear vigencia</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+const LOCATION_ID = {{ location.id }};
+const MARKUP      = parseFloat("{{ config.markup|default:1 }}");
+const COMMISSION  = parseFloat("{{ config.commission|default:0 }}");
+const EXTRA_DISC  = parseFloat("{{ config.extra_discount|default:0 }}");
+const EXCHANGE    = parseFloat("{{ config.exchange|default:1 }}");
+const GLOBAL_INC  = parseFloat("{{ config.increase|default:0 }}");
+
+async function postJSON(url, body) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+
+function blockIncrease(block) {
+    return parseFloat(block.querySelector('.increase-input')?.value || 0) || 0;
+}
+
+function calcFromRack(rack, isUsd, blockInc) {
+    if (!rack || !MARKUP) return { daily: null, sell: null };
+    const IVA      = 1.21;
+    const commDec  = COMMISSION / 100;
+    const totalInc = 1 + (GLOBAL_INC + (blockInc || 0)) / 100;
+    // ARS rack already has IVA; commission on pre-IVA amount → factor (1 - comm/IVA)
+    // USD rack: standard commission factor
+    const daily = isUsd
+        ? rack * (1 - commDec) * (1 - EXTRA_DISC / 100) * totalInc
+        : rack / EXCHANGE * (1 - commDec / IVA) * (1 - EXTRA_DISC / 100) * totalInc;
+    const sell  = Math.ceil(daily / MARKUP);
+    return { daily: daily.toFixed(2), sell };
+}
+
+function blockIsUsd(block) {
+    return block.dataset.usd === 'true';
+}
+
+function recalcBlock(block) {
+    const isUsd   = blockIsUsd(block);
+    const blockInc = blockIncrease(block);
+    block.querySelectorAll('.rack-input').forEach(input => {
+        const rack = parseFloat(input.value);
+        if (!rack) return;
+        const tr = input.closest('tr');
+        const { daily, sell } = calcFromRack(rack, isUsd, blockInc);
+        tr.querySelector('.daily-cost').textContent = daily !== null ? daily : '—';
+        tr.querySelector('.sell-price').textContent = (sell !== null && sell > 0) ? sell : '—';
+    });
+}
+
+// ─── RACK inputs: live recalc + debounced autosave ───────────────────
+const saveTimers = {};
+
+async function saveRackInput(input, block) {
+    const rack = parseFloat(input.value);
+    let rateId     = input.dataset.rateId;
+    let rateLineId = input.dataset.rateLineId;
+
+    // Category was added after the block was created — create the rate on first save
+    if (!rateId || !rateLineId) {
+        const categoryId = input.closest('tr').dataset.categoryId;
+        if (!categoryId) return;
+        try {
+            const created = await postJSON('{% url "car_hire_create_category_rate_in_block" %}', {
+                category_id: parseInt(categoryId),
+                date_from:   block.dataset.dateFrom,
+                date_to:     block.dataset.dateTo,
+                season:      block.dataset.season || '',
+            });
+            input.dataset.rateId     = created.rate_id;
+            input.dataset.rateLineId = created.rate_line_id;
+            rateId     = created.rate_id;
+            rateLineId = created.rate_line_id;
+        } catch (e) {
+            console.error('Error creando tarifa:', e);
+            return;
+        }
+    }
+
+    const { sell } = calcFromRack(rack, blockIsUsd(block), blockIncrease(block));
+    try {
+        await postJSON('{% url "car_hire_update_rate" %}', {
+            rate_id: parseInt(rateId),
+            cost: rack || 0,
+            sell: sell || 0,
+        });
+        input.style.background = '#d4edda';
+        setTimeout(() => input.style.background = '', 1200);
+    } catch (e) {
+        console.error('Error guardando tarifa:', e);
+        input.style.background = '#f8d7da';
+        setTimeout(() => input.style.background = '', 3000);
+    }
+}
+
+document.querySelectorAll('.dest-block').forEach(block => {
+    block.querySelectorAll('.rack-input').forEach(input => {
+        input.addEventListener('input', () => {
+            const rack = parseFloat(input.value);
+            const tr   = input.closest('tr');
+            const { daily, sell } = calcFromRack(rack, blockIsUsd(block), blockIncrease(block));
+            tr.querySelector('.daily-cost').textContent = daily !== null ? daily : '—';
+            tr.querySelector('.sell-price').textContent = (sell !== null && sell > 0) ? sell : '—';
+
+            // Autosave 600ms after the user stops typing
+            const key = input.dataset.rateId;
+            clearTimeout(saveTimers[key]);
+            saveTimers[key] = setTimeout(() => saveRackInput(input, block), 600);
+        });
+
+        // Also save immediately on blur (covers copy-paste without keystroke)
+        input.addEventListener('change', () => saveRackInput(input, block));
+    });
+
+    // ─── Aumento adicional per block ─────────────────────────────────
+    const incInput = block.querySelector('.increase-input');
+    if (incInput) {
+        incInput.addEventListener('input', () => recalcBlock(block));
+        incInput.addEventListener('change', async () => {
+            const increase = parseFloat(incInput.value) || 0;
+            const rateIds  = Array.from(block.querySelectorAll('.rack-input'))
+                .map(i => parseInt(i.dataset.rateId)).filter(Boolean);
+            if (!rateIds.length) return;
+            try {
+                await postJSON('{% url "car_hire_update_block_increase" %}', { rate_ids: rateIds, increase });
+            } catch (e) {
+                console.error('Error guardando aumento:', e);
+            }
+        });
+    }
+});
+
+// ─── Toggle moneda ────────────────────────────────────────────────────
+document.querySelectorAll('.dest-block').forEach(block => {
+    const arsBtn = block.querySelector('.cur-ars');
+    const usdBtn = block.querySelector('.cur-usd');
+    const label  = block.querySelector('.cur-label');
+    if (!arsBtn) return;
+
+    function applyToggle(isUsd) {
+        block.dataset.usd = isUsd ? 'true' : 'false';
+        arsBtn.className = arsBtn.className.replace(/btn-(outline-)?secondary/, isUsd ? 'btn-outline-secondary' : 'btn-secondary');
+        usdBtn.className = usdBtn.className.replace(/btn-(outline-)?secondary/, isUsd ? 'btn-secondary' : 'btn-outline-secondary');
+        if (label) label.textContent = isUsd ? 'USD' : 'ARS';
+        recalcBlock(block);
+    }
+
+    arsBtn.addEventListener('click', async () => {
+        if (!blockIsUsd(block)) return;
+        applyToggle(false);
+        const ids = block.dataset.rateLineIds.split(',').map(Number).filter(Boolean);
+        await postJSON('{% url "car_hire_update_block_currency" %}', { rate_line_ids: ids, usd: false });
+    });
+
+    usdBtn.addEventListener('click', async () => {
+        if (blockIsUsd(block)) return;
+        applyToggle(true);
+        const ids = block.dataset.rateLineIds.split(',').map(Number).filter(Boolean);
+        await postJSON('{% url "car_hire_update_block_currency" %}', { rate_line_ids: ids, usd: true });
+    });
+});
+
+// ─── Eliminar bloque ──────────────────────────────────────────────────
+document.querySelectorAll('.delete-block-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const block = btn.closest('.dest-block');
+        if (!confirm('¿Eliminar esta vigencia y todas sus tarifas?')) return;
+        await postJSON('{% url "car_hire_delete_destination_block" %}', {
+            location_id: LOCATION_ID,
+            date_from: block.dataset.dateFrom,
+            date_to: block.dataset.dateTo,
+            season: block.dataset.season,
+        });
+        block.remove();
+    });
+});
+
+// ─── Nueva vigencia ───────────────────────────────────────────────────
+document.getElementById('saveNewBlockBtn').addEventListener('click', async () => {
+    const dateFrom = document.getElementById('new_date_from').value;
+    const dateTo   = document.getElementById('new_date_to').value;
+    const season   = document.getElementById('new_season').value.trim();
+
+    if (!dateFrom || !dateTo) { alert('Completá las fechas.'); return; }
+    if (dateTo < dateFrom)    { alert('La fecha de fin debe ser posterior a la de inicio.'); return; }
+
+    try {
+        await postJSON('{% url "car_hire_create_destination_block" %}', {
+            location_id: LOCATION_ID,
+            date_from: dateFrom,
+            date_to: dateTo,
+            season: season,
+        });
+        bootstrap.Modal.getInstance(document.getElementById('newBlockModal'))?.hide();
+        location.reload();
+    } catch (e) {
+        alert('Error al crear vigencia: ' + e.message);
+    }
+});
+</script>
+{% endblock %}

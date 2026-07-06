@@ -1,0 +1,671 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container py-4">
+
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h2><i class="fa-solid fa-car me-2"></i>Car Hire — Quote</h2>
+        <div class="d-flex gap-2">
+            {% if user.isAdmin %}
+            <button class="btn btn-outline-secondary btn-lg" data-bs-toggle="modal" data-bs-target="#hertzImportModal" title="Importar cotización Hertz">
+                <i class="fa-solid fa-file-import"></i>
+            </button>
+            {% endif %}
+            <a href="{% url 'tariff' %}" class="btn btn-dark btn-lg" title="Back">
+                <i class="fa-solid fa-rotate-left"></i>
+            </a>
+        </div>
+    </div>
+
+    {# ── Form ──────────────────────────────────────────────────────────────── #}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Destination</label>
+                    <select class="form-select" id="q_location">
+                        <option value="">— Select a destination —</option>
+                        {% for loc in locations %}
+                        <option value="{{ loc.id }}">{{ loc.code }} — {{ loc.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold">Start date</label>
+                    <input type="date" class="form-control" id="q_date">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Vehicle type</label>
+                    <select class="form-select" id="q_category" disabled>
+                        <option value="">— Select destination first —</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label fw-semibold">Days</label>
+                    <input type="number" class="form-control" id="q_days" min="1" value="3">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label fw-semibold">Passengers</label>
+                    <input type="number" class="form-control" id="q_passengers" min="1" value="2">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" id="calcBtn">
+                        <i class="fa-solid fa-calculator me-1"></i> Calculate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Capacity warning ─────────────────────────────────────────────────── #}
+    <div id="capacityWarn" class="alert alert-warning align-items-center gap-2 mb-3" style="display:none;">
+        <i class="fa-solid fa-triangle-exclamation fa-lg"></i>
+        <span id="capacityWarnMsg"></span>
+    </div>
+
+    {# ── Result ────────────────────────────────────────────────────────────── #}
+    <div id="resultSection" style="display:none;">
+
+        {# Vehicle card #}
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="row align-items-center g-3">
+                    <div class="col-md-3 text-center">
+                        <img id="res_pic" src="" alt=""
+                             style="max-width:100%;max-height:180px;object-fit:cover;border-radius:8px;display:none;">
+                        <div id="res_no_pic"
+                             class="align-items-center justify-content-center bg-light rounded"
+                             style="height:140px;display:none;">
+                            <i class="fa-solid fa-car fa-3x text-muted"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <h3 class="mb-1">
+                            <span id="res_code" class="text-muted me-2 fs-5"></span>
+                            <span id="res_name"></span>
+                        </h3>
+                        <div class="d-flex flex-wrap gap-4 mt-2 text-muted fs-5">
+                            <span id="res_passengers_wrap" style="display:none;">
+                                <i class="fa-solid fa-user me-1"></i><span id="res_passengers"></span> passengers max
+                            </span>
+                            <span id="res_luggage_wrap" style="display:none;">
+                                <i class="fa-solid fa-suitcase me-1"></i><span id="res_luggage"></span> bags max
+                            </span>
+                            <span id="res_transmission_wrap" style="display:none;">
+                                <i class="fa-solid fa-gears me-1"></i><span id="res_transmission"></span>
+                            </span>
+                        </div>
+                        <div id="franchiseNote" class="mt-3 p-3 bg-light border rounded fst-italic text-muted small" style="display:none;white-space:pre-wrap;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Price breakdown #}
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="mb-3" id="res_subtitle"></h5>
+                <table class="table align-middle" id="priceTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:36px;"></th>
+                            <th>Item</th>
+                            <th class="text-end" style="width:110px;">Per day (USD)</th>
+                            <th class="text-end" style="width:110px;">Total (USD)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="priceBody"></tbody>
+                </table>
+
+                <div class="d-flex justify-content-end mt-3 border-top pt-3">
+                    <div class="d-flex gap-5 align-items-end">
+                        <div class="text-center">
+                            <div class="text-muted small mb-1 text-uppercase">Per passenger</div>
+                            <div class="fs-3 fw-semibold text-primary" id="grandTotalPerPax">USD 0</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted small mb-1 text-uppercase letter-spacing-1">Total</div>
+                            <div class="display-5 fw-bold text-success" id="grandTotal">USD 0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>{# /resultSection #}
+
+    {% if conditions_text %}
+    <div class="mt-3 p-3 bg-light border rounded">
+        <p class="fst-italic text-muted small mb-0" style="white-space:pre-wrap;">{{ conditions_text }}</p>
+    </div>
+    {% endif %}
+
+    <div id="errorMsg" class="alert alert-warning mt-3" style="display:none;"></div>
+
+</div>
+
+<script>
+const CSRF_TOKEN  = '{{ csrf_token }}';
+const CATS_BY_LOC = {{ cats_by_location_json|safe }};
+
+// ─── Destination / date → populate vehicle types sorted by price ──────
+async function fetchCategoryOptions() {
+    const locId      = document.getElementById('q_location').value;
+    const date       = document.getElementById('q_date').value;
+    const passengers = parseInt(document.getElementById('q_passengers').value) || 2;
+    const catSel     = document.getElementById('q_category');
+    if (!locId) {
+        catSel.innerHTML = '<option value="">— Select destination first —</option>';
+        catSel.disabled = true;
+        return;
+    }
+    const prevVal = catSel.value;
+    catSel.innerHTML = '<option value="">Loading…</option>';
+    catSel.disabled  = true;
+    try {
+        const res  = await fetch('{% url "car_hire_quoter_list_categories" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ location_id: locId, date: date || null, passengers }),
+        });
+        const data = await res.json();
+        catSel.innerHTML = '<option value="">— Select vehicle type —</option>';
+        if (data.categories && data.categories.length) {
+            data.categories.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.code} — ${c.name}  (USD ${c.sell_per_day.toLocaleString('en-US')}/day)`;
+                catSel.appendChild(opt);
+            });
+            catSel.disabled = false;
+            if (prevVal) catSel.value = prevVal; // restore selection if still available
+        } else {
+            catSel.innerHTML = '<option value="">No rates available for this date</option>';
+        }
+    } catch (e) {
+        catSel.innerHTML = '<option value="">— Select vehicle type —</option>';
+        catSel.disabled = false;
+    }
+}
+
+document.getElementById('q_location').addEventListener('change', fetchCategoryOptions);
+document.getElementById('q_date').addEventListener('change', fetchCategoryOptions);
+document.getElementById('q_passengers').addEventListener('change', fetchCategoryOptions);
+
+// ─── Calculate ────────────────────────────────────────────────────────
+document.getElementById('calcBtn').addEventListener('click', calculate);
+
+async function calculate() {
+    const locId      = document.getElementById('q_location').value;
+    const catId      = document.getElementById('q_category').value;
+    const date       = document.getElementById('q_date').value;
+    const days       = Math.max(1, parseInt(document.getElementById('q_days').value) || 1);
+    const passengers = Math.max(1, parseInt(document.getElementById('q_passengers').value) || 1);
+
+    hideError();
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('capacityWarn').style.display  = 'none';
+
+    if (!locId || !catId || !date) { showError('Please fill in all fields.'); return; }
+
+    const res  = await fetch('{% url "car_hire_quoter_calculate" %}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+        body: JSON.stringify({ location_id: locId, category_id: catId, date, days, passengers }),
+    });
+    const data = await res.json();
+    if (data.error) { showError(data.error); return; }
+
+    renderResult(data);
+}
+
+// ─── Render ───────────────────────────────────────────────────────────
+function renderResult(data) {
+    const cat  = data.category;
+    const days = data.days;
+
+    // Capacity warning
+    const warn = document.getElementById('capacityWarn');
+    if (data.exceeds_capacity) {
+        document.getElementById('capacityWarnMsg').textContent =
+            `This vehicle fits a maximum of ${cat.max_passengers} passengers. ` +
+            `For ${data.passengers} passengers, 2 vehicles would be needed. ` +
+            `Showing quote for 1 vehicle (${data.effective_passengers} pax).`;
+        warn.style.display = 'flex';
+    } else {
+        warn.style.display = 'none';
+    }
+
+    // Vehicle card
+    document.getElementById('res_code').textContent = cat.code;
+    document.getElementById('res_name').textContent = cat.name;
+    const pic = document.getElementById('res_pic');
+    const noPic = document.getElementById('res_no_pic');
+    if (cat.pic1_url) {
+        pic.src = cat.pic1_url;
+        pic.style.display  = 'block';
+        noPic.style.display = 'none';
+    } else {
+        pic.src = '';
+        pic.style.display  = 'none';
+        noPic.style.display = 'flex';
+    }
+    showSpec('res_passengers_wrap', 'res_passengers', cat.max_passengers);
+    showSpec('res_luggage_wrap',    'res_luggage',    cat.max_luggage);
+    showSpec('res_transmission_wrap','res_transmission', cat.transmission);
+
+    // Franchise & Guarantee note — always visible if note exists
+    const noteEl = document.getElementById('franchiseNote');
+    if (cat.note) {
+        noteEl.textContent = cat.note;
+        noteEl.style.display = 'block';
+    } else {
+        noteEl.textContent = '';
+        noteEl.style.display = 'none';
+    }
+
+    const paxLabel = data.effective_passengers > 1
+        ? ` · ${data.effective_passengers} passengers`
+        : '';
+    document.getElementById('res_subtitle').textContent =
+        `${days} day${days !== 1 ? 's' : ''}${paxLabel}`;
+
+    // Build rows: base → recommended (extras + fixed costs) → non-recommended
+    const rows = [];
+
+    rows.push({
+        id: 'base', label: 'Base rental', perDay: data.sell_per_day,
+        perDayFlag: true, checked: true, alwaysOn: true, badge: null,
+    });
+
+    data.extras.forEach(e => {
+        rows.push({
+            id: e.type, label: e.label, perDay: e.sell_per_day,
+            perDayFlag: true, checked: true, alwaysOn: false,
+            badge: `${e.pct}% of RACK`,
+        });
+    });
+
+    data.fixed_costs.filter(fc => fc.recommended).forEach(fc => {
+        rows.push({
+            id: `fc_${fc.id}`, label: fc.name, perDay: fc.sell,
+            perDayFlag: fc.per_day, checked: true, alwaysOn: false,
+            badge: fc.per_day ? null : 'one-time',
+        });
+    });
+
+    data.fixed_costs.filter(fc => !fc.recommended).forEach(fc => {
+        rows.push({
+            id: `fc_${fc.id}`, label: fc.name, perDay: fc.sell,
+            perDayFlag: fc.per_day, checked: false, alwaysOn: false,
+            badge: fc.per_day ? null : 'one-time',
+        });
+    });
+
+    renderTable(rows, days);
+    document.getElementById('resultSection').style.display = '';
+}
+
+function renderTable(rows, days) {
+    const tbody = document.getElementById('priceBody');
+    tbody.innerHTML = rows.map(r => {
+        const dailyCeil = Math.ceil(r.perDay);
+        const total     = r.perDayFlag ? dailyCeil * days : r.perDay;
+        const checked  = r.checked  ? 'checked' : '';
+        const disabled = r.alwaysOn ? 'disabled' : '';
+        const badge    = r.badge    ? `<span class="badge bg-secondary ms-2 fw-normal" style="font-size:.7em;">${r.badge}</span>` : '';
+        return `<tr class="price-row"
+                    data-per-day="${r.perDay}"
+                    data-per-day-flag="${r.perDayFlag ? 1 : 0}">
+            <td><input type="checkbox" class="form-check-input price-cb" ${checked} ${disabled}></td>
+            <td>${r.label}${badge}</td>
+            <td class="text-end text-muted">${r.perDayFlag ? fmt(r.perDay) : '—'}</td>
+            <td class="text-end fw-semibold row-total">${fmt(total)}</td>
+        </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.price-cb').forEach(cb => {
+        cb.addEventListener('change', recalcTotal);
+    });
+    recalcTotal();
+}
+
+function recalcTotal() {
+    const days = Math.max(1, parseInt(document.getElementById('q_days').value) || 1);
+    const pax  = Math.max(1, parseInt(document.getElementById('q_passengers').value) || 1);
+    let total  = 0;
+    document.querySelectorAll('.price-row').forEach(row => {
+        const cb      = row.querySelector('.price-cb');
+        const perDay  = parseFloat(row.dataset.perDay);
+        const isDaily = row.dataset.perDayFlag === '1';
+        const amount  = isDaily ? Math.ceil(perDay) * days : perDay;
+        if (cb && cb.checked) total += amount;
+        row.querySelector('.row-total').textContent = (cb && cb.checked) ? fmt(amount) : '—';
+    });
+    const perPax     = Math.ceil(total / pax);
+    const grandTotal = perPax * pax;
+    const fmtDec = v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('grandTotalPerPax').textContent =
+        `USD ${fmtDec(perPax)}`;
+    document.getElementById('grandTotal').textContent =
+        `USD ${fmtDec(grandTotal)}`;
+}
+
+function showSpec(wrapId, valId, val) {
+    if (val) {
+        document.getElementById(valId).textContent = val;
+        document.getElementById(wrapId).style.display = '';
+    } else {
+        document.getElementById(wrapId).style.display = 'none';
+    }
+}
+function fmt(val) { return Math.ceil(val).toLocaleString('en-US'); }
+function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg; el.style.display = '';
+}
+function hideError() { document.getElementById('errorMsg').style.display = 'none'; }
+</script>
+{% if user.isAdmin %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<div class="modal fade" id="hertzImportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-file-import me-2"></i>Importar cotización Hertz</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="hertz-tab-text-btn" onclick="hertzSwitchTab('text')">
+                            <i class="fa-solid fa-paste me-1"></i>Texto
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="hertz-tab-pdf-btn" onclick="hertzSwitchTab('pdf')">
+                            <i class="fa-solid fa-file-pdf me-1"></i>PDF
+                        </button>
+                    </li>
+                </ul>
+
+                <div id="hertz-input-text">
+                    <textarea class="form-control font-monospace" id="hertzEmailText" rows="10"
+                              style="font-size:.8em;"
+                              placeholder="Pegá aquí el contenido completo del email de cotización de Hertz..."></textarea>
+                </div>
+                <div id="hertz-input-pdf" class="d-none">
+                    <input type="file" id="hertzPdfInput" class="form-control" accept=".pdf">
+                    <div id="hertzPdfStatus" class="small text-muted mt-2"></div>
+                    <textarea id="hertzPdfExtracted" class="form-control mt-2 font-monospace d-none"
+                              style="font-size:.78em;" rows="6" readonly></textarea>
+                </div>
+
+                <div class="row g-2 my-3 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label fw-semibold mb-1">Pasajeros</label>
+                        <input type="number" class="form-control" id="hertz_passengers" min="1" value="2" style="width:90px;">
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-primary" id="parseHertzBtn">
+                            <i class="fa-solid fa-calculator me-1"></i> Calcular
+                        </button>
+                    </div>
+                </div>
+
+                <div id="hertzResult" style="display:none;">
+                    <div id="hertzResultTable"></div>
+
+                    <div class="mt-4 pt-3 border-top">
+                        <h6 class="mb-3 fw-semibold">Generar cotización</h6>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label mb-1">Destino</label>
+                                <select class="form-select form-select-sm" id="hertz_loc_sel">
+                                    <option value="">— Seleccionar —</option>
+                                    {% for loc in locations %}
+                                    <option value="{{ loc.id }}">{{ loc.code }} — {{ loc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label mb-1">Vehículo</label>
+                                <select class="form-select form-select-sm" id="hertz_cat_sel" disabled>
+                                    <option value="">— Seleccioná destino —</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-success btn-sm w-100" id="showHertzQuoteBtn">
+                                    <i class="fa-solid fa-file-lines me-1"></i> Cotizar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Tab switching ────────────────────────────────────────────────────────────
+function hertzSwitchTab(tab) {
+    document.getElementById('hertz-input-text').classList.toggle('d-none', tab !== 'text');
+    document.getElementById('hertz-input-pdf').classList.toggle('d-none',  tab !== 'pdf');
+    document.getElementById('hertz-tab-text-btn').classList.toggle('active', tab === 'text');
+    document.getElementById('hertz-tab-pdf-btn').classList.toggle('active',  tab === 'pdf');
+}
+
+function hertzGetText() {
+    return document.getElementById('hertz-tab-pdf-btn').classList.contains('active')
+        ? document.getElementById('hertzPdfExtracted').value.trim()
+        : document.getElementById('hertzEmailText').value.trim();
+}
+
+// ── PDF extraction via pdf.js ─────────────────────────────────────────────
+document.getElementById('hertzPdfInput').addEventListener('change', async function () {
+    const file   = this.files[0];
+    if (!file) return;
+    const status    = document.getElementById('hertzPdfStatus');
+    const extracted = document.getElementById('hertzPdfExtracted');
+    status.textContent = 'Extrayendo texto del PDF…';
+    extracted.classList.add('d-none');
+    try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const buffer = await file.arrayBuffer();
+        const pdf    = await pdfjsLib.getDocument({ data: buffer }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page    = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map(s => s.str).join(' ') + '\n';
+        }
+        extracted.value = text.trim();
+        extracted.classList.remove('d-none');
+        status.textContent = `✓ ${pdf.numPages} página(s) extraída(s).`;
+    } catch (e) {
+        status.textContent = 'Error leyendo PDF: ' + e.message;
+    }
+});
+
+// ── Pre-fill from main form on modal open ────────────────────────────────
+document.getElementById('hertzImportModal').addEventListener('show.bs.modal', () => {
+    const pax = document.getElementById('q_passengers').value;
+    if (pax) document.getElementById('hertz_passengers').value = pax;
+    const locVal = document.getElementById('q_location').value;
+    const catVal = document.getElementById('q_category').value;
+    if (locVal) {
+        document.getElementById('hertz_loc_sel').value = locVal;
+        document.getElementById('hertz_loc_sel').dispatchEvent(new Event('change'));
+        if (catVal) setTimeout(() => { document.getElementById('hertz_cat_sel').value = catVal; }, 60);
+    }
+    document.getElementById('hertzResult').style.display = 'none';
+});
+
+// ── Location → category cascade ──────────────────────────────────────────
+document.getElementById('hertz_loc_sel').addEventListener('change', function () {
+    const locId  = parseInt(this.value);
+    const catSel = document.getElementById('hertz_cat_sel');
+    catSel.innerHTML = '<option value="">— Seleccioná categoría —</option>';
+    if (!locId || !CATS_BY_LOC[locId]) { catSel.disabled = true; return; }
+    CATS_BY_LOC[locId].forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.code} — ${c.name}`;
+        catSel.appendChild(opt);
+    });
+    catSel.disabled = false;
+});
+
+// ── Parse / Calculate ────────────────────────────────────────────────────
+let _hertzParsed = null;
+
+document.getElementById('parseHertzBtn').addEventListener('click', async () => {
+    const text       = hertzGetText();
+    const passengers = parseInt(document.getElementById('hertz_passengers').value) || 2;
+    if (!text) { alert('Pegá el texto del email o subí el PDF.'); return; }
+
+    const btn = document.getElementById('parseHertzBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Calculando...';
+
+    try {
+        const res  = await fetch('{% url "car_hire_quoter_parse_email" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ text, passengers }),
+        });
+        const data = await res.json();
+        if (!data.ok) { alert(data.error || 'Error al procesar.'); return; }
+        _hertzParsed = data;
+        renderHertzModalResult(data);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-calculator me-1"></i> Calcular';
+    }
+});
+
+function renderHertzModalResult(data) {
+    const pl  = n => n !== 1 ? 's' : '';
+    const rows = data.items.map(item => {
+        const perDayStr = item.per_day ? `USD ${fmt(item.sell_per_day)}` : '—';
+        return `<tr>
+            <td>${item.label}</td>
+            <td class="text-end text-muted">${perDayStr}</td>
+            <td class="text-end fw-semibold">USD ${fmt(item.sell_total)}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('hertzResultTable').innerHTML = `
+        <h6 class="mb-2 text-muted">${data.days} día${pl(data.days)} · ${data.passengers} pasajero${pl(data.passengers)}</h6>
+        <table class="table table-sm align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Item</th>
+                    <th class="text-end" style="width:150px;">Por día (USD)</th>
+                    <th class="text-end" style="width:150px;">Total (USD)</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+        <div class="d-flex justify-content-end gap-5 align-items-end mb-2">
+            <div class="text-center">
+                <div class="text-muted small mb-1 text-uppercase">Por pasajero</div>
+                <div class="fs-3 fw-semibold text-primary">USD ${fmt(data.per_passenger)}</div>
+            </div>
+            <div class="text-center">
+                <div class="text-muted small mb-1 text-uppercase">Total vehículo</div>
+                <div class="display-6 fw-bold text-success">USD ${fmt(data.grand_total)}</div>
+            </div>
+        </div>
+    `;
+    document.getElementById('hertzResult').style.display = '';
+}
+
+// ── Generate full quote ──────────────────────────────────────────────────
+document.getElementById('showHertzQuoteBtn').addEventListener('click', async () => {
+    const catId = document.getElementById('hertz_cat_sel').value;
+    if (!catId || !_hertzParsed) { alert('Seleccioná un vehículo.'); return; }
+
+    const btn = document.getElementById('showHertzQuoteBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch('{% url "car_hire_quoter_category_info" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ category_id: catId }),
+        });
+        const cat = await res.json();
+        bootstrap.Modal.getInstance(document.getElementById('hertzImportModal')).hide();
+        renderHertzQuote(cat, _hertzParsed);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+function renderHertzQuote(cat, data) {
+    const days = data.days;
+    const pax  = data.passengers;
+
+    // Vehicle card
+    document.getElementById('capacityWarn').style.display = 'none';
+    document.getElementById('res_code').textContent = cat.code || '';
+    document.getElementById('res_name').textContent = cat.name || '';
+    const pic   = document.getElementById('res_pic');
+    const noPic = document.getElementById('res_no_pic');
+    if (cat.pic1_url) {
+        pic.src = cat.pic1_url;
+        pic.style.display  = 'block';
+        noPic.style.display = 'none';
+    } else {
+        pic.src = '';
+        pic.style.display  = 'none';
+        noPic.style.display = 'flex';
+    }
+    showSpec('res_passengers_wrap',   'res_passengers',   cat.max_passengers);
+    showSpec('res_luggage_wrap',      'res_luggage',      cat.max_luggage);
+    showSpec('res_transmission_wrap', 'res_transmission', cat.transmission);
+
+    const noteEl = document.getElementById('franchiseNote');
+    if (cat.note) {
+        noteEl.textContent   = cat.note;
+        noteEl.style.display = 'block';
+    } else {
+        noteEl.textContent   = '';
+        noteEl.style.display = 'none';
+    }
+
+    document.getElementById('res_subtitle').textContent =
+        `${days} día${days !== 1 ? 's' : ''} · ${pax} pasajero${pax !== 1 ? 's' : ''}`;
+
+    // Build rows from parsed Hertz items
+    const rows = data.items.map((item, i) => ({
+        id:         `h_${i}`,
+        label:      item.label,
+        perDay:     item.per_day ? item.sell_per_day : item.sell_total,
+        perDayFlag: item.per_day,
+        checked:    true,
+        alwaysOn:   item.label === 'Alquiler base',
+        badge:      item.per_day ? null : 'por reserva',
+    }));
+
+    renderTable(rows, days);
+
+    document.getElementById('q_days').value       = days;
+    document.getElementById('q_passengers').value = pax;
+    document.getElementById('resultSection').style.display = '';
+    recalcTotal();
+    document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+{% endif %}
+
+{% endblock %}

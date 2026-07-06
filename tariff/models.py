@@ -599,3 +599,176 @@ class SustainableAction(models.Model):
 
     class Meta:
         ordering = ['category']
+
+# ============================================================================
+# ALQUILER DE VEHÍCULO — pegar al final de tariff/models.py
+# Reutiliza: Location, STATUS, FCU_OPTIONS (ya definidos arriba en el archivo)
+# ============================================================================
+ 
+CAR_EXTRA_TYPES = [
+    ("AIRPORT", "Airport"),
+    ("SMART", "Smart"),
+    ("COVER", "Tyres Cover"),
+]
+# Nota: "Map" se sacó de acá. Es un costo fijo (monto plano), no un
+# porcentaje sobre la tarifa RACK -> se carga como un CarFixedCost más,
+# igual que Conductor adicional, Drop off, Snow Chain, etc.
+ 
+ 
+class CarHireConfig(models.Model):
+    """
+    Singleton: markup, tipo de cambio y porcentajes DEFAULT de Airport/
+    Smart/Cover para TODO el módulo (se gestiona desde la página de
+    Destinos). Cada categoría puede pisar estos defaults si su % real
+    difiere (ver CarCategory.airport_pct / smart_pct / cover_pct).
+    """
+    markup = models.FloatField(default=0.82, verbose_name="Markup general")
+    exchange = models.PositiveIntegerField(default=1400, verbose_name="Tipo de cambio (ARS x USD)")
+    increase = models.FloatField(default=0, verbose_name="Aumento general %")
+ 
+    default_airport_pct = models.FloatField(default=23, verbose_name="Airport % (default, sobre venta RACK)")
+    default_smart_pct = models.FloatField(default=38, verbose_name="Smart % (default, sobre venta RACK)")
+    default_cover_pct = models.FloatField(default=15, verbose_name="Cover % (default, sobre venta RACK)")
+    commission = models.FloatField(default=0, verbose_name="Comisión %")
+    extra_discount = models.FloatField(default=20, verbose_name="Descuento adicional %")
+    extras_rounding = models.PositiveSmallIntegerField(default=5, verbose_name="Redondeo extras x pax (USD)")
+    conditions_text = models.TextField(blank=True, default="", verbose_name="Condiciones generales (cotizador)")
+ 
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+ 
+    def delete(self, *args, **kwargs):
+        pass  # el singleton no se borra
+ 
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+ 
+    def __str__(self):
+        return f"Config Alquiler de Vehículo (markup {self.markup})"
+ 
+ 
+class CarCategory(models.Model):
+    """
+    Categoría / modelo de vehículo dentro de un Destino.
+    Es el equivalente a 'Product' en Servicios: lo que aparece dentro
+    del modal al clickear un Destino, y lleva al $ -> rate lines.
+    """
+    code = models.CharField(max_length=10, verbose_name="Categoría Hertz (ej: H1, K1, N1)")
+    name = models.CharField(max_length=150, verbose_name="Modelo (ej: Fiat Cronos Mt 4 Ptas)")
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="car_categories")
+    order = models.PositiveIntegerField(default=9999)
+    note = models.CharField(max_length=300, blank=True, default="")
+    pic1_url = models.CharField(max_length=500, blank=True, null=True)
+    isActivated = models.BooleanField(default=True)
+ 
+    # Porcentajes propios de la categoría (sobre la venta RACK). Si quedan
+    # en None, se usa el default general de CarHireConfig.
+    airport_pct = models.FloatField(null=True, blank=True, verbose_name="Airport % (vacío = usar default general)")
+    smart_pct = models.FloatField(null=True, blank=True, verbose_name="Smart % (vacío = usar default general)")
+    cover_pct = models.FloatField(null=True, blank=True, verbose_name="Cover % (vacío = usar default general)")
+    max_passengers = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Máx. pasajeros")
+    max_luggage = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Máx. valijas")
+    transmission = models.CharField(max_length=1, choices=[('M','Manual'),('A','Automatic')], blank=True, default='')
+ 
+    def pct_for(self, extra_type, config):
+        """Devuelve el % efectivo (propio si está cargado, si no el default general)."""
+        own = {"AIRPORT": self.airport_pct, "SMART": self.smart_pct, "COVER": self.cover_pct}.get(extra_type)
+        if own is not None:
+            return own
+        return {"AIRPORT": config.default_airport_pct, "SMART": config.default_smart_pct, "COVER": config.default_cover_pct}.get(extra_type, 0)
+ 
+    class Meta:
+        ordering = ["order"]
+        verbose_name_plural = "Car categories"
+ 
+    def __str__(self):
+        return f"{self.location.code} - {self.code} - {self.name}"
+ 
+ 
+class CarRateGroup(models.Model):
+    """Grupo tarifario de la categoría (por defecto uno solo, 'Tarifa estándar')."""
+    name = models.CharField(max_length=64, default="Tarifa estándar")
+    order = models.PositiveIntegerField(default=1)
+    category = models.ForeignKey(CarCategory, on_delete=models.CASCADE, related_name="rate_groups")
+ 
+    def __str__(self):
+        return f"{self.category} - {self.name}"
+ 
+ 
+class CarRateLine(models.Model):
+    """Bloque de vigencia (equivalente a RateLine). Un bloque = una temporada."""
+    date_from = models.DateField(verbose_name="from_date")
+    date_to = models.DateField(verbose_name="to_date")
+    group = models.ForeignKey(CarRateGroup, on_delete=models.CASCADE, related_name="group_rate")
+    season = models.CharField(max_length=64, blank=True, default="")
+    is_revised = models.BooleanField(default=True)
+    usd = models.BooleanField(default=False, verbose_name="Costo en USD")
+
+    def __str__(self):
+        return f"{self.group} - {self.date_from}/{self.date_to}"
+ 
+ 
+class CarRate(models.Model):
+    """
+    Tarifa base del alquiler (costo/venta por día del vehículo, sin extras).
+    Equivalente a 'Rate', pero sin columnas de pax: un solo valor por bloque.
+    """
+    rate_line = models.ForeignKey(CarRateLine, on_delete=models.CASCADE, related_name="line_rates")
+    status = models.CharField(choices=STATUS, max_length=64, default="Confirmed")
+    increase = models.FloatField(null=True, blank=True, default=0)
+    cost = models.FloatField(default=0, verbose_name="Costo x día (ARS)")
+    sell = models.PositiveIntegerField(default=0, verbose_name="Venta x día (USD)")
+    locked = models.BooleanField(default=False)
+ 
+    def __str__(self):
+        return f"{self.rate_line} - costo {self.cost} / venta {self.sell}"
+ 
+ 
+class CarExtra(models.Model):
+    """
+    Extras opcionales que el cliente puede o no pedir (Airport, Smart, Cover).
+    El monto se calcula por defecto como % de la venta RACK (CarRate.sell)
+    usando CarCategory.pct_for() / CarHireConfig, pero se puede pisar a mano
+    con 'manual_override' si el % no refleja el caso real.
+    """
+    rate = models.ForeignKey(CarRate, on_delete=models.CASCADE, related_name="extras")
+    type = models.CharField(choices=CAR_EXTRA_TYPES, max_length=20)
+    cost = models.FloatField(default=0, verbose_name="Costo x día (ARS)")
+    sell = models.PositiveIntegerField(default=0, verbose_name="Venta x día (USD)")
+    manual_override = models.BooleanField(default=False, verbose_name="Cargado a mano (no recalcular automático)")
+ 
+    class Meta:
+        unique_together = ("rate", "type")
+ 
+    def __str__(self):
+        return f"{self.get_type_display()} - {self.rate}"
+ 
+ 
+class CarFixedCost(models.Model):
+    """
+    Costos fijos generales: Additional Driver, Baby Seat, Return after hours,
+    Snow Chain, Border Crossing, etc.
+    location=None significa 'aplica a TODOS los destinos'.
+    """
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=64, blank=True, null=True)
+    location = models.ForeignKey(
+        Location, on_delete=models.CASCADE, related_name="car_fixed_costs",
+        null=True, blank=True, verbose_name="Destino (vacío = todos)"
+    )
+    date_from = models.DateField(null=True, blank=True)
+    date_to = models.DateField(null=True, blank=True)
+    usd = models.BooleanField(default=True)
+    exchange = models.PositiveIntegerField(default=1)
+    value = models.FloatField(default=0, verbose_name="Costo")
+    fcu = models.CharField(choices=FCU_OPTIONS, max_length=64, default="Group")
+    per_day = models.BooleanField(default=True, verbose_name="Por día (vs único por estadía)")
+    recommended = models.BooleanField(default=True, verbose_name="Recomendado (pre-tildado en cotizador)")
+    increase = models.FloatField(null=True, blank=True, default=0)
+ 
+    def __str__(self):
+        dest = self.location.code if self.location else "TODOS"
+        return f"{self.name} ({dest})"

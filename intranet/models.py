@@ -143,9 +143,12 @@ class User(AbstractUser):
     isAdmin = models.BooleanField(default=False)
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
+    seniority = models.CharField(max_length=10, choices=[('Junior','Junior'),('Senior','Senior')], blank=True, default='')
     tariff_news = models.BooleanField(default=True)
     show_in_calendar = models.BooleanField(default=True)
     show_in_client_team = models.BooleanField(default=True)
+    chat_webhook_url = models.URLField(blank=True, default='', verbose_name='Google Chat Webhook URL')
+    chat_user_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Google Chat User ID')
     client = models.ForeignKey(
         'Client',
         null=True, blank=True,
@@ -274,6 +277,8 @@ class Trip(models.Model):
     dh_type = models.CharField(max_length=64, choices=DH_TYPES, default="Sin definir")
     trip_type = models.CharField(max_length=64, choices=TRIP_TYPES, default="FIT's")
     responsable_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_responsable_users", null=True)
+    consultant_tp = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_consultant_tp_users", null=True, blank=True)
+    vr_requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_vr_requests", null=True, blank=True)
     operations_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_operations_users", null=True)
     quantity_pax = models.IntegerField(default=2)
     rent_perc = models.FloatField(default=0, blank=True, null=True)
@@ -340,6 +345,9 @@ class Entry(models.Model):
     exception = models.BooleanField(default=False)
     response_speed = models.IntegerField(null=True, blank=True)
     last_followup_sent = models.DateTimeField(null=True, blank=True, verbose_name='Último seguimiento enviado')
+    is_revised = models.BooleanField(default=False)
+    revising_user = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='revising_entries')
+    revision_link = models.CharField(max_length=500, null=True, blank=True)
 
     @property
     def response_days(self):
@@ -377,6 +385,20 @@ class Entry(models.Model):
             self.response_speed = int(get_working_days(self.starting_date, self.closing_date))
             self.save()
         
+
+class RevisionScheduleDay(models.Model):
+    WEEKDAYS = [(0,'Lunes'),(1,'Martes'),(2,'Miércoles'),(3,'Jueves'),(4,'Viernes')]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='revision_days')
+    weekday = models.IntegerField(choices=WEEKDAYS)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = [('user', 'weekday')]
+        ordering = ['weekday', 'order']
+
+    def __str__(self):
+        return f"{self.user.username} – {self.get_weekday_display()}"
+
 
 class Holidays(models.Model):
     date_from = models.DateField(verbose_name="holidays from")

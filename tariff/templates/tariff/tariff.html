@@ -38,6 +38,7 @@
                 {% if user.isAdmin %}
                     <a href="{% url 'tp_mod_list' %}"><button type="button" class="btn btn-dark btn-lg" data-bs-toggle="modal" data-bs-target="#windowTourplan"><img src="../../static/tariff/tp.jpeg" style="width:20px"></button></a>
                 {% endif %}
+                    <a href="{% url 'car_hire_quoter' %}" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="down" title="Cotizador alquiler de vehículo"><i class="fa-solid fa-car"></i></a>
                     <a href="{% url 'hotel_comparison' %}"><button type="button" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="down" title="Hotel Rate Comparison"><i class="fa-solid fa-dollar-sign"></i><i class="fa-solid fa-dollar-sign"></i></button></a>
                     <a href="{% url 'history_of_changes' %}"><button type="button" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="down" title="History of changes"><i class="fa-solid fa-history"></i></button></a>
                     <a href="{% url 'calendar_view' %}"><button type="button" class="btn btn-dark btn-lg" data-toggle="tooltip" data-placement="down" title="Special Dates"><i class="fa-solid fa-calendar"></i></button></a>

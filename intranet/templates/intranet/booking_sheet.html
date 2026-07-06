@@ -1,0 +1,1257 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block extra_head %}
+<style>
+  #booking-sheet-table td,
+  #booking-sheet-table th { font-size: .8rem; vertical-align: middle; white-space: nowrap; padding: 4px 6px; }
+  .bs-check { color: #198754; }
+  .bs-create-btn { border: none; background: none; color: #dc3545; cursor: pointer; padding: 0 2px; }
+  .bs-create-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .status-badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: .72rem; font-weight: 600; }
+  .status-fi { background:#d1ecf1; color:#0c5460; }
+  .status-ok { background:#d4edda; color:#155724; }
+  .status-ct { background:#f8d7da; color:#721c24; }
+  .status-bx { background:#e2e3e5; color:#383d41; }
+  .bs-vr-assign-btn { border:1px dashed #6c757d; background:none; color:#6c757d; border-radius:999px; padding:1px 8px; font-size:.75em; cursor:pointer; white-space:nowrap; }
+  .bs-vr-assign-btn:hover { border-color:#0d6efd; color:#0d6efd; }
+  .bs-vr-pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:.78em; font-weight:500; white-space:nowrap; }
+  .bs-vr-request-btn { border:1px dashed #0d6efd; background:none; color:#0d6efd; border-radius:999px; padding:1px 8px; font-size:.75em; cursor:pointer; white-space:nowrap; }
+  .bs-vr-request-btn:hover { background:#0d6efd; color:#fff; }
+  .bs-vr-request-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .bs-vr-requested-pill { border:1.5px solid #adb5bd; background:#e9ecef; color:#6c757d; border-radius:999px; padding:1px 8px; font-size:.75em; cursor:pointer; white-space:nowrap; }
+  .bs-vr-requested-pill:hover { border-color:#fd7e14; color:#fd7e14; }
+  .bs-month-subtotal td { background:#f1f3f5 !important; font-size:.77rem !important; padding:2px 10px !important; }
+  #bs-table-overlay { display:none; position:absolute; inset:0; background:rgba(255,255,255,0.78); z-index:20; align-items:center; justify-content:center; border-radius:4px; }
+  .bs-spin-ring { width:3.5rem; height:3.5rem; border:4px solid #f0d8d1; border-top-color:#d98875; border-radius:50%; animation:bs-spin 0.75s linear infinite; }
+  @keyframes bs-spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid mt-2">
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fa-solid fa-table-list me-2"></i>Planilla de Reservas</h2>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <div class="btn-group btn-group-sm" role="group" id="bs-view-btns">
+        <button type="button" class="btn btn-outline-secondary active" data-bs-view="default">General</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-view="vr">Vendedor Responsable</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-view="ops">Operaciones</button>
+      </div>
+      {% if is_admin %}
+      <button type="button" class="btn btn-sm btn-outline-primary d-none" id="bs-auto-assign-btn"
+              onclick="bsAutoAssignVr()">
+        <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Asignar VR
+      </button>
+      {% endif %}
+      <a href="{% url 'booking_sheet' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fa-solid fa-rotate me-1"></i>Actualizar
+      </a>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-danger">
+    <i class="fa-solid fa-triangle-exclamation me-2"></i>
+    Error al conectar con Tourplan: <code>{{ error }}</code>
+  </div>
+  {% endif %}
+
+  {% if not error %}
+  <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <div class="d-flex align-items-center gap-2">
+      <label class="fw-semibold mb-0" style="font-size:.85rem;white-space:nowrap;">Temporada:</label>
+      <select id="bs-season-select" class="form-select form-select-sm" style="width:auto"
+              onchange="window.location='?season='+this.value">
+        {% for s in season_options %}
+        <option value="{{ s.year }}"{% if s.selected %} selected{% endif %}>{{ s.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="text-muted" style="font-size:.83rem;">
+      {{ rows|length }} reserva{{ rows|length|pluralize }}
+      &nbsp;&mdash;&nbsp;
+      <span class="text-success fw-semibold" id="bs-in-count">…</span> en Intranet /
+      <span class="text-danger fw-semibold" id="bs-missing-count">…</span> sin importar
+    </div>
+  </div>
+
+  <div class="d-flex align-items-center gap-3 mb-3 flex-wrap" style="row-gap:.5rem;">
+    {% if type_filters %}
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="text-muted" style="font-size:.8rem;white-space:nowrap;">Tipo:</span>
+      {% for t in type_filters %}
+      <label class="bs-type-pill{% if not t.default_on %} bs-type-off{% endif %}"
+             data-code="{{ t.code }}"
+             style="cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:5px;
+                    padding:3px 10px;border-radius:999px;font-size:.78rem;font-weight:500;
+                    border:1.5px solid #adb5bd;background:{% if t.default_on %}#212529{% else %}#fff{% endif %};
+                    color:{% if t.default_on %}#fff{% else %}#6c757d{% endif %};">
+        <input type="checkbox" class="bs-type-cb d-none" value="{{ t.code }}"{% if t.default_on %} checked{% endif %}>
+        {{ t.label }}
+      </label>
+      {% endfor %}
+    </div>
+    <div style="width:1px;height:20px;background:#dee2e6;flex-shrink:0;"></div>
+    {% endif %}
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span id="bs-vr-filter-label" class="text-muted" style="font-size:.8rem;white-space:nowrap;">Consultor:</span>
+      <div id="bs-vr-pills" class="d-flex gap-2 flex-wrap"></div>
+    </div>
+  </div>
+
+  {% if status_filters %}
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap" style="row-gap:.5rem;">
+    <span class="text-muted" style="font-size:.8rem;white-space:nowrap;">Status:</span>
+    {% for s in status_filters %}
+    <label class="bs-status-pill"
+           data-code="{{ s.code }}"
+           style="cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:5px;
+                  padding:3px 10px;border-radius:999px;font-size:.78rem;font-weight:500;
+                  border:1.5px solid {% if s.default_on %}#212529{% else %}#adb5bd{% endif %};
+                  background:{% if s.default_on %}#212529{% else %}#fff{% endif %};
+                  color:{% if s.default_on %}#fff{% else %}#6c757d{% endif %};">
+      <input type="checkbox" class="bs-status-cb d-none" value="{{ s.code }}"{% if s.default_on %} checked{% endif %}>
+      {{ s.label }}
+    </label>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-sm-4">
+      <div class="card border-0 shadow-sm h-100" style="background:#1c1c1c;color:#fff;">
+        <div class="card-body text-center py-3">
+          <div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#aaa;margin-bottom:4px;">Files confirmados</div>
+          <div style="font-size:2.4rem;font-weight:700;line-height:1.1;" id="bs-total-files">…</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-4">
+      <div class="card border-0 shadow-sm h-100" style="background:#1c1c1c;color:#fff;">
+        <div class="card-body text-center py-3">
+          <div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#aaa;margin-bottom:4px;">Pasajeros</div>
+          <div style="font-size:2.4rem;font-weight:700;line-height:1.1;" id="bs-total-pax">…</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-4">
+      <div class="card border-0 shadow-sm h-100" style="background:#1c1c1c;color:#fff;">
+        <div class="card-body text-center py-3">
+          <div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#aaa;margin-bottom:4px;">Venta total</div>
+          <div style="font-size:2.4rem;font-weight:700;line-height:1.1;">USD <span id="bs-total-amount">…</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:relative;">
+    <div id="bs-table-overlay"><div class="bs-spin-ring"></div></div>
+    <table id="booking-sheet-table" class="table table-hover table-bordered" style="width:100%">
+      <thead class="table-dark">
+        <tr>
+          <th>TP#</th>
+          <th>Nombre</th>
+          <th>Cliente</th>
+          <th>Ref</th>
+          <th>Fecha IN</th>
+          <th>Fecha OUT</th>
+          <th>Status</th>
+          <th>Pax</th>
+          <th>Monto</th>
+          <th title="Monto facturado (Tourplan)">Invoiced</th>
+          <th>Rent.%</th>
+          <th>Coti por</th>
+          <th>Consultant</th>
+          <th>VR</th>
+          <th>OP</th>
+          <th title="Seguimiento">Seg.</th>
+          <th>DH</th>
+          <th>Guía</th>
+          <th>Intranet</th>
+          <th title="Nota de Rentabilidad (Tourplan)">Rentabilidad</th>
+          <th title="Nota PNR (Tourplan)">PNR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr data-tp-prefix="{{ r.tp_prefix }}" data-vr-code="{{ r.responsable_code }}" data-status="{{ r.raw_status }}"
+            data-trip-id="{{ r.intranet_trip_id|default:'' }}"
+            data-month="{{ r.travelling_date_month }}"
+            data-pax="{{ r.num_pax|default:0 }}"
+            data-amount-num="{{ r.amount|default:0 }}"
+            data-intranet-vr-code="{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}"
+            data-intranet-vr-color="{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% endif %}"
+            data-intranet-vr-id="{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% endif %}"
+            data-vr-requested-by="{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}">
+          <td>{{ r.tp_id }}</td>
+          <td class="bs-col-text" title="{{ r.name }}">{{ r.name }}</td>
+          <td class="bs-col-text" title="{{ r.client_name }}">{{ r.client_name }}</td>
+          <td>{{ r.client_reference }}</td>
+          <td data-order="{{ r.travelling_date_sort }}">{{ r.travelling_date }}</td>
+          <td>{{ r.out_date }}</td>
+          <td>
+            {% if r.raw_status == "FI" %}
+              <span class="status-badge status-fi">Final IT</span>
+            {% elif r.raw_status == "OK" %}
+              <span class="status-badge status-ok">OK</span>
+            {% elif r.raw_status == "CT" %}
+              <span class="status-badge status-ct">Cerrado</span>
+            {% else %}
+              <span class="status-badge status-bx">{{ r.raw_status }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ r.num_pax }}</td>
+          <td class="text-end">{% if r.amount %}{{ r.amount }}{% endif %}</td>
+          <td class="text-end" style="white-space:nowrap;">
+            {% if r.invoiced %}
+              {{ r.invoiced }}
+              {% if r.amount == r.invoiced %}
+                <i class="fa-solid fa-check ms-1" style="color:#198754;font-size:.8em;"></i>
+              {% else %}
+                <i class="fa-solid fa-xmark ms-1" style="color:#dc3545;font-size:.8em;"></i>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td class="text-end">{{ r.rent_perc }}</td>
+          <td class="text-center">
+            {% if r.cotizado_code %}{% with color=r.cotizado_user.color|default:"#6c757d" %}
+            <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.cotizado_code }}</span>
+            {% endwith %}{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.responsable_code %}{% with color=r.responsable_user.color|default:"#6c757d" %}
+            <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.responsable_code }}</span>
+            {% endwith %}{% endif %}
+          </td>
+          <td class="text-center bs-vr-cell">
+            {% if r.intranet_trip_id %}
+              {% if r.intranet_vr %}
+                <span class="bs-vr-pill" style="background-color:{{ r.intranet_vr.color }};color:{{ r.intranet_vr.color|contrast_color }};">{{ r.intranet_vr.username }}</span>
+              {% elif r.vr_requested_by %}
+                {# Gray pill with warning — request pending #}
+                <button class="bs-vr-requested-pill"
+                        title="Pedido por {{ r.vr_requested_by.username }}"
+                        data-trip-id="{{ r.intranet_trip_id }}"
+                        data-requested-by-id="{{ r.vr_requested_by.id }}"
+                        {% if is_admin %}onclick="bsAssignVrRequested(this)"{% endif %}>
+                  <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ r.vr_requested_by.username }}
+                </button>
+              {% else %}
+                <button class="bs-vr-request-btn" onclick="bsRequestVr(this)" data-trip-id="{{ r.intranet_trip_id }}">Pedir VR</button>
+              {% endif %}
+            {% else %}
+              <span class="text-muted" style="font-size:.75em;">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.operations_code %}{% with color=r.operations_user.color|default:"#6c757d" %}
+            <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.operations_code }}</span>
+            {% endwith %}{% endif %}
+          </td>
+          <td class="text-center">{{ r.dh_type }}</td>
+          <td class="bs-col-text" title="{{ r.dh_name }}">{{ r.dh_name }}</td>
+          <td class="bs-col-text" title="{{ r.guide }}">{{ r.guide }}</td>
+          <td class="text-center" id="bs-cell-{{ r.tp_id|slugify }}">
+            {% if r.in_intranet %}
+              <i class="fa-solid fa-check bs-check" title="En intranet (file #{{ r.intranet_trip_id }})"></i>
+            {% else %}
+              <button
+                class="bs-create-btn"
+                title="Importar a intranet"
+                data-row="{{ r|bs_row_json }}"
+                onclick="bsCreate(this)">
+                <i class="fa-solid fa-circle-plus"></i>
+              </button>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.tp_notes %}
+            <button type="button" class="btn btn-sm btn-link p-0"
+                    onclick="bsOpenNote('{{ r.name|escapejs }}', '{{ r.tp_notes|escapejs }}', 'Rentabilidad')"
+                    title="{{ r.tp_notes }}">
+              <i class="fa-solid fa-note-sticky text-warning"></i>
+            </button>
+            {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.pnr_notes %}
+            <button type="button" class="btn btn-sm btn-link p-0"
+                    onclick="bsOpenNote('{{ r.name|escapejs }}', '{{ r.pnr_notes|escapejs }}', 'PNR')"
+                    title="{{ r.pnr_notes }}">
+              <i class="fa-solid fa-note-sticky text-info"></i>
+            </button>
+            {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Modal: nota de booking sheet -->
+<div class="modal fade" id="bsNoteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">
+          <i class="fa-solid fa-note-sticky me-2" id="bs-note-modal-icon"></i><span id="bs-note-modal-type"></span> – <span id="bs-note-modal-name"></span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="bs-note-modal-content" class="mb-0" style="white-space:pre-wrap;"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="bs-row-data" type="application/json">
+[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+</script>
+<script>
+// ── Row data indexed by tp_id for summary recalculation ──────────────────────
+const _BS_ROWS = JSON.parse(document.getElementById('bs-row-data').textContent || '[]');
+const _BS_CURRENT_USER_TP = "{{ current_user_tp|escapejs }}";
+const _BS_CURRENT_USER_USERNAME = "{{ current_user_username|escapejs }}";
+
+// ── VR filter state ───────────────────────────────────────────────────────────
+let _bsVrFilter = null;         // null = Todos
+let _bsCurrentView = 'default';
+let _bsVrFilterUserCleared = false; // true when user explicitly clicked "Todos"
+
+// ── Assign VR modal state ─────────────────────────────────────────────────────
+let _bsDraft       = {};          // tp_id → {trip_id, user_id, username, color}
+let _bsChecked     = new Set();   // tp_ids that will be saved on Guardar
+let _bsDirty       = false;       // true when modal has unsaved changes
+let _bsModalFilter = null;        // "YYYY-MM:userId" or null — active summary pill filter
+
+function _bsBuildVrFilter() {
+  const container = document.getElementById('bs-vr-pills');
+  if (!container) return;
+
+  const isVrView = _bsCurrentView === 'vr';
+
+  // Update label
+  const filterLabel = document.getElementById('bs-vr-filter-label');
+  if (filterLabel) filterLabel.textContent = isVrView ? 'VR:' : 'Consultor:';
+
+  // Only include users that have files in the currently active types and statuses
+  const activePrefixes = new Set(
+    [...document.querySelectorAll('.bs-type-cb:checked')].map(el => el.value)
+  );
+  const activeStatusesVr = new Set(
+    [...document.querySelectorAll('.bs-status-cb:checked')].map(el => el.value)
+  );
+  const seen = new Map(); // code → {color, label}
+  _BS_ROWS.forEach(r => {
+    if (!activePrefixes.has(r.prefix) || !activeStatusesVr.has(r.status)) return;
+    if (isVrView) {
+      // VR view: filter by intranet responsable_user
+      const code = r.intranet_vr_code;
+      if (code && !seen.has(code)) {
+        seen.set(code, { color: r.intranet_vr_color || '#6c757d', label: code });
+      }
+    } else {
+      // Default/Ops views: filter by Tourplan consultant
+      if (r.vr_code && !seen.has(r.vr_code)) {
+        seen.set(r.vr_code, { color: r.vr_color || '#6c757d', label: r.vr_label || r.vr_code });
+      }
+    }
+  });
+
+  // Auto-select current user if they have files in active types, else Todos
+  const defaultCode = isVrView
+    ? (seen.has(_BS_CURRENT_USER_USERNAME) ? _BS_CURRENT_USER_USERNAME : null)
+    : (seen.has(_BS_CURRENT_USER_TP) ? _BS_CURRENT_USER_TP : null);
+  if (!_bsVrFilterUserCleared && _bsVrFilter === null) {
+    // First load or view switch: auto-select current user
+    _bsVrFilter = defaultCode;
+  } else if (_bsVrFilter !== null && !seen.has(_bsVrFilter)) {
+    // Currently selected user no longer visible: reset to default
+    _bsVrFilter = defaultCode;
+    _bsVrFilterUserCleared = false;
+  }
+
+  // Build pills
+  container.innerHTML = '';
+
+  const makeVrPill = (code, label, color, isActive) => {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.dataset.vrCode = code || '';
+    pill.dataset.color = color || '#6c757d';
+    pill.style.cssText = `border:1.5px solid;border-radius:999px;padding:2px 10px;font-size:.78rem;
+      font-weight:500;cursor:pointer;transition:background .15s,color .15s;`;
+    _bsStyleVrPill(pill, isActive, color);
+    pill.textContent = label;
+    pill.addEventListener('click', () => _bsSelectVr(pill));
+    return pill;
+  };
+
+  // "Todos" pill
+  container.appendChild(makeVrPill(null, 'Todos', '#6c757d', _bsVrFilter === null));
+
+  // One pill per unique VR user, ordered
+  [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([code, info]) => {
+    container.appendChild(makeVrPill(code, code, info.color, _bsVrFilter === code));
+  });
+}
+
+function _bsStyleVrPill(pill, isActive, color) {
+  if (isActive) {
+    pill.style.background = color;
+    pill.style.color = _bsContrastColor(color);
+    pill.style.borderColor = color;
+  } else {
+    pill.style.background = '#fff';
+    pill.style.color = '#6c757d';
+    pill.style.borderColor = '#adb5bd';
+  }
+}
+
+function _bsSelectVr(clickedPill) {
+  const tbl = document.getElementById('booking-sheet-table');
+  if (!tbl) return;
+  const code = clickedPill.dataset.vrCode || null;
+  _bsVrFilter = code || null;
+  _bsVrFilterUserCleared = (code === null); // true when user explicitly chose "Todos"
+  // Update all pill styles using stored color from dataset
+  document.querySelectorAll('#bs-vr-pills button').forEach(p => {
+    const pCode = p.dataset.vrCode || null;
+    const color = p.dataset.color || '#6c757d';
+    _bsStyleVrPill(p, pCode === _bsVrFilter, color);
+  });
+  _bsScheduleDraw();
+}
+
+// Luminance helper for contrast
+function _bsContrastColor(hex) {
+  hex = (hex || '#6c757d').replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+  const r = parseInt(hex.substr(0,2),16) / 255;
+  const g = parseInt(hex.substr(2,2),16) / 255;
+  const b = parseInt(hex.substr(4,2),16) / 255;
+  const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+  return lum > 0.45 ? '#000000' : '#ffffff';
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const tbl = document.getElementById('booking-sheet-table');
+  if (tbl) {
+    $(tbl).DataTable({
+      paging: false,
+      order: [[4, 'asc']],
+      dom: "<'d-flex align-items-center gap-2 mb-2'Bf>rtip",
+      buttons: [{
+        extend: 'colvis',
+        text: '<i class="fa-solid fa-table-columns me-1"></i>Columnas',
+        className: 'btn btn-sm btn-dark',
+        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,19,20],
+      }],
+      language: {
+        search: 'Buscar:',
+        info: 'Mostrando _START_–_END_ de _TOTAL_',
+        zeroRecords: 'Sin resultados',
+        buttons: { colvis: 'Columnas' },
+      },
+      columns: [
+        { visible: true  },  // 0  TP#
+        { visible: true  },  // 1  Nombre
+        { visible: true  },  // 2  Cliente
+        { visible: false },  // 3  Ref
+        { visible: true  },  // 4  Fecha IN
+        { visible: false },  // 5  Fecha OUT
+        { visible: true  },  // 6  Status
+        { visible: true  },  // 7  Pax
+        { visible: true  },  // 8  Monto USD
+        { visible: true  },  // 9  Invoiced
+        { visible: true  },  // 10 Rent.%
+        { visible: false },  // 11 Coti por
+        { visible: true  },  // 12 Consultant
+        { visible: false },  // 13 VR (intranet)
+        { visible: true  },  // 14 OP
+        { visible: false },  // 15 Seg.
+        { visible: false },  // 16 DH
+        { visible: false },  // 17 Guía
+        { visible: true,  orderable: false },  // 18 Intranet
+        { visible: false },  // 19 Rentabilidad
+        { visible: false },  // 20 PNR
+      ],
+      drawCallback: function() {
+        _bsRenderMonthSubtotals();
+        _bsUpdateSummary();
+        const ov = document.getElementById('bs-table-overlay');
+        if (ov) ov.style.display = 'none';
+      },
+    });
+  }
+
+  // ── View presets ─────────────────────────────────────────────────────────
+  const _BS_VIEWS = {
+    default: {
+      // General: IN(4), Status(6), Pax(7), Monto(8), Invoiced(9), Rent(10), Consultant(12), OP(14), Intranet(18)
+      // OUT(5) oculto en General
+      show: [0,1,2,4,6,7,8,9,10,12,14,18],
+      hide: [3,5,11,13,15,16,17,19,20],
+    },
+    vr: {
+      // VR: muestra Consultant(12), VR(13); oculta Status(6), Intranet(18)
+      show: [0,1,2,4,5,7,8,9,10,11,12,13,14,19,20],
+      hide: [3,6,15,16,17,18],
+    },
+    ops: {
+      // Operaciones: igual que default
+      show: [0,1,2,4,6,7,8,9,10,12,14,18],
+      hide: [3,5,11,13,15,16,17,19,20],
+    },
+  };
+
+  function bsSetView(viewKey) {
+    const tbl = document.getElementById('booking-sheet-table');
+    if (!tbl) return;
+    const dt = $(tbl).DataTable();
+    const preset = _BS_VIEWS[viewKey] || _BS_VIEWS.default;
+    preset.show.forEach(i => dt.column(i).visible(true));
+    preset.hide.forEach(i => dt.column(i).visible(false));
+    document.querySelectorAll('#bs-view-btns button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.bsView === viewKey);
+    });
+    // Show "Asignar VR" button only in VR view
+    const autoBtn = document.getElementById('bs-auto-assign-btn');
+    if (autoBtn) autoBtn.classList.toggle('d-none', viewKey !== 'vr');
+    localStorage.setItem('bs-view', viewKey);
+    // Switch filter mode and rebuild pills when view changes
+    _bsCurrentView = viewKey;
+    _bsVrFilter = null;
+    _bsVrFilterUserCleared = false; // reset so auto-select picks the right default
+    _bsBuildVrFilter();
+    _bsScheduleDraw();
+  }
+
+  document.querySelectorAll('#bs-view-btns button').forEach(btn => {
+    btn.addEventListener('click', () => bsSetView(btn.dataset.bsView));
+  });
+
+  // Build user (VR) filter on load
+  _bsBuildVrFilter();
+
+  // Restore last selected view (always apply a preset so columns match _BS_VIEWS)
+  const savedView = localStorage.getItem('bs-view');
+  bsSetView(savedView && _BS_VIEWS[savedView] ? savedView : 'default');
+
+  const inCount  = document.querySelectorAll('.bs-check').length;
+  const missing  = document.querySelectorAll('.bs-create-btn').length;
+  const elIn  = document.getElementById('bs-in-count');
+  const elMis = document.getElementById('bs-missing-count');
+  if (elIn)  elIn.textContent  = inCount;
+  if (elMis) elMis.textContent = missing;
+
+  // ── Type filter pills ────────────────────────────────────────────────────
+  const bsTable = $(tbl).DataTable();
+  const activeTypes = new Set(
+    [...document.querySelectorAll('.bs-type-cb:checked')].map(el => el.value)
+  );
+  const activeStatuses = new Set(
+    [...document.querySelectorAll('.bs-status-cb:checked')].map(el => el.value)
+  );
+
+  $.fn.dataTable.ext.search.push(function(settings, _data, dataIndex) {
+    if (settings.nTable !== tbl) return true;
+    const node = bsTable.row(dataIndex).node();
+    if (!node) return true;
+    // Type filter
+    if (!activeTypes.has(node.dataset.tpPrefix)) return false;
+    // Status filter
+    if (!activeStatuses.has(node.dataset.status)) return false;
+    // VR user filter — in VR view filter by intranet responsable_user, otherwise by Tourplan consultant
+    if (_bsVrFilter !== null) {
+      const cmpAttr = _bsCurrentView === 'vr' ? node.dataset.intranetVrCode : node.dataset.vrCode;
+      if ((cmpAttr || '') !== _bsVrFilter) return false;
+    }
+    return true;
+  });
+
+  document.querySelectorAll('.bs-type-pill').forEach(pill => {
+    pill.addEventListener('click', function () {
+      const cb = this.querySelector('.bs-type-cb');
+      const code = this.dataset.code;
+      cb.checked = !cb.checked;
+      if (cb.checked) {
+        activeTypes.add(code);
+        this.style.background = '#212529';
+        this.style.color = '#fff';
+        this.style.borderColor = '#212529';
+      } else {
+        activeTypes.delete(code);
+        this.style.background = '#fff';
+        this.style.color = '#6c757d';
+        this.style.borderColor = '#adb5bd';
+      }
+      _bsBuildVrFilter();
+      _bsScheduleDraw();
+    });
+  });
+
+  document.querySelectorAll('.bs-status-pill').forEach(pill => {
+    pill.addEventListener('click', function () {
+      const cb = this.querySelector('.bs-status-cb');
+      const code = this.dataset.code;
+      cb.checked = !cb.checked;
+      if (cb.checked) {
+        activeStatuses.add(code);
+        this.style.background = '#212529';
+        this.style.color = '#fff';
+        this.style.borderColor = '#212529';
+      } else {
+        activeStatuses.delete(code);
+        this.style.background = '#fff';
+        this.style.color = '#6c757d';
+        this.style.borderColor = '#adb5bd';
+      }
+      _bsBuildVrFilter();
+      _bsScheduleDraw();
+    });
+  });
+
+  _bsScheduleDraw();
+});
+
+function _bsUpdateSummary() {
+  const activeTypes = new Set(
+    [...document.querySelectorAll('.bs-type-cb:checked')].map(el => el.value)
+  );
+  const activeStatuses = new Set(
+    [...document.querySelectorAll('.bs-status-cb:checked')].map(el => el.value)
+  );
+  const visibleRows = _BS_ROWS.filter(r =>
+    activeTypes.has(r.prefix) &&
+    activeStatuses.has(r.status) &&
+    (_bsVrFilter === null || (_bsCurrentView === 'vr' ? r.intranet_vr_code : r.vr_code) === _bsVrFilter)
+  );
+  const totalFiles  = visibleRows.length;
+  const totalPax    = visibleRows.reduce((s, r) => s + (r.pax || 0), 0);
+  const totalAmt    = visibleRows.reduce((s, r) => s + (r.amount || 0), 0);
+  const fmtAmt      = totalAmt.toLocaleString('de-DE', {maximumFractionDigits: 0});
+
+  const inIntranet = visibleRows.filter(r => r.trip_id !== null).length;
+  const missing    = visibleRows.filter(r => r.trip_id === null).length;
+
+  const elF  = document.getElementById('bs-total-files');
+  const elP  = document.getElementById('bs-total-pax');
+  const elA  = document.getElementById('bs-total-amount');
+  const elIn = document.getElementById('bs-in-count');
+  const elMi = document.getElementById('bs-missing-count');
+  if (elF)  elF.textContent  = totalFiles;
+  if (elP)  elP.textContent  = totalPax;
+  if (elA)  elA.textContent  = fmtAmt;
+  if (elIn) elIn.textContent = inIntranet;
+  if (elMi) elMi.textContent = missing;
+}
+
+function bsCreate(btn) {
+  btn.disabled = true;
+  const icon = btn.querySelector('i');
+  if (icon) { icon.className = 'fa-solid fa-spinner fa-spin'; }
+
+  let row;
+  try { row = JSON.parse(btn.dataset.row); } catch(e) { return; }
+
+  fetch("{% url 'booking_sheet_create' %}", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCsrfToken(),
+    },
+    body: JSON.stringify(row),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const cell = btn.closest('td');
+    if (data.created || data.already_exists) {
+      cell.innerHTML = '<i class="fa-solid fa-check bs-check" title="Importado"></i>';
+      const el = document.getElementById('bs-missing-count');
+      if (el) el.textContent = Math.max(0, parseInt(el.textContent || '0') - 1);
+    } else {
+      btn.disabled = false;
+      if (icon) icon.className = 'fa-solid fa-circle-plus';
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  })
+  .catch(() => {
+    btn.disabled = false;
+    if (icon) icon.className = 'fa-solid fa-circle-plus';
+    alert('Error de red');
+  });
+}
+
+function bsOpenNote(name, note, type) {
+  document.getElementById('bs-note-modal-name').textContent = name;
+  document.getElementById('bs-note-modal-content').textContent = note;
+  document.getElementById('bs-note-modal-type').textContent = type;
+  const icon = document.getElementById('bs-note-modal-icon');
+  icon.className = type === 'PNR'
+    ? 'fa-solid fa-note-sticky text-info me-2'
+    : 'fa-solid fa-note-sticky text-warning me-2';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bsNoteModal')).show();
+}
+
+function getCsrfToken() {
+  const el = document.querySelector('[name=csrfmiddlewaretoken]');
+  if (el) return el.value;
+  const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+  return cookie ? cookie.split('=')[1].trim() : '';
+}
+
+// ── VR assignment ────────────────────────────────────────────────────────────
+const _BS_VENTAS_USERS = {{ ventas_users_json|safe }};
+const _BS_IS_ADMIN = {{ is_admin|yesno:"true,false" }};
+
+function _bsRenderVrCell(td, userId, username, color, requestedBy) {
+  const tr = td.closest('tr');
+  const tripId = tr ? tr.dataset.tripId : null;
+  if (userId) {
+    td.innerHTML = `<span class="bs-vr-pill" style="background-color:${color};color:${_bsContrastColor(color)};">${username}</span>`;
+  } else if (requestedBy) {
+    const reqBtn = `<button class="bs-vr-requested-pill" title="Pedido por ${requestedBy.username}"
+      data-trip-id="${tripId}" data-requested-by-id="${requestedBy.id}"
+      ${_BS_IS_ADMIN ? 'onclick="bsAssignVrRequested(this)"' : ''}>
+      <i class="fa-solid fa-triangle-exclamation me-1"></i>${requestedBy.username}</button>`;
+    td.innerHTML = reqBtn;
+  } else if (tripId) {
+    td.innerHTML = `<button class="bs-vr-request-btn" onclick="bsRequestVr(this)" data-trip-id="${tripId}">Pedir VR</button>`;
+  } else {
+    td.innerHTML = '<span class="text-muted" style="font-size:.75em;">—</span>';
+  }
+}
+
+function _bsOpenInlineSelect(td, tripId, defaultUserId) {
+  if (!_BS_VENTAS_USERS.length) { alert('No hay usuarios de Ventas'); return; }
+  let sel = `<select class="form-select form-select-sm" style="font-size:.75rem;min-width:100px;" onchange="bsSetVrFromSelect(this,${tripId})">`;
+  sel += '<option value="">-- elegir --</option>';
+  _BS_VENTAS_USERS.forEach(u => {
+    const selected = (defaultUserId && u.id == defaultUserId) ? ' selected' : '';
+    sel += `<option value="${u.id}"${selected}>${u.username}</option>`;
+  });
+  sel += '</select>';
+  td.innerHTML = sel;
+  td.querySelector('select').focus();
+}
+
+function bsAssignVrSingle(btn) {
+  const tripId = btn.dataset.tripId;
+  if (!tripId) return;
+  _bsOpenInlineSelect(btn.closest('td'), tripId, null);
+}
+
+function bsAssignVrRequested(btn) {
+  const tripId = btn.dataset.tripId;
+  const defaultUserId = btn.dataset.requestedById;
+  if (!tripId) return;
+  _bsOpenInlineSelect(btn.closest('td'), tripId, defaultUserId);
+}
+
+function bsSetVrFromSelect(sel, tripId) {
+  const userId = sel.value;
+  if (!userId) return;
+  const user = _BS_VENTAS_USERS.find(u => u.id == userId);
+  if (!user) return;
+
+  fetch("{% url 'booking_sheet_set_vr' %}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ trip_id: parseInt(tripId), user_id: parseInt(userId) }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      const td = sel.closest('td');
+      const tr = td.closest('tr');
+      tr.dataset.intranetVrCode = user.username;
+      tr.dataset.intranetVrColor = user.color;
+      tr.dataset.intranetVrId = user.id;
+      tr.dataset.vrRequestedBy = '';
+      _bsRenderVrCell(td, user.id, user.username, user.color || '#6c757d', null);
+      // Update _BS_ROWS entry
+      const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(tripId));
+      if (rowEntry) { rowEntry.intranet_vr_code = user.username; rowEntry.intranet_vr_id = user.id; rowEntry.intranet_vr_color = user.color; rowEntry.vr_requested_by = ''; }
+      _bsBuildVrFilter();
+      _bsUpdateSummary();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  })
+  .catch(() => alert('Error de red'));
+}
+
+function bsRequestVr(btn) {
+  const tripId = btn.dataset.tripId;
+  if (!tripId) return;
+  btn.disabled = true;
+  fetch("{% url 'booking_sheet_request_vr' %}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ trip_id: parseInt(tripId) }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      const td = btn.closest('td');
+      const tr = td.closest('tr');
+      tr.dataset.vrRequestedBy = data.username;
+      _bsRenderVrCell(td, null, null, null, { id: data.user_id, username: data.username });
+      const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(tripId));
+      if (rowEntry) { rowEntry.vr_requested_by = data.username; rowEntry.vr_requested_by_id = data.user_id; }
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+      btn.disabled = false;
+    }
+  })
+  .catch(() => { alert('Error de red'); btn.disabled = false; });
+}
+
+// ── Scheduled draw with loader ───────────────────────────────────────────────
+function _bsScheduleDraw() {
+  const _t = document.getElementById('booking-sheet-table');
+  if (!_t || !$.fn.DataTable.isDataTable(_t)) return;
+  const ov = document.getElementById('bs-table-overlay');
+  if (ov) ov.style.display = 'flex';
+  // One frame delay lets the browser paint the overlay before blocking on draw
+  setTimeout(() => $(_t).DataTable().draw(), 16);
+}
+
+// ── Monthly subtotals ─────────────────────────────────────────────────────────
+const _BS_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function _bsRenderMonthSubtotals() {
+  document.querySelectorAll('.bs-month-subtotal').forEach(r => r.remove());
+  const _bsTbl = document.getElementById('booking-sheet-table');
+  if (!_bsTbl || !$.fn.DataTable.isDataTable(_bsTbl)) return;
+  const nodes = $(_bsTbl).DataTable().rows({ order: 'applied', search: 'applied' }).nodes();
+  let currentMonth = null, monthFiles = 0, monthPax = 0, monthAmount = 0, lastNode = null;
+  const groups = [];
+  nodes.each(function(node) {
+    const month = node.dataset.month || '';
+    if (currentMonth !== null && month !== currentMonth) {
+      groups.push({ month: currentMonth, files: monthFiles, pax: monthPax, amount: monthAmount, lastNode });
+      monthFiles = 0; monthPax = 0; monthAmount = 0;
+    }
+    currentMonth = month;
+    monthFiles++;
+    monthPax += parseInt(node.dataset.pax || 0);
+    monthAmount += parseFloat(node.dataset.amountNum || 0);
+    lastNode = node;
+  });
+  if (currentMonth && lastNode) groups.push({ month: currentMonth, files: monthFiles, pax: monthPax, amount: monthAmount, lastNode });
+
+  groups.forEach(g => {
+    const parts = (g.month || '').split('-');
+    const label = parts.length === 2 ? `${_BS_MESES[parseInt(parts[1])-1]} ${parts[0]}` : g.month;
+    const amtFmt = g.amount.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+    const sub = document.createElement('tr');
+    sub.className = 'bs-month-subtotal';
+    sub.innerHTML = `<td colspan="21">
+      <span style="font-weight:700;color:#343a40;">${label}</span>
+      <span class="ms-3 text-secondary">${g.files} file${g.files !== 1 ? 's' : ''}</span>
+      <span class="ms-2 text-secondary">· ${g.pax} pax</span>
+      <span class="ms-2 text-secondary">· USD ${amtFmt}</span>
+    </td>`;
+    g.lastNode.insertAdjacentElement('afterend', sub);
+  });
+}
+
+// ── Asignar VR — modal with draft assignments ────────────────────────────────
+
+function _bsComputeDraft() {
+  _bsDraft = {};
+  _bsChecked = new Set();
+
+  // Pre-fill existing assignments and pre-check them
+  _BS_ROWS.forEach(r => {
+    if (!r.trip_id || !r.month || !r.intranet_vr_id) return;
+    _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: r.intranet_vr_id, username: r.intranet_vr_code, color: r.intranet_vr_color || '#6c757d' };
+    _bsChecked.add(r.tp_id);
+  });
+
+  // Auto-assign pending rows via round-robin (not pre-checked)
+  const monthGroups = {};
+  _BS_ROWS.forEach(r => {
+    if (!r.trip_id || !r.month) return;
+    if (!monthGroups[r.month]) monthGroups[r.month] = { existing: {}, pending: [] };
+    if (r.intranet_vr_id) {
+      monthGroups[r.month].existing[r.intranet_vr_id] = (monthGroups[r.month].existing[r.intranet_vr_id] || 0) + 1;
+    } else {
+      monthGroups[r.month].pending.push(r);
+    }
+  });
+  const ventasIds = _BS_VENTAS_USERS.map(u => u.id);
+  const ventasById = Object.fromEntries(_BS_VENTAS_USERS.map(u => [u.id, u]));
+  Object.entries(monthGroups).forEach(([month, g]) => {
+    if (!g.pending.length) return;
+    const counts = Object.fromEntries(ventasIds.map(id => [id, g.existing[id] || 0]));
+    g.pending.forEach(r => {
+      let assignedId = null;
+      if (r.vr_requested_by_id && ventasById[r.vr_requested_by_id]) {
+        assignedId = r.vr_requested_by_id;
+      } else {
+        assignedId = ventasIds.reduce((a, b) => counts[a] <= counts[b] ? a : b);
+      }
+      const u = ventasById[assignedId];
+      counts[assignedId] = (counts[assignedId] || 0) + 1;
+      _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: u.id, username: u.username, color: u.color || '#6c757d' };
+      // pending rows are NOT added to _bsChecked — admin must tick them
+    });
+  });
+}
+
+function bsAutoAssignVr() {
+  _bsRenderAssignModal();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).show();
+}
+
+function _bsMonthGroups() {
+  const activeTypes    = new Set([...document.querySelectorAll('.bs-type-cb:checked')].map(el => el.value));
+  const activeStatuses = new Set([...document.querySelectorAll('.bs-status-cb:checked')].map(el => el.value));
+  const months = {};
+  _BS_ROWS.forEach(r => {
+    if (!r.month || !r.trip_id) return;
+    if (!activeTypes.has(r.prefix)) return;
+    if (!activeStatuses.has(r.status)) return;
+    if (!months[r.month]) months[r.month] = { all: [], existingCount: 0, pendingCount: 0 };
+    months[r.month].all.push(r);
+    if (r.intranet_vr_id) months[r.month].existingCount++;
+    else months[r.month].pendingCount++;
+  });
+  return months;
+}
+
+function _bsAssignSummaryHtml(month, g) {
+  // Count final state: existing (checked→draft, unchecked→original) + checked pending→draft
+  const counts = {};
+  (g.all || []).forEach(r => {
+    if (r.intranet_vr_id) {
+      if (_bsChecked.has(r.tp_id)) {
+        const asgn = _bsDraft[r.tp_id];
+        const uid = asgn ? asgn.user_id : r.intranet_vr_id;
+        counts[uid] = (counts[uid] || 0) + 1;
+      } else {
+        counts[r.intranet_vr_id] = (counts[r.intranet_vr_id] || 0) + 1;
+      }
+    } else if (_bsChecked.has(r.tp_id)) {
+      const asgn = _bsDraft[r.tp_id];
+      if (asgn) counts[asgn.user_id] = (counts[asgn.user_id] || 0) + 1;
+    }
+  });
+  const filterKey = _bsModalFilter;
+  return _BS_VENTAS_USERS
+    .map(u => ({ u, total: counts[u.id] || 0 }))
+    .sort((a, b) => b.total - a.total)
+    .map(({ u, total }) => {
+      const c = u.color || '#6c757d';
+      const isActive = filterKey === `${month}:${u.id}`;
+      const pillStyle = `background:${c};color:${_bsContrastColor(c)};padding:4px 12px;border-radius:999px;font-size:.82em;font-weight:600;white-space:nowrap;cursor:pointer;${isActive ? 'outline:2.5px solid #000;outline-offset:2px;' : 'opacity:0.85;'}`;
+      return `<span style="${pillStyle}" title="${isActive ? 'Click para ver todos' : 'Filtrar por '+u.username}" onclick="_bsToggleModalFilter(${u.id},'${month}')">${u.username} = ${total}</span>`;
+    }).join('');
+}
+
+function _bsRenderAssignModal() {
+  _bsComputeDraft();
+  _bsDirty = false;
+  _bsModalFilter = null;
+
+  const body = document.getElementById('bs-assign-vr-modal-body');
+  if (!body) return;
+
+  const months = _bsMonthGroups();
+  const sortedMonths = Object.keys(months).sort();
+  if (!sortedMonths.length) { body.innerHTML = '<p class="text-muted">No hay files importados a la intranet.</p>'; return; }
+
+  const _today = new Date();
+  const _currentMonth = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}`;
+  const _defaultIdx = sortedMonths.includes(_currentMonth) ? sortedMonths.indexOf(_currentMonth) : 0;
+
+  const _parseDate = d => { if (!d) return '99999999'; const [day,mo,yr] = d.split('/'); return `${yr}${mo}${day}`; };
+
+  let html = `<ul class="nav nav-tabs mb-3" id="bs-assign-tabs">`;
+  sortedMonths.forEach((m, i) => {
+    const [yr, mo] = m.split('-');
+    const label = `${_BS_MESES[parseInt(mo)-1]} ${yr}`;
+    const pending = months[m].pendingCount;
+    html += `<li class="nav-item"><a class="nav-link${i===_defaultIdx?' active':''}" data-bs-toggle="tab" href="#bs-assign-tab-${m.replace('-','')}">
+      ${label}${pending > 0 ? `<span class="badge bg-warning text-dark ms-1">${pending}</span>` : ''}</a></li>`;
+  });
+  html += `</ul><div class="tab-content">`;
+
+  const _DIFF_LABEL = {'1':'Muy Fácil','2':'Fácil','3':'Moderado','4':'Complejo','5':'Muy Complejo'};
+  const _DIFF_COLOR = {'1':'#198754','2':'#20c997','3':'#fd7e14','4':'#dc3545','5':'#6f1a25'};
+
+  sortedMonths.forEach((m, i) => {
+    const g = months[m];
+    const mk = m.replace('-', '');
+
+    html += `<div class="tab-pane fade${i===_defaultIdx?' show active':''}" id="bs-assign-tab-${mk}">`;
+    g.all.sort((a, b) => _parseDate(a.date).localeCompare(_parseDate(b.date)));
+
+    html += `<div class="d-flex gap-2 mb-2 flex-wrap">
+      <span class="badge bg-secondary">${g.all.length} files total</span>
+      <span class="badge bg-success">${g.existingCount} con VR</span>
+      <span class="badge bg-warning text-dark">${g.pendingCount} sin VR</span>
+    </div>`;
+
+    html += `<div id="bs-assign-summary-${mk}" class="d-flex gap-2 flex-wrap align-items-center p-2 mb-3 rounded" style="background:#f8f9fa;min-height:2.4rem;">
+      ${_bsAssignSummaryHtml(m, g)}
+    </div>`;
+
+    html += `<div class="border rounded" style="overflow-x:auto;">
+      <table class="table table-sm mb-0" style="font-size:.78rem;min-width:700px;">
+        <thead class="table-light"><tr>
+          <th style="width:32px;" title="Guardar esta asignación">✓</th>
+          <th style="min-width:80px;">TP#</th>
+          <th>Nombre</th>
+          <th>Cliente</th>
+          <th style="white-space:nowrap;">Fecha IN</th>
+          <th class="text-end">USD</th>
+          <th class="text-center">Dif.</th>
+          <th class="text-center" style="min-width:40px;">Pax</th>
+          <th>Consultor</th>
+          <th style="min-width:120px;">VR</th>
+        </tr></thead>
+        <tbody>`;
+
+    g.all.forEach(r => {
+      const asgn = _bsDraft[r.tp_id] || {};
+      const isChecked = _bsChecked.has(r.tp_id);
+      const opts = _BS_VENTAS_USERS.map(u =>
+        `<option value="${u.id}"${u.id == asgn.user_id ? ' selected' : ''}>${u.username}</option>`
+      ).join('');
+      const diffLabel = _DIFF_LABEL[r.difficulty] || '';
+      const diffColor = _DIFF_COLOR[r.difficulty] || '#6c757d';
+      const diffBadge = diffLabel
+        ? `<span style="color:${diffColor};font-weight:600;">${r.difficulty}&nbsp;<span style="font-weight:400;">${diffLabel}</span></span>`
+        : '<span class="text-muted">—</span>';
+      const reqIcon = r.vr_requested_by
+        ? ` <i class="fa-solid fa-triangle-exclamation text-warning" title="Pedido por ${r.vr_requested_by}"></i>` : '';
+      const rowBg = isChecked ? '' : 'color:#adb5bd;';
+      html += `<tr data-tp-id="${r.tp_id}" style="${rowBg}">
+        <td class="text-center" style="vertical-align:middle;">
+          <input type="checkbox" class="form-check-input bs-assign-cb" data-tp-id="${r.tp_id}" data-month="${m}"
+                 ${isChecked ? 'checked' : ''}
+                 onchange="_bsToggleCheck('${r.tp_id}','${m}',this.checked)">
+        </td>
+        <td class="text-muted" style="white-space:nowrap;">${r.tp_id}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.name}">${r.name}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client || ''}">${r.client || '—'}</td>
+        <td style="white-space:nowrap;">${r.date || '—'}</td>
+        <td class="text-end" style="white-space:nowrap;">${r.amount_str || '—'}</td>
+        <td class="text-center" style="white-space:nowrap;">${diffBadge}</td>
+        <td class="text-center">${r.pax}</td>
+        <td style="white-space:nowrap;">${r.vr_code || '—'}${reqIcon}</td>
+        <td><select class="form-select form-select-sm" style="font-size:.75rem;"
+                    onchange="_bsChangeDraftVr('${r.tp_id}',this.value,'${m}')">${opts}</select></td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div></div>`;
+  });
+
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
+function _bsToggleCheck(tpId, month, checked) {
+  if (checked) _bsChecked.add(tpId);
+  else _bsChecked.delete(tpId);
+  _bsDirty = true;
+  _bsRefreshModalSummary(month);
+  // Dim/restore the row
+  const cb = document.querySelector(`.bs-assign-cb[data-tp-id="${tpId}"]`);
+  if (cb) { const tr = cb.closest('tr'); if (tr) tr.style.color = checked ? '' : '#adb5bd'; }
+}
+
+function _bsChangeDraftVr(tpId, newUserId, month) {
+  const u = _BS_VENTAS_USERS.find(u => u.id == newUserId);
+  if (!u) return;
+  const r = _BS_ROWS.find(r => r.tp_id === tpId);
+  if (!r) return;
+  _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: u.id, username: u.username, color: u.color || '#6c757d' };
+  // Auto-check the row when VR is selected
+  _bsChecked.add(tpId);
+  _bsDirty = true;
+  const cb = document.querySelector(`.bs-assign-cb[data-tp-id="${tpId}"]`);
+  if (cb) { cb.checked = true; const tr = cb.closest('tr'); if (tr) tr.style.color = ''; }
+  _bsRefreshModalSummary(month);
+}
+
+function _bsRefreshModalSummary(month) {
+  const mk = month.replace('-', '');
+  const summaryDiv = document.getElementById(`bs-assign-summary-${mk}`);
+  if (summaryDiv) {
+    const g = _bsMonthGroups()[month] || { all: [], existingCount: 0, pendingCount: 0 };
+    summaryDiv.innerHTML = _bsAssignSummaryHtml(month, g);
+  }
+  _bsApplyModalFilter(month);
+}
+
+function _bsToggleModalFilter(userId, month) {
+  const key = `${month}:${userId}`;
+  _bsModalFilter = (_bsModalFilter === key) ? null : key;
+  _bsRefreshModalSummary(month);
+}
+
+function _bsApplyModalFilter(month) {
+  const mk = month.replace('-', '');
+  const tabPane = document.getElementById(`bs-assign-tab-${mk}`);
+  if (!tabPane) return;
+  const [fMonth, fUserId] = _bsModalFilter ? _bsModalFilter.split(':') : [null, null];
+  const filtering = fMonth === month && fUserId;
+  tabPane.querySelectorAll('tr[data-tp-id]').forEach(tr => {
+    if (!filtering) { tr.style.display = ''; return; }
+    const asgn = _bsDraft[tr.dataset.tpId];
+    tr.style.display = (asgn && String(asgn.user_id) === fUserId) ? '' : 'none';
+  });
+}
+
+function bsSendTestEmail(btn) {
+  const activeTab = document.querySelector('#bs-assign-tabs .nav-link.active');
+  if (!activeTab) { alert('No hay pestaña activa.'); return; }
+  const tabId = activeTab.getAttribute('href').replace('#bs-assign-tab-', '');
+  const month = tabId.slice(0, 4) + '-' + tabId.slice(4, 6);
+
+  // Send the current draft state for this month (same as Guardar but to test address)
+  const assignments = [];
+  _BS_ROWS.forEach(r => {
+    if (r.month !== month || !r.trip_id) return;
+    const asgn = _bsDraft[r.tp_id];
+    if (!asgn) return;
+    // Include checked rows (new) AND existing already-assigned rows (unchecked but in DB)
+    if (_bsChecked.has(r.tp_id) || r.intranet_vr_id) {
+      const userId = _bsChecked.has(r.tp_id) ? asgn.user_id : r.intranet_vr_id;
+      assignments.push({ trip_id: r.trip_id, user_id: userId });
+    }
+  });
+
+  if (!assignments.length) { alert('No hay files con asignación en este mes.'); return; }
+
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Enviando...';
+
+  fetch("{% url 'booking_sheet_test_vr_email' %}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ month, assignments }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      btn.innerHTML = `<i class="fa-solid fa-check me-1"></i>Enviado (${data.sent})`;
+      setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 4000);
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+      btn.innerHTML = orig; btn.disabled = false;
+    }
+  })
+  .catch(() => { alert('Error de red'); btn.innerHTML = orig; btn.disabled = false; });
+}
+
+function bsSaveAssignments() {
+  const assignments = [];
+  _bsChecked.forEach(tpId => {
+    const asgn = _bsDraft[tpId];
+    if (asgn) assignments.push({ trip_id: asgn.trip_id, user_id: asgn.user_id });
+  });
+  if (!assignments.length) {
+    _bsDirty = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide();
+    return;
+  }
+
+  const saveBtn = document.querySelector('#bs-assign-vr-modal .btn-primary');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Guardando...'; }
+
+  fetch("{% url 'booking_sheet_bulk_set_vr' %}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ assignments }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      (data.assignments || []).forEach(a => {
+        const tr = document.querySelector(`tr[data-trip-id="${a.trip_id}"]`);
+        if (!tr) return;
+        tr.dataset.intranetVrCode = a.username;
+        tr.dataset.intranetVrColor = a.color;
+        tr.dataset.intranetVrId = a.user_id;
+        tr.dataset.vrRequestedBy = '';
+        const vrTd = tr.querySelectorAll('td')[13];
+        if (vrTd) _bsRenderVrCell(vrTd, a.user_id, a.username, a.color || '#6c757d', null);
+        const rowEntry = _BS_ROWS.find(r => r.trip_id == a.trip_id);
+        if (rowEntry) { rowEntry.intranet_vr_code = a.username; rowEntry.intranet_vr_id = a.user_id; rowEntry.intranet_vr_color = a.color; rowEntry.vr_requested_by = ''; rowEntry.vr_requested_by_id = null; }
+      });
+      _bsDraft = {};
+      _bsChecked = new Set();
+      _bsDirty = false;
+      _bsBuildVrFilter();
+      _bsUpdateSummary();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  })
+  .catch(() => alert('Error de red'))
+  .finally(() => {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar'; }
+  });
+}
+</script>
+
+{% if is_admin %}
+<!-- Asignar VR Modal -->
+<div class="modal fade" id="bs-assign-vr-modal" tabindex="-1" aria-labelledby="bs-assign-vr-modal-label">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bs-assign-vr-modal-label">
+          <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Asignar Vendedor Responsable
+        </h5>
+        <button type="button" class="btn-close" id="bs-assign-vr-close-btn"></button>
+      </div>
+      <div class="modal-body" id="bs-assign-vr-modal-body">
+        <p class="text-muted">Calculando asignaciones...</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="bs-assign-vr-cancel-btn">Cancelar</button>
+        <button type="button" class="btn btn-outline-secondary" id="bs-test-email-btn" onclick="bsSendTestEmail(this)">
+          <i class="fa-solid fa-envelope me-1"></i>Enviar prueba
+        </button>
+        <button type="button" class="btn btn-primary" onclick="bsSaveAssignments()">
+          <i class="fa-solid fa-floppy-disk me-1"></i>Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  function _bsConfirmClose() {
+    if (!_bsDirty) return true;
+    return confirm('Hay asignaciones pendientes de guardar.\n\n¿Cerrar sin guardar?');
+  }
+  document.getElementById('bs-assign-vr-close-btn').addEventListener('click', function() {
+    if (_bsConfirmClose()) { _bsDirty = false; bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide(); }
+  });
+  document.getElementById('bs-assign-vr-cancel-btn').addEventListener('click', function() {
+    if (_bsConfirmClose()) { _bsDirty = false; bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide(); }
+  });
+  // Block the backdrop/ESC close if dirty
+  document.getElementById('bs-assign-vr-modal').addEventListener('hide.bs.modal', function(e) {
+    if (_bsDirty) e.preventDefault();
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
