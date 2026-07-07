@@ -208,6 +208,19 @@
 
                     <hr>
 
+                    <h5 class="mb-3">Notas internas</h5>
+
+                    <div class="mb-2">
+                        <small class="text-muted">Negociaciones especiales Aliwen</small>
+                        <textarea class="form-control" name="note_aliwen" rows="2" placeholder="Ej: Tarifa neta negociada para grupos +10 pax"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Nota Audley</small>
+                        <textarea class="form-control" name="note_audley" rows="2" placeholder="Ej: Preferred property – confirm availability 6 months in advance"></textarea>
+                    </div>
+
+                    <hr>
+
                     <h5 class="mb-3">Imágenes (URLs)</h5>
                     <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
 
@@ -524,6 +537,19 @@ High – 0.82 - Tarifas especiales negociadas
                                             <div class="mb-3">
                                                 <small class="text-muted">Incluido / No incluido</small>
                                                 <textarea class="form-control" name="inclusions" rows="2" placeholder="Ej: Breakfast included. Transfers not included.">{{ supplier.inclusions|default:'' }}</textarea>
+                                            </div>
+
+                                            <hr>
+
+                                            <h5 class="mb-3">Notas internas</h5>
+
+                                            <div class="mb-2">
+                                                <small class="text-muted">Negociaciones especiales Aliwen</small>
+                                                <textarea class="form-control" name="note_aliwen" rows="2" placeholder="Ej: Tarifa neta negociada para grupos +10 pax">{{ supplier.note_aliwen|default:'' }}</textarea>
+                                            </div>
+                                            <div class="mb-3">
+                                                <small class="text-muted">Nota Audley</small>
+                                                <textarea class="form-control" name="note_audley" rows="2" placeholder="Ej: Preferred property – confirm availability 6 months in advance">{{ supplier.note_audley|default:'' }}</textarea>
                                             </div>
 
                                             <hr>

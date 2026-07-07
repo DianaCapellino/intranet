@@ -394,6 +394,27 @@ function markUnrevised(lineId, btn) {
                             <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
                         </div>
                     {% endif %}
+
+                    {% if supplier.note_aliwen and request.user.userType != "Cliente" %}
+                        <div class="d-flex align-items-start mx-3 mb-3 p-3 rounded border border-warning" style="background-color:#fffbea;">
+                            <img src="../../static/tariff/sello2.png" width="36" class="me-3 flex-shrink-0 mt-1">
+                            <div>
+                                <div class="fw-bold small text-uppercase mb-1" style="color:#92400e;letter-spacing:.04em;">Aliwen exclusive Amenities & Agreements</div>
+                                <div class="small">{{ supplier.note_aliwen }}</div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    {% if supplier.note_audley and request.user.userType != "Cliente" %}
+                        <div class="d-flex align-items-start mx-3 mb-3 p-3 rounded border border-warning" style="background-color:#fffbea;">
+                            <img src="../../static/tariff/audley.png" width="36" class="me-3 flex-shrink-0 mt-1">
+                            <div>
+                                <div class="fw-bold small text-uppercase mb-1" style="color:#92400e;letter-spacing:.04em;">Audley exclusive Notes</div>
+                                <div class="small">{{ supplier.note_audley }}</div>
+                            </div>
+                        </div>
+                    {% endif %}
+
                     <div class="text-center">
                         <button class="btn btn btn-outline-secondary mx-2" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfo{{ supplier.id }}">MORE INFORMATION</button>
                         {# === ProductGroup (desayuno / otros) === #}
@@ -782,6 +803,26 @@ function markUnrevised(lineId, btn) {
                                         <div class="d-flex align-items-center m-3">
                                             <i class="fa-solid fa-exclamation"></i>
                                             <div class="text-primary fw-bold ms-2">{{ supplier.note }}</div>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if supplier.note_aliwen %}
+                                        <div class="d-flex align-items-start mx-3 mb-3 p-3 rounded border border-warning" style="background-color:#fffbea;">
+                                            <img src="../../static/tariff/sello2.png" width="36" class="me-3 flex-shrink-0 mt-1">
+                                            <div>
+                                                <div class="fw-bold small text-uppercase mb-1" style="color:#92400e;letter-spacing:.04em;">Aliwen exclusive Amenities & Agreements</div>
+                                                <div class="small">{{ supplier.note_aliwen }}</div>
+                                            </div>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if supplier.note_audley %}
+                                        <div class="d-flex align-items-start mx-3 mb-3 p-3 rounded border border-warning" style="background-color:#fffbea;">
+                                            <img src="../../static/tariff/audley.png" width="36" class="me-3 flex-shrink-0 mt-1">
+                                            <div>
+                                                <div class="fw-bold small text-uppercase mb-1" style="color:#92400e;letter-spacing:.04em;">Audley exclusive Notes</div>
+                                                <div class="small">{{ supplier.note_audley }}</div>
+                                            </div>
                                         </div>
                                     {% endif %}
                                     {% endif %}{# /not Cliente — notes block #}

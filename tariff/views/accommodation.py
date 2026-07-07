@@ -86,6 +86,8 @@ def supplier(request):
             room_quantity=request.POST.get("room_quantity", ""),
             inclusions=request.POST.get("inclusions", ""),
             bedding=request.POST.get("bedding", ""),
+            note_aliwen=request.POST.get("note_aliwen", ""),
+            note_audley=request.POST.get("note_audley", ""),
             pic1_url=request.POST.get("pic1_url"),
             pic2_url=request.POST.get("pic2_url"),
             pic3_url=request.POST.get("pic3_url"),

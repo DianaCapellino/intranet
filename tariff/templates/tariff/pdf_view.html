@@ -127,6 +127,37 @@
             margin: 2px 0;
         }
 
+        .note-special {
+            display: flex;
+            align-items: flex-start;
+            border: 1px solid #F59E0B;
+            background-color: #fffbea;
+            border-radius: 3px;
+            padding: 5px 7px;
+            margin: 5px 0;
+        }
+        .note-special img {
+            width: 22px;
+            height: auto;
+            margin-right: 7px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .note-special-title {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 6.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #92400e;
+            margin-bottom: 2px;
+        }
+        .note-special-body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7.5pt;
+            color: #1a1a1a;
+        }
+
         /* ── Product group label ── */
         .product-group-label {
             font-family: Arial, Helvetica, sans-serif;
@@ -329,6 +360,26 @@
             {% endif %}
             {% if supplier.note %}
                 <div class="supplier-note">* {{ supplier.note }}</div>
+            {% endif %}
+
+            {% if supplier.note_aliwen and not client %}
+                <div class="note-special">
+                    {% if sello_b64 %}<img src="{{ sello_b64 }}" alt="">{% endif %}
+                    <div>
+                        <div class="note-special-title">Aliwen exclusive Amenities &amp; Agreements</div>
+                        <div class="note-special-body">{{ supplier.note_aliwen }}</div>
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if supplier.note_audley and not client %}
+                <div class="note-special">
+                    {% if audley_b64 %}<img src="{{ audley_b64 }}" alt="">{% endif %}
+                    <div>
+                        <div class="note-special-title">Audley exclusive Notes</div>
+                        <div class="note-special-body">{{ supplier.note_audley }}</div>
+                    </div>
+                </div>
             {% endif %}
 
             {% regroup supplier_block.list by group.product.group.id as product_groups %}

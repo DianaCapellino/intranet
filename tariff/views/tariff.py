@@ -396,14 +396,20 @@ def pdf_view(request):
 
     import base64
     from django.contrib.staticfiles.finders import find as static_find
-    logo_path = static_find("intranet/images/logo2.png")
-    if not logo_path:
-        logo_path = os.path.join(settings.STATIC_ROOT, "intranet", "images", "logo2.png")
-    try:
-        with open(logo_path, "rb") as f:
-            logo_b64 = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
-    except (FileNotFoundError, TypeError):
-        logo_b64 = ""
+
+    def _load_b64(path_parts):
+        p = static_find(os.path.join(*path_parts))
+        if not p:
+            p = os.path.join(settings.STATIC_ROOT, *path_parts)
+        try:
+            with open(p, "rb") as f:
+                return "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
+        except (FileNotFoundError, TypeError):
+            return ""
+
+    logo_b64   = _load_b64(["intranet", "images", "logo2.png"])
+    sello_b64  = _load_b64(["tariff", "sello2.png"])
+    audley_b64 = _load_b64(["tariff", "audley.png"])
 
     return render(request, "tariff/pdf_view.html", {
         "acc_rate_lines": acc_rate_lines,
@@ -411,6 +417,8 @@ def pdf_view(request):
         "client": client,
         "season": year,
         "logo_b64": logo_b64,
+        "sello_b64": sello_b64,
+        "audley_b64": audley_b64,
     })
 
 

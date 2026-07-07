@@ -492,6 +492,8 @@ def modify_supplier(request, supplier_id):
             supplier.room_quantity=request.POST.get("room_quantity", "")
             supplier.inclusions=request.POST.get("inclusions", "")
             supplier.bedding=request.POST.get("bedding", "")
+            supplier.note_aliwen=request.POST.get("note_aliwen", "")
+            supplier.note_audley=request.POST.get("note_audley", "")
 
         # Modifies the model of the supplier from the form information
         supplier.name=name

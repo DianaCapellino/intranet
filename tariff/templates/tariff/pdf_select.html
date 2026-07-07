@@ -67,13 +67,21 @@
 
             <!-- ALOJAMIENTO / ACCOMMODATION -->
             <div class="tab-pane fade show active" id="tab-acc">
-                <div class="mb-3 d-flex gap-2">
+                <div class="mb-3 d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', true)">
                         <i class="fa-solid fa-check-double me-1"></i>{% if is_client %}Select all{% else %}Seleccionar todos{% endif %}
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll('acc', false)">
                         <i class="fa-solid fa-xmark me-1"></i>{% if is_client %}Deselect all{% else %}Deseleccionar todos{% endif %}
                     </button>
+                    {% if not is_client %}
+                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="selectByNote('aliwen')">
+                        <i class="fa-solid fa-star me-1"></i>Aliwen
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="selectByNote('audley')">
+                        <i class="fa-solid fa-star me-1"></i>Audley
+                    </button>
+                    {% endif %}
                 </div>
 
                 {% for location, suppliers in acc_locations_data %}
@@ -93,7 +101,9 @@
                             {% for supplier in suppliers %}
                             <div class="col-md-4 col-lg-3 p-2 supplier-item acc-item"
                                  data-location="{{ location.id }}"
-                                 data-name="{{ supplier.name|lower }}">
+                                 data-name="{{ supplier.name|lower }}"
+                                 {% if supplier.note_aliwen %}data-aliwen="1"{% endif %}
+                                 {% if supplier.note_audley %}data-audley="1"{% endif %}>
                                 <div class="form-check">
                                     <input class="form-check-input acc-check loc-acc-{{ location.id }}"
                                            type="checkbox"
@@ -104,6 +114,10 @@
                                         {{ supplier.name }}
                                         {% if supplier.hotel_quality %}
                                             <small class="text-muted d-block">{{ supplier.hotel_quality }}</small>
+                                        {% endif %}
+                                        {% if not is_client %}
+                                            {% if supplier.note_aliwen %}<small class="text-warning d-block fw-bold" style="font-size:.7rem;">★ Aliwen</small>{% endif %}
+                                            {% if supplier.note_audley %}<small class="text-warning d-block fw-bold" style="font-size:.7rem;">★ Audley</small>{% endif %}
                                         {% endif %}
                                     </label>
                                 </div>
@@ -205,6 +219,15 @@ function selectAll(type, checked) {
     document.querySelectorAll('.' + type + '-check').forEach(cb => cb.checked = checked);
     document.querySelectorAll('[id^="' + type + '-all-"]').forEach(cb => cb.checked = checked);
     document.querySelectorAll('[id^="' + type + '-grp-"]').forEach(cb => cb.checked = checked);
+}
+
+function selectByNote(noteType) {
+    document.querySelectorAll('.acc-item[data-' + noteType + '="1"] .acc-check').forEach(cb => {
+        cb.checked = true;
+        const locId = [...cb.classList]
+            .find(c => c.startsWith('loc-acc-'))?.replace('loc-acc-', '');
+        if (locId) syncLocationCheckbox('acc', locId);
+    });
 }
 
 function toggleLocation(type, locId, checked) {

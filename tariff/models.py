@@ -263,6 +263,10 @@ class Supplier(models.Model):
     inclusions = models.CharField(max_length=500, blank=True, default='')
     bedding = models.CharField(max_length=300, blank=True, default='')
 
+    # Internal negotiation & client-specific notes (not shown in public tariff)
+    note_aliwen = models.TextField(blank=True, default='')
+    note_audley = models.TextField(blank=True, default='')
+
     def __str__(self):
         return f"{self.name}"
 
