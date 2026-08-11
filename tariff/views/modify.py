@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import date
 from django.db.models import Avg
 import json
+import math
 
 MARGIN_SVS_OPTIONS = [
     ("Low", "0.87"),
@@ -587,7 +588,7 @@ def _cost_per_pax(value, fcu, tax, increase, usd, exchange, pax):
     v *= (1 + float(increase or 0) / 100)
     if not usd and exchange:
         v /= float(exchange)
-    return round(v, 2)
+    return math.ceil(v * 100) / 100
 
 
 def calculate_margins(rate):
@@ -702,10 +703,9 @@ def modify_supplier_rates(request, supplier_id):
                     margin_ai = getattr(rate, 'margin_ai', 0) if rate else 0
                 suggested_sell = None
                 if has_items and total_cost and supplier.margin:
-                    import math as _math
-                    suggested_sell = _math.ceil(total_cost / supplier.margin)
+                    suggested_sell = math.ceil(total_cost / supplier.margin)
                 elif effective_cost and margin_ai and 0 < margin_ai < 100:
-                    suggested_sell = round(effective_cost / (1 - margin_ai / 100))
+                    suggested_sell = math.ceil(effective_cost / (1 - margin_ai / 100))
 
                 line.bases.append({
                     "pax": col,
@@ -880,9 +880,9 @@ def rates_summary_api(request, supplier_id):
 
             suggested_sell = None
             if has_items and total_cost and supplier.margin:
-                suggested_sell = _math.ceil(total_cost / supplier.margin)
+                suggested_sell = math.ceil(total_cost / supplier.margin)
             elif effective_cost and margin_ai and 0 < margin_ai < 100:
-                suggested_sell = round(effective_cost / (1 - margin_ai / 100))
+                suggested_sell = math.ceil(effective_cost / (1 - margin_ai / 100))
 
             cost_val = total_cost if has_items else (float(rate.cost) if rate.cost is not None else 0)
             rates_summary.append({

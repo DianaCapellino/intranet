@@ -1005,7 +1005,7 @@ function calcCostPerPax(value, fcu, tax, increase, usd, exchange, pax) {
     v *= (1 + parseFloat(tax  || 0) / 100);
     v *= (1 + parseFloat(increase || 0) / 100);
     if (!usd && parseFloat(exchange) > 0) v /= parseFloat(exchange);
-    return Math.round(v * 100) / 100;
+    return Math.ceil(v * 100) / 100;
 }
 
 async function refreshBaseCostTotal(rateId) {
@@ -1025,7 +1025,7 @@ async function refreshBaseCostTotal(rateId) {
         const directCost = parseFloat(costCellEl?.textContent) || 0;
         if (directCost > 0) {
             if (sugCell && marginAi > 0 && marginAi < 100) {
-                sugCell.textContent = Math.round(directCost / (1 - marginAi / 100));
+                sugCell.textContent = Math.ceil(directCost / (1 - marginAi / 100));
             }
             if (sell > 0 && marginCell) {
                 const actualMargin = ((sell - directCost) / sell * 100).toFixed(1);
@@ -1040,12 +1040,12 @@ async function refreshBaseCostTotal(rateId) {
         const txt = row.querySelector('.cost-per-pax-val')?.textContent || '';
         total += parseFloat(txt.replace('$', '').replace('/pax', '')) || 0;
     });
-    total = Math.round(total * 100) / 100;
+    total = Math.ceil(total * 100) / 100;
     totalCell.textContent = total;
 
     // Suggested sell: keep same margin_ai with new cost
     if (sugCell && marginAi > 0 && marginAi < 100) {
-        sugCell.textContent = Math.round(total / (1 - marginAi / 100));
+        sugCell.textContent = Math.ceil(total / (1 - marginAi / 100));
     }
 
     // Update actual Rent% cell: (sell - new_cost) / sell

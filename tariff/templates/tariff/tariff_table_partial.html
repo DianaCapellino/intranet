@@ -476,13 +476,19 @@ function markUnrevised(lineId, btn) {
                                         ">
                                             <td class="ps-3 py-2 border-0">
                                                 <div class="fw-bold text-secondary" style="font-size:0.85rem;">
-                                                    {{ line.group.product.name }}
+                                                    {% if line.group.product.description %}
+                                                        <span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;"
+                                                              data-bs-toggle="modal" data-bs-target="#windowRoomDesc{{ line.group.product.id }}">
+                                                            {{ line.group.product.name }}
+                                                        </span>
+                                                    {% else %}
+                                                        {{ line.group.product.name }}
+                                                    {% endif %}
                                                     <span class="fw-normal">
                                                         – {{ line.group.name }}
                                                     </span>
                                                     {% if line.group.product.note %}
                                                         <i class="btn btn-sm fa-solid fa-exclamation text-primary fw-bold" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowProductNote{{ line.group.product.id }}"></i>
-                                                    {% else %}
                                                     {% endif %}
                                                 </div>
                                             </td>
@@ -554,6 +560,24 @@ function markUnrevised(lineId, btn) {
                                                 </div>
                                             </div>
                                         </div>
+                                        {% if line.group.product.description %}
+                                        <div class="modal fade" id="windowRoomDesc{{ line.group.product.id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content text-dark">
+                                                    <div class="modal-header border-0 pb-0">
+                                                        <h5 class="modal-title fw-bold">{{ line.group.product.name }}</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                                    </div>
+                                                    <div class="modal-body text-start">
+                                                        <p>{{ line.group.product.description|linebreaks }}</p>
+                                                        <div class="text-center mt-3">
+                                                            <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cerrar</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
                                     {% endfor %}
                                     <tr class="vigency-separator">
                                         <td colspan="{% if show_costs %}7{% else %}5{% endif %}" style="height:30px"></td>

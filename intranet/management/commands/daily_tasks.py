@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly, send_tariff_team_weekly
 
 
 class Command(BaseCommand):
@@ -39,6 +39,7 @@ class Command(BaseCommand):
 
         today = date.today()
         is_wednesday = today.weekday() == 2
+        is_thursday  = today.weekday() == 3
         is_monday = today.weekday() == 0
         is_first_wednesday = is_wednesday and today.day <= 7
 
@@ -97,6 +98,18 @@ class Command(BaseCommand):
                 ))
             except Exception as exc:
                 self.stdout.write(self.style.ERROR(f"Error al enviar tarifas a clientes: {exc}"))
+
+        # Tariff team update — every Thursday
+        if is_thursday:
+            self.stdout.write("-" * 30)
+            self.stdout.write("Enviando actualización de tarifas al equipo interno...")
+            try:
+                r = send_tariff_team_weekly(stdout=self.stdout)
+                self.stdout.write(self.style.SUCCESS(
+                    f"Enviado a {r['sent']} usuario(s) | Omitidos: {r['skipped']} | Errores: {r['errors']}"
+                ))
+            except Exception as exc:
+                self.stdout.write(self.style.ERROR(f"Error al enviar tarifas al equipo: {exc}"))
 
         # Holiday reminder — every day, fires only when a holiday starts in exactly 7 days
         self.stdout.write("-" * 30)

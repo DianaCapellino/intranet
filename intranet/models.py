@@ -34,7 +34,8 @@ IMPORTANCE_OPTIONS = [
 
 DEPARTMENTS = [
     ("AI", "Aliwen"),
-    ("SH", "Say Hueque")
+    ("DM", "Say Hueque DMC"),
+    ("GR", "Say Hueque Grupos")
 ]
 
 PROGRESS_OPTIONS = [

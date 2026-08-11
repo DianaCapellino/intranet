@@ -83,11 +83,13 @@
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'stats' %}">Estadísticas</a>
                   </li>
+                  {% if user.department == "AI" %}
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'calidad' %}">Calidad
                         {% if nav_pending_emails %}<span class="badge rounded-pill text-bg-danger ms-1" style="font-size:0.65rem;">{{ nav_pending_emails }}</span>{% endif %}
                       </a>
                   </li>
+                  {% endif %}
                   <li class="nav-item dropdown">
                     <a class="nav-link text-light dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                       Gestionar
@@ -111,7 +113,7 @@
                     </ul>
                   </li>
                   {% endif %}
-                  {% if user.isAdmin %}
+                  {% if user.isAdmin and user.department == "AI" %}
                   <li class="nav-item">
                     <a class="nav-link text-success fw-semibold" href="{% url 'aliwen_green' %}">🌿 Aliwen Green</a>
                   </li>

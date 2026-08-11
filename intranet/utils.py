@@ -654,6 +654,26 @@ def send_tariff_client_weekly(stdout=None):
     return {'sent': sent, 'skipped': skipped, 'errors': errors}
 
 
+def send_tariff_team_weekly(stdout=None):
+    """Send the weekly rate-update email to all internal team members. Called every Thursday."""
+    try:
+        subject, to_emails, template, context = build_tariff_team_news_context()
+        if not context.get('locations'):
+            if stdout:
+                stdout.write("  Sin cambios de tarifas esta semana, mail interno omitido.")
+            return {'sent': 0, 'skipped': 1, 'errors': 0}
+        if not to_emails:
+            if stdout:
+                stdout.write("  Sin usuarios internos con email configurado.")
+            return {'sent': 0, 'skipped': 1, 'errors': 0}
+        send_templated_email(subject, to_emails, template, context)
+        return {'sent': len(to_emails), 'skipped': 0, 'errors': 0}
+    except Exception as exc:
+        if stdout:
+            stdout.write(f"  Error enviando mail de tarifas al equipo: {exc}")
+        return {'sent': 0, 'skipped': 0, 'errors': 1}
+
+
 def build_tariff_team_news_context(date_from=None):
     """
     Build the context for tariff_team_news.html (internal team email).
@@ -870,9 +890,30 @@ SELECT DISTINCT
 FROM BHD
 LEFT JOIN DRM ON DRM.CODE = BHD.AGENT
 LEFT JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
-WHERE BHD.BRANCH = 'AL'
+WHERE BHD.BRANCH IN ('AL', 'DM', 'GR')
   AND BHD.TRAVELDATE >= %s
   AND BHD.TRAVELDATE <= %s
+  AND BHD.STATUS IN ('OK','FI','CT','B1','B2','B3','B4','B5','B6','B7','B8','RX','XC','XX')
+"""
+
+_SEGUIMIENTO_QUERY = """
+SELECT
+    BHD.FULL_REFERENCE AS tourplan_id,
+    MIN(O.CODE) AS seg_code,
+    MIN(CASE WHEN O.SUPPLIER = '1863' THEN '__SIN_ASIGNAR__' ELSE CRM.NAME END) AS seg_supplier
+FROM (
+    SELECT OPT_ID, CODE, SUPPLIER
+    FROM OPT
+    WHERE LOCATION = '000'
+      AND CODE IN ('SEGBAS', 'SEGSTD', 'SEGFUL')
+) O
+JOIN BSL ON BSL.OPT_ID = O.OPT_ID
+JOIN BHD ON BHD.BHD_ID = BSL.BHD_ID
+JOIN CRM ON CRM.CODE = O.SUPPLIER
+WHERE BHD.BRANCH IN ('AL', 'DM', 'GR')
+  AND BHD.TRAVELDATE >= %s
+  AND BHD.TRAVELDATE <= %s
+GROUP BY BHD.FULL_REFERENCE
 """
 
 _BOOKING_STATUSES  = {"OK", "FI", "CT", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
@@ -893,24 +934,32 @@ def get_tourplan_connection():
     )
 
 
-def sync_from_tourplan_db():
+def sync_from_tourplan_db(branches=None, dept_list=None):
     """
     Connects directly to the Tourplan SQL Server DB and updates Trip records
     using the same logic as upload_data() but without a CSV file.
     Returns (updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app).
+    branches: list of Tourplan BRANCH codes, e.g. ['AL'] or ['DM'] (default: all)
+    dept_list: list of Django department values, e.g. ['AI'] (default: all)
     """
     from difflib import SequenceMatcher
+
+    if not branches:
+        branches = ['AL', 'DM', 'GR']
+    if not dept_list:
+        dept_list = ['AI', 'DM', 'SHD', 'SH', 'GR', 'SHG']
 
     today = date.today()
     date_from = today.replace(year=today.year - 2).strftime("%Y%m%d")
     date_to   = today.replace(year=today.year + 3).strftime("%Y%m%d")
 
-    # Pre-fetch lookups
+    # Pre-fetch lookups — trips restricted to caller's branch/department
     users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
 
     trips_by_tourplan = {
         t.tourplanId: t
         for t in Trip.objects.select_related("responsable_user", "operations_user")
+        .filter(department__in=dept_list)
         .exclude(tourplanId="").exclude(tourplanId__isnull=True)
     }
 
@@ -929,11 +978,15 @@ def sync_from_tourplan_db():
             if "/" in r:
                 client_ref_set.add(r.split("/")[0])
 
-    # Fetch rows from Tourplan
+    # Fetch rows from Tourplan — filtered to the caller's branches
+    _branch_in = ', '.join(f"'{b}'" for b in branches)
+    _sync_query = _TOURPLAN_SYNC_QUERY.replace(
+        "BHD.BRANCH IN ('AL', 'DM', 'GR')", f"BHD.BRANCH IN ({_branch_in})"
+    )
     conn = get_tourplan_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(_TOURPLAN_SYNC_QUERY, (date_from, date_to))
+        cursor.execute(_sync_query, (date_from, date_to))
         rows = cursor.fetchall()
     finally:
         conn.close()
@@ -1085,11 +1138,11 @@ def sync_from_tourplan_db():
             "guide", "rent_perc", "amount", "tp_notes",
         ])
 
-    # Build the three "wrong TP" groups (same logic as upload_data)
+    # Build the three "wrong TP" groups — restricted to caller's department
     no_tp_group1 = []
     no_tp_group2 = []
     no_tp_group3 = []
-    for t in (Trip.objects.filter(status="Booking")
+    for t in (Trip.objects.filter(status="Booking", department__in=dept_list)
               .select_related("responsable_user", "client")
               .order_by("travelling_date")):
         client_ref = str(t.client_reference).strip() if t.client_reference else ""
@@ -1356,20 +1409,64 @@ def booking_sheet_season_year():
     return today.year if today.month >= 5 else today.year - 1
 
 
-def get_booking_sheet_data(date_from_str, date_to_str):
+def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
     """
-    Returns all confirmed Tourplan bookings (status in _BOOKING_STATUSES),
-    excluding Personal Trip (ALPP) and Sites (ALSI) prefixes,
-    filtered to the given date range (YYYYMMDD strings).
-    Each dict includes in_intranet (bool) and intranet_trip_id (int or None).
+    Returns confirmed Tourplan bookings for the given branches and date range.
+    branches: list of BHD.BRANCH values, e.g. ['AL'], ['DM'], ['AL','DM','GR'].
+    Defaults to all known branches if not provided.
     """
+    if not branches:
+        branches = ['AL', 'DM', 'GR']
+    _branch_in = ', '.join(f"'{b}'" for b in branches)
+    _main_query = _TOURPLAN_SYNC_QUERY.replace(
+        "BHD.BRANCH IN ('AL', 'DM', 'GR')", f"BHD.BRANCH IN ({_branch_in})"
+    )
+    _seg_query = _SEGUIMIENTO_QUERY.replace(
+        "BHD.BRANCH IN ('AL', 'DM', 'GR')", f"BHD.BRANCH IN ({_branch_in})"
+    )
     conn = get_tourplan_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(_TOURPLAN_SYNC_QUERY, (date_from_str, date_to_str))
+        cursor.execute(_main_query, (date_from_str, date_to_str))
         rows = cursor.fetchall()
     finally:
         conn.close()
+
+    import threading
+    _seg_holder = [None]
+
+    def _fetch_seguimiento():
+        try:
+            import pymssql as _pymssql
+            tp = settings.TOURPLAN_DB
+            sc = _pymssql.connect(
+                server=tp["SERVER"],
+                port=tp.get("PORT", 1433),
+                database=tp["DATABASE"],
+                user=tp["UID"],
+                password=tp["PWD"],
+                login_timeout=5,
+                as_dict=True,
+            )
+            try:
+                cur = sc.cursor()
+                cur.execute(_seg_query, (date_from_str, date_to_str))
+                _seg_holder[0] = cur.fetchall()
+            finally:
+                sc.close()
+        except Exception:
+            _seg_holder[0] = []
+
+    _seg_thread = threading.Thread(target=_fetch_seguimiento, daemon=True)
+    _seg_thread.start()
+    _seg_thread.join(timeout=3)
+    seg_rows = _seg_holder[0] or []
+
+    _seguimiento_by_tp = {
+        r["tourplan_id"].strip(): {"code": r["seg_code"], "supplier": r["seg_supplier"]}
+        for r in seg_rows
+        if r.get("tourplan_id")
+    }
 
     def _s(row, key):
         v = row.get(key)
@@ -1379,26 +1476,29 @@ def get_booking_sheet_data(date_from_str, date_to_str):
         Trip.objects.select_related("responsable_user", "vr_requested_by")
         .exclude(tourplanId="").exclude(tourplanId__isnull=True)
     )
-    trips_by_tp = {t.tourplanId: t.id for t in _intranet_trips}
-    _difficulty_by_tp = {t.tourplanId: (t.difficulty or "") for t in _intranet_trips}
+    trips_by_tp = {t.tourplanId.strip(): t.id for t in _intranet_trips if t.tourplanId}
+    _difficulty_by_tp = {t.tourplanId.strip(): (t.difficulty or "") for t in _intranet_trips if t.tourplanId}
     _vr_by_tp = {}
     _vr_requested_by_tp = {}
     for _t in _intranet_trips:
+        if not _t.tourplanId:
+            continue
+        _key = _t.tourplanId.strip()
         if _t.responsable_user:
-            _vr_by_tp[_t.tourplanId] = {
+            _vr_by_tp[_key] = {
                 "id": _t.responsable_user.id,
                 "username": _t.responsable_user.username,
                 "color": str(_t.responsable_user.color) if _t.responsable_user.color else "#6c757d",
             }
         else:
-            _vr_by_tp[_t.tourplanId] = None
+            _vr_by_tp[_key] = None
         if _t.vr_requested_by:
-            _vr_requested_by_tp[_t.tourplanId] = {
+            _vr_requested_by_tp[_key] = {
                 "id": _t.vr_requested_by.id,
                 "username": _t.vr_requested_by.username,
             }
         else:
-            _vr_requested_by_tp[_t.tourplanId] = None
+            _vr_requested_by_tp[_key] = None
 
     _all_users = list(User.objects.all())
     users_by_other_tp_bs = {
@@ -1430,7 +1530,8 @@ def get_booking_sheet_data(date_from_str, date_to_str):
         return {"name": u.other_name or u.username, "color": str(u.color) if u.color else "#6c757d"}
 
 
-    _bs_prefix_re = re.compile(r'^AL([A-Z]+)', re.IGNORECASE)
+    _SEG_MAP = {'SEGBAS': 'BASIC', 'SEGSTD': 'STD', 'SEGFUL': 'FULL'}
+    _bs_prefix_re = re.compile(r'^(?:AL|DM|GR)([A-Z]+)', re.IGNORECASE)
 
     result = []
     for row in rows:
@@ -1477,6 +1578,7 @@ def get_booking_sheet_data(date_from_str, date_to_str):
             pass
 
         trip_id = trips_by_tp.get(tp_id)
+        _seg = _seguimiento_by_tp.get(tp_id, {})
         result.append({
             "tp_id":              tp_id,
             "name":               _s(row, "pax_name"),
@@ -1494,7 +1596,7 @@ def get_booking_sheet_data(date_from_str, date_to_str):
             "responsable_user":   _user_pill(_s(row, "responsable_code")),
             "operations_code":    _s(row, "operations_code"),
             "operations_user":    _user_pill(_s(row, "operations_code")),
-            "dh_type":            _s(row, "dh_type"),
+            "seguimiento_supplier": _seg.get("supplier", ""),
             "dh_name":            dh_name,
             "guide":              _s(row, "guide"),
             "tp_prefix":          tp_prefix,
@@ -1508,6 +1610,7 @@ def get_booking_sheet_data(date_from_str, date_to_str):
             "intranet_vr":        _vr_by_tp.get(tp_id) if trip_id else None,
             "vr_requested_by":    _vr_requested_by_tp.get(tp_id) if trip_id else None,
             "difficulty":         _difficulty_by_tp.get(tp_id, "") if trip_id else "",
+            "seguimiento":        _SEG_MAP.get(_seg.get("code", ""), ""),
             # Fields needed for single-trip creation
             "contact_name":       "",
             "vendedor_tp":        _s(row, "responsable_code"),

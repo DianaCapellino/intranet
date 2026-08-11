@@ -165,12 +165,12 @@
           <th>Consultant</th>
           <th>VR</th>
           <th>OP</th>
-          <th title="Seguimiento">Seg.</th>
           <th>DH</th>
           <th>Guía</th>
           <th>Intranet</th>
           <th title="Nota de Rentabilidad (Tourplan)">Rentabilidad</th>
           <th title="Nota PNR (Tourplan)">PNR</th>
+          <th title="Seguimiento">Seguimiento</th>
         </tr>
       </thead>
       <tbody>
@@ -249,8 +249,13 @@
             <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.operations_code }}</span>
             {% endwith %}{% endif %}
           </td>
-          <td class="text-center">{{ r.dh_type }}</td>
-          <td class="bs-col-text" title="{{ r.dh_name }}">{{ r.dh_name }}</td>
+          <td class="text-center">
+            {% if r.seguimiento_supplier == "__SIN_ASIGNAR__" %}
+              <span class="status-badge" style="background:#fff3cd;color:#856404;">Sin asignar</span>
+            {% elif r.seguimiento_supplier %}
+              {{ r.seguimiento_supplier }}
+            {% endif %}
+          </td>
           <td class="bs-col-text" title="{{ r.guide }}">{{ r.guide }}</td>
           <td class="text-center" id="bs-cell-{{ r.tp_id|slugify }}">
             {% if r.in_intranet %}
@@ -283,6 +288,11 @@
             </button>
             {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
           </td>
+          <td class="text-center">
+            {% if r.seguimiento %}
+            <span class="status-badge" style="background:#e0d7f5;color:#3d2085;">{{ r.seguimiento }}</span>
+            {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -309,7 +319,7 @@
 </div>
 
 <script id="bs-row-data" type="application/json">
-[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}","out_date":"{{ r.out_date }}","date_sort":"{{ r.travelling_date_sort }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
 </script>
 <script>
 // ── Row data indexed by tp_id for summary recalculation ──────────────────────
@@ -449,7 +459,7 @@ document.addEventListener('DOMContentLoaded', function () {
         extend: 'colvis',
         text: '<i class="fa-solid fa-table-columns me-1"></i>Columnas',
         className: 'btn btn-sm btn-dark',
-        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,19,20],
+        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,19,20],
       }],
       language: {
         search: 'Buscar:',
@@ -473,12 +483,12 @@ document.addEventListener('DOMContentLoaded', function () {
         { visible: true  },  // 12 Consultant
         { visible: false },  // 13 VR (intranet)
         { visible: true  },  // 14 OP
-        { visible: false },  // 15 Seg.
-        { visible: false },  // 16 DH
-        { visible: false },  // 17 Guía
-        { visible: true,  orderable: false },  // 18 Intranet
-        { visible: false },  // 19 Rentabilidad
-        { visible: false },  // 20 PNR
+        { visible: false },  // 15 DH (seguimiento supplier)
+        { visible: false },  // 16 Guía
+        { visible: true,  orderable: false },  // 17 Intranet
+        { visible: false },  // 18 Rentabilidad
+        { visible: false },  // 19 PNR
+        { visible: false },  // 20 Seguimiento
       ],
       drawCallback: function() {
         _bsRenderMonthSubtotals();
@@ -492,20 +502,20 @@ document.addEventListener('DOMContentLoaded', function () {
   // ── View presets ─────────────────────────────────────────────────────────
   const _BS_VIEWS = {
     default: {
-      // General: IN(4), Status(6), Pax(7), Monto(8), Invoiced(9), Rent(10), Consultant(12), OP(14), Intranet(18)
-      // OUT(5) oculto en General
-      show: [0,1,2,4,6,7,8,9,10,12,14,18],
-      hide: [3,5,11,13,15,16,17,19,20],
+      // General: IN(4), Status(6), Pax(7), Monto(8), Invoiced(9), Rent(10), Consultant(12), OP(14), Intranet(17)
+      // DH(15), Guía(16), Seguimiento(20) ocultos por defecto
+      show: [0,1,2,4,6,7,8,9,10,12,14,17],
+      hide: [3,5,11,13,15,16,18,19,20],
     },
     vr: {
-      // VR: muestra Consultant(12), VR(13); oculta Status(6), Intranet(18)
-      show: [0,1,2,4,5,7,8,9,10,11,12,13,14,19,20],
-      hide: [3,6,15,16,17,18],
+      // VR: muestra Consultant(12), VR(13); oculta Status(6), Intranet(17); Seguimiento(20) oculto por defecto
+      show: [0,1,2,4,5,7,8,9,10,11,12,13,14,18,19],
+      hide: [3,6,15,16,17,20],
     },
     ops: {
       // Operaciones: igual que default
-      show: [0,1,2,4,6,7,8,9,10,12,14,18],
-      hide: [3,5,11,13,15,16,17,19,20],
+      show: [0,1,2,4,6,7,8,9,10,12,14,17],
+      hide: [3,5,11,13,15,16,18,19,20],
     },
   };
 
@@ -708,6 +718,71 @@ function getCsrfToken() {
 // ── VR assignment ────────────────────────────────────────────────────────────
 const _BS_VENTAS_USERS = {{ ventas_users_json|safe }};
 const _BS_IS_ADMIN = {{ is_admin|yesno:"true,false" }};
+const _BS_ABSENCES  = {{ bs_absences_json|safe }};
+
+// Lookup: Tourplan code (uppercase) → active ventas user
+const _BS_VENTAS_BY_CODE = {};
+_BS_VENTAS_USERS.forEach(u => {
+  if (u.other_tp) _BS_VENTAS_BY_CODE[u.other_tp.toUpperCase()] = u;
+  _BS_VENTAS_BY_CODE[u.username.toUpperCase()] = u;
+});
+
+// Returns first absence overlapping [IN_date - 14 days, IN_date], or null
+function _bsAbsenceWarning(userId, inDateStr) {
+  if (!userId || !inDateStr) return null;
+  const p = inDateStr.split('/');
+  if (p.length !== 3) return null;
+  const inDate = new Date(+p[2], +p[1] - 1, +p[0]);
+  const wStart = new Date(inDate);
+  wStart.setDate(wStart.getDate() - 14);
+  for (const a of _BS_ABSENCES) {
+    if (a.user_id != userId) continue;
+    const from = new Date(a.date_from + 'T00:00:00');
+    const to   = new Date(a.date_to   + 'T00:00:00');
+    if (from <= inDate && to >= wStart) return a;
+  }
+  return null;
+}
+
+function _bsFmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function _bsFilterModal(input) {
+  const q = input.value.toLowerCase();
+  const tbl = document.getElementById(input.dataset.tbl);
+  if (!tbl) return;
+  tbl.querySelectorAll('tbody tr[data-tp-id]').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function _bsSortModal(th) {
+  const tbody = th.closest('table')?.querySelector('tbody');
+  if (!tbody) return;
+  const colIdx = [...th.parentElement.children].indexOf(th);
+  const asc = th.dataset.sortDir !== 'asc';
+  th.closest('tr').querySelectorAll('th[onclick]').forEach(t => {
+    t.dataset.sortDir = '';
+    const si = t.querySelector('.bs-si');
+    if (si) si.textContent = '↕';
+  });
+  th.dataset.sortDir = asc ? 'asc' : 'desc';
+  const si = th.querySelector('.bs-si');
+  if (si) si.textContent = asc ? '↑' : '↓';
+  const rows = [...tbody.querySelectorAll('tr[data-tp-id]')];
+  rows.sort((a, b) => {
+    const ac = a.cells[colIdx], bc = b.cells[colIdx];
+    const av = (ac?.dataset.sort ?? ac?.textContent ?? '').trim();
+    const bv = (bc?.dataset.sort ?? bc?.textContent ?? '').trim();
+    const an = parseFloat(av.replace(/[^\d.-]/g, '')), bn = parseFloat(bv.replace(/[^\d.-]/g, ''));
+    if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  rows.forEach(tr => tbody.appendChild(tr));
+}
 
 function _bsRenderVrCell(td, userId, username, color, requestedBy) {
   const tr = td.closest('tr');
@@ -894,12 +969,19 @@ function _bsComputeDraft() {
     const counts = Object.fromEntries(ventasIds.map(id => [id, g.existing[id] || 0]));
     g.pending.forEach(r => {
       let assignedId = null;
-      if (r.vr_requested_by_id && ventasById[r.vr_requested_by_id]) {
+      // 1. Use Tourplan consultant if they're an active ventas user
+      const consultant = r.vr_code ? _BS_VENTAS_BY_CODE[r.vr_code.trim().toUpperCase()] : null;
+      if (consultant) {
+        assignedId = consultant.id;
+      } else if (r.vr_requested_by_id && ventasById[r.vr_requested_by_id]) {
+        // 2. Requested-by user
         assignedId = r.vr_requested_by_id;
       } else {
+        // 3. Round-robin fallback
         assignedId = ventasIds.reduce((a, b) => counts[a] <= counts[b] ? a : b);
       }
       const u = ventasById[assignedId];
+      if (!u) return;
       counts[assignedId] = (counts[assignedId] || 0) + 1;
       _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: u.id, username: u.username, color: u.color || '#6c757d' };
       // pending rows are NOT added to _bsChecked — admin must tick them
@@ -929,31 +1011,35 @@ function _bsMonthGroups() {
 }
 
 function _bsAssignSummaryHtml(month, g) {
-  // Count final state: existing (checked→draft, unchecked→original) + checked pending→draft
-  const counts = {};
+  const counts = {}, amounts = {};
+  const _add = (uid, r) => {
+    counts[uid]  = (counts[uid]  || 0) + 1;
+    amounts[uid] = (amounts[uid] || 0) + (r.amount || 0);
+  };
   (g.all || []).forEach(r => {
     if (r.intranet_vr_id) {
       if (_bsChecked.has(r.tp_id)) {
         const asgn = _bsDraft[r.tp_id];
-        const uid = asgn ? asgn.user_id : r.intranet_vr_id;
-        counts[uid] = (counts[uid] || 0) + 1;
+        _add(asgn ? asgn.user_id : r.intranet_vr_id, r);
       } else {
-        counts[r.intranet_vr_id] = (counts[r.intranet_vr_id] || 0) + 1;
+        _add(r.intranet_vr_id, r);
       }
     } else if (_bsChecked.has(r.tp_id)) {
       const asgn = _bsDraft[r.tp_id];
-      if (asgn) counts[asgn.user_id] = (counts[asgn.user_id] || 0) + 1;
+      if (asgn) _add(asgn.user_id, r);
     }
   });
   const filterKey = _bsModalFilter;
   return _BS_VENTAS_USERS
-    .map(u => ({ u, total: counts[u.id] || 0 }))
-    .sort((a, b) => b.total - a.total)
-    .map(({ u, total }) => {
+    .map(u => ({ u, total: counts[u.id] || 0, amt: amounts[u.id] || 0 }))
+    .filter(x => x.total > 0)
+    .sort((a, b) => b.amt - a.amt)
+    .map(({ u, total, amt }) => {
       const c = u.color || '#6c757d';
       const isActive = filterKey === `${month}:${u.id}`;
+      const fmtAmt = amt.toLocaleString('de-DE', { maximumFractionDigits: 0 });
       const pillStyle = `background:${c};color:${_bsContrastColor(c)};padding:4px 12px;border-radius:999px;font-size:.82em;font-weight:600;white-space:nowrap;cursor:pointer;${isActive ? 'outline:2.5px solid #000;outline-offset:2px;' : 'opacity:0.85;'}`;
-      return `<span style="${pillStyle}" title="${isActive ? 'Click para ver todos' : 'Filtrar por '+u.username}" onclick="_bsToggleModalFilter(${u.id},'${month}')">${u.username} = ${total}</span>`;
+      return `<span style="${pillStyle}" title="${isActive ? 'Click para ver todos' : 'Filtrar por '+u.username}" onclick="_bsToggleModalFilter(${u.id},'${month}')">${u.username} = USD ${fmtAmt} <span style="font-weight:400;opacity:.8;">(${total})</span></span>`;
     }).join('');
 }
 
@@ -1005,19 +1091,24 @@ function _bsRenderAssignModal() {
       ${_bsAssignSummaryHtml(m, g)}
     </div>`;
 
-    html += `<div class="border rounded" style="overflow-x:auto;">
-      <table class="table table-sm mb-0" style="font-size:.78rem;min-width:700px;">
+    html += `<div class="mb-2">
+      <input type="text" class="form-control form-control-sm" placeholder="Buscar en este mes…"
+             data-tbl="bs-modal-tbl-${mk}" oninput="_bsFilterModal(this)" style="max-width:280px;">
+    </div>
+    <div class="border rounded" style="overflow-x:auto;">
+      <table id="bs-modal-tbl-${mk}" class="table table-sm mb-0" style="font-size:.78rem;min-width:860px;">
         <thead class="table-light"><tr>
           <th style="width:32px;" title="Guardar esta asignación">✓</th>
-          <th style="min-width:80px;">TP#</th>
-          <th>Nombre</th>
-          <th>Cliente</th>
-          <th style="white-space:nowrap;">Fecha IN</th>
-          <th class="text-end">USD</th>
-          <th class="text-center">Dif.</th>
-          <th class="text-center" style="min-width:40px;">Pax</th>
-          <th>Consultor</th>
-          <th style="min-width:120px;">VR</th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;white-space:nowrap;min-width:80px;">TP# <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;">Nombre <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;">Cliente <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;white-space:nowrap;">Fecha IN <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;white-space:nowrap;">Fecha OUT <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" class="text-end" style="cursor:pointer;">USD <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" class="text-center" style="cursor:pointer;">Dif. <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" class="text-center" style="cursor:pointer;min-width:36px;">Pax <span class="bs-si">↕</span></th>
+          <th onclick="_bsSortModal(this)" style="cursor:pointer;">Consultor <span class="bs-si">↕</span></th>
+          <th style="min-width:150px;">VR</th>
         </tr></thead>
         <tbody>`;
 
@@ -1035,6 +1126,12 @@ function _bsRenderAssignModal() {
       const reqIcon = r.vr_requested_by
         ? ` <i class="fa-solid fa-triangle-exclamation text-warning" title="Pedido por ${r.vr_requested_by}"></i>` : '';
       const rowBg = isChecked ? '' : 'color:#adb5bd;';
+      const abs = _bsAbsenceWarning(asgn.user_id, r.date);
+      const absWarn = abs
+        ? `<div class="bs-abs-warn mt-1 text-danger" style="font-size:.7rem;white-space:nowrap;">
+             <i class="fa-solid fa-triangle-exclamation me-1"></i>Ausente ${_bsFmtDate(abs.date_from)}–${_bsFmtDate(abs.date_to)}
+           </div>`
+        : '';
       html += `<tr data-tp-id="${r.tp_id}" style="${rowBg}">
         <td class="text-center" style="vertical-align:middle;">
           <input type="checkbox" class="form-check-input bs-assign-cb" data-tp-id="${r.tp_id}" data-month="${m}"
@@ -1044,13 +1141,17 @@ function _bsRenderAssignModal() {
         <td class="text-muted" style="white-space:nowrap;">${r.tp_id}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.name}">${r.name}</td>
         <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client || ''}">${r.client || '—'}</td>
-        <td style="white-space:nowrap;">${r.date || '—'}</td>
+        <td style="white-space:nowrap;" data-sort="${r.date_sort || ''}">${r.date || '—'}</td>
+        <td style="white-space:nowrap;" data-sort="${r.out_date ? r.out_date.split('/').reverse().join('') : ''}">${r.out_date || '—'}</td>
         <td class="text-end" style="white-space:nowrap;">${r.amount_str || '—'}</td>
         <td class="text-center" style="white-space:nowrap;">${diffBadge}</td>
         <td class="text-center">${r.pax}</td>
         <td style="white-space:nowrap;">${r.vr_code || '—'}${reqIcon}</td>
-        <td><select class="form-select form-select-sm" style="font-size:.75rem;"
-                    onchange="_bsChangeDraftVr('${r.tp_id}',this.value,'${m}')">${opts}</select></td>
+        <td data-tp-id-vr="${r.tp_id}">
+          <select class="form-select form-select-sm" style="font-size:.75rem;"
+                  onchange="_bsChangeDraftVr('${r.tp_id}',this.value,'${m}')">${opts}</select>
+          ${absWarn}
+        </td>
       </tr>`;
     });
 
@@ -1082,6 +1183,21 @@ function _bsChangeDraftVr(tpId, newUserId, month) {
   _bsDirty = true;
   const cb = document.querySelector(`.bs-assign-cb[data-tp-id="${tpId}"]`);
   if (cb) { cb.checked = true; const tr = cb.closest('tr'); if (tr) tr.style.color = ''; }
+  // Refresh absence warning for the new user
+  const vrCell = document.querySelector(`[data-tp-id-vr="${tpId}"]`);
+  if (vrCell) {
+    const abs = _bsAbsenceWarning(u.id, r.date);
+    const existing = vrCell.querySelector('.bs-abs-warn');
+    if (abs) {
+      const html = `<div class="bs-abs-warn mt-1 text-danger" style="font-size:.7rem;white-space:nowrap;">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>Ausente ${_bsFmtDate(abs.date_from)}–${_bsFmtDate(abs.date_to)}
+      </div>`;
+      if (existing) existing.outerHTML = html;
+      else vrCell.insertAdjacentHTML('beforeend', html);
+    } else if (existing) {
+      existing.remove();
+    }
+  }
   _bsRefreshModalSummary(month);
 }
 
@@ -1158,12 +1274,24 @@ function bsSendTestEmail(btn) {
 }
 
 function bsSaveAssignments() {
+  // Resolve the currently visible month tab
+  const activeTab = document.querySelector('#bs-assign-tabs .nav-link.active');
+  const tabId = activeTab?.getAttribute('href')?.replace('#bs-assign-tab-', '');
+  const activeMonth = tabId ? tabId.slice(0, 4) + '-' + tabId.slice(4, 6) : null;
+
+  // Only include checked rows that belong to the active month
+  const monthTpIds = new Set();
   const assignments = [];
   _bsChecked.forEach(tpId => {
+    const row = _BS_ROWS.find(r => r.tp_id === tpId);
+    if (!row || (activeMonth && row.month !== activeMonth)) return;
+    monthTpIds.add(tpId);
     const asgn = _bsDraft[tpId];
     if (asgn) assignments.push({ trip_id: asgn.trip_id, user_id: asgn.user_id });
   });
+
   if (!assignments.length) {
+    monthTpIds.forEach(id => _bsChecked.delete(id));
     _bsDirty = false;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide();
     return;
@@ -1192,8 +1320,7 @@ function bsSaveAssignments() {
         const rowEntry = _BS_ROWS.find(r => r.trip_id == a.trip_id);
         if (rowEntry) { rowEntry.intranet_vr_code = a.username; rowEntry.intranet_vr_id = a.user_id; rowEntry.intranet_vr_color = a.color; rowEntry.vr_requested_by = ''; rowEntry.vr_requested_by_id = null; }
       });
-      _bsDraft = {};
-      _bsChecked = new Set();
+      monthTpIds.forEach(id => _bsChecked.delete(id));
       _bsDirty = false;
       _bsBuildVrFilter();
       _bsUpdateSummary();

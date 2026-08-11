@@ -348,15 +348,16 @@ def advanced_search(request):
         return HttpResponseRedirect(reverse("trips"), get_return_page("trips", "", request.user))
 
     else:
+        _, dept_list = _user_tp_branches(request.user)
         return render(request, "intranet/search.html", {
             "trips":Trip.objects.all(),
             "status": STATUS_OPTIONS,
             "trip_types": TRIP_TYPES,
             "dh_types": DH_TYPES,
             "difficulty_options": DIFFICULTY_OPTIONS,
-            "clients": Client.objects.all(),
-            "contacts": ClientContact.objects.all(),
-            "users": User.objects.all(),
+            "clients": Client.objects.filter(department__in=dept_list),
+            "contacts": ClientContact.objects.filter(client__department__in=dept_list),
+            "users": User.objects.filter(department__in=dept_list),
             "to_date_default": to_date_iso,
         })
 
@@ -404,6 +405,7 @@ def create_country(request):
 
 @login_required
 def create_client(request):
+    _, dept_list = _user_tp_branches(request.user)
 
     # If method is POST it will create the new client
     if request.method == "POST":
@@ -417,7 +419,7 @@ def create_client(request):
         if not name or not country_form or not category:
             return render(request, "intranet/clients.html", {
                 "message": "Todos los campos deben ser completados",
-                "clients": Client.objects.all(),
+                "clients": Client.objects.filter(department__in=dept_list),
                 "countries": Country.objects.all(),
                 "categories": CLIENT_CATEGORIES,
                 "departments": DEPARTMENTS,
@@ -443,7 +445,7 @@ def create_client(request):
         new_client.available_clients.set(Product.objects.filter(isActivated=True))
 
         return render(request, "intranet/clients.html", {
-            "clients": Client.objects.all(),
+            "clients": Client.objects.filter(department__in=dept_list),
             "countries": Country.objects.all(),
             "categories": CLIENT_CATEGORIES,
             "departments": DEPARTMENTS,
@@ -452,7 +454,7 @@ def create_client(request):
     # If method is GET it displays the form to add new client
     else:
         return render(request, "intranet/clients.html", {
-            "clients": Client.objects.all(),
+            "clients": Client.objects.filter(department__in=dept_list),
             "countries": Country.objects.all(),
             "categories": CLIENT_CATEGORIES,
             "departments": DEPARTMENTS,
@@ -461,6 +463,8 @@ def create_client(request):
 
 @login_required
 def create_client_contact(request):
+    _, dept_list = _user_tp_branches(request.user)
+
     if request.method == "POST":
 
         # Attempt to create contact
@@ -472,8 +476,8 @@ def create_client_contact(request):
         if not name or not email or not client_form:
             return render(request, "intranet/contacts.html", {
                 "message": "Todos los campos deben ser completados",
-                "clients": Client.objects.all(),
-                "contacts": ClientContact.objects.all()
+                "clients": Client.objects.filter(department__in=dept_list),
+                "contacts": ClientContact.objects.filter(client__department__in=dept_list),
             })
 
         # Get the client from the client ID of the form
@@ -488,19 +492,21 @@ def create_client_contact(request):
         new_contact.save()
 
         return render(request, "intranet/contacts.html", {
-            "clients": Client.objects.all(),
-            "contacts": ClientContact.objects.all()
+            "clients": Client.objects.filter(department__in=dept_list),
+            "contacts": ClientContact.objects.filter(client__department__in=dept_list),
         })
 
     else:
         return render(request, "intranet/contacts.html", {
-            "clients": Client.objects.all(),
-            "contacts": ClientContact.objects.all()
+            "clients": Client.objects.filter(department__in=dept_list),
+            "contacts": ClientContact.objects.filter(client__department__in=dept_list),
         })
 
 
 @login_required
 def create_user(request):
+    _, dept_list = _user_tp_branches(request.user)
+
     if request.method == "POST":
 
         # Attempt to create user
@@ -526,7 +532,7 @@ def create_user(request):
                 "message_new": "Todos los campos deben ser completados",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all()
+                "users": User.objects.filter(department__in=dept_list),
             })
 
         if len(username) < 2 or len(username) > 3:
@@ -534,7 +540,7 @@ def create_user(request):
                 "message_new": "El usuario debe tener entre 2 y 3 caracteres",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all()
+                "users": User.objects.filter(department__in=dept_list),
             })
 
         client_id = request.POST.get("client_id") if type == "Cliente" else None
@@ -565,27 +571,28 @@ def create_user(request):
                 "message_new": "El usuario ya existe",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all(),
-                "clients": Client.objects.order_by("name"),
+                "users": User.objects.filter(department__in=dept_list),
+                "clients": Client.objects.filter(department__in=dept_list).order_by("name"),
             })
 
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
-            "users": User.objects.all(),
-            "clients": Client.objects.order_by("name"),
+            "users": User.objects.filter(department__in=dept_list),
+            "clients": Client.objects.filter(department__in=dept_list).order_by("name"),
         })
 
     else:
         return render(request, "intranet/users.html", {
             "departments": DEPARTMENTS,
             "user_types": USER_TYPES,
-            "users": User.objects.all(),
-            "clients": Client.objects.order_by("name"),
+            "users": User.objects.filter(department__in=dept_list),
+            "clients": Client.objects.filter(department__in=dept_list).order_by("name"),
         })
 
 @login_required
 def modify_user(request, user_id):
+    _, dept_list = _user_tp_branches(request.user)
 
     # Gets the object of the user modifying
     user = User.objects.get(id=user_id)
@@ -637,7 +644,7 @@ def modify_user(request, user_id):
                 "message_modify": "Todos los campos deben ser completados",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all()
+                "users": User.objects.filter(department__in=dept_list),
             })
 
         if len(username) < 2 or len(username) > 3:
@@ -645,7 +652,7 @@ def modify_user(request, user_id):
                 "message_modify": "El usuario debe tener entre 2 y 3 caracteres",
                 "departments": DEPARTMENTS,
                 "user_types": USER_TYPES,
-                "users": User.objects.all()
+                "users": User.objects.filter(department__in=dept_list),
             })
 
         client_id = request.POST.get("client_id") if type == "Cliente" else None
@@ -696,6 +703,7 @@ def change_password_user(request, user_id):
 
 @login_required
 def modify_client(request, client_id):
+    _, dept_list = _user_tp_branches(request.user)
 
     # Gets the object of the client modifying
     client = Client.objects.get(id=client_id)
@@ -721,7 +729,7 @@ def modify_client(request, client_id):
         if not name or not country_form or not category or not department:
             return render(request, "intranet/clients.html", {
                 "message_modify": "Todos los campos deben ser completados",
-                "clients": Client.objects.all(),
+                "clients": Client.objects.filter(department__in=dept_list),
                 "countries": Country.objects.all(),
                 "categories": CLIENT_CATEGORIES,
                 "departments": DEPARTMENTS,
@@ -748,6 +756,7 @@ def modify_client(request, client_id):
 
 @login_required
 def modify_contact(request, contact_id):
+    _, dept_list = _user_tp_branches(request.user)
 
     # Gets the object of the contact modifying
     contact = ClientContact.objects.get(id=contact_id)
@@ -772,8 +781,8 @@ def modify_contact(request, contact_id):
         if not name or not email or not client_form:
             return render(request, "intranet/contacts.html", {
                 "message_modify": "Todos los campos deben ser completados",
-                "clients": Client.objects.all(),
-                "contacts": ClientContact.objects.all()
+                "clients": Client.objects.filter(department__in=dept_list),
+                "contacts": ClientContact.objects.filter(client__department__in=dept_list),
             })
 
         client = Client.objects.get(pk=client_form)
@@ -2769,10 +2778,9 @@ def jsonclient(request, client_id):
 
 @login_required
 @csrf_exempt
-def json_clients(_request):
-
-    # Get the list of the clients
-    clients_object_list = Client.objects.all()
+def json_clients(request):
+    _, dept_list = _user_tp_branches(request.user)
+    clients_object_list = Client.objects.filter(department__in=dept_list)
     clients = [client.serialize() for client in clients_object_list]
 
     return JsonResponse(clients, safe=False)
@@ -3178,11 +3186,16 @@ def entries_data(request):
         )
 
     if request.user.userType == "Cliente":
-        try:
-            client_obj = Client.objects.get(name=request.user.other_name)
+        client_obj = getattr(request.user, 'client', None)
+        if not client_obj:
+            try:
+                client_obj = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                client_obj = None
+        if client_obj:
             qs = qs.filter(trip__client=client_obj)
-        except Client.DoesNotExist:
-            return HttpResponseRedirect(reverse("index"))
+        else:
+            return JsonResponse({"draw": draw, "recordsTotal": 0, "recordsFiltered": 0, "data": []})
 
     total_records = Entry.objects.filter(trip__department=request.user.department).count()
     filtered_records = qs.count()
@@ -3644,8 +3657,8 @@ def stats_trips_data(request):
             "travelling_date": trip.travelling_date.strftime("%Y/%m/%d") if trip.travelling_date else "",
             "amount": f"USD {trip.amount:,.2f}" if trip.amount else "Pendiente",
             "difficulty": trip.difficulty,
-            "responsable_user": trip.responsable_user.username,
-            "operations_user": trip.operations_user.username
+            "responsable_user": trip.responsable_user.username if trip.responsable_user else "",
+            "operations_user": trip.operations_user.username if trip.operations_user else "",
         })
 
 
@@ -3660,7 +3673,7 @@ def stats_trips_data(request):
     }
 
     for trip in qs:  # qs ya filtrado
-        if trip.client.name == "Audley Travel UK":
+        if trip.client and trip.client.name == "Audley Travel UK":
             summary["audley_count"] += 1
             summary["audley_amount"] += trip.amount or 0
         else:
@@ -4434,21 +4447,12 @@ def stats_trips_by_responsable(qs, date_from, date_to):
     responsable_users = {}
 
     for trip in bookings:
-        vendor = trip.responsable_user.other_name
+        vendor = trip.responsable_user.other_name if trip.responsable_user else "Sin asignar"
         if vendor not in responsable_users:
+            user_color = '#999999'
+            if trip.responsable_user and hasattr(trip.responsable_user, 'color') and trip.responsable_user.color:
+                user_color = str(trip.responsable_user.color)
 
-            # ✅ Asegurar que el color sea string
-            user_color = '#999999'  # Color por defecto
-
-            if trip.responsable_user:
-                if hasattr(trip.responsable_user, 'color'):
-                    # Convertir explícitamente a string
-                    color_value = trip.responsable_user.color
-                    if color_value:
-                        # Si es un objeto ColorField, convertir a string
-                        user_color = str(color_value)
-
-            # Create empty vendors
             responsable_users[vendor] = {
                 "total": 0,
                 "amountTotal": 0,
@@ -4487,28 +4491,19 @@ def stats_trips_by_operator(qs, date_from, date_to):
     operations_users = {}
 
     for trip in bookings:
-        operator = trip.operations_user.other_name
+        operator = trip.operations_user.other_name if trip.operations_user else "Sin asignar"
         if operator not in operations_users:
+            user_color = '#999999'
+            if trip.operations_user and hasattr(trip.operations_user, 'color') and trip.operations_user.color:
+                user_color = str(trip.operations_user.color)
 
-            # ✅ Asegurar que el color sea string
-            user_color = '#999999'  # Color por defecto
-
-            if trip.operations_user:
-                if hasattr(trip.operations_user, 'color'):
-                    # Convertir explícitamente a string
-                    color_value = trip.operations_user.color
-                    if color_value:
-                        # Si es un objeto ColorField, convertir a string
-                        user_color = str(color_value)
-
-            # Create empty vendors
             operations_users[operator] = {
                 "total": 0,
                 "amountTotal": 0,
                 "audley": 0,
                 "amountAudley": 0.0,
                 "color": user_color,
-                "workingDays": get_working_days_worker(date_from, date_to, trip.responsable_user),
+                "workingDays": get_working_days_worker(date_from, date_to, trip.operations_user),
             }
 
         # Complete the information of the vendors with booking information
@@ -4540,7 +4535,7 @@ def stats_trips_by_client(qs):
     bookings = qs.filter(status="Booking")
 
     for trip in bookings:
-        client = trip.client.name
+        client = trip.client.name if trip.client else "Sin cliente"
         if client not in clients:
             # Create empty clients
             clients[client] = {
@@ -4954,20 +4949,25 @@ def tourplan_files(request):
         "users": User.objects.all,
     })
 
-def upload_data(csv_obj):
+def upload_data(csv_obj, branches=None, dept_list=None):
+    if not branches:
+        branches = ['AL', 'DM', 'GR']
+    if not dept_list:
+        dept_list = ['AI', 'DM', 'SHD', 'SH', 'GR', 'SHG']
 
-    # Pre-fetch lookups into dicts to avoid per-row DB queries
+    # Pre-fetch lookups — trips restricted to caller's department
     users_by_other_tp = {u.other_tp: u for u in User.objects.all() if u.other_tp}
 
     trips_by_tourplan = {
         t.tourplanId: t
         for t in Trip.objects.select_related(
             "responsable_user", "operations_user"
-        ).exclude(tourplanId="").exclude(tourplanId__isnull=True)
+        ).filter(department__in=dept_list)
+        .exclude(tourplanId="").exclude(tourplanId__isnull=True)
     }
 
     booking_tp_ids = set(
-        Trip.objects.filter(status="Booking")
+        Trip.objects.filter(status="Booking", department__in=dept_list)
         .exclude(tourplanId="").exclude(tourplanId__isnull=True)
         .values_list("tourplanId", flat=True)
     )
@@ -5046,7 +5046,9 @@ def upload_data(csv_obj):
                     quantity_pax = int(raw_pax)
                 except ValueError:
                     quantity_pax = 2
-                if trip_status in ("Booking", "Cancelado") and not tp_id.startswith(("ALSI", "ALPP")):
+                # Only include TP IDs belonging to the caller's branch
+                tp_in_branch = any(tp_id.upper().startswith(b.upper()) for b in branches)
+                if trip_status in ("Booking", "Cancelado") and not tp_id.startswith(("ALSI", "ALPP")) and tp_in_branch:
                     raw_rent = row[20].strip() if len(row) > 20 else ""
                     raw_amount = row[21].strip() if len(row) > 21 else ""
                     csv_not_in_app.append({
@@ -5166,7 +5168,7 @@ def upload_data(csv_obj):
     no_tp_group1 = []
     no_tp_group2 = []
     no_tp_group3 = []
-    for t in (Trip.objects.filter(status="Booking")
+    for t in (Trip.objects.filter(status="Booking", department__in=dept_list)
               .select_related("responsable_user", "client")
               .order_by("travelling_date")):
         client_ref = str(t.client_reference).strip() if t.client_reference else ""
@@ -5211,9 +5213,24 @@ def upload_data(csv_obj):
     return updated_count, no_tp_group1, no_tp_group2, no_tp_group3, csv_not_in_app
 
 
+_TP_DEPT_TO_BRANCH = {
+    "AI":  (["AL"], ["AI"]),
+    "DM":  (["DM"], ["DM", "SHD", "SH"]),
+    "GR":  (["GR"], ["GR", "SHG"]),
+}
+_TP_ALL_BRANCHES = ["AL", "DM", "GR"]
+_TP_ALL_DEPTS    = ["AI", "DM", "SHD", "SH", "GR", "SHG"]
+
+
+def _user_tp_branches(user):
+    """Return (branches, dept_list) for the given user based on their department."""
+    return _TP_DEPT_TO_BRANCH.get(user.department, (_TP_ALL_BRANCHES, _TP_ALL_DEPTS))
+
+
 # Page to load the tourplan csv
 @login_required
 def tourplan_files(request):
+    branches, dept_list = _user_tp_branches(request.user)
 
     if request.method == "POST":
         form = CsvFormTourplanFiles(request.POST, request.FILES)
@@ -5225,7 +5242,9 @@ def tourplan_files(request):
             form.save()
 
             csv_obj = CsvFileTourplanFiles.objects.filter(read=False).last()
-            updated_count, no_tp_group1, no_tp_group2, no_tp_group3, csv_not_in_app = upload_data(csv_obj)
+            updated_count, no_tp_group1, no_tp_group2, no_tp_group3, csv_not_in_app = upload_data(
+                csv_obj, branches=branches, dept_list=dept_list
+            )
 
             request.session["tp_csv_not_in_app"] = csv_not_in_app
             request.session["tp_no_tp_group1"]   = no_tp_group1
@@ -5267,8 +5286,11 @@ def tourplan_db_sync(request):
     if not request.user.isAdmin:
         return redirect("error")
     from intranet.utils import sync_from_tourplan_db
+    branches, dept_list = _user_tp_branches(request.user)
     try:
-        updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app = sync_from_tourplan_db()
+        updated_count, no_tp_group1, no_tp_group2, no_tp_group3, not_in_app = sync_from_tourplan_db(
+            branches=branches, dept_list=dept_list
+        )
     except Exception as e:
         return render(request, "intranet/tourplan_files.html", {
             "form": CsvFormTourplanFiles(),
@@ -5518,8 +5540,11 @@ def booking_sheet(request):
         for y in range(current_year - 3, current_year + 3)
     ]
 
+    _DEPT_TO_BRANCH = {"AI": ["AL"], "DM": ["DM"], "GR": ["GR"]}
+    branches = _DEPT_TO_BRANCH.get(request.user.department, ["AL", "DM", "GR"])
+
     try:
-        rows = get_booking_sheet_data(date_from, date_to)
+        rows = get_booking_sheet_data(date_from, date_to, branches=branches)
         error = None
     except Exception as e:
         rows = []
@@ -5550,7 +5575,7 @@ def booking_sheet(request):
         for p in seen_prefixes
     ]
 
-    _BS_STATUS_DEFAULT_ON = {"OK", "FI", "CT"}
+    _BS_STATUS_DEFAULT_ON = {"OK", "FI"}
     seen_statuses = sorted({r["raw_status"] for r in rows})
     status_filters = [
         {"code": s, "label": _BS_STATUS_LABELS.get(s, s), "default_on": s in _BS_STATUS_DEFAULT_ON}
@@ -5566,11 +5591,30 @@ def booking_sheet(request):
     import json as _json
     ventas_users = list(
         User.objects.filter(userType="Ventas", isActivated=True, department=request.user.department)
-        .values("id", "username", "other_name", "color")
+        .values("id", "username", "other_name", "color", "other_tp")
         .order_by("other_name")
     )
     for u in ventas_users:
         u["color"] = str(u["color"]) if u["color"] else "#6c757d"
+        u["other_tp"] = (u.get("other_tp") or "").strip()
+
+    from intranet.models import Absence as _Absence
+    _abs_qs = _Absence.objects.filter(
+        absence_user__userType="Ventas",
+        absence_user__isActivated=True,
+        absence_user__department=request.user.department,
+        date_to__gte=date.today(),
+    ).select_related("absence_user")
+    bs_absences = [
+        {
+            "user_id":   _a.absence_user.id,
+            "username":  _a.absence_user.username,
+            "date_from": _a.date_from.isoformat(),
+            "date_to":   _a.date_to.isoformat(),
+        }
+        for _a in _abs_qs
+        if (_a.date_to - _a.date_from).days > 1
+    ]
 
     return render(request, "intranet/booking_sheet.html", {
         "rows": rows,
@@ -5587,6 +5631,7 @@ def booking_sheet(request):
         "current_user_username": request.user.username or "",
         "is_admin": request.user.isAdmin,
         "ventas_users_json": _json.dumps(ventas_users),
+        "bs_absences_json": _json.dumps(bs_absences),
     })
 
 
@@ -6175,7 +6220,7 @@ def upload_csv_intranet(csv_obj):
                         client_reference=temp_obj["client_reference"],
                         contact=ClientContact.objects.get(name="Sin Contacto"),
                         difficulty=1,
-                        department="SH",
+                        department=temp_obj.get("department", "DM"),
                         responsable_user=User.objects.get(username="SD"),
                         operations_user=User.objects.get(username="SD"),
                         dh=None,
@@ -8173,6 +8218,8 @@ def notifications_management(request):
         return HttpResponseRedirect(reverse('index'))
 
     TYPE_LABELS = dict(NOTIFICATION_TYPES)
+    admin_dept = request.user.department
+    _, dept_list = _user_tp_branches(request.user)
 
     sections = []
     for type_key, type_label in NOTIFICATION_TYPES:
@@ -8188,7 +8235,6 @@ def notifications_management(request):
         rows = []
         shown_user_ids = set()
         is_client_type = (type_key == 'tariff_client')
-        admin_dept = request.user.department
 
         if is_auto:
             for user in _auto_logic_users(type_key):
@@ -8210,7 +8256,7 @@ def notifications_management(request):
                 continue
             u = pref.user
             if is_client_type:
-                if u.userType != 'Cliente':
+                if u.userType != 'Cliente' or u.department not in dept_list:
                     continue
             else:
                 if u.department != admin_dept or u.userType == 'Cliente':
@@ -8226,7 +8272,7 @@ def notifications_management(request):
 
         if is_client_type:
             available_users = (
-                User.objects.filter(isActivated=True, userType='Cliente')
+                User.objects.filter(isActivated=True, userType='Cliente', department__in=dept_list)
                 .exclude(email='')
                 .exclude(id__in=shown_user_ids)
                 .order_by('username')
