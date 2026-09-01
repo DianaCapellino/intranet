@@ -57,6 +57,14 @@
                                     {% endfor %}
                                 </select>
                             </div>
+                            <div class="mb-3 col">
+                                <select class="form-control" aria-label="seniority" name="seniority">
+                                    <option selected value="">Seniority (opcional)</option>
+                                    {% for option in seniority_options %}
+                                    <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div class="form-check-sm mb-3 col new-user-admin-wrap">
                                 <input class="form-check-input" type="checkbox" value="" id="checkDefault" name="admin">
                                 <label class="form-check-label" for="checkDefault">
@@ -244,6 +252,19 @@
                                                                 {% endfor %}
                                                             </select>
                                                         </div>
+                                                        <div class="mb-3 col">
+                                                            <label for="modify_seniority{{user.id}}" class="form-label">Seniority</label>
+                                                            <select class="form-control" aria-label="seniority" name="seniority" id="modify_seniority{{user.id}}">
+                                                                <option value=""{% if not user.seniority %} selected{% endif %}>Sin definir</option>
+                                                                {% for option in seniority_options %}
+                                                                    {% if option.0 == user.seniority %}
+                                                                        <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% else %}
+                                                                        <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
                                                         <div class="mb-3 p-3 col">
                                                             <br>
                                                             <input type="color" id="color" name="color" value="{{ user.color }}">
@@ -337,6 +358,17 @@
     <br>
 
 <script>
+{% if message_new %}
+// Reabre el panel de alta de usuario para que se vea el mensaje de error del POST anterior
+document.addEventListener('DOMContentLoaded', () => {
+    const newUserDiv = document.getElementById('new_user');
+    const userList = document.getElementById('user_list');
+    const newUserBtn = document.getElementById('new_user_btn');
+    if (newUserDiv) newUserDiv.className = 'd-block';
+    if (userList) userList.className = 'd-none';
+    if (newUserBtn) newUserBtn.className = 'd-none';
+});
+{% endif %}
 // ---- New-user form ----
 (function () {
     const typeSelect   = document.querySelector('.new-user-type');

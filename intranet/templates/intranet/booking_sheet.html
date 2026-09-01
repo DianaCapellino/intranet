@@ -5,6 +5,11 @@
 <style>
   #booking-sheet-table td,
   #booking-sheet-table th { font-size: .8rem; vertical-align: middle; white-space: nowrap; padding: 4px 6px; }
+  #booking-sheet-table.table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(0,0,0,.025); }
+  .bs-col-name, .bs-col-client { max-width: 140px; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+  #booking-sheet-table thead th { position: relative; }
+  .bs-col-resize-handle { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 5; }
+  .bs-col-resize-handle:hover, .bs-col-resize-handle.bs-resizing { background: rgba(13,110,253,.4); }
   .bs-check { color: #198754; }
   .bs-create-btn { border: none; background: none; color: #dc3545; cursor: pointer; padding: 0 2px; }
   .bs-create-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -21,7 +26,10 @@
   .bs-vr-request-btn:disabled { opacity:.5; cursor:not-allowed; }
   .bs-vr-requested-pill { border:1.5px solid #adb5bd; background:#e9ecef; color:#6c757d; border-radius:999px; padding:1px 8px; font-size:.75em; cursor:pointer; white-space:nowrap; }
   .bs-vr-requested-pill:hover { border-color:#fd7e14; color:#fd7e14; }
-  .bs-month-subtotal td { background:#f1f3f5 !important; font-size:.77rem !important; padding:2px 10px !important; }
+  .bs-vr-cancel-request-btn { border:none; background:none; color:#adb5bd; padding:0 2px; font-size:.85em; line-height:1; cursor:pointer; }
+  .bs-vr-cancel-request-btn:hover { color:#dc3545; }
+  .bs-month-subtotal { border-top: 6px solid #fff; }
+  .bs-month-subtotal td { background:#212529 !important; color:#fff !important; font-size:.77rem !important; padding:6px 10px !important; }
   #bs-table-overlay { display:none; position:absolute; inset:0; background:rgba(255,255,255,0.78); z-index:20; align-items:center; justify-content:center; border-radius:4px; }
   .bs-spin-ring { width:3.5rem; height:3.5rem; border:4px solid #f0d8d1; border-top-color:#d98875; border-radius:50%; animation:bs-spin 0.75s linear infinite; }
   @keyframes bs-spin { to { transform: rotate(360deg); } }
@@ -34,8 +42,8 @@
     <h2 class="mb-0"><i class="fa-solid fa-table-list me-2"></i>Planilla de Reservas</h2>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <div class="btn-group btn-group-sm" role="group" id="bs-view-btns">
-        <button type="button" class="btn btn-outline-secondary active" data-bs-view="default">General</button>
-        <button type="button" class="btn btn-outline-secondary" data-bs-view="vr">Vendedor Responsable</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-view="default">General</button>
+        <button type="button" class="btn btn-outline-secondary active" data-bs-view="vr">Vendedor Responsable</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-view="ops">Operaciones</button>
       </div>
       {% if is_admin %}
@@ -95,6 +103,13 @@
     <div style="width:1px;height:20px;background:#dee2e6;flex-shrink:0;"></div>
     {% endif %}
     <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="text-muted" style="font-size:.8rem;white-space:nowrap;">Mes:</span>
+      <select id="bs-month-select" class="form-select form-select-sm" style="width:auto;font-size:.8rem;" onchange="_bsSetMonthFilter(this.value)">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div style="width:1px;height:20px;background:#dee2e6;flex-shrink:0;"></div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
       <span id="bs-vr-filter-label" class="text-muted" style="font-size:.8rem;white-space:nowrap;">Consultor:</span>
       <div id="bs-vr-pills" class="d-flex gap-2 flex-wrap"></div>
     </div>
@@ -147,12 +162,13 @@
 
   <div style="position:relative;">
     <div id="bs-table-overlay"><div class="bs-spin-ring"></div></div>
-    <table id="booking-sheet-table" class="table table-hover table-bordered" style="width:100%">
+    <table id="booking-sheet-table" class="table table-hover table-bordered table-striped" style="width:100%">
       <thead class="table-dark">
         <tr>
           <th>TP#</th>
           <th>Nombre</th>
           <th>Cliente</th>
+          <th title="Contacto del cliente (ClientContact)">Vendedor Cliente</th>
           <th>Ref</th>
           <th>Fecha IN</th>
           <th>Fecha OUT</th>
@@ -164,6 +180,7 @@
           <th>Coti por</th>
           <th>Consultant</th>
           <th>VR</th>
+          <th title="Sustituto del VR por ausencia">VR2</th>
           <th>OP</th>
           <th>DH</th>
           <th>Guía</th>
@@ -175,7 +192,7 @@
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr data-tp-prefix="{{ r.tp_prefix }}" data-vr-code="{{ r.responsable_code }}" data-status="{{ r.raw_status }}"
+        <tr data-tp-prefix="{{ r.tp_prefix }}" data-vr-code="{{ r.responsable_code }}" data-op-code="{{ r.operations_code }}" data-status="{{ r.raw_status }}"
             data-trip-id="{{ r.intranet_trip_id|default:'' }}"
             data-month="{{ r.travelling_date_month }}"
             data-pax="{{ r.num_pax|default:0 }}"
@@ -185,8 +202,9 @@
             data-intranet-vr-id="{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% endif %}"
             data-vr-requested-by="{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}">
           <td>{{ r.tp_id }}</td>
-          <td class="bs-col-text" title="{{ r.name }}">{{ r.name }}</td>
-          <td class="bs-col-text" title="{{ r.client_name }}">{{ r.client_name }}</td>
+          <td class="bs-col-text bs-col-name" title="{{ r.name }}">{{ r.name }}</td>
+          <td class="bs-col-text bs-col-client" title="{{ r.client_name }}">{{ r.client_name }}</td>
+          <td class="bs-col-text" title="{{ r.vendedor_cliente }}">{{ r.vendedor_cliente }}</td>
           <td>{{ r.client_reference }}</td>
           <td data-order="{{ r.travelling_date_sort }}">{{ r.travelling_date }}</td>
           <td>{{ r.out_date }}</td>
@@ -237,9 +255,19 @@
                         {% if is_admin %}onclick="bsAssignVrRequested(this)"{% endif %}>
                   <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ r.vr_requested_by.username }}
                 </button>
+                <button class="bs-vr-cancel-request-btn" onclick="bsCancelVrRequest(this)" data-trip-id="{{ r.intranet_trip_id }}" title="Deshacer pedido de VR">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
               {% else %}
                 <button class="bs-vr-request-btn" onclick="bsRequestVr(this)" data-trip-id="{{ r.intranet_trip_id }}">Pedir VR</button>
               {% endif %}
+            {% else %}
+              <span class="text-muted" style="font-size:.75em;">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.intranet_vr2 %}
+            <span class="bs-vr-pill" style="background:#fff;color:{{ r.intranet_vr2.color }};border:1.5px dashed {{ r.intranet_vr2.color }};" title="Sustituto por ausencia">{{ r.intranet_vr2.username }}</span>
             {% else %}
               <span class="text-muted" style="font-size:.75em;">—</span>
             {% endif %}
@@ -319,7 +347,7 @@
 </div>
 
 <script id="bs-row-data" type="application/json">
-[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}","out_date":"{{ r.out_date }}","date_sort":"{{ r.travelling_date_sort }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","op_code":"{{ r.operations_code }}","op_color":"{{ r.operations_user.color|default:'#6c757d' }}","op_label":"{{ r.operations_user.name|default:r.operations_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","intranet_vr2_code":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.username }}{% endif %}","intranet_vr2_id":{% if r.intranet_vr2 %}{{ r.intranet_vr2.id }}{% else %}null{% endif %},"intranet_vr2_color":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}","out_date":"{{ r.out_date }}","date_sort":"{{ r.travelling_date_sort }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
 </script>
 <script>
 // ── Row data indexed by tp_id for summary recalculation ──────────────────────
@@ -332,6 +360,122 @@ let _bsVrFilter = null;         // null = Todos
 let _bsCurrentView = 'default';
 let _bsVrFilterUserCleared = false; // true when user explicitly clicked "Todos"
 
+// ── Month filter state ────────────────────────────────────────────────────────
+let _bsMonthFilter = '';        // '' = Todos
+
+function _bsSetMonthFilter(val) {
+  _bsMonthFilter = val || '';
+  _bsBuildVrFilter();
+  _bsScheduleDraw();
+}
+
+function _bsBuildMonthFilter() {
+  const sel = document.getElementById('bs-month-select');
+  if (!sel) return;
+  const months = [...new Set(_BS_ROWS.map(r => r.month).filter(Boolean))].sort();
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Todos</option>' + months.map(m => {
+    const parts = m.split('-');
+    const label = parts.length === 2 ? `${_BS_MESES[parseInt(parts[1])-1]} ${parts[0]}` : m;
+    return `<option value="${m}">${label}</option>`;
+  }).join('');
+  if (months.includes(current)) sel.value = current;
+}
+
+// ── Per-user column config (visibility + width), saved per table/view ─────────
+const _BS_TABLE_ID = 'booking_sheet';
+const _BS_DEFAULT_COL_WIDTHS = { 1: 150, 2: 150 }; // Nombre, Cliente
+let _BS_PREFS = {};             // table_key → { visible: {idx:bool}, widths: {idx:px} }
+let _bsApplyingPreset = false;  // true while bsSetView() bulk-applies visibility, to skip re-saving
+let _bsSaveTimer = null;
+let _bsResizing = null;         // { idx, startX, startWidth }
+
+function _bsTableKey(viewKey) { return `${_BS_TABLE_ID}:${viewKey}`; }
+
+function _bsLoadPrefs() {
+  const keys = ['default', 'vr', 'ops'].map(_bsTableKey).join(',');
+  return fetch(`{% url 'table_preferences_get' %}?keys=${encodeURIComponent(keys)}`)
+    .then(r => r.ok ? r.json() : {})
+    .then(data => { _BS_PREFS = data || {}; })
+    .catch(() => { _BS_PREFS = {}; });
+}
+
+function _bsSavePrefs(viewKey) {
+  const key = _bsTableKey(viewKey);
+  const cfg = _BS_PREFS[key] || {};
+  clearTimeout(_bsSaveTimer);
+  _bsSaveTimer = setTimeout(() => {
+    fetch("{% url 'table_preferences_set' %}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ table_key: key, config: cfg }),
+    }).catch(() => {});
+  }, 500);
+}
+
+function _bsApplyColWidths(viewKey) {
+  const cfg = _BS_PREFS[_bsTableKey(viewKey)] || {};
+  const widths = cfg.widths || {};
+  const idxs = new Set([...Object.keys(_BS_DEFAULT_COL_WIDTHS), ...Object.keys(widths)].map(Number));
+  let css = '';
+  idxs.forEach(idx => {
+    const px = widths[idx] !== undefined ? widths[idx] : _BS_DEFAULT_COL_WIDTHS[idx];
+    const n = idx + 1;
+    css += `#booking-sheet-table th:nth-child(${n}), #booking-sheet-table td:nth-child(${n}) { width:${px}px; max-width:${px}px; overflow:hidden; text-overflow:ellipsis; }\n`;
+  });
+  let styleEl = document.getElementById('bs-col-width-style');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'bs-col-width-style';
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = css;
+}
+
+function _bsSetColWidth(idx, px) {
+  const key = _bsTableKey(_bsCurrentView);
+  if (!_BS_PREFS[key]) _BS_PREFS[key] = {};
+  if (!_BS_PREFS[key].widths) _BS_PREFS[key].widths = {};
+  _BS_PREFS[key].widths[idx] = px;
+  _bsApplyColWidths(_bsCurrentView);
+}
+
+function _bsInitColResize() {
+  document.querySelectorAll('#booking-sheet-table thead th').forEach((th, idx) => {
+    if (th.querySelector('.bs-col-resize-handle')) return;
+    const handle = document.createElement('span');
+    handle.className = 'bs-col-resize-handle';
+    handle.dataset.colIdx = idx;
+    th.appendChild(handle);
+  });
+}
+
+document.addEventListener('mousedown', function (e) {
+  const handle = e.target.closest('.bs-col-resize-handle');
+  if (!handle) return;
+  e.preventDefault();
+  const idx = parseInt(handle.dataset.colIdx);
+  const th = handle.closest('th');
+  _bsResizing = { idx, startX: e.clientX, startWidth: th.getBoundingClientRect().width };
+  handle.classList.add('bs-resizing');
+  document.body.style.userSelect = 'none';
+});
+
+document.addEventListener('mousemove', function (e) {
+  if (!_bsResizing) return;
+  const delta = e.clientX - _bsResizing.startX;
+  const newWidth = Math.max(40, Math.round(_bsResizing.startWidth + delta));
+  _bsSetColWidth(_bsResizing.idx, newWidth);
+});
+
+document.addEventListener('mouseup', function () {
+  if (!_bsResizing) return;
+  document.querySelectorAll('.bs-col-resize-handle.bs-resizing').forEach(h => h.classList.remove('bs-resizing'));
+  document.body.style.userSelect = '';
+  _bsResizing = null;
+  _bsSavePrefs(_bsCurrentView);
+});
+
 // ── Assign VR modal state ─────────────────────────────────────────────────────
 let _bsDraft       = {};          // tp_id → {trip_id, user_id, username, color}
 let _bsChecked     = new Set();   // tp_ids that will be saved on Guardar
@@ -343,10 +487,11 @@ function _bsBuildVrFilter() {
   if (!container) return;
 
   const isVrView = _bsCurrentView === 'vr';
+  const isOpsView = _bsCurrentView === 'ops';
 
   // Update label
   const filterLabel = document.getElementById('bs-vr-filter-label');
-  if (filterLabel) filterLabel.textContent = isVrView ? 'VR:' : 'Consultor:';
+  if (filterLabel) filterLabel.textContent = isVrView ? 'VR:' : (isOpsView ? 'Operador:' : 'Consultor:');
 
   // Only include users that have files in the currently active types and statuses
   const activePrefixes = new Set(
@@ -358,14 +503,20 @@ function _bsBuildVrFilter() {
   const seen = new Map(); // code → {color, label}
   _BS_ROWS.forEach(r => {
     if (!activePrefixes.has(r.prefix) || !activeStatusesVr.has(r.status)) return;
+    if (_bsMonthFilter && r.month !== _bsMonthFilter) return;
     if (isVrView) {
       // VR view: filter by intranet responsable_user
       const code = r.intranet_vr_code;
       if (code && !seen.has(code)) {
         seen.set(code, { color: r.intranet_vr_color || '#6c757d', label: code });
       }
+    } else if (isOpsView) {
+      // Ops view: filter by Tourplan operator
+      if (r.op_code && !seen.has(r.op_code)) {
+        seen.set(r.op_code, { color: r.op_color || '#6c757d', label: r.op_label || r.op_code });
+      }
     } else {
-      // Default/Ops views: filter by Tourplan consultant
+      // Default view: filter by Tourplan consultant
       if (r.vr_code && !seen.has(r.vr_code)) {
         seen.set(r.vr_code, { color: r.vr_color || '#6c757d', label: r.vr_label || r.vr_code });
       }
@@ -453,13 +604,13 @@ document.addEventListener('DOMContentLoaded', function () {
   if (tbl) {
     $(tbl).DataTable({
       paging: false,
-      order: [[4, 'asc']],
+      order: [[5, 'asc']],
       dom: "<'d-flex align-items-center gap-2 mb-2'Bf>rtip",
       buttons: [{
         extend: 'colvis',
         text: '<i class="fa-solid fa-table-columns me-1"></i>Columnas',
         className: 'btn btn-sm btn-dark',
-        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,19,20],
+        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22],
       }],
       language: {
         search: 'Buscar:',
@@ -471,24 +622,26 @@ document.addEventListener('DOMContentLoaded', function () {
         { visible: true  },  // 0  TP#
         { visible: true  },  // 1  Nombre
         { visible: true  },  // 2  Cliente
-        { visible: false },  // 3  Ref
-        { visible: true  },  // 4  Fecha IN
-        { visible: false },  // 5  Fecha OUT
-        { visible: true  },  // 6  Status
-        { visible: true  },  // 7  Pax
-        { visible: true  },  // 8  Monto USD
-        { visible: true  },  // 9  Invoiced
-        { visible: true  },  // 10 Rent.%
-        { visible: false },  // 11 Coti por
-        { visible: true  },  // 12 Consultant
-        { visible: false },  // 13 VR (intranet)
-        { visible: true  },  // 14 OP
-        { visible: false },  // 15 DH (seguimiento supplier)
-        { visible: false },  // 16 Guía
-        { visible: true,  orderable: false },  // 17 Intranet
-        { visible: false },  // 18 Rentabilidad
-        { visible: false },  // 19 PNR
-        { visible: false },  // 20 Seguimiento
+        { visible: false },  // 3  Vendedor Cliente
+        { visible: false },  // 4  Ref
+        { visible: true  },  // 5  Fecha IN
+        { visible: false },  // 6  Fecha OUT
+        { visible: true  },  // 7  Status
+        { visible: true  },  // 8  Pax
+        { visible: true  },  // 9  Monto USD
+        { visible: true  },  // 10 Invoiced
+        { visible: true  },  // 11 Rent.%
+        { visible: false },  // 12 Coti por
+        { visible: true  },  // 13 Consultant
+        { visible: false },  // 14 VR (intranet)
+        { visible: false },  // 15 VR2 (sustituto)
+        { visible: true  },  // 16 OP
+        { visible: false },  // 17 DH (seguimiento supplier)
+        { visible: false },  // 18 Guía
+        { visible: true,  orderable: false },  // 19 Intranet
+        { visible: false },  // 20 Rentabilidad
+        { visible: false },  // 21 PNR
+        { visible: false },  // 22 Seguimiento
       ],
       drawCallback: function() {
         _bsRenderMonthSubtotals();
@@ -497,25 +650,39 @@ document.addEventListener('DOMContentLoaded', function () {
         if (ov) ov.style.display = 'none';
       },
     });
+    _bsInitColResize();
+    $(tbl).on('column-visibility.dt', function (e, settings, column, state) {
+      if (_bsApplyingPreset) return;
+      const key = _bsTableKey(_bsCurrentView);
+      if (!_BS_PREFS[key]) _BS_PREFS[key] = {};
+      if (!_BS_PREFS[key].visible) _BS_PREFS[key].visible = {};
+      _BS_PREFS[key].visible[column] = state;
+      _bsSavePrefs(_bsCurrentView);
+    });
   }
 
+  const bsOverlay = document.getElementById('bs-table-overlay');
+  if (bsOverlay) bsOverlay.style.display = 'flex';
+
+  _bsLoadPrefs().then(function () {
   // ── View presets ─────────────────────────────────────────────────────────
   const _BS_VIEWS = {
     default: {
-      // General: IN(4), Status(6), Pax(7), Monto(8), Invoiced(9), Rent(10), Consultant(12), OP(14), Intranet(17)
-      // DH(15), Guía(16), Seguimiento(20) ocultos por defecto
-      show: [0,1,2,4,6,7,8,9,10,12,14,17],
-      hide: [3,5,11,13,15,16,18,19,20],
+      // General: Vendedor Cliente(3), IN(5), Status(7), Pax(8), Monto(9), Invoiced(10), Rent(11), Consultant(13), OP(16), Intranet(19)
+      // Ref(4), OUT(6), Coti por(12), VR(14), VR2(15), DH(17), Guía(18), Rentabilidad(20), PNR(21), Seguimiento(22) ocultos por defecto
+      show: [0,1,2,3,5,7,8,9,10,11,13,16,19],
+      hide: [4,6,12,14,15,17,18,20,21,22],
     },
     vr: {
-      // VR: muestra Consultant(12), VR(13); oculta Status(6), Intranet(17); Seguimiento(20) oculto por defecto
-      show: [0,1,2,4,5,7,8,9,10,11,12,13,14,18,19],
-      hide: [3,6,15,16,17,20],
+      // VR: muestra Consultant(13), VR(14), VR2(15); oculta Vendedor Cliente(3), Status(7), Intranet(19); Seguimiento(22) oculto por defecto
+      show: [0,1,2,5,6,8,9,10,11,12,13,14,15,16,20,21],
+      hide: [3,4,7,17,18,19,22],
     },
     ops: {
-      // Operaciones: igual que default
-      show: [0,1,2,4,6,7,8,9,10,12,14,17],
-      hide: [3,5,11,13,15,16,18,19,20],
+      // Operaciones: como default pero con Guía(18), DH(17), VR(14), VR2(15), PNR(21) y Rentabilidad(20);
+      // sin Vendedor Cliente(3), Monto(9), Invoiced(10) ni Intranet(19)
+      show: [0,1,2,5,7,8,11,13,14,15,16,17,18,20,21],
+      hide: [3,4,6,9,10,12,19,22],
     },
   };
 
@@ -524,8 +691,13 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!tbl) return;
     const dt = $(tbl).DataTable();
     const preset = _BS_VIEWS[viewKey] || _BS_VIEWS.default;
-    preset.show.forEach(i => dt.column(i).visible(true));
-    preset.hide.forEach(i => dt.column(i).visible(false));
+    // Saved per-user visibility overrides the preset when present for a column
+    const savedVisible = (_BS_PREFS[_bsTableKey(viewKey)] || {}).visible || {};
+    _bsApplyingPreset = true;
+    preset.show.forEach(i => dt.column(i).visible(savedVisible[i] !== undefined ? !!savedVisible[i] : true, false));
+    preset.hide.forEach(i => dt.column(i).visible(savedVisible[i] !== undefined ? !!savedVisible[i] : false, false));
+    dt.columns.adjust();
+    _bsApplyingPreset = false;
     document.querySelectorAll('#bs-view-btns button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.bsView === viewKey);
     });
@@ -537,6 +709,7 @@ document.addEventListener('DOMContentLoaded', function () {
     _bsCurrentView = viewKey;
     _bsVrFilter = null;
     _bsVrFilterUserCleared = false; // reset so auto-select picks the right default
+    _bsApplyColWidths(viewKey);
     _bsBuildVrFilter();
     _bsScheduleDraw();
   }
@@ -547,10 +720,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Build user (VR) filter on load
   _bsBuildVrFilter();
+  _bsBuildMonthFilter();
 
   // Restore last selected view (always apply a preset so columns match _BS_VIEWS)
   const savedView = localStorage.getItem('bs-view');
-  bsSetView(savedView && _BS_VIEWS[savedView] ? savedView : 'default');
+  bsSetView(savedView && _BS_VIEWS[savedView] ? savedView : 'vr');
 
   const inCount  = document.querySelectorAll('.bs-check').length;
   const missing  = document.querySelectorAll('.bs-create-btn').length;
@@ -576,9 +750,14 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!activeTypes.has(node.dataset.tpPrefix)) return false;
     // Status filter
     if (!activeStatuses.has(node.dataset.status)) return false;
-    // VR user filter — in VR view filter by intranet responsable_user, otherwise by Tourplan consultant
+    // Month filter
+    if (_bsMonthFilter && node.dataset.month !== _bsMonthFilter) return false;
+    // VR/operator filter — VR view: intranet responsable_user; Ops view: Tourplan operator; Default: Tourplan consultant
     if (_bsVrFilter !== null) {
-      const cmpAttr = _bsCurrentView === 'vr' ? node.dataset.intranetVrCode : node.dataset.vrCode;
+      let cmpAttr;
+      if (_bsCurrentView === 'vr') cmpAttr = node.dataset.intranetVrCode;
+      else if (_bsCurrentView === 'ops') cmpAttr = node.dataset.opCode;
+      else cmpAttr = node.dataset.vrCode;
       if ((cmpAttr || '') !== _bsVrFilter) return false;
     }
     return true;
@@ -627,6 +806,7 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   _bsScheduleDraw();
+  }); // end _bsLoadPrefs().then()
 });
 
 function _bsUpdateSummary() {
@@ -639,7 +819,8 @@ function _bsUpdateSummary() {
   const visibleRows = _BS_ROWS.filter(r =>
     activeTypes.has(r.prefix) &&
     activeStatuses.has(r.status) &&
-    (_bsVrFilter === null || (_bsCurrentView === 'vr' ? r.intranet_vr_code : r.vr_code) === _bsVrFilter)
+    (!_bsMonthFilter || r.month === _bsMonthFilter) &&
+    (_bsVrFilter === null || (_bsCurrentView === 'vr' ? r.intranet_vr_code : (_bsCurrentView === 'ops' ? r.op_code : r.vr_code)) === _bsVrFilter)
   );
   const totalFiles  = visibleRows.length;
   const totalPax    = visibleRows.reduce((s, r) => s + (r.pax || 0), 0);
@@ -727,19 +908,27 @@ _BS_VENTAS_USERS.forEach(u => {
   _BS_VENTAS_BY_CODE[u.username.toUpperCase()] = u;
 });
 
-// Returns first absence overlapping [IN_date - 14 days, IN_date], or null
-function _bsAbsenceWarning(userId, inDateStr) {
+// Returns first absence overlapping [IN_date - 30 days, OUT_date], or null
+function _bsAbsenceWarning(userId, inDateStr, outDateStr) {
   if (!userId || !inDateStr) return null;
   const p = inDateStr.split('/');
   if (p.length !== 3) return null;
   const inDate = new Date(+p[2], +p[1] - 1, +p[0]);
   const wStart = new Date(inDate);
-  wStart.setDate(wStart.getDate() - 14);
+  wStart.setDate(wStart.getDate() - 30);
+  let wEnd = inDate;
+  if (outDateStr) {
+    const op = outDateStr.split('/');
+    if (op.length === 3) {
+      const outDate = new Date(+op[2], +op[1] - 1, +op[0]);
+      if (outDate > wEnd) wEnd = outDate;
+    }
+  }
   for (const a of _BS_ABSENCES) {
     if (a.user_id != userId) continue;
     const from = new Date(a.date_from + 'T00:00:00');
     const to   = new Date(a.date_to   + 'T00:00:00');
-    if (from <= inDate && to >= wStart) return a;
+    if (from <= wEnd && to >= wStart) return a;
   }
   return null;
 }
@@ -793,7 +982,10 @@ function _bsRenderVrCell(td, userId, username, color, requestedBy) {
     const reqBtn = `<button class="bs-vr-requested-pill" title="Pedido por ${requestedBy.username}"
       data-trip-id="${tripId}" data-requested-by-id="${requestedBy.id}"
       ${_BS_IS_ADMIN ? 'onclick="bsAssignVrRequested(this)"' : ''}>
-      <i class="fa-solid fa-triangle-exclamation me-1"></i>${requestedBy.username}</button>`;
+      <i class="fa-solid fa-triangle-exclamation me-1"></i>${requestedBy.username}</button>
+      <button class="bs-vr-cancel-request-btn" onclick="bsCancelVrRequest(this)" data-trip-id="${tripId}" title="Deshacer pedido de VR">
+        <i class="fa-solid fa-xmark"></i>
+      </button>`;
     td.innerHTML = reqBtn;
   } else if (tripId) {
     td.innerHTML = `<button class="bs-vr-request-btn" onclick="bsRequestVr(this)" data-trip-id="${tripId}">Pedir VR</button>`;
@@ -887,6 +1079,32 @@ function bsRequestVr(btn) {
   .catch(() => { alert('Error de red'); btn.disabled = false; });
 }
 
+function bsCancelVrRequest(btn) {
+  const tripId = btn.dataset.tripId;
+  if (!tripId) return;
+  btn.disabled = true;
+  fetch("{% url 'booking_sheet_cancel_vr_request' %}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ trip_id: parseInt(tripId) }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      const td = btn.closest('td');
+      const tr = td.closest('tr');
+      tr.dataset.vrRequestedBy = '';
+      _bsRenderVrCell(td, null, null, null, null);
+      const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(tripId));
+      if (rowEntry) { rowEntry.vr_requested_by = ''; rowEntry.vr_requested_by_id = null; }
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+      btn.disabled = false;
+    }
+  })
+  .catch(() => { alert('Error de red'); btn.disabled = false; });
+}
+
 // ── Scheduled draw with loader ───────────────────────────────────────────────
 function _bsScheduleDraw() {
   const _t = document.getElementById('booking-sheet-table');
@@ -928,11 +1146,11 @@ function _bsRenderMonthSubtotals() {
     const amtFmt = g.amount.toLocaleString('de-DE', { maximumFractionDigits: 0 });
     const sub = document.createElement('tr');
     sub.className = 'bs-month-subtotal';
-    sub.innerHTML = `<td colspan="21">
-      <span style="font-weight:700;color:#343a40;">${label}</span>
-      <span class="ms-3 text-secondary">${g.files} file${g.files !== 1 ? 's' : ''}</span>
-      <span class="ms-2 text-secondary">· ${g.pax} pax</span>
-      <span class="ms-2 text-secondary">· USD ${amtFmt}</span>
+    sub.innerHTML = `<td colspan="23">
+      <span style="font-weight:700;color:#fff;">${label}</span>
+      <span class="ms-3" style="color:#adb5bd;">${g.files} file${g.files !== 1 ? 's' : ''}</span>
+      <span class="ms-2" style="color:#adb5bd;">· ${g.pax} pax</span>
+      <span class="ms-2" style="color:#adb5bd;">· USD ${amtFmt}</span>
     </td>`;
     g.lastNode.insertAdjacentElement('afterend', sub);
   });
@@ -948,6 +1166,11 @@ function _bsComputeDraft() {
   _BS_ROWS.forEach(r => {
     if (!r.trip_id || !r.month || !r.intranet_vr_id) return;
     _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: r.intranet_vr_id, username: r.intranet_vr_code, color: r.intranet_vr_color || '#6c757d' };
+    if (r.intranet_vr2_id) {
+      _bsDraft[r.tp_id].vr2_user_id = r.intranet_vr2_id;
+      _bsDraft[r.tp_id].vr2_username = r.intranet_vr2_code;
+      _bsDraft[r.tp_id].vr2_color = r.intranet_vr2_color || '#6c757d';
+    }
     _bsChecked.add(r.tp_id);
   });
 
@@ -1011,27 +1234,37 @@ function _bsMonthGroups() {
 }
 
 function _bsAssignSummaryHtml(month, g) {
-  const counts = {}, amounts = {};
-  const _add = (uid, r) => {
+  const counts = {}, amounts = {}, labels = {};
+  const _add = (uid, r, username, color) => {
+    if (uid == null) return;
     counts[uid]  = (counts[uid]  || 0) + 1;
     amounts[uid] = (amounts[uid] || 0) + (r.amount || 0);
+    if (!labels[uid]) labels[uid] = { username: username || '—', color: color || '#6c757d' };
   };
   (g.all || []).forEach(r => {
     if (r.intranet_vr_id) {
       if (_bsChecked.has(r.tp_id)) {
         const asgn = _bsDraft[r.tp_id];
-        _add(asgn ? asgn.user_id : r.intranet_vr_id, r);
+        if (asgn) _add(asgn.user_id, r, asgn.username, asgn.color);
+        else _add(r.intranet_vr_id, r, r.intranet_vr_code, r.intranet_vr_color);
       } else {
-        _add(r.intranet_vr_id, r);
+        _add(r.intranet_vr_id, r, r.intranet_vr_code, r.intranet_vr_color);
       }
     } else if (_bsChecked.has(r.tp_id)) {
       const asgn = _bsDraft[r.tp_id];
-      if (asgn) _add(asgn.user_id, r);
+      if (asgn) _add(asgn.user_id, r, asgn.username, asgn.color);
     }
   });
+  // Include every user that actually has files this month, even if they're no longer
+  // an active Ventas user (e.g. deactivated) — otherwise their files vanish from the summary.
+  const knownById = new Map(_BS_VENTAS_USERS.map(u => [u.id, u]));
   const filterKey = _bsModalFilter;
-  return _BS_VENTAS_USERS
-    .map(u => ({ u, total: counts[u.id] || 0, amt: amounts[u.id] || 0 }))
+  return Object.keys(counts)
+    .map(uidStr => {
+      const uid = Number(uidStr);
+      const u = knownById.get(uid) || { id: uid, username: (labels[uid] || {}).username, color: (labels[uid] || {}).color };
+      return { u, total: counts[uid] || 0, amt: amounts[uid] || 0 };
+    })
     .filter(x => x.total > 0)
     .sort((a, b) => b.amt - a.amt)
     .map(({ u, total, amt }) => {
@@ -1112,12 +1345,19 @@ function _bsRenderAssignModal() {
         </tr></thead>
         <tbody>`;
 
+    const _ventasIds = new Set(_BS_VENTAS_USERS.map(u => u.id));
     g.all.forEach(r => {
       const asgn = _bsDraft[r.tp_id] || {};
       const isChecked = _bsChecked.has(r.tp_id);
-      const opts = _BS_VENTAS_USERS.map(u =>
+      let opts = _BS_VENTAS_USERS.map(u =>
         `<option value="${u.id}"${u.id == asgn.user_id ? ' selected' : ''}>${u.username}</option>`
       ).join('');
+      // Currently-assigned user is no longer an active Ventas user (deactivated, etc.) —
+      // add them so the dropdown still shows/keeps the real assignment instead of silently
+      // falling back to whichever option is first in the list.
+      if (asgn.user_id != null && !_ventasIds.has(asgn.user_id)) {
+        opts = `<option value="${asgn.user_id}" selected>${asgn.username || '—'} (inactivo)</option>` + opts;
+      }
       const diffLabel = _DIFF_LABEL[r.difficulty] || '';
       const diffColor = _DIFF_COLOR[r.difficulty] || '#6c757d';
       const diffBadge = diffLabel
@@ -1126,12 +1366,7 @@ function _bsRenderAssignModal() {
       const reqIcon = r.vr_requested_by
         ? ` <i class="fa-solid fa-triangle-exclamation text-warning" title="Pedido por ${r.vr_requested_by}"></i>` : '';
       const rowBg = isChecked ? '' : 'color:#adb5bd;';
-      const abs = _bsAbsenceWarning(asgn.user_id, r.date);
-      const absWarn = abs
-        ? `<div class="bs-abs-warn mt-1 text-danger" style="font-size:.7rem;white-space:nowrap;">
-             <i class="fa-solid fa-triangle-exclamation me-1"></i>Ausente ${_bsFmtDate(abs.date_from)}–${_bsFmtDate(abs.date_to)}
-           </div>`
-        : '';
+      const vrExtras = _bsVrExtrasHtml(r, asgn);
       html += `<tr data-tp-id="${r.tp_id}" style="${rowBg}">
         <td class="text-center" style="vertical-align:middle;">
           <input type="checkbox" class="form-check-input bs-assign-cb" data-tp-id="${r.tp_id}" data-month="${m}"
@@ -1150,7 +1385,7 @@ function _bsRenderAssignModal() {
         <td data-tp-id-vr="${r.tp_id}">
           <select class="form-select form-select-sm" style="font-size:.75rem;"
                   onchange="_bsChangeDraftVr('${r.tp_id}',this.value,'${m}')">${opts}</select>
-          ${absWarn}
+          ${vrExtras}
         </td>
       </tr>`;
     });
@@ -1177,28 +1412,68 @@ function _bsChangeDraftVr(tpId, newUserId, month) {
   if (!u) return;
   const r = _BS_ROWS.find(r => r.tp_id === tpId);
   if (!r) return;
-  _bsDraft[r.tp_id] = { trip_id: r.trip_id, user_id: u.id, username: u.username, color: u.color || '#6c757d' };
+  // VR2 substitute was tied to the previous VR1's absence — reset when VR1 changes
+  _bsDraft[tpId] = { trip_id: r.trip_id, user_id: u.id, username: u.username, color: u.color || '#6c757d' };
   // Auto-check the row when VR is selected
   _bsChecked.add(tpId);
   _bsDirty = true;
   const cb = document.querySelector(`.bs-assign-cb[data-tp-id="${tpId}"]`);
   if (cb) { cb.checked = true; const tr = cb.closest('tr'); if (tr) tr.style.color = ''; }
-  // Refresh absence warning for the new user
-  const vrCell = document.querySelector(`[data-tp-id-vr="${tpId}"]`);
-  if (vrCell) {
-    const abs = _bsAbsenceWarning(u.id, r.date);
-    const existing = vrCell.querySelector('.bs-abs-warn');
-    if (abs) {
-      const html = `<div class="bs-abs-warn mt-1 text-danger" style="font-size:.7rem;white-space:nowrap;">
-        <i class="fa-solid fa-triangle-exclamation me-1"></i>Ausente ${_bsFmtDate(abs.date_from)}–${_bsFmtDate(abs.date_to)}
-      </div>`;
-      if (existing) existing.outerHTML = html;
-      else vrCell.insertAdjacentHTML('beforeend', html);
-    } else if (existing) {
-      existing.remove();
-    }
-  }
+  _bsRefreshVrCellExtras(tpId);
   _bsRefreshModalSummary(month);
+}
+
+// Absence warning + VR2 (sustituto) picker, shown together in the modal's VR cell
+function _bsVrExtrasHtml(r, asgn) {
+  const abs = _bsAbsenceWarning(asgn.user_id, r.date, r.out_date);
+  const showVr2 = !!(abs || asgn.vr2_user_id);
+  const absWarn = abs
+    ? `<div class="bs-abs-warn mt-1 text-danger" style="font-size:.7rem;white-space:nowrap;">
+         <i class="fa-solid fa-triangle-exclamation me-1"></i>Ausente ${_bsFmtDate(abs.date_from)}–${_bsFmtDate(abs.date_to)}
+       </div>`
+    : '';
+  let vr2Field = '';
+  if (showVr2) {
+    const vr2Opts = _BS_VENTAS_USERS
+      .filter(u => u.id != asgn.user_id)
+      .map(u => `<option value="${u.id}"${u.id == asgn.vr2_user_id ? ' selected' : ''}>${u.username}</option>`)
+      .join('');
+    vr2Field = `<div class="bs-vr2-field mt-1">
+      <select class="form-select form-select-sm" style="font-size:.72rem;"
+              onchange="_bsChangeDraftVr2('${r.tp_id}',this.value)">
+        <option value="">VR2 (sustituto)…</option>
+        ${vr2Opts}
+      </select>
+    </div>`;
+  }
+  return absWarn + vr2Field;
+}
+
+function _bsRefreshVrCellExtras(tpId) {
+  const vrCell = document.querySelector(`[data-tp-id-vr="${tpId}"]`);
+  if (!vrCell) return;
+  const r = _BS_ROWS.find(row => row.tp_id === tpId);
+  const asgn = _bsDraft[tpId] || {};
+  if (!r) return;
+  vrCell.querySelectorAll('.bs-abs-warn, .bs-vr2-field').forEach(el => el.remove());
+  vrCell.insertAdjacentHTML('beforeend', _bsVrExtrasHtml(r, asgn));
+}
+
+function _bsChangeDraftVr2(tpId, vr2UserId) {
+  const asgn = _bsDraft[tpId];
+  if (!asgn) return;
+  if (!vr2UserId) {
+    delete asgn.vr2_user_id;
+    delete asgn.vr2_username;
+    delete asgn.vr2_color;
+  } else {
+    const u = _BS_VENTAS_USERS.find(u => u.id == vr2UserId);
+    if (!u) return;
+    asgn.vr2_user_id = u.id;
+    asgn.vr2_username = u.username;
+    asgn.vr2_color = u.color || '#6c757d';
+  }
+  _bsDirty = true;
 }
 
 function _bsRefreshModalSummary(month) {
@@ -1230,50 +1505,97 @@ function _bsApplyModalFilter(month) {
   });
 }
 
-function bsSendTestEmail(btn) {
-  const activeTab = document.querySelector('#bs-assign-tabs .nav-link.active');
-  if (!activeTab) { alert('No hay pestaña activa.'); return; }
-  const tabId = activeTab.getAttribute('href').replace('#bs-assign-tab-', '');
-  const month = tabId.slice(0, 4) + '-' + tabId.slice(4, 6);
+// ── Confirmation step before saving/notifying ──────────────────────────────────
+let _bsPendingSaveMode = null;
 
-  // Send the current draft state for this month (same as Guardar but to test address)
-  const assignments = [];
-  _BS_ROWS.forEach(r => {
-    if (r.month !== month || !r.trip_id) return;
-    const asgn = _bsDraft[r.tp_id];
+// Per user in the active month: files newly assigned (had none before), files received
+// from a reassignment (had a different VR before), and files taken away (had this VR,
+// now assigned to someone else).
+function _bsComputeSaveDiff(activeMonth) {
+  const perUser = {};
+  const ensure = (uid, username, color) => {
+    if (uid == null) return null;
+    if (!perUser[uid]) perUser[uid] = { uid, username: username || '—', color: color || '#6c757d', nuevos: 0, recibidos: 0, quitados: 0 };
+    return perUser[uid];
+  };
+  _bsChecked.forEach(tpId => {
+    const row = _BS_ROWS.find(r => r.tp_id === tpId);
+    if (!row || (activeMonth && row.month !== activeMonth)) return;
+    const asgn = _bsDraft[tpId];
     if (!asgn) return;
-    // Include checked rows (new) AND existing already-assigned rows (unchecked but in DB)
-    if (_bsChecked.has(r.tp_id) || r.intranet_vr_id) {
-      const userId = _bsChecked.has(r.tp_id) ? asgn.user_id : r.intranet_vr_id;
-      assignments.push({ trip_id: r.trip_id, user_id: userId });
+    const oldId = row.intranet_vr_id;
+    const newId = asgn.user_id;
+    if (oldId === newId) return; // unchanged this session
+    if (oldId == null) {
+      const u = ensure(newId, asgn.username, asgn.color);
+      if (u) u.nuevos++;
+    } else {
+      const gain = ensure(newId, asgn.username, asgn.color);
+      if (gain) gain.recibidos++;
+      const loss = ensure(oldId, row.intranet_vr_code, row.intranet_vr_color);
+      if (loss) loss.quitados++;
     }
   });
-
-  if (!assignments.length) { alert('No hay files con asignación en este mes.'); return; }
-
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Enviando...';
-
-  fetch("{% url 'booking_sheet_test_vr_email' %}", {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-    body: JSON.stringify({ month, assignments }),
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.ok) {
-      btn.innerHTML = `<i class="fa-solid fa-check me-1"></i>Enviado (${data.sent})`;
-      setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 4000);
-    } else {
-      alert('Error: ' + (data.error || 'desconocido'));
-      btn.innerHTML = orig; btn.disabled = false;
-    }
-  })
-  .catch(() => { alert('Error de red'); btn.innerHTML = orig; btn.disabled = false; });
+  return Object.values(perUser);
 }
 
-function bsSaveAssignments() {
+function bsConfirmSaveAssignments(mode) {
+  const activeTab = document.querySelector('#bs-assign-tabs .nav-link.active');
+  const tabId = activeTab?.getAttribute('href')?.replace('#bs-assign-tab-', '');
+  const activeMonth = tabId ? tabId.slice(0, 4) + '-' + tabId.slice(4, 6) : null;
+
+  const hasChecked = [..._bsChecked].some(tpId => {
+    const row = _BS_ROWS.find(r => r.tp_id === tpId);
+    return row && (!activeMonth || row.month === activeMonth);
+  });
+  if (!hasChecked) { bsSaveAssignments(mode); return; }
+
+  const diff = _bsComputeSaveDiff(activeMonth);
+  _bsPendingSaveMode = mode;
+
+  const title = document.getElementById('bs-save-confirm-modal-label');
+  const body = document.getElementById('bs-save-confirm-modal-body');
+  const okBtn = document.getElementById('bs-save-confirm-ok-btn');
+  title.textContent = mode === 'none' ? 'Confirmar guardado'
+    : mode === 'update' ? 'Confirmar actualización'
+    : 'Confirmar asignación completa';
+
+  if (!diff.length) {
+    const emptyNotice = mode === 'none' ? ' No se envía ningún mail.'
+      : mode === 'update' ? ' No se enviará ningún mail.'
+      : ' Igualmente se guardará y se enviará el listado completo del mes a cada VR con files.';
+    body.innerHTML = `<p class="text-muted mb-0">No hay asignaciones nuevas ni modificadas en esta selección.${emptyNotice}</p>`;
+  } else {
+    const rows = diff
+      .sort((a, b) => a.username.localeCompare(b.username))
+      .map(u => {
+        const parts = [];
+        if (u.nuevos)    parts.push(`<span class="text-success">+${u.nuevos} nuevo${u.nuevos !== 1 ? 's' : ''}</span>`);
+        if (u.recibidos) parts.push(`<span class="text-primary">+${u.recibidos} reasignado${u.recibidos !== 1 ? 's' : ''}</span>`);
+        if (u.quitados)  parts.push(`<span class="text-danger">−${u.quitados} quitado${u.quitados !== 1 ? 's' : ''}</span>`);
+        return `<tr>
+          <td><span class="bs-vr-pill" style="background-color:${u.color};color:${_bsContrastColor(u.color)};">${u.username}</span></td>
+          <td>${parts.join(' &nbsp; ')}</td>
+        </tr>`;
+      }).join('');
+    const notice = mode === 'none'
+      ? '<p class="text-muted small mb-2">Se guarda todo lo tildado. No se envía ningún mail.</p>'
+      : mode === 'update'
+      ? '<p class="text-muted small mb-2">Solo se enviará mail a los usuarios con files nuevos o reasignados (verde/azul). Los "quitados" no reciben mail.</p>'
+      : '<p class="text-muted small mb-2">Se enviará el listado completo del mes a todos los VR con files, no solo a los que cambiaron acá abajo.</p>';
+    body.innerHTML = `${notice}<table class="table table-sm mb-0"><tbody>${rows}</tbody></table>`;
+  }
+
+  okBtn.onclick = function () {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-save-confirm-modal')).hide();
+    bsSaveAssignments(_bsPendingSaveMode);
+  };
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-save-confirm-modal')).show();
+}
+
+function bsSaveAssignments(mode) {
+  mode = mode || 'all';
   // Resolve the currently visible month tab
   const activeTab = document.querySelector('#bs-assign-tabs .nav-link.active');
   const tabId = activeTab?.getAttribute('href')?.replace('#bs-assign-tab-', '');
@@ -1287,7 +1609,7 @@ function bsSaveAssignments() {
     if (!row || (activeMonth && row.month !== activeMonth)) return;
     monthTpIds.add(tpId);
     const asgn = _bsDraft[tpId];
-    if (asgn) assignments.push({ trip_id: asgn.trip_id, user_id: asgn.user_id });
+    if (asgn) assignments.push({ trip_id: asgn.trip_id, user_id: asgn.user_id, vr2_user_id: asgn.vr2_user_id || null });
   });
 
   if (!assignments.length) {
@@ -1297,41 +1619,36 @@ function bsSaveAssignments() {
     return;
   }
 
-  const saveBtn = document.querySelector('#bs-assign-vr-modal .btn-primary');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Guardando...'; }
+  const noneBtn = document.getElementById('bs-save-none-btn');
+  const allBtn = document.getElementById('bs-save-all-btn');
+  const updateBtn = document.getElementById('bs-save-update-btn');
+  const clickedBtn = mode === 'none' ? noneBtn : mode === 'update' ? updateBtn : allBtn;
+  [noneBtn, allBtn, updateBtn].forEach(b => { if (b) b.disabled = true; });
+  if (clickedBtn) clickedBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Guardando...';
 
   fetch("{% url 'booking_sheet_bulk_set_vr' %}", {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-    body: JSON.stringify({ assignments }),
+    body: JSON.stringify({ assignments, mode }),
   })
   .then(r => r.json())
   .then(data => {
     if (data.ok) {
-      (data.assignments || []).forEach(a => {
-        const tr = document.querySelector(`tr[data-trip-id="${a.trip_id}"]`);
-        if (!tr) return;
-        tr.dataset.intranetVrCode = a.username;
-        tr.dataset.intranetVrColor = a.color;
-        tr.dataset.intranetVrId = a.user_id;
-        tr.dataset.vrRequestedBy = '';
-        const vrTd = tr.querySelectorAll('td')[13];
-        if (vrTd) _bsRenderVrCell(vrTd, a.user_id, a.username, a.color || '#6c757d', null);
-        const rowEntry = _BS_ROWS.find(r => r.trip_id == a.trip_id);
-        if (rowEntry) { rowEntry.intranet_vr_code = a.username; rowEntry.intranet_vr_id = a.user_id; rowEntry.intranet_vr_color = a.color; rowEntry.vr_requested_by = ''; rowEntry.vr_requested_by_id = null; }
-      });
       monthTpIds.forEach(id => _bsChecked.delete(id));
       _bsDirty = false;
-      _bsBuildVrFilter();
-      _bsUpdateSummary();
       bootstrap.Modal.getOrCreateInstance(document.getElementById('bs-assign-vr-modal')).hide();
+      // Reload so the whole sheet (VR pills, filters, subtotals, summary cards) reflects
+      // the saved assignments instead of patching each piece by hand.
+      window.location.reload();
     } else {
       alert('Error: ' + (data.error || 'desconocido'));
     }
   })
   .catch(() => alert('Error de red'))
   .finally(() => {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar'; }
+    if (noneBtn) { noneBtn.disabled = false; noneBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar'; }
+    if (allBtn) { allBtn.disabled = false; allBtn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i>Asignar todo'; }
+    if (updateBtn) { updateBtn.disabled = false; updateBtn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i>Actualizar'; }
   });
 }
 </script>
@@ -1352,11 +1669,36 @@ function bsSaveAssignments() {
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="bs-assign-vr-cancel-btn">Cancelar</button>
-        <button type="button" class="btn btn-outline-secondary" id="bs-test-email-btn" onclick="bsSendTestEmail(this)">
-          <i class="fa-solid fa-envelope me-1"></i>Enviar prueba
-        </button>
-        <button type="button" class="btn btn-primary" onclick="bsSaveAssignments()">
+        <button type="button" class="btn btn-outline-secondary" id="bs-save-none-btn" onclick="bsConfirmSaveAssignments('none')"
+                title="Guarda todo lo tildado sin enviar ningún mail">
           <i class="fa-solid fa-floppy-disk me-1"></i>Guardar
+        </button>
+        <button type="button" class="btn btn-outline-primary" id="bs-save-update-btn" onclick="bsConfirmSaveAssignments('update')"
+                title="Guarda todo lo tildado, pero solo envía mail a quienes tengan una asignación nueva o modificada">
+          <i class="fa-solid fa-envelope me-1"></i>Actualizar
+        </button>
+        <button type="button" class="btn btn-primary" id="bs-save-all-btn" onclick="bsConfirmSaveAssignments('all')"
+                title="Guarda todo lo tildado y envía a cada VR el listado completo de sus files del mes">
+          <i class="fa-solid fa-envelope me-1"></i>Asignar todo
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmar asignación/actualización Modal -->
+<div class="modal fade" id="bs-save-confirm-modal" tabindex="-1" aria-labelledby="bs-save-confirm-modal-label">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="bs-save-confirm-modal-label">Confirmar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="bs-save-confirm-modal-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="bs-save-confirm-ok-btn">
+          <i class="fa-solid fa-check me-1"></i>Confirmar y guardar
         </button>
       </div>
     </div>

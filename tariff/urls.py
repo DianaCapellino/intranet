@@ -119,6 +119,7 @@ urlpatterns = [
     path("modify/car-hire/destination/block/create/", car_hire.create_destination_block, name="car_hire_create_destination_block"),
     path("modify/car-hire/destination/category-rate/create/", car_hire.create_category_rate_in_block, name="car_hire_create_category_rate_in_block"),
     path("modify/car-hire/destination/block/delete/", car_hire.delete_destination_block, name="car_hire_delete_destination_block"),
+    path("modify/car-hire/destination/block/copy/", car_hire.copy_destination_block, name="car_hire_copy_destination_block"),
     path("modify/car-hire/destination/block/currency/", car_hire.update_block_currency, name="car_hire_update_block_currency"),
     path("modify/car-hire/destination/block/increase/", car_hire.update_block_increase, name="car_hire_update_block_increase"),
 
@@ -131,5 +132,7 @@ urlpatterns = [
     path("car-hire/quoter/list-categories/", car_hire.quoter_list_categories, name="car_hire_quoter_list_categories"),
     path("car-hire/quoter/parse-email/", car_hire.quoter_parse_email, name="car_hire_quoter_parse_email"),
     path("car-hire/quoter/category-info/", car_hire.quoter_category_info, name="car_hire_quoter_category_info"),
+    path("car-hire/quoter/manual-item/", car_hire.quoter_manual_item, name="car_hire_quoter_manual_item"),
+    path("car-hire/quoter/hertz-fixed-costs/", car_hire.quoter_hertz_fixed_costs, name="car_hire_quoter_hertz_fixed_costs"),
 
 ]

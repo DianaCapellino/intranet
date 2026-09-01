@@ -53,6 +53,9 @@
             </div>
 
             {% if user.isAdmin %}
+            <button class="btn btn-sm btn-outline-secondary copy-block-btn" title="Copiar esta vigencia">
+                <i class="fa-solid fa-copy"></i>
+            </button>
             <button class="btn btn-sm btn-danger delete-block-btn" title="Eliminar esta vigencia">
                 <i class="fa-solid fa-trash"></i>
             </button>
@@ -136,6 +139,49 @@
     </div>
 </div>
 
+{# ─── Modal: copiar vigencia ──────────────────────────────────────────────── #}
+<div class="modal fade" id="copyBlockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Copiar vigencia — {{ location.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small mb-3">
+                    <i class="fa-solid fa-circle-info me-1"></i>
+                    Vigencia original: <strong id="copy_src_label"></strong>
+                </div>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label">Desde</label>
+                        <input type="date" class="form-control" id="copy_date_from">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Hasta</label>
+                        <input type="date" class="form-control" id="copy_date_to">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Temporada (opcional)</label>
+                        <input type="text" class="form-control" id="copy_season" placeholder="Alta, Baja…">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Aumento % <small class="text-muted">(Aum. del bloque)</small></label>
+                        <input type="number" class="form-control" id="copy_increase" min="0" step="0.1" value="0">
+                    </div>
+                </div>
+                <div id="copy_dur_warn" class="alert alert-warning mt-3 py-2 small d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmCopyBlockBtn">
+                    <i class="fa-solid fa-copy me-1"></i> Copiar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const CSRF_TOKEN = '{{ csrf_token }}';
 const LOCATION_ID = {{ location.id }};
@@ -161,15 +207,12 @@ function blockIncrease(block) {
 
 function calcFromRack(rack, isUsd, blockInc) {
     if (!rack || !MARKUP) return { daily: null, sell: null };
-    const IVA      = 1.21;
     const commDec  = COMMISSION / 100;
     const totalInc = 1 + (GLOBAL_INC + (blockInc || 0)) / 100;
-    // ARS rack already has IVA; commission on pre-IVA amount → factor (1 - comm/IVA)
-    // USD rack: standard commission factor
-    const daily = isUsd
-        ? rack * (1 - commDec) * (1 - EXTRA_DISC / 100) * totalInc
-        : rack / EXCHANGE * (1 - commDec / IVA) * (1 - EXTRA_DISC / 100) * totalInc;
-    const sell  = Math.ceil(daily / MARKUP);
+    // extra discount → commission (flat) → ÷ TC (ARS only) → + increase → ÷ markup
+    const rackUsd = isUsd ? rack : rack / EXCHANGE;
+    const daily   = rackUsd * (1 - commDec) * (1 - EXTRA_DISC / 100) * totalInc;
+    const sell    = Math.ceil(daily / MARKUP);
     return { daily: daily.toFixed(2), sell };
 }
 
@@ -337,6 +380,105 @@ document.getElementById('saveNewBlockBtn').addEventListener('click', async () =>
         location.reload();
     } catch (e) {
         alert('Error al crear vigencia: ' + e.message);
+    }
+});
+
+// ─── Copiar vigencia ──────────────────────────────────────────────────
+let _copySrc = null;
+let _copySpanDays = 0;
+
+function fmtDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function checkCopyDuration() {
+    const f = new Date(document.getElementById('copy_date_from').value + 'T00:00:00');
+    const t = new Date(document.getElementById('copy_date_to').value + 'T00:00:00');
+    const warn = document.getElementById('copy_dur_warn');
+    if (isNaN(f) || isNaN(t)) { warn.classList.add('d-none'); return; }
+    const d = Math.round((t - f) / 86400000);
+    if (d !== _copySpanDays) {
+        warn.textContent = `La duración es de ${d} días, distinta a los ${_copySpanDays} días del período original.`;
+        warn.classList.remove('d-none');
+    } else {
+        warn.classList.add('d-none');
+    }
+}
+
+document.querySelectorAll('.copy-block-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const block     = btn.closest('.dest-block');
+        const srcFrom   = block.dataset.dateFrom;
+        const srcTo     = block.dataset.dateTo;
+        const srcSeason = block.dataset.season || '';
+        _copySrc = { from: srcFrom, to: srcTo, season: srcSeason };
+
+        const from = new Date(srcFrom + 'T00:00:00');
+        const to   = new Date(srcTo   + 'T00:00:00');
+        _copySpanDays = Math.round((to - from) / 86400000);
+        const nf = new Date(to); nf.setDate(nf.getDate() + 1);
+        const nt = new Date(nf); nt.setDate(nt.getDate() + _copySpanDays);
+
+        document.getElementById('copy_src_label').textContent =
+            `${srcFrom} → ${srcTo}${srcSeason ? ' · ' + srcSeason : ''}`;
+        document.getElementById('copy_date_from').value = fmtDate(nf);
+        document.getElementById('copy_date_to').value   = fmtDate(nt);
+        document.getElementById('copy_season').value    = srcSeason;
+        document.getElementById('copy_increase').value  = 0;
+        document.getElementById('copy_dur_warn').classList.add('d-none');
+
+        new bootstrap.Modal(document.getElementById('copyBlockModal')).show();
+    });
+});
+
+document.getElementById('copy_date_from').addEventListener('change', () => {
+    const f = new Date(document.getElementById('copy_date_from').value + 'T00:00:00');
+    if (!isNaN(f) && _copySpanDays) {
+        const t = new Date(f); t.setDate(t.getDate() + _copySpanDays);
+        document.getElementById('copy_date_to').value = fmtDate(t);
+    }
+    checkCopyDuration();
+});
+document.getElementById('copy_date_to').addEventListener('change', checkCopyDuration);
+
+document.getElementById('confirmCopyBlockBtn').addEventListener('click', async () => {
+    if (!_copySrc) return;
+    const dateFrom = document.getElementById('copy_date_from').value;
+    const dateTo   = document.getElementById('copy_date_to').value;
+    const season   = document.getElementById('copy_season').value.trim();
+    const increase = parseFloat(document.getElementById('copy_increase').value) || 0;
+
+    if (!dateFrom || !dateTo) { alert('Completá las fechas.'); return; }
+    if (dateTo < dateFrom)    { alert('La fecha de fin debe ser posterior a la de inicio.'); return; }
+
+    const btn = document.getElementById('confirmCopyBlockBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch('{% url "car_hire_copy_destination_block" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({
+                location_id:   LOCATION_ID,
+                src_date_from: _copySrc.from,
+                src_date_to:   _copySrc.to,
+                src_season:    _copySrc.season,
+                date_from:     dateFrom,
+                date_to:       dateTo,
+                season:        season,
+                increase:      increase,
+            }),
+        });
+        const resp = await res.json();
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('copyBlockModal'))?.hide();
+            location.reload();
+        } else {
+            alert(resp.error || 'No se pudo copiar la vigencia.');
+        }
+    } catch (e) {
+        alert('Error al copiar: ' + e.message);
+    } finally {
+        btn.disabled = false;
     }
 });
 </script>

@@ -11,10 +11,11 @@ Importar y registrar las urls de car_hire_urls.py en tariff/urls.py.
 import json
 import math
 import re
-from datetime import date
+import unicodedata
+from datetime import date, timedelta
 from collections import defaultdict
 
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse, HttpResponse
@@ -25,6 +26,63 @@ from tariff.models import (
     Location, CarCategory, CarRateGroup, CarRateLine, CarRate, CarExtra,
     CarFixedCost, CarHireConfig, CAR_EXTRA_TYPES, STATUS, FCU_OPTIONS,
 )
+from intranet.models import ExternalCalendarEntry, Holidays
+
+# Peak-period surcharge added to the quote when the hire dates hit a public
+# holiday or a long weekend.
+SPECIAL_DATES_SURCHARGE_PCT = 20.0
+
+
+def _strip_accents(s):
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s or "")
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def _special_calendar_hits(location_id, start, end):
+    """Public holidays / long weekends that overlap the hire dates [start, end].
+
+    - Feriados / días no laborables come from the Holidays master list; a
+      Friday/Monday holiday also drags in the adjacent Sat–Sun, so a hire that
+      only touches the weekend of a long weekend still counts.
+    - Long weekends explicitly loaded in the external calendar
+      (ExternalCalendarEntry) are also matched, scoped to the destination.
+    """
+    hits, seen = [], set()
+
+    def add(name, category, d_from, d_to):
+        key = (d_from, category)
+        if key in seen:
+            return
+        seen.add(key)
+        hits.append({"name": name, "category": category,
+                     "date_from": d_from, "date_to": d_to})
+
+    win_lo, win_hi = start - timedelta(days=4), end + timedelta(days=4)
+    for h in (Holidays.objects
+              .filter(type_holidays__in=("Feriado", "Día no laborable"))
+              .filter(date_from__lte=win_hi, date_to__gte=win_lo)
+              .values("name", "type_holidays", "date_from", "date_to")):
+        span_from, span_to = h["date_from"], h["date_to"]
+        if span_from.weekday() == 0:          # Monday holiday → + Sat/Sun before
+            span_from -= timedelta(days=2)
+        if span_to.weekday() == 4:            # Friday holiday → + Sat/Sun after
+            span_to += timedelta(days=2)
+        if span_from <= end and span_to >= start:
+            add(h["name"] or h["type_holidays"], "holiday",
+                h["date_from"], h["date_to"])
+
+    for e in (ExternalCalendarEntry.objects
+              .filter(category="long_weekend")
+              .filter(Q(location_id=location_id) | Q(location__isnull=True))
+              .filter(date_from__lte=end, date_to__gte=start)
+              .values("name", "date_from", "date_to")):
+        add(e["name"] or "Long weekend", "long_weekend",
+            e["date_from"], e["date_to"])
+
+    hits.sort(key=lambda x: x["date_from"])
+    return hits
 
 EXTRA_ORDER = ["AIRPORT", "SMART", "COVER"]
 EXTRA_LABELS = dict(CAR_EXTRA_TYPES)
@@ -73,6 +131,66 @@ def _recalc_extras_for_rate(rate, category, config, force=False):
         extra.sell = sell_usd
         extra.cost = cost_ars
         extra.save()
+
+
+def _manual_item_row(data, config, days, eff_pax):
+    """Computes one manually-added quote line (Hertz importer / online quoter).
+
+    amount → (+21% IVA if the amount is loaded without IVA) → USD → increase
+    (the Hertz modal's "Aumento" box when sent, otherwise config.increase) →
+    markup. No commission / extra_discount (same as the generic Hertz items).
+    Returns None when the payload is invalid.
+    """
+    IVA      = 1.21
+    exchange = float(config.exchange or 1) or 1
+    markup   = float(config.markup or 1) or 1
+    # The Hertz-import "Aumento %" box carries the general increase as its default,
+    # so when it's sent it *replaces* config.increase (not stacked). Absent → config.
+    _ei          = data.get("extra_increase")
+    increase_pct = float(config.increase or 0) if _ei is None else float(_ei or 0)
+    tot_inc  = 1.0 + increase_pct / 100.0
+    days     = max(1, int(days or 1))
+    eff_pax  = max(1, int(eff_pax or 1))
+
+    label = re.sub(r"\s+", " ", str(data.get("label") or "")).strip()
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    if not label or amount <= 0:
+        return None
+
+    is_usd     = str(data.get("currency") or "ARS").upper() == "USD"
+    per_day    = bool(data.get("per_day"))
+    with_iva   = amount if data.get("iva_included") else amount * IVA
+    amount_usd = with_iva if is_usd else with_iva / exchange
+
+    if per_day:
+        sell_pd = math.ceil(amount_usd * tot_inc / markup / eff_pax) * eff_pax
+        return {"label": label, "per_day": True,
+                "sell_per_day": sell_pd, "sell_total": sell_pd * days}
+
+    sell_total = math.ceil(amount_usd * tot_inc / markup / eff_pax) * eff_pax
+    return {"label": label, "per_day": False,
+            "sell_per_day": None, "sell_total": sell_total}
+
+
+def _car_daily_sell(rack, usd, block_increase, config):
+    """RACK (ARS incl. IVA, or USD) → (daily cost USD, sell USD) for the
+    destination rates table. Same base-rental logic as the quoter: extra
+    discount → commission (flat) → ÷ exchange (ARS only) → + increase → ÷ markup."""
+    rack = float(rack or 0)
+    if not rack:
+        return None, None
+    exchange  = float(config.exchange or 1) or 1
+    markup    = float(config.markup or 1) or 1
+    comm_dec  = float(config.commission or 0) / 100.0
+    disc_f    = 1.0 - float(config.extra_discount or 0) / 100.0
+    total_inc = 1.0 + (float(config.increase or 0) + float(block_increase or 0)) / 100.0
+    rack_usd  = rack if usd else rack / exchange
+    daily     = rack_usd * (1 - comm_dec) * disc_f * total_inc
+    sell      = math.ceil(daily / markup)
+    return daily, sell
 
 
 # ─── Página principal: Destinos ──────────────────────────────────────────
@@ -543,28 +661,19 @@ def destination_rates(request, location_id):
         if rate and blocks_map[key]["block_increase"] == 0.0:
             blocks_map[key]["block_increase"] = float(rate.increase or 0)
 
-    exchange = float(config.exchange or 1)
-
     date_blocks = []
     for (date_from, date_to, season), block_data in sorted(blocks_map.items()):
         cat_data      = block_data["cats"]
         block_usd     = block_data["usd"]
         block_inc     = block_data["block_increase"]
         rate_line_ids = block_data["rate_line_ids"]
-        total_inc     = 1.0 + (float(config.increase or 0) + block_inc) / 100.0
         rows = []
         for cat in categories:
             d = cat_data.get(cat.id, {})
             rate = d.get("rate")
             rack = rate.cost if rate else None
             if rack is not None:
-                IVA      = 1.21
-                comm_dec = config.commission / 100
-                disc_f   = 1 - config.extra_discount / 100
-                rack_usd = float(rack) if block_usd else float(rack) / exchange
-                comm_f   = (1 - comm_dec) if block_usd else (1 - comm_dec / IVA)
-                daily    = rack_usd * comm_f * disc_f * total_inc
-                sell     = math.ceil(daily / config.markup) if config.markup else 0
+                daily, sell = _car_daily_sell(rack, block_usd, block_inc, config)
             else:
                 daily = sell = None
             rows.append({
@@ -695,6 +804,78 @@ def delete_destination_block(request):
     return JsonResponse({"ok": True, "deleted": deleted})
 
 
+@login_required
+@csrf_exempt
+def copy_destination_block(request):
+    """Duplica una vigencia completa (todas las categorías del destino) a nuevas
+    fechas. El 'aumento' del modal se guarda como Aum.% del bloque nuevo
+    (CarRate.increase); el RACK se copia sin tocar y la venta se recalcula."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    data = json.loads(request.body)
+
+    location_id = data.get("location_id")
+    src_from    = data.get("src_date_from")
+    src_to      = data.get("src_date_to")
+    src_season  = data.get("src_season", "") or ""
+    new_from    = data.get("date_from")
+    new_to      = data.get("date_to")
+    new_season  = data.get("season", "") or ""
+    increase    = float(data.get("increase") or 0)
+
+    if not all([location_id, src_from, src_to, new_from, new_to]):
+        return JsonResponse({"ok": False, "error": "Faltan datos"}, status=400)
+    if new_to < new_from:
+        return JsonResponse({"ok": False, "error": "La fecha de fin debe ser posterior a la de inicio"}, status=400)
+
+    location   = get_object_or_404(Location, pk=location_id)
+    categories = CarCategory.objects.filter(location=location)
+
+    src_lines = list(
+        CarRateLine.objects
+        .filter(group__category__in=categories,
+                date_from=src_from, date_to=src_to, season=src_season)
+        .select_related("group")
+        .prefetch_related("line_rates", "line_rates__extras")
+    )
+    if not src_lines:
+        return JsonResponse({"ok": False, "error": "No se encontró la vigencia original"}, status=404)
+
+    if CarRateLine.objects.filter(
+        group__category__in=categories,
+        date_from=new_from, date_to=new_to, season=new_season,
+    ).exists():
+        return JsonResponse({"ok": False, "error": "Ya existe una vigencia con esas fechas"}, status=409)
+
+    config  = CarHireConfig.get_solo()
+    created = 0
+    for line in src_lines:
+        new_line = CarRateLine.objects.create(
+            date_from=new_from, date_to=new_to, season=new_season,
+            group=line.group, usd=line.usd, is_revised=line.is_revised,
+        )
+        for rate in line.line_rates.all():
+            new_increase = increase if increase else float(rate.increase or 0)
+            _daily, new_sell = _car_daily_sell(rate.cost, new_line.usd, new_increase, config)
+            new_rate = CarRate.objects.create(
+                rate_line=new_line,
+                status=rate.status,
+                increase=new_increase,
+                cost=rate.cost,
+                sell=new_sell or 0,
+                locked=rate.locked,
+            )
+            for ex in rate.extras.all():
+                CarExtra.objects.create(
+                    rate=new_rate, type=ex.type,
+                    cost=ex.cost, sell=ex.sell,
+                    manual_override=ex.manual_override,
+                )
+            created += 1
+
+    return JsonResponse({"ok": True, "created": created})
+
+
 # ─── Edición de modelo de vehículo (aplica a todas las categorías del modelo) ─
 
 @login_required
@@ -760,6 +941,10 @@ def category_update_model(request):
 
 @login_required
 def quoter_page(request):
+    # Por ahora el cotizador de alquiler es solo para usuarios internos.
+    if getattr(request.user, "userType", None) == "Cliente":
+        return redirect("tariff")
+
     locations_with_cats = (
         Location.objects
         .filter(car_categories__isnull=False, car_categories__isActivated=True)
@@ -781,6 +966,9 @@ def quoter_page(request):
         "locations": locations_with_cats,
         "cats_by_location_json": json.dumps(dict(cats_by_location)),
         "conditions_text": config.conditions_text,
+        "config_markup": config.markup,
+        "config_exchange": config.exchange,
+        "config_increase": config.increase,
     })
 
 
@@ -802,7 +990,6 @@ def quoter_list_categories(request):
     config      = CarHireConfig.get_solo()
     exchange    = float(config.exchange or 1)
     markup      = float(config.markup or 1)
-    IVA         = 1.21
     comm_dec    = float(config.commission or 0) / 100.0
     disc_factor = 1.0 - float(config.extra_discount or 0) / 100.0
 
@@ -828,16 +1015,21 @@ def quoter_list_categories(request):
         if cat.id not in seen and float(rate.cost or 0) > 0:
             seen[cat.id] = (cat, rate)
 
+    # Period (block) increase for the chosen date — normally uniform across the
+    # block; surface the highest if they differ. None when no date was given.
+    period_increase = None
+    if check_in and seen:
+        period_increase = max(float(rate.increase or 0) for _, rate in seen.values())
+
     results = []
     for cat, rate in seen.values():
         total_inc = 1.0 + (float(config.increase or 0) + float(rate.increase or 0)) / 100.0
         rack_raw  = float(rate.cost or 0)
         eff_pax   = max(1, min(passengers, cat.max_passengers or passengers))
 
-        if rate.rate_line.usd:
-            base_raw = rack_raw * (1 - comm_dec) * disc_factor * total_inc / markup
-        else:
-            base_raw = (rack_raw / exchange) * (1 - comm_dec / IVA) * disc_factor * total_inc / markup
+        # Base sell: discount, then commission, ÷ exchange (ARS only), + increase, ÷ markup
+        rack_usd = rack_raw if rate.rate_line.usd else rack_raw / exchange
+        base_raw = rack_usd * (1 - comm_dec) * disc_factor * total_inc / markup
 
         sell_per_day = math.ceil(base_raw / eff_pax) * eff_pax
 
@@ -849,7 +1041,7 @@ def quoter_list_categories(request):
         })
 
     results.sort(key=lambda x: x["sell_per_day"])
-    return JsonResponse({"ok": True, "categories": results})
+    return JsonResponse({"ok": True, "categories": results, "period_increase": period_increase})
 
 
 @login_required
@@ -894,21 +1086,26 @@ def quoter_calculate(request):
     markup       = float(config.markup or 1)
 
     rack_raw    = float(rate.cost or 0)
-    IVA         = 1.21
     comm_dec    = float(config.commission or 0) / 100.0
     disc_factor = 1.0 - float(config.extra_discount or 0) / 100.0
 
-    # Combined increase: global config + per-period rate increase
-    total_inc = 1.0 + (float(config.increase or 0) + float(rate.increase or 0)) / 100.0
+    # Peak-period surcharge: any hire day on a public holiday / long weekend
+    # (external calendar) adds a flat % to the quote.
+    try:
+        _start = date.fromisoformat(check_in)
+        _end   = _start + timedelta(days=days - 1)
+        special_hits = _special_calendar_hits(int(location_id), _start, _end)
+    except (ValueError, TypeError):
+        special_hits = []
+    surcharge_pct = SPECIAL_DATES_SURCHARGE_PCT if special_hits else 0.0
+
+    # Combined increase: global config + per-period rate increase + peak surcharge
+    total_inc = 1.0 + (float(config.increase or 0) + float(rate.increase or 0) + surcharge_pct) / 100.0
 
     rack_usd = rack_raw if rate.rate_line.usd else rack_raw / exchange
 
-    if rate.rate_line.usd:
-        # USD rack: standard commission deduction
-        base_raw = rack_usd * (1 - comm_dec) * disc_factor * total_inc / markup
-    else:
-        # ARS rack already includes IVA; commission applies on pre-IVA amount → factor (1 - comm/IVA)
-        base_raw = rack_usd * (1 - comm_dec / IVA) * disc_factor * total_inc / markup
+    # Base sell: discount, then commission, ÷ exchange (ARS only), + increase, ÷ markup
+    base_raw = rack_usd * (1 - comm_dec) * disc_factor * total_inc / markup
     if eff_pax > 0:
         sell_per_day = math.ceil(base_raw / eff_pax) * eff_pax
     else:
@@ -938,8 +1135,11 @@ def quoter_calculate(request):
         .values("id", "name", "value", "usd", "exchange", "fcu", "per_day", "recommended")
     )
     for fc in fixed_costs:
-        value_usd   = float(fc["value"]) if fc["usd"] else float(fc["value"]) / exchange
-        fc["sell"]  = math.ceil(value_usd / markup)
+        value_usd = float(fc["value"]) if fc["usd"] else float(fc["value"]) / exchange
+        raw       = value_usd / markup
+        # round up per passenger — per day for daily costs, on the one-time total
+        # for the rest (frontend multiplies daily costs by the number of days)
+        fc["sell"] = math.ceil(raw / eff_pax) * eff_pax if eff_pax > 0 else math.ceil(raw)
 
     return JsonResponse({
         "category": {
@@ -958,6 +1158,18 @@ def quoter_calculate(request):
         "passengers":         passengers,
         "effective_passengers": eff_pax,
         "exceeds_capacity":   exceeds,
+        "special_dates": {
+            "surcharge_pct": surcharge_pct,
+            "entries": [
+                {
+                    "name":     h["name"] or h["category"].replace("_", " ").title(),
+                    "category": h["category"],
+                    "from":     h["date_from"].isoformat(),
+                    "to":       h["date_to"].isoformat(),
+                }
+                for h in special_hits
+            ],
+        },
     })
 
 
@@ -982,6 +1194,75 @@ def quoter_category_info(request):
 
 @login_required
 @csrf_exempt
+def quoter_manual_item(request):
+    """Compute a single manually-added quote line. Non-client users only."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if getattr(request.user, "userType", None) == "Cliente":
+        return JsonResponse({"ok": False, "error": "No autorizado"}, status=403)
+
+    data   = json.loads(request.body)
+    config = CarHireConfig.get_solo()
+    row = _manual_item_row(data, config, data.get("days", 1), data.get("passengers", 1))
+    if not row:
+        return JsonResponse({"ok": False, "error": "Ingresá descripción y monto."}, status=400)
+    return JsonResponse({"ok": True, "item": row})
+
+
+@login_required
+@csrf_exempt
+def quoter_hertz_fixed_costs(request):
+    """The loaded fixed costs (CarFixedCost), priced for the Hertz importer so
+    they can be ticked into a pasted/PDF quote: same formula as the online
+    quoter's fixed costs + the modal's 'Aumento %' + per-passenger rounding.
+    Non-client users only."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    if getattr(request.user, "userType", None) == "Cliente":
+        return JsonResponse({"ok": False, "error": "No autorizado"}, status=403)
+
+    data        = json.loads(request.body)
+    passengers  = max(1, int(data.get("passengers") or 2))
+    days        = max(1, int(data.get("days") or 1))
+    location_id = data.get("location_id")
+
+    config   = CarHireConfig.get_solo()
+    exchange = float(config.exchange or 1) or 1
+    markup   = float(config.markup or 1) or 1
+    _ei          = data.get("extra_increase")
+    increase_pct = float(config.increase or 0) if _ei is None else float(_ei or 0)
+    tot_inc  = 1.0 + increase_pct / 100.0
+    eff_pax  = max(1, passengers)
+
+    qs = CarFixedCost.objects.all()
+    if location_id:
+        qs = qs.filter(Q(location_id=int(location_id)) | Q(location__isnull=True))
+
+    rows = []
+    for fc in qs.values("id", "name", "value", "usd", "per_day", "recommended",
+                        "location__code", "location__name"):
+        value_usd = float(fc["value"]) if fc["usd"] else float(fc["value"]) / exchange
+        sell_pd   = math.ceil(value_usd * tot_inc / markup / eff_pax) * eff_pax
+        if fc["location__code"]:
+            location = f'{fc["location__code"]} — {fc["location__name"]}'
+        else:
+            location = "Todos los destinos"
+        rows.append({
+            "id":           fc["id"],
+            "label":        fc["name"],
+            "location":     location,
+            "global":       not fc["location__code"],
+            "per_day":      fc["per_day"],
+            "recommended":  fc["recommended"],
+            "sell_per_day": sell_pd if fc["per_day"] else None,
+            "sell_total":   sell_pd * days if fc["per_day"] else sell_pd,
+        })
+    rows.sort(key=lambda r: (not r["recommended"], not r["global"], r["label"].lower()))
+    return JsonResponse({"ok": True, "fixed_costs": rows})
+
+
+@login_required
+@csrf_exempt
 def quoter_parse_email(request):
     """
     Parse a pasted Hertz Argentina quote email and calculate sell prices
@@ -989,6 +1270,8 @@ def quoter_parse_email(request):
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
+    if getattr(request.user, "userType", None) == "Cliente":
+        return JsonResponse({"ok": False, "error": "No autorizado"}, status=403)
 
     data       = json.loads(request.body)
     text       = data.get("text", "")
@@ -999,7 +1282,12 @@ def quoter_parse_email(request):
     markup   = float(config.markup or 1) if config.markup else 1
     comm     = float(config.commission or 0) / 100.0
     disc     = float(config.extra_discount or 0) / 100.0
-    tot_inc  = 1.0 + float(config.increase or 0) / 100.0
+    # The Hertz-import "Aumento %" box is prefilled with the general increase and
+    # is the single increase applied here — it replaces config.increase, not adds
+    # to it. When it isn't sent at all, fall back to config.increase.
+    _ei          = data.get("extra_increase")
+    increase_pct = float(config.increase or 0) if _ei is None else float(_ei or 0)
+    tot_inc  = 1.0 + increase_pct / 100.0
     IVA      = 1.21
     eff_pax  = max(1, passengers)
 
@@ -1033,19 +1321,55 @@ def quoter_parse_email(request):
             items_raw.append({"label": "Alquiler base", "rack_ars": parse_ars(m2.group(2)) / 7, "per_day": True})
             seen.add("alquiler base")
 
-    # ── 2. Additional driver per day: "Conductor Adicional ($ 6.000,00 por Día)" ─
-    m = re.search(
-        r"Conductor Adicional\s*\(\$\s*([\d.,]+)\s*por\s*D[íi]a\)",
-        text_1, re.IGNORECASE,
-    )
-    if m:
-        items_raw.append({"label": "Conductor Adicional", "rack_ars": parse_ars(m.group(1)), "per_day": True})
-        seen.add("conductor adicional")
+    # ── 2. Additional driver — ALWAYS a per-day charge, rounded per pax per day.
+    #    Hertz writes this line in several shapes; we look at the text right after
+    #    the label and work out the *daily* figure:
+    #      "Conductor Adicional ($ 6.000,00 por Día) x 3 Días - Agencia $ 18.000,00"
+    #      "Conductor Adicional - Agencia $ 6.000,00"
+    #      "Conductor Adicional x 3 Días - Agencia $ 18.000,00"
+    #      "Conductor Adicional $ 6.000,00 por día"
+    cond_full = None
+    cm = re.search(r"Conductor(?:es)? Adicional(?:es)?\b", text_1, re.IGNORECASE)
+    if cm:
+        window   = text_1[cm.end():cm.end() + 160]
+        amounts  = re.findall(r"\$\s*([\d.,]+)", window)
+        ndays_m  = re.search(r"x\s*(\d+)\s*d[íi]as?|por\s*(\d+)\s*d[íi]as?", window, re.IGNORECASE)
+        per_dia  = re.search(r"por\s*d[íi]a|x\s*d[íi]a|diari[oa]", window, re.IGNORECASE)
+        if amounts:
+            n_days = int(next(g for g in ndays_m.groups() if g)) if ndays_m else 0
+            if per_dia:
+                # the "$ X por día" figure is already the daily rate
+                daily_amt = parse_ars(amounts[0])
+            elif n_days:
+                # first amount after "x N Días" is the lump sum → prorate to one day
+                daily_amt = parse_ars(amounts[0]) / max(1, n_days)
+            else:
+                # a bare "$ X" next to the label — Hertz quotes the driver per day
+                daily_amt = parse_ars(amounts[0])
+            if daily_amt > 0:
+                items_raw.append({"label": "Conductor Adicional",
+                                  "rack_ars": daily_amt, "per_day": True})
+                seen.add("conductor adicional")
+                # blank out the label + its whole trailing shape so the generic
+                # matcher below can't add the driver a second time (or pick up a
+                # stray "Días - Agencia $ …" fragment)
+                tail = re.match(
+                    r"\s*\(\$?[^)\n]*\)"
+                    r"(?:\s*x\s*\d+\s*d[íi]as?)?"
+                    r"(?:\s*-\s*[Aa]gencia\s*\$\s*[\d.,]+)?"
+                    r"|\s*(?:x\s*\d+\s*d[íi]as?\s*)?-\s*[Aa]gencia\s*\$\s*[\d.,]+"
+                    r"|\s*\$\s*[\d.,]+(?:\s*(?:por\s*d[íi]a|diari[oa]))?",
+                    window, re.IGNORECASE,
+                )
+                cond_full = text_1[cm.start():cm.end() + (tail.end() if tail else 0)]
+
+    if cond_full:
+        text_1 = text_1.replace(cond_full, " ", 1)
 
     # ── 3. Generic: any "LABEL (optional-paren) - Agencia $ AMOUNT" ────────────
-    # Skips: IVA, % OFF, Total, Deducibles, Garantía, Franquicia, Reserva
+    # Skips: IVA, % OFF, Total, Deducibles, Garantía, Franquicia, Reserva, Conductor
     SKIP = re.compile(
-        r"\b(iva|off|total|deducible|garantía|garantia|franquicia|solicitud|reserva)\b",
+        r"\b(iva|off|total|deducible|garantía|garantia|franquicia|solicitud|reserva|conductor)\b",
         re.IGNORECASE,
     )
     # Label: capital start, no $ or newline inside ($ in content would be part of day-rate
@@ -1074,13 +1398,55 @@ def quoter_parse_email(request):
         seen.add(key)
         items_raw.append({"label": label, "amount_ars": amount, "per_day": False})
 
+    # Rack (ARS, net of IVA) of the base daily rate, if it was parsed — used
+    # below to cross-check extra lines against the %-based formula.
+    base_rack_ars = next(
+        (it["rack_ars"] for it in items_raw if it["label"] == "Alquiler base"), None
+    )
+
+    def _pct_comparison(pct_value):
+        """What a line would cost if computed as a % of the daily base (same
+        formula/rounding as the 'extras' in the online quoter) instead of trusting
+        Hertz's own amount. None when there's no parsed base to compare against."""
+        if not base_rack_ars or not pct_value:
+            return None
+        pct = float(pct_value) / 100.0
+        rack_usd = base_rack_ars * IVA / exchange
+        extra_raw = rack_usd * pct * tot_inc / markup
+        sell_pd = math.ceil(extra_raw / eff_pax) * eff_pax
+        return {
+            "pct": round(pct * 100, 1),
+            "sell_per_day": sell_pd,
+            "sell_total": sell_pd * days,
+        }
+
+    # Match a parsed line label (ES/EN) to the config % it should be cross-checked
+    # against: airport tax, Smart cover, Tyre/Glass cover.
+    _EXTRA_LABEL_PCTS = [
+        (re.compile(r"aeropuerto|airport", re.IGNORECASE), config.default_airport_pct),
+        (re.compile(r"\bsmart\b", re.IGNORECASE), config.default_smart_pct),
+        (re.compile(r"tyre|tire|cubierta|cristal|parabris|windscreen|"
+                    r"windshield|neum[aá]tic|\bcover\b", re.IGNORECASE),
+         config.default_cover_pct),
+    ]
+
+    def _comparison_for(label):
+        for rx, pct in _EXTRA_LABEL_PCTS:
+            if rx.search(label):
+                return _pct_comparison(pct)
+        return None
+
     # ── Calculate sell prices ─────────────────────────────────────────────────
     result_items = []
     for item in items_raw:
+        compare = _comparison_for(item["label"])
         if item.get("per_day") and "rack_ars" in item:
             if item["label"] == "Alquiler base":
-                # rack_with_iva * (1 - comm/IVA) / exchange = rack_ars * (IVA - comm) / exchange
-                raw_pd = item["rack_ars"] * (IVA - comm) / exchange * (1 - disc) * tot_inc / markup
+                # Hertz line amounts are net of IVA (unlike the RACK field in the
+                # destination-rates table, which is entered with IVA already
+                # included) → gross up +21% first, then: discount → commission
+                # → ÷ exchange → + increase → ÷ markup, same as the RACK formula.
+                raw_pd = item["rack_ars"] * IVA * (1 - disc) * (1 - comm) / exchange * tot_inc / markup
             else:
                 rack_usd = item["rack_ars"] * IVA / exchange
                 raw_pd = rack_usd * tot_inc / markup
@@ -1090,16 +1456,44 @@ def quoter_parse_email(request):
                 "per_day":      True,
                 "sell_per_day": sell_pd,
                 "sell_total":   sell_pd * days,
+                "compare":      compare,
             })
         elif "amount_ars" in item:
-            # Per-reservation total: add IVA, apply increase, convert to USD, apply markup
-            sell_total = math.ceil(item["amount_ars"] * IVA * tot_inc / exchange / markup)
+            # Per-reservation total: add IVA, apply increase, convert to USD, apply
+            # markup, then round the total up per passenger
+            raw_total  = item["amount_ars"] * IVA * tot_inc / exchange / markup
+            sell_total = math.ceil(raw_total / eff_pax) * eff_pax
             result_items.append({
                 "label":        item["label"],
                 "per_day":      False,
                 "sell_per_day": None,
                 "sell_total":   sell_total,
+                "compare":      compare,
             })
+
+    # ── Best-effort: detect the destination + Hertz category from the text ────
+    text_norm = _strip_accents(re.sub(r"\s+", " ", text)).lower()
+    detected_location_id = None
+    detected_category_id = None
+    for loc in (Location.objects
+                .filter(car_categories__isnull=False).distinct()
+                .values("id", "code", "name")):
+        code  = _strip_accents(loc["code"] or "").lower()
+        words = [w for w in re.split(r"[^a-z0-9]+", _strip_accents(loc["name"]).lower()) if len(w) >= 4]
+        if (code and re.search(rf"\b{re.escape(code)}\b", text_norm)) or \
+           any(re.search(rf"\b{re.escape(w)}\b", text_norm) for w in words):
+            detected_location_id = loc["id"]
+            break
+
+    cat_qs = CarCategory.objects.filter(isActivated=True)
+    if detected_location_id:
+        cat_qs = cat_qs.filter(location_id=detected_location_id)
+    for cat in cat_qs.values("id", "code", "location_id"):
+        ccode = _strip_accents(cat["code"] or "").lower()
+        if ccode and re.search(rf"\b{re.escape(ccode)}\b", text_norm):
+            detected_category_id = cat["id"]
+            detected_location_id = detected_location_id or cat["location_id"]
+            break
 
     grand_total = sum(i["sell_total"] for i in result_items)
     return JsonResponse({
@@ -1109,4 +1503,6 @@ def quoter_parse_email(request):
         "items":         result_items,
         "grand_total":   grand_total,
         "per_passenger": math.ceil(grand_total / eff_pax),
+        "detected_location_id": detected_location_id,
+        "detected_category_id": detected_category_id,
     })

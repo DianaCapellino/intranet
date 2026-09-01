@@ -1,0 +1,39 @@
+{# Manual quote-item form. Pass `prefix` (e.g. "mi" or "hmi") for unique ids. #}
+<div class="border rounded p-3 my-3 bg-light" id="{{ prefix }}_form">
+    <div class="fw-semibold small text-uppercase text-muted mb-2">
+        <i class="fa-solid fa-plus me-1"></i>Agregar item manual
+    </div>
+    <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small mb-1">Descripción</label>
+            <input type="text" class="form-control form-control-sm" id="{{ prefix }}_label">
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Monto</label>
+            <input type="number" class="form-control form-control-sm" id="{{ prefix }}_amount" min="0" step="0.01">
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Moneda</label>
+            <select class="form-select form-select-sm" id="{{ prefix }}_currency">
+                <option value="ARS" selected>Pesos</option>
+                <option value="USD">Dólares</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">IVA</label>
+            <select class="form-select form-select-sm" id="{{ prefix }}_iva">
+                <option value="0" selected>Sin IVA (+21%)</option>
+                <option value="1">IVA incluido</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2 d-flex align-items-center gap-3 pb-1">
+            <div class="form-check mb-0">
+                <input type="checkbox" class="form-check-input" id="{{ prefix }}_per_day">
+                <label class="form-check-label small" for="{{ prefix }}_per_day">Por día</label>
+            </div>
+            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="{{ prefix }}_add_btn" type="button">
+                Agregar
+            </button>
+        </div>
+    </div>
+</div>

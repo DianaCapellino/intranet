@@ -247,7 +247,8 @@ function create_datatable (type) {
                 { data: "note" },            // 14
                 { data: "travelling_date" }, // 15
                 { data: "acciones", orderable: false }, // 16
-                { data: "revision", orderable: false }  // 17
+                { data: "revision", orderable: false }, // 17
+                { data: "itinerario", orderable: false } // 18
             ],
             layout: {
                 topStart: _isClient ? {
@@ -307,12 +308,12 @@ function create_datatable (type) {
             responsive: _isClient,
             columnDefs: _isClient ? [
                 // Hidden and excluded from colvis: Type, Client, Quoted by,
-                // Priority, Difficulty, More info, Revision (col 17)
-                { visible: false, className: 'no-colvis', targets: [3, 6, 9, 12, 13, 14, 17] },
+                // Priority, Difficulty, More info, Revision (col 17), Itinerario (col 18)
+                { visible: false, className: 'no-colvis', targets: [3, 6, 9, 12, 13, 14, 17, 18] },
                 // Date of Travel: hidden by default but toggleable via colvis
                 { visible: false, targets: [15] },
                 { width: '20%', targets: [2] },
-                { orderable: false, targets: [16, 17] },
+                { orderable: false, targets: [16, 17, 18] },
                 // Responsive priorities: lower = stays visible longer on small screens
                 { responsivePriority: 1, targets: [2, 16] },   // Trip, Actions — always visible
                 { responsivePriority: 2, targets: [4] },        // Status
@@ -324,10 +325,10 @@ function create_datatable (type) {
                 { responsivePriority: 8, targets: [0] },        // Date
                 { responsivePriority: 9, targets: [1] },        // Date Response
             ] : [
-                { orderable: false, targets: [16, 17] },
+                { orderable: false, targets: [16, 17, 18] },
                 { width: '20%', targets: [2] },
                 { width: '2px', targets: [13] },
-                { visible: false, targets: [5, 8, 12, 13, 14] }
+                { visible: false, targets: [5, 8, 12, 13, 14, 18] }
             ],
             order: [[0, "desc"]],
             createdRow: function(row, data) {
@@ -412,25 +413,64 @@ function create_datatable (type) {
             let _crmEntryId = null;
             const csrfToken = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
 
+            // Refresh the "Correcciones" badge without a full page reload — called
+            // right after an assignment happens here, and polled periodically so it
+            // also picks up assignments made elsewhere (e.g. from Esquema de Correcciones).
+            function refreshRevisionBadge() {
+                const badge = document.getElementById('revision-count-badge');
+                if (!badge) return;
+                fetch('/entries/my_revision_pending_count')
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.ok) return;
+                        badge.textContent = d.count;
+                        badge.classList.toggle('d-none', !d.count);
+                    })
+                    .catch(() => {});
+            }
+            if (document.getElementById('revision-count-badge')) {
+                setInterval(refreshRevisionBadge, 45000);
+            }
+
             // Send-for-revision: open modal
             $('#entries').on('click', '.send-revision-btn', function () {
                 _srmEntryId = $(this).data('entry-id');
                 $('#srm-trip-name').text($(this).data('trip') || 'este file');
                 $('#srm-link').val('');
+                $('#srm-note').val('');
+                $('#srm-reviewer-select').val('');
+                $('#srm-reviewer-hint').text('Buscando sugerencia…');
                 new bootstrap.Modal(document.getElementById('sendRevisionModal')).show();
+
+                // Preview who would be auto-assigned right now, and pre-select it
+                // (the admin/user can still change it before confirming).
+                fetch(`/entries/${_srmEntryId}/suggested_reviewer`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.ok && d.reviewer_id) {
+                            $('#srm-reviewer-select').val(d.reviewer_id);
+                            $('#srm-reviewer-hint').text(`Sugerido: ${d.reviewer_username}`);
+                        } else {
+                            $('#srm-reviewer-hint').text('No hay un revisor disponible hoy — se puede elegir manualmente.');
+                        }
+                    })
+                    .catch(() => $('#srm-reviewer-hint').text(''));
             });
 
             // Send-for-revision: confirm
             $('#srm-confirm').on('click', function () {
                 if (!_srmEntryId) return;
                 const link = $('#srm-link').val().trim();
+                const note = $('#srm-note').val().trim();
+                const reviewerId = $('#srm-reviewer-select').val() || null;
                 fetch(`/entries/${_srmEntryId}/send_for_revision`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-                    body: JSON.stringify({ link }),
+                    body: JSON.stringify({ link, note, reviewer_id: reviewerId }),
                 }).then(r => r.json()).then(d => {
                     bootstrap.Modal.getInstance(document.getElementById('sendRevisionModal'))?.hide();
                     entriesTable.ajax.reload(null, false);
+                    refreshRevisionBadge();
                 });
             });
 
@@ -453,6 +493,7 @@ function create_datatable (type) {
                 }).then(r => r.json()).then(() => {
                     bootstrap.Modal.getInstance(document.getElementById('changeReviewerModal'))?.hide();
                     entriesTable.ajax.reload(null, false);
+                    refreshRevisionBadge();
                 });
             });
         }

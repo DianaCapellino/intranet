@@ -15,6 +15,7 @@ STATUS_OPTIONS = [
     ("Cancelado", "Cancelado"),
     ("Queja", "Queja"),
     ("Programa", "Programa"),
+    ("Pre-Quote", "Pre-Quote"),
     ("Bloqueo", "Bloqueo"),
     ("Otro", "Otro")
 ]
@@ -117,6 +118,8 @@ TYPE_ABSENCE = [
     ("FAM/Trabajando fuera ofi", "FAM/Trabajando fuera ofi"),
     ("Feriado trabajado", "Feriado trabajado"),
     ("Feriado trabajado 1/2", "Feriado trabajado 1/2"),
+    ("Licencia con goce", "Licencia con goce"),
+    ("Licencia sin goce", "Licencia sin goce"),
     ("Semana home", "Semana home"),
     ("Sin goce de sueldo", "Sin goce de sueldo"),
     ("Viernes OFF", "Viernes OFF"),
@@ -135,6 +138,12 @@ TIMING_STATUS = [
     ("danger", "Muy vencido"),
 ]
 
+SENIORITY = [
+    ("Principiante", "Principiante"),
+    ("Junior", "Junior"),
+    ("Senior", "Senior"),
+]
+
 
 class User(AbstractUser):
     other_name = models.CharField(max_length=64)
@@ -144,12 +153,17 @@ class User(AbstractUser):
     isAdmin = models.BooleanField(default=False)
     userType = models.CharField(max_length=64, choices=USER_TYPES, default="Ventas")
     color = ColorField(default='#000000')
-    seniority = models.CharField(max_length=10, choices=[('Junior','Junior'),('Senior','Senior')], blank=True, default='')
+    seniority = models.CharField(max_length=20, choices=SENIORITY, blank=True, default='')
     tariff_news = models.BooleanField(default=True)
     show_in_calendar = models.BooleanField(default=True)
     show_in_client_team = models.BooleanField(default=True)
     chat_webhook_url = models.URLField(blank=True, default='', verbose_name='Google Chat Webhook URL')
     chat_user_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Google Chat User ID')
+    revision_blocked = models.BooleanField(
+        default=False,
+        verbose_name='Bloqueado para revisiones',
+        help_text='Si está tildado, no se le asignan automáticamente itinerarios para revisar.',
+    )
     client = models.ForeignKey(
         'Client',
         null=True, blank=True,
@@ -278,6 +292,7 @@ class Trip(models.Model):
     dh_type = models.CharField(max_length=64, choices=DH_TYPES, default="Sin definir")
     trip_type = models.CharField(max_length=64, choices=TRIP_TYPES, default="FIT's")
     responsable_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_responsable_users", null=True)
+    responsable_user_2 = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_responsable_users_2", null=True, blank=True)
     consultant_tp = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_consultant_tp_users", null=True, blank=True)
     vr_requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_vr_requests", null=True, blank=True)
     operations_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_operations_users", null=True)
@@ -347,8 +362,18 @@ class Entry(models.Model):
     response_speed = models.IntegerField(null=True, blank=True)
     last_followup_sent = models.DateTimeField(null=True, blank=True, verbose_name='Último seguimiento enviado')
     is_revised = models.BooleanField(default=False)
+    revised_date = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Fecha y hora de revisión',
+        help_text='Momento en que se marcó is_revised=True; usado para mostrarlo tachado en el listado del día y para medir cuánto tardó la revisión.',
+    )
     revising_user = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='revising_entries')
     revision_link = models.CharField(max_length=500, null=True, blank=True)
+    revision_assigned_date = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Fecha y hora de asignación de revisión',
+        help_text='Momento en que se asignó revising_user (automática o manualmente); usado para balancear la carga del día y medir cuánto tardó la revisión.',
+    )
 
     @property
     def response_days(self):
@@ -385,7 +410,86 @@ class Entry(models.Model):
         if self.isClosed:
             self.response_speed = int(get_working_days(self.starting_date, self.closing_date))
             self.save()
-        
+
+
+DEFAULT_ITINERARY_INTRO_TEXT = (
+    "Argentina is a land of contrasts that never ceases to amaze. The many natural wonders "
+    "are breath-taking and marvelously unspoiled. Subtropical rainforests and spectacular "
+    "waterfalls in Iguazu, the immense Perito Moreno Glacier, the sparkling lakes and rolling "
+    "green hills of the Lake District, salt flats and cloud forest jungle near Salta, whales "
+    "basking in the bay at Peninsula Valdes, and of course the miles of gaucho (cowboy) filled "
+    "Estancia country for which Argentina is so famous. The combination of all this natural "
+    "beauty, together with one of the most buzzing and cosmopolitan capitals in South America, "
+    "delightful colonial towns, a luxurious wine region and a population of friendly and "
+    "welcoming people you really can’t go wrong with a trip to Argentina. It truly has "
+    "something for everyone."
+)
+
+
+class PublicItinerary(models.Model):
+    """Snapshot editable de itinerario, compartible por link público (sin login) via `token`."""
+    entry = models.OneToOneField(Entry, on_delete=models.CASCADE, related_name="public_itinerary")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    is_published = models.BooleanField(default=False)
+    title = models.CharField(max_length=200, blank=True, default="")
+    intro_text = models.TextField(blank=True, default=DEFAULT_ITINERARY_INTRO_TEXT)
+    cover_image_url = models.CharField(max_length=500, blank=True, null=True)
+    show_prices = models.BooleanField(default=True)
+    currency = models.CharField(max_length=8, blank=True, default="USD")
+    total_amount = models.FloatField(null=True, blank=True)
+    synced_from_tourplan_at = models.DateTimeField(null=True, blank=True)
+    edited_manually_at = models.DateTimeField(null=True, blank=True)
+    important_comments = models.TextField(blank=True, default="")
+    prepayments_required = models.TextField(blank=True, default="")
+    pax_count = models.IntegerField(null=True, blank=True)
+    consultant_name = models.CharField(max_length=200, blank=True, default="")
+    trip_style = models.CharField(max_length=200, blank=True, default="")
+    sustainability_note = models.CharField(max_length=200, blank=True, default="")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_itineraries")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Itinerario de {self.entry.trip.name if self.entry.trip else self.entry_id}"
+
+
+class ItineraryDay(models.Model):
+    itinerary = models.ForeignKey(PublicItinerary, on_delete=models.CASCADE, related_name="days")
+    order = models.IntegerField(default=0)
+    date = models.DateField(null=True, blank=True)
+    title = models.CharField(max_length=200, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    image_url = models.CharField(max_length=500, blank=True, null=True)
+
+    class Meta:
+        ordering = ["order"]
+
+
+
+class ItineraryLine(models.Model):
+    day = models.ForeignKey(ItineraryDay, on_delete=models.CASCADE, related_name="lines")
+    order = models.IntegerField(default=0)
+    service_code = models.CharField(max_length=4, blank=True, default="")
+    supplier_code = models.CharField(max_length=6, blank=True, default="")
+    option_code = models.CharField(max_length=6, blank=True, default="")
+    location_code = models.CharField(max_length=10, blank=True, default="")
+    supplier_name = models.CharField(max_length=200, blank=True, default="")
+    location_name = models.CharField(max_length=200, blank=True, default="")
+    title_note = models.CharField(max_length=300, blank=True, default="")
+    option_description = models.TextField(blank=True, default="")
+    room_summary = models.CharField(max_length=300, blank=True, default="")
+    nights = models.IntegerField(null=True, blank=True)
+    conditions_note = models.TextField(blank=True, default="")
+    is_optional = models.BooleanField(default=False)
+    custom_title = models.CharField(max_length=200, blank=True, default="")
+    custom_description = models.TextField(blank=True, default="")
+    image_url = models.CharField(max_length=500, blank=True, null=True)
+    image_url_2 = models.CharField(max_length=500, blank=True, null=True)
+    image_url_3 = models.CharField(max_length=500, blank=True, null=True)
+    amount = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["order"]
 
 class RevisionScheduleDay(models.Model):
     WEEKDAYS = [(0,'Lunes'),(1,'Martes'),(2,'Miércoles'),(3,'Jueves'),(4,'Viernes')]
@@ -582,10 +686,11 @@ NOTIFICATION_TYPES = [
     ('weekly_roster', 'Weekly Roster'),
     ('holiday_reminder', 'Holiday Reminder'),
     ('quality_closure', 'Calidad – Resumen de cierre'),
+    ('closure_reminder', 'Recordatorio de Cierre de Files (Operaciones)'),
 ]
 
 # Types whose base recipient list is auto-derived from user type queries
-NOTIFICATION_AUTO_TYPES = {'margin_warning', 'weekly_roster', 'holiday_reminder'}
+NOTIFICATION_AUTO_TYPES = {'margin_warning', 'weekly_roster', 'holiday_reminder', 'closure_reminder'}
 
 
 class NotificationPreference(models.Model):
@@ -620,3 +725,20 @@ class NotificationPreference(models.Model):
 
     def get_display_name(self):
         return self.user.other_name or self.user.username
+
+
+class UserTablePreference(models.Model):
+    user = models.ForeignKey(
+        'User',
+        on_delete=models.CASCADE,
+        related_name='table_preferences',
+    )
+    table_key = models.CharField(max_length=100)
+    config = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('user', 'table_key')]
+
+    def __str__(self):
+        return f"{self.user.username} / {self.table_key}"

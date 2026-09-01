@@ -33,7 +33,7 @@
           {% elif not user.is_authenticated %}
             <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:50px"></a>
           {% else %}
-            <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:50px"></a>
+            <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="width:65px"></a>
           {% endif %}
           </div>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -46,7 +46,7 @@
             {% elif not user.is_authenticated %}
               <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:80px"></a>
             {% else %}
-              <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/logo.png' %}" style="width:80px"></a>
+              <a class="nav-link" href="{% url 'index' %}"><img src="{% static 'intranet/images/say.png' %}" style="width:105px"></a>
             {% endif %}
             </div>
             {% if user.is_authenticated %}
@@ -64,18 +64,19 @@
                       {% if user.isAdmin %}
                       <li><hr class="dropdown-divider"></li>
                       <li><a class="dropdown-item" href="{% url 'tourplan_files' %}"><i class="fa-solid fa-rotate me-2"></i>Sincronizar Tourplan</a></li>
-                      <li><a class="dropdown-item" href="{% url 'email_processor' %}"><i class="fa-solid fa-envelope me-2"></i>Revisar emails</a></li>
                       {% endif %}
                     </ul>
                   </li>
                   <li class="nav-item">
                       <a class="nav-link text-light" href="{% url 'entries' %}" id="pendings">Pendientes</a>
                   </li>
+                  {% if user.department == "AI" %}
                   <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff
                       {% if nav_pending_revised %}<span class="badge rounded-pill text-bg-warning ms-1" style="font-size:0.65rem;">{{ nav_pending_revised }}</span>{% endif %}
                     </a>
                   </li>
+                  {% endif %}
                   <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'calendar_view' %}">Calendario</a>
                   </li>
@@ -107,7 +108,9 @@
                         </ul>
                       </li>
                       <li><a class="dropdown-item" href="{% url 'holidays' %}"><i class="fa-solid fa-calendar-days me-2"></i>Calendario</a></li>
+                      {% if user.department == "AI" %}
                       <li><a class="dropdown-item" href="{% url 'modify_tariff' %}"><i class="fa-solid fa-file-invoice-dollar me-2"></i>Tarifario</a></li>
+                      {% endif %}
                       <li><hr class="dropdown-divider"></li>
                       <li><a class="dropdown-item" href="{% url 'notifications_management' %}"><i class="fa-solid fa-bell me-2"></i>Notificaciones</a></li>
                     </ul>
@@ -119,9 +122,11 @@
                   </li>
                   {% endif %}
                 {% else %}
+                  {% if user.department == "AI" %}
                   <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'tariff' %}">Tariff</a>
                   </li>
+                  {% endif %}
                   <li class="nav-item">
                     <a class="nav-link text-light" href="{% url 'entries' %}">Entries</a>
                   </li>

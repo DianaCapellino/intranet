@@ -1,0 +1,486 @@
+{% load static %}
+{% load custom_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% if unavailable %}Itinerary not available{% else %}{{ itinerary.title|default:"Your itinerary" }}{% endif %} — Aliwen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://kit.fontawesome.com/6f082d5aab.js" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --clay:#c9705a; --clay-deep:#a85641; --charcoal:#231f20; --cream:#f7f2ec;
+    --card:#ffffff; --ink:#2c2725; --ink-soft:#736a65; --line:#e7ddd3;
+    --gold:#b3852f; --forest:#5c6b4d; --forest-soft:#eef1e9;
+    --shadow: 0 10px 30px -12px rgba(35,31,32,.18); --radius: 14px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0; background:var(--cream); color:var(--ink); font-family:'Work Sans', sans-serif; font-size:15.5px; line-height:1.55;}
+  h1,h2,h3,h4{font-family:'Fraunces', serif; color:var(--charcoal); margin:0; letter-spacing:-.01em;}
+  a{color:inherit;} .wrap{max-width:1080px;margin:0 auto;padding:0 24px;} img{display:block;max-width:100%;}
+
+  .topbar{position:sticky; top:0; z-index:50; background:rgba(247,242,236,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+  .topbar-inner{max-width:1080px;margin:0 auto;padding:0 24px; display:flex;align-items:center;gap:28px;height:64px;}
+  .brand{display:flex;align-items:center;gap:10px;font-family:'Fraunces',serif;font-weight:600;font-size:1.05rem;color:var(--charcoal);white-space:nowrap;}
+  .brand img{height:34px;width:auto;filter:brightness(0);}
+  .toptabs{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none;}
+  .toptabs::-webkit-scrollbar{display:none;}
+  .toptab{appearance:none;border:none;background:none;cursor:pointer; font-family:'Work Sans',sans-serif; font-size:.78rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); padding:8px 14px; border-radius:999px; white-space:nowrap; transition:color .15s ease, background .15s ease;}
+  .toptab:hover{color:var(--charcoal);}
+  .toptab.active{color:#fff; background:var(--charcoal);}
+  .cta-btn{display:inline-flex; align-items:center; gap:7px; appearance:none; border:none; cursor:pointer; white-space:nowrap; background:var(--clay); color:#fff; font-family:'Work Sans',sans-serif; font-weight:600; font-size:.78rem; letter-spacing:.04em; text-transform:uppercase; padding:10px 18px; border-radius:999px; transition:background .15s ease;}
+  .cta-btn:hover{background:var(--clay-deep);}
+  .tabpanel{display:none; padding:44px 0 72px;} .tabpanel.active{display:block;}
+  .eyebrow{font-size:.72rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--clay-deep); margin-bottom:8px; display:block;}
+
+  .hero{position:relative; min-height:340px; border-radius:20px; overflow:hidden; display:flex; align-items:flex-end; color:#fff; background:linear-gradient(135deg,#a85641,#231f20); background-size:cover; background-position:center; margin-bottom:34px;}
+  .hero::before{content:""; position:absolute; inset:0; background:radial-gradient(circle at 20% 15%, rgba(255,255,255,.10), transparent 45%), linear-gradient(to top, rgba(15,12,12,.82), rgba(15,12,12,.05) 60%);}
+  .hero-inner{position:relative; z-index:1; padding:40px 44px;}
+  .hero .eyebrow{color:#f0d7c9;}
+  .hero h1{font-size:2.3rem; font-weight:600; color:#fff; max-width:640px;}
+  .hero-meta{display:flex; gap:22px; flex-wrap:wrap; margin-top:18px; font-size:.85rem; color:#f0e6dd;}
+  .hero-meta span{display:flex; align-items:center; gap:7px;}
+
+  .intro-text{color:var(--ink-soft); font-size:1rem; margin-bottom:36px;}
+
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:8px;}
+  .fact-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px;}
+  .fact-card .ic{width:34px;height:34px;border-radius:10px;background:var(--forest-soft);color:var(--forest); display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
+  .fact-card .label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:600;}
+  .fact-card .val{font-family:'Fraunces',serif;font-size:1.15rem;color:var(--charcoal);margin-top:3px;}
+
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;margin:44px 0 18px;flex-wrap:wrap;gap:8px;}
+  .sec-head h2{font-size:1.5rem;} .sec-head .sub{color:var(--ink-soft);font-size:.85rem;}
+
+  .acc-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:20px;}
+  .acc-card{background:var(--card); border-radius:var(--radius); overflow:hidden; border:1px solid var(--line); box-shadow:var(--shadow);}
+  .acc-body{padding:18px 20px 20px;} .acc-body h3{font-size:1.15rem;}
+  .acc-dates{color:var(--ink-soft); font-size:.82rem; margin-top:4px;}
+  .acc-room{margin-top:12px; font-size:.88rem; color:var(--ink);}
+  .acc-note{margin-top:8px; font-size:.76rem; color:var(--gold); background:#faf3e5; border-radius:8px; padding:6px 10px;}
+  .acc-price{margin-top:14px; padding-top:14px; border-top:1px dashed var(--line); display:flex; justify-content:space-between; align-items:baseline;}
+  .acc-price .pp{font-size:.76rem; color:var(--ink-soft);}
+  .acc-price .amt{font-family:'Fraunces',serif; font-weight:600; color:var(--charcoal); font-size:1.05rem;}
+
+  .highlights{display:flex; flex-direction:column; gap:22px;}
+  .hl-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
+  .hl-photo{position:relative; min-height:150px; background:linear-gradient(150deg,#c9705a,#4a3530); background-size:cover; background-position:center;}
+  .hl-photo .daytag{position:absolute; left:14px; top:14px; background:rgba(255,255,255,.92); color:var(--charcoal); font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:5px 10px; border-radius:999px;}
+  .hl-photo .daynum{position:absolute; right:16px; bottom:14px; color:#fff; font-family:'Fraunces',serif; font-size:1.9rem; font-weight:600; opacity:.85;}
+  .hl-body{padding:22px 24px 6px;}
+  .hl-body .hl-date{font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--clay-deep); font-weight:700;}
+  .hl-body h3{font-size:1.25rem; margin-top:4px;}
+  .hl-body .hl-blurb{color:var(--ink-soft); font-size:.92rem; margin-top:8px; max-width:64ch;}
+  .hl-items{padding:8px 24px 20px;}
+
+  .item{display:flex; gap:14px; padding:14px 0; border-top:1px solid var(--line);}
+  .item:first-child{border-top:none;}
+  .item .ic{flex:0 0 auto; width:36px;height:36px;border-radius:10px; display:flex;align-items:center;justify-content:center;}
+  .item.type-hotel .ic{background:var(--forest-soft); color:var(--forest);}
+  .item.type-transfer .ic{background:#eaf0f6; color:#4a6a86;}
+  .item.type-excursion .ic{background:#faf0e2; color:var(--gold);}
+  .item.type-meal .ic{background:#fbe9e6; color:var(--clay-deep);}
+  .item.type-fee .ic{background:#f1eeea; color:var(--ink-soft);}
+  .item.type-flight .ic{background:#eef0fb; color:#5b5ba0;}
+  .item-body{flex:1; min-width:0;}
+  .item-title{font-weight:600; color:var(--charcoal); font-size:.92rem;}
+  .item-desc{color:var(--ink-soft); font-size:.85rem; margin-top:3px;}
+  .item-flag{margin-top:7px; display:inline-block; font-size:.72rem; color:var(--gold); background:#faf3e5; padding:3px 8px; border-radius:6px;}
+
+  /* ---------- Fotos + descriptivo lado a lado (Day by Day, Upgrade Options) ---------- */
+  .photo-with-desc{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px;}
+  .photo-with-desc .photo-carousel{flex:0 0 220px; width:220px;}
+  .photo-with-desc .side-desc{flex:1 1 220px; min-width:200px;}
+
+  /* ---------- Pestañas Photos/Description (Accommodation) ---------- */
+  .card-tabs{display:flex; gap:4px; margin-top:10px; border-bottom:1px solid var(--line);}
+  .card-tab{appearance:none; border:none; background:none; cursor:pointer; font-family:'Work Sans',sans-serif; font-size:.76rem; font-weight:600; color:var(--ink-soft); padding:6px 12px 8px; border-bottom:2px solid transparent; margin-bottom:-1px;}
+  .card-tab.active{color:var(--clay-deep); border-bottom-color:var(--clay-deep);}
+  .card-tabpanel{display:none; padding-top:12px;}
+  .card-tabpanel.active{display:block;}
+
+  .photo-carousel{position:relative; border-radius:10px; overflow:hidden; background:var(--line); aspect-ratio:4/3;}
+  .photo-carousel-track{display:flex; height:100%; transition:transform .25s ease;}
+  .photo-carousel-track img{flex:0 0 100%; width:100%; height:100%; object-fit:cover; display:block;}
+  .carousel-nav-btn{position:absolute; top:50%; transform:translateY(-50%); width:28px; height:28px; border-radius:50%; border:none; background:rgba(35,31,32,.55); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.9rem; line-height:1;}
+  .carousel-nav-btn.prev{left:8px;} .carousel-nav-btn.next{right:8px;}
+  .carousel-dots{position:absolute; bottom:8px; left:0; right:0; display:flex; justify-content:center; gap:5px;}
+  .carousel-dot{width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.65); border:none; padding:0; cursor:pointer;}
+  .carousel-dot.active{background:#fff;}
+
+  .tbl-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); margin-bottom:22px;}
+  .tbl-card h4{padding:16px 20px 0; font-size:1.02rem;}
+  table{width:100%; border-collapse:collapse; font-size:.86rem;}
+  thead th{text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-soft); padding:12px 20px; border-bottom:1px solid var(--line); font-weight:700;}
+  tbody td{padding:13px 20px; border-bottom:1px solid var(--line); vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  .muted{color:var(--ink-soft); font-size:.8rem;}
+  td.num{white-space:nowrap; font-weight:600; color:var(--charcoal);}
+
+  .price-hero{background:var(--charcoal); color:#fff; border-radius:var(--radius); padding:26px 28px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; margin-top:8px;}
+  .price-hero .lbl{font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:#cbb9ae;}
+  .price-hero .big{font-family:'Fraunces',serif; font-size:2.1rem; font-weight:600; margin-top:4px;}
+  .price-hero .per{font-size:.82rem; color:#d8cec7; margin-top:6px;}
+
+  .opt-card{background:#fbf6ef; border:1px dashed var(--gold); border-radius:var(--radius); padding:18px 22px; margin-top:10px;}
+  .opt-card .item{border-top:1px solid #ecdfc4; padding:14px 0;}
+  .opt-card .item:first-child{border-top:none; padding-top:4px;}
+  .opt-amt{font-family:'Fraunces',serif; font-weight:600; color:var(--charcoal); white-space:nowrap;}
+
+  .note-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px; margin-bottom:16px; box-shadow:var(--shadow);}
+  .note-card h4{font-size:1rem; margin-bottom:8px;}
+  details.tc{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:4px 22px; margin-bottom:14px;}
+  details.tc summary{cursor:pointer; padding:16px 0; font-family:'Fraunces',serif; font-size:1.02rem; color:var(--charcoal); list-style:none; display:flex; justify-content:space-between; align-items:center;}
+  details.tc summary::-webkit-details-marker{display:none;}
+  details.tc summary::after{content:"+"; font-size:1.3rem; color:var(--clay); font-family:'Work Sans',sans-serif;}
+  details.tc[open] summary::after{content:"–";}
+  details.tc .tc-body{padding-bottom:18px; color:var(--ink-soft); font-size:.86rem;}
+  details.tc .tc-body h5{color:var(--charcoal); font-size:.85rem; margin:14px 0 4px;}
+  details.tc .tc-body ul{margin:0; padding-left:18px;} details.tc .tc-body li{margin-bottom:6px;}
+
+  footer{background:var(--charcoal); color:#cfc3bb; padding:36px 0; margin-top:20px;}
+  .foot-inner{display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px; font-size:.82rem;}
+  .foot-inner b{color:#fff;}
+
+  .itin-unavailable{min-height:80vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px;}
+
+  @media (max-width:640px){ .hero h1{font-size:1.6rem;} .hero-inner{padding:24px 20px;} .price-hero{flex-direction:column; align-items:flex-start;} .acc-grid{grid-template-columns:1fr;} }
+  @media print{
+    *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .topbar, footer, .cta-btn{display:none !important;}
+    body{background:#fff;}
+    .tabpanel{display:none !important; padding:0;} .tabpanel.active{display:block !important;}
+    .hero{border-radius:0;}
+    .tbl-card, .hl-card, .acc-card, .note-card, details.tc{box-shadow:none; break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+{% if unavailable %}
+    <div class="itin-unavailable">
+        <img src="{% static 'intranet/images/logo.png' %}" style="max-width:140px;filter:brightness(0);" class="mb-4">
+        <h4 class="mb-2">This itinerary is not available</h4>
+        <p class="text-muted small">The link may have expired or not be published yet.</p>
+    </div>
+{% else %}
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><img src="{% static 'intranet/images/logo.png' %}" alt="Aliwen"></div>
+    <nav class="toptabs" id="toptabs">
+      <button class="toptab active" data-tab="inicio">Overview</button>
+      <button class="toptab" data-tab="itinerario">Day by Day</button>
+      {% if accommodation_cards %}<button class="toptab" data-tab="alojamiento">Accommodation</button>{% endif %}
+      <button class="toptab" data-tab="info">Good to Know</button>
+    </nav>
+    <button class="cta-btn" id="downloadBtn"><i class="fa-solid fa-file-arrow-down"></i> Download</button>
+  </div>
+</div>
+
+<!-- ============ TAB: OVERVIEW ============ -->
+<section class="tabpanel active" id="tab-inicio">
+  <div class="wrap">
+    <div class="hero" style="background-image:url('{{ itinerary.cover_image_url|default:default_cover_url }}');">
+      <div class="hero-inner">
+        <span class="eyebrow">Ref. {{ itinerary.entry.tourplanId|default:itinerary.entry.trip.tourplanId }}</span>
+        <h1>{{ itinerary.title|default:"Your itinerary" }}</h1>
+        <div class="hero-meta">
+          {% if dated_days_first %}<span><i class="fa-solid fa-calendar"></i> {{ dated_days_first|date:"j M Y" }} – {{ dated_days_last|date:"j M Y" }} · {{ nights_total }} nights</span>{% endif %}
+          {% if itinerary.pax_count %}<span><i class="fa-solid fa-users"></i> {{ itinerary.pax_count }} traveller{{ itinerary.pax_count|pluralize }}</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <p class="intro-text">{{ itinerary.intro_text|default:default_intro_text|linebreaksbr }}</p>
+
+    <div class="facts">
+      <div class="fact-card">
+        <div class="ic"><i class="fa-solid fa-calendar"></i></div>
+        <div class="label">Duration</div>
+        <div class="val">{{ days_total }} days · {{ nights_total }} nights</div>
+      </div>
+      {% if itinerary.pax_count %}
+      <div class="fact-card">
+        <div class="ic"><i class="fa-solid fa-users"></i></div>
+        <div class="label">Travellers</div>
+        <div class="val">{{ itinerary.pax_count }}</div>
+      </div>
+      {% endif %}
+      {% if itinerary.trip_style %}
+      <div class="fact-card">
+        <div class="ic"><i class="fa-solid fa-compass"></i></div>
+        <div class="label">Style</div>
+        <div class="val">{{ itinerary.trip_style }}</div>
+      </div>
+      {% endif %}
+      {% if itinerary.sustainability_note %}
+      <div class="fact-card">
+        <div class="ic"><i class="fa-solid fa-leaf"></i></div>
+        <div class="label">Sustainability</div>
+        <div class="val">{{ itinerary.sustainability_note }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="sec-head">
+      <h2>Itinerary Quote Brief</h2>
+      <span class="sub">Service by service{% if itinerary.show_prices %} · net rates in {{ itinerary.currency }}{% endif %}</span>
+    </div>
+    <div id="overviewExport">
+      {% for loc_name, rows in quote_brief_groups %}
+      <div class="tbl-card">
+        <h4>{{ loc_name }}</h4>
+        <table>
+          <thead><tr><th>Date</th><th>Service or Hotel</th><th>Pax</th>{% if itinerary.show_prices %}<th>Per Person</th><th>Subtotal</th>{% endif %}</tr></thead>
+          <tbody>
+          {% for day, line in rows %}
+          <tr>
+            <td class="muted" style="white-space:nowrap;">{{ day.date|date:"D j M" }}</td>
+            <td>
+              {% if line.service_code == "AC" %}
+              <div style="font-weight:600;color:var(--charcoal);">{{ line.custom_title|default:line.supplier_name }}</div>
+              {% if line.title_note or line.room_summary %}<div class="muted">{{ line.title_note }}{% if line.title_note and line.room_summary %} · {% endif %}{{ line.room_summary }}</div>{% endif %}
+              {% else %}
+              <div style="font-weight:600;color:var(--charcoal);">{{ line.custom_title|default:line.title_note|default:line.supplier_name }}</div>
+              {% with desc=line.custom_description|default:line.option_description %}
+              {% if desc %}<div class="muted">{{ desc|truncatechars:140 }}</div>{% endif %}
+              {% endwith %}
+              {% endif %}
+              {% if line.conditions_note %}<div class="item-flag" style="margin-top:5px;">{{ line.conditions_note|truncatechars:100 }}</div>{% endif %}
+            </td>
+            <td class="muted">{{ itinerary.pax_count|default:"—" }}</td>
+            {% if itinerary.show_prices %}
+            <td class="num">{% with pp=line.amount|safe_divide:itinerary.pax_count %}{% if pp %}{{ itinerary.currency }} {{ pp|floatformat:2 }}{% else %}—{% endif %}{% endwith %}</td>
+            <td class="num">{% if line.amount %}{{ itinerary.currency }} {{ line.amount|floatformat:2 }}{% else %}—{% endif %}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+
+      {% if passengers %}
+      <div class="tbl-card">
+        <h4>Passenger Summary</h4>
+        <table>
+          <thead><tr><th>Name</th>{% if itinerary.show_prices %}<th>Subtotal</th>{% endif %}</tr></thead>
+          <tbody>
+          {% for name in passengers %}
+          <tr><td>{{ name }}</td>{% if itinerary.show_prices %}<td class="num">{% if per_person_amount %}{{ itinerary.currency }} {{ per_person_amount|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}</tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if itinerary.show_prices and itinerary.total_amount %}
+      <div class="price-hero">
+        <div>
+          <div class="lbl">Grand total for the group</div>
+          <div class="big">{{ itinerary.currency }} {{ itinerary.total_amount|floatformat:2 }}</div>
+        </div>
+        {% if per_person_amount %}
+        <div>
+          <div class="lbl">Per person</div>
+          <div class="big" style="font-size:1.4rem;">{{ itinerary.currency }} {{ per_person_amount|floatformat:2 }}</div>
+          <div class="per">× {{ itinerary.pax_count }} traveller{{ itinerary.pax_count|pluralize }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if optional_days %}
+      <div class="sec-head" style="margin-top:36px;">
+        <h2 style="font-size:1.2rem;">Upgrade Options</h2>
+        <span class="sub">Not included in the total above</span>
+      </div>
+      <div class="opt-card">
+        {% for day, lines in optional_days %}
+          {% for line in lines %}
+          {% include "intranet/_itinerary_public_item.html" with line=line show_amount=True %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB: DAY BY DAY ============ -->
+<section class="tabpanel" id="tab-itinerario">
+  <div class="wrap">
+    <div class="sec-head"><h2>Day by Day</h2><span class="sub">{{ days_total }} days</span></div>
+    <div class="highlights" id="highlights">
+      {% for day, lines in regular_days %}
+      <div class="hl-card">
+        <div class="hl-photo" {% if day.image_url %}style="background-image:url('{{ day.image_url }}');"{% endif %}>
+          {% if day.title %}<span class="daytag">{{ day.title|truncatechars:28 }}</span>{% endif %}
+          <span class="daynum">{{ forloop.counter|stringformat:"02d" }}</span>
+        </div>
+        <div class="hl-body">
+          {% if day.date %}<div class="hl-date">Day {{ forloop.counter }} · {{ day.date|date:"l, F j" }}</div>{% endif %}
+          {% if day.description %}<p class="hl-blurb">{{ day.description }}</p>{% endif %}
+        </div>
+        <div class="hl-items">
+          {% for line in lines %}
+          {% include "intranet/_itinerary_public_item.html" with line=line show_amount=False %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB: ACCOMMODATION ============ -->
+{% if accommodation_cards %}
+<section class="tabpanel" id="tab-alojamiento">
+  <div class="wrap">
+    <div class="sec-head"><h2>Accommodation Summary</h2><span class="sub">{{ accommodation_cards|length }} hotel{{ accommodation_cards|length|pluralize }}</span></div>
+    <div class="acc-grid">
+      {% for acc in accommodation_cards %}
+      <div class="acc-card">
+        <div class="acc-body card-tabs-host">
+          <h3>{{ acc.line.custom_title|default:acc.line.supplier_name }}</h3>
+          {% if acc.line.title_note or acc.line.room_summary %}
+          <div class="acc-room">{{ acc.line.title_note }}{% if acc.line.title_note and acc.line.room_summary %} · {% endif %}{{ acc.line.room_summary }}</div>
+          {% endif %}
+          <div class="acc-dates">{% if acc.line.location_name %}{{ acc.line.location_name }} · {% endif %}{{ acc.checkin|date:"D j M Y" }} – {{ acc.checkout|date:"D j M Y" }}</div>
+
+          <div class="card-tabs">
+            <button type="button" class="card-tab active" data-tab="photos">Photos</button>
+            <button type="button" class="card-tab" data-tab="info">Description</button>
+          </div>
+          <div class="card-tabpanel active" data-tabpanel="photos">
+            {% include "intranet/_photo_carousel.html" with photos=acc.photos %}
+          </div>
+          <div class="card-tabpanel" data-tabpanel="info">
+            {% with desc=acc.line.custom_description|default:acc.line.option_description %}
+            {% if desc %}<p class="item-desc">{{ desc }}</p>{% else %}<p class="muted">Hotel description coming soon.</p>{% endif %}
+            {% endwith %}
+            {% if acc.line.conditions_note %}<div class="acc-note">{{ acc.line.conditions_note }}</div>{% endif %}
+          </div>
+
+          {% if itinerary.show_prices and acc.line.amount %}
+          <div class="acc-price">
+            {% with pp=acc.line.amount|safe_divide:itinerary.pax_count|safe_divide:acc.nights %}
+            {% if pp %}<span class="pp">{{ itinerary.currency }} {{ pp|floatformat:2 }} / person / night</span>{% endif %}
+            {% endwith %}
+            <span class="amt">{{ itinerary.currency }} {{ acc.line.amount|floatformat:2 }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- ============ TAB: GOOD TO KNOW ============ -->
+<section class="tabpanel" id="tab-info">
+  <div class="wrap">
+    <div class="sec-head"><h2>Good to Know</h2><span class="sub">Important comments &amp; conditions</span></div>
+
+    {% if itinerary.important_comments %}
+    <div class="note-card"><h4>Important Comments</h4><p class="muted" style="margin:0;">{{ itinerary.important_comments|linebreaksbr }}</p></div>
+    {% endif %}
+
+    {% if itinerary.prepayments_required %}
+    <div class="note-card"><h4>Prepayments Required</h4><p class="muted" style="margin:0;">{{ itinerary.prepayments_required|linebreaksbr }}</p></div>
+    {% endif %}
+
+    <details class="tc">
+      <summary>Quote Terms &amp; Conditions</summary>
+      <div class="tc-body">
+        <h5>Validity &amp; rates</h5>
+        <ul>
+          <li>This document is a quotation — bookings have not been made. Hotels, restaurants and other services are subject to availability upon request.</li>
+          <li>Valid for 15 days from the date sent, and only for the dates and passenger count described.</li>
+          <li>Rates are subject to change with the exchange rate.</li>
+        </ul>
+        <h5>Inclusions</h5>
+        <ul>
+          <li>Lodging includes breakfast unless another meal plan is stated.</li>
+          <li>National Park, museum and reserve entrance fees are included only when explicitly detailed.</li>
+          <li>Private transfers/excursions use exclusive vehicles; shared services are with other travellers. Standard duration applies — extra hours are billed separately.</li>
+        </ul>
+        <h5>Good to know before you travel</h5>
+        <ul>
+          <li>Check hotel check-in/check-out times against flight schedules — early check-in / late check-out is not included unless stated.</li>
+          <li>Some excursions are weather-dependent.</li>
+          <li>Tips for luggage handling and meals are not included.</li>
+          <li>International and domestic flights and medical assistance insurance are quoted separately.</li>
+        </ul>
+        <h5>Payment &amp; cancellation policy</h5>
+        <ul>
+          <li>Full pre-payment is required before arrival; hotels requiring prepayment will be requested separately by due date.</li>
+          <li>Cancellation policy and penalties depend on how close to arrival the cancellation is made, plus any supplier cancellation penalties.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div><b>Aliwen Incoming</b> — DMC Argentina<br>quote@aliwenincoming.com.ar</div>
+    <div>Emergency phone: 0054 911 6991 7018<br>{% if itinerary.consultant_name %}Prepared by {{ itinerary.consultant_name }} · {% endif %}{{ itinerary.updated_at|date:"j M Y" }}</div>
+  </div>
+</footer>
+
+<script>
+/* ---- Pestañas Photos/Description dentro de cada tarjeta (Accommodation, delegado) ---- */
+document.addEventListener('click', e=>{
+  const tabBtn = e.target.closest('.card-tab');
+  if(!tabBtn) return;
+  const host = tabBtn.closest('.card-tabs-host');
+  if(!host) return;
+  host.querySelectorAll('.card-tab').forEach(b=>b.classList.toggle('active', b===tabBtn));
+  host.querySelectorAll('.card-tabpanel').forEach(p=>p.classList.toggle('active', p.dataset.tabpanel===tabBtn.dataset.tab));
+});
+
+/* ---- Carrusel de fotos (delegado) ---- */
+function _setCarouselSlide(carousel, index){
+  const track = carousel.querySelector('.photo-carousel-track');
+  const slides = track.children.length;
+  const i = ((index % slides) + slides) % slides;
+  track.style.transform = `translateX(-${i * 100}%)`;
+  carousel.querySelectorAll('.carousel-dot').forEach((d, di)=>d.classList.toggle('active', di===i));
+  carousel.dataset.index = i;
+}
+document.addEventListener('click', e=>{
+  const navBtn = e.target.closest('.carousel-nav-btn, .carousel-dot');
+  if(!navBtn) return;
+  const carousel = navBtn.closest('.photo-carousel');
+  if(!carousel) return;
+  const current = parseInt(carousel.dataset.index || '0', 10);
+  if(navBtn.classList.contains('prev')) _setCarouselSlide(carousel, current - 1);
+  else if(navBtn.classList.contains('next')) _setCarouselSlide(carousel, current + 1);
+  else if(navBtn.classList.contains('carousel-dot')) _setCarouselSlide(carousel, [...navBtn.parentElement.children].indexOf(navBtn));
+});
+
+function activateTab(tab){
+  document.querySelectorAll('.toptab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+document.getElementById('toptabs').addEventListener('click', e=>{
+  const btn = e.target.closest('.toptab');
+  if(!btn) return;
+  activateTab(btn.dataset.tab);
+});
+function printPDF(tab){ activateTab(tab); setTimeout(()=>window.print(), 120); }
+document.getElementById('downloadBtn').addEventListener('click', ()=>{
+  const activePanel = document.querySelector('.tabpanel.active');
+  const tab = activePanel ? activePanel.id.replace('tab-','') : 'inicio';
+  printPDF(tab);
+});
+</script>
+{% endif %}
+</body>
+</html>

@@ -2,6 +2,10 @@
 {% load custom_filters %}
 
 {% block body %}
+<style>
+  .trip-name-link { color: inherit; text-decoration: none; font-weight: bold; }
+  .trip-name-link:hover { color: #D88775; text-decoration: underline; }
+</style>
 <script>window.ENTRIES_IS_CLIENT = {% if user.userType == "Cliente" %}true{% else %}false{% endif %};</script>
 
 <div id="entry_list">
@@ -43,11 +47,9 @@
             </button>
             <a href="{% url 'revising_itineraries' %}" class="btn btn-sm btn-outline-secondary position-relative" style="font-size:0.78rem;">
                 <i class="fa-solid fa-magnifying-glass me-1"></i>Correcciones
-                {% if my_revision_pending_count %}
-                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;">
-                    {{ my_revision_pending_count }}
+                <span id="revision-count-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger{% if not my_revision_pending_count %} d-none{% endif %}" style="font-size:.65rem;">
+                    {{ my_revision_pending_count|default:0 }}
                 </span>
-                {% endif %}
             </a>
         </div>
     </div>
@@ -126,6 +128,7 @@
                                 <th>Fecha Viaje</th>
                                 <th>Acciones</th>
                                 <th>✓</th>
+                                <th>Itinerario</th>
                             </tr>
                         {% else %}
                             <tr>
@@ -147,6 +150,7 @@
                                 <th>Date of Travel</th>
                                 <th>Actions</th>
                                 <th></th><!-- revision — hidden via columnDefs -->
+                                <th></th><!-- itinerario — hidden via columnDefs -->
                             </tr>
                         {% endif %}
                     </thead>
@@ -171,6 +175,20 @@
                 <div class="mb-3">
                     <label class="form-label small text-muted">Link del itinerario a revisar</label>
                     <input type="text" id="srm-link" class="form-control" placeholder="Ruta o link del itinerario..." />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Revisor asignado</label>
+                    <select id="srm-reviewer-select" class="form-select">
+                        <option value="">Sin asignar (elegir automáticamente al enviar)</option>
+                        {% for u in dept_users_for_revision %}
+                        <option value="{{ u.id }}">{{ u.username }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text text-muted" id="srm-reviewer-hint"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Nota para quien corrige (opcional)</label>
+                    <textarea id="srm-note" class="form-control" rows="2" placeholder="Se incluye en el aviso del chat como &quot;Nota: ...&quot;"></textarea>
                 </div>
             </div>
             <div class="modal-footer">

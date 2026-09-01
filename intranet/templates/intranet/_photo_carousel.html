@@ -1,0 +1,14 @@
+{% if photos %}
+<div class="photo-carousel" data-index="0">
+    <div class="photo-carousel-track">
+        {% for url in photos %}<img src="{{ url }}" alt="">{% endfor %}
+    </div>
+    {% if photos|length > 1 %}
+    <button type="button" class="carousel-nav-btn prev" aria-label="Previous photo">&lsaquo;</button>
+    <button type="button" class="carousel-nav-btn next" aria-label="Next photo">&rsaquo;</button>
+    <div class="carousel-dots">
+        {% for url in photos %}<button type="button" class="carousel-dot{% if forloop.first %} active{% endif %}" aria-label="Go to photo {{ forloop.counter }}"></button>{% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}

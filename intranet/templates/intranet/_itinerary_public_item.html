@@ -1,0 +1,52 @@
+{% load custom_filters %}
+{% with bucket=service_type_bucket|dict_get:line.service_code|default:default_service_type_bucket %}
+{% with label=service_labels|dict_get:line.service_code %}
+{% with photos=line|line_photos %}
+<div class="item type-{{ bucket }}">
+    <div class="ic"><i class="fa-solid {{ label.1|default:default_service_label.1 }}"></i></div>
+    <div class="item-body">
+        <div class="item-title" style="display:flex;justify-content:space-between;gap:10px;">
+            {% if line.service_code == "AC" %}
+            <span>{{ line.custom_title|default:line.supplier_name }}</span>
+            {% else %}
+            <span>{{ line.custom_title|default:line.title_note|default:line.supplier_name }}</span>
+            {% endif %}
+            {% if show_amount and itinerary.show_prices and line.amount %}
+            <span class="opt-amt">{{ itinerary.currency }} {{ line.amount|floatformat:2 }}</span>
+            {% endif %}
+        </div>
+        {% if line.service_code == "AC" %}
+            {% if line.title_note or line.room_summary %}
+            <div class="item-desc">{{ line.title_note }}{% if line.title_note and line.room_summary %} · {% endif %}{{ line.room_summary }}</div>
+            {% endif %}
+        {% endif %}
+
+        {% if photos %}
+        <div class="photo-with-desc">
+            {% include "intranet/_photo_carousel.html" with photos=photos %}
+            <div class="side-desc">
+        {% endif %}
+
+        {% with desc=line.custom_description|default:line.option_description %}
+        {% if desc %}<div class="item-desc">{{ desc }}</div>{% endif %}
+        {% endwith %}
+        {% if show_amount and itinerary.show_prices and itinerary.pax_count %}
+            {% with pp=line.amount|safe_divide:itinerary.pax_count %}
+            {% if pp %}
+            <div class="muted" style="font-size:.76rem;margin-top:2px;">{{ itinerary.pax_count }} pax · {{ itinerary.currency }} {{ pp|floatformat:2 }} per person</div>
+            {% endif %}
+            {% endwith %}
+        {% endif %}
+        {% if line.conditions_note %}
+        <div class="item-flag">{{ line.conditions_note }}</div>
+        {% endif %}
+
+        {% if photos %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endwith %}
+{% endwith %}
+{% endwith %}

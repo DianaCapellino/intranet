@@ -122,25 +122,7 @@ Respondé ÚNICAMENTE con este JSON (sin markdown, sin texto extra):
 
 # ── Itinerary loading ──────────────────────────────────────────────────────────
 
-def fetch_itinerary_from_tourplan(booking_ref):
-    """
-    Query Tourplan SQL Server for itinerary rows of a specific booking.
-    Date window: 4 months back to 12 months forward from today.
-    Returns list of dicts ready for format_rows_for_prompt / get_relevant_rows.
-    Returns [] if booking_ref is None or the connection fails.
-    """
-    if not booking_ref:
-        return []
-
-    from datetime import date, timedelta
-    from intranet.utils import get_tourplan_connection
-
-    today     = date.today()
-    date_from = (today - timedelta(days=120)).strftime('%Y%m%d')
-    date_to   = (today + timedelta(days=365)).strftime('%Y%m%d')
-
-    sql = """
-        SELECT
+_ITINERARY_BASE_COLUMNS = """
             Booking_Reference  NumeroDeFile,
             Booking_name       NombreDelViaje,
             Product_Location,
@@ -148,40 +130,189 @@ def fetch_itinerary_from_tourplan(booking_ref):
             Pax + Children + Infants  Total_Pax,
             CAST(Day_Number AS VARCHAR) + ' / ' + CAST(Sequence_Number AS VARCHAR)  [Dia/Sec.],
             Product_Option_name  Product_name,
-            Product_service,
+            Product_Service      Product_service,
             Supplier_Name        Proveedor,
             supplier_confirmation,
-            Service_status,
+            Service_Status       Service_status,
             sst.NAME             Service_StatusName,
             pickup_time, dropoff_time, pickup_date, pickup, dropoff,
             Booking_Analysis1_Name   Operador,
             Booking_Consultant_Name  Consultant,
             Booking_Analysis3_Name   GR
+"""
+
+# Extra columns for the public-itinerary use case (price + codes to match Product/Supplier
+# for photos). Confirmed against the real OPSView schema via discover_opsview_columns().
+# Agent_Price (not Retail_Price) is used for consistency with how "amount" is defined
+# everywhere else in this app (Entry.amount / Trip.amount both come from BSD.AGENT, whose
+# OPSView equivalent is Agent_Price) — if the public itinerary should instead show the
+# client-facing retail price, swap this for OPSView.Retail_Price.
+_ITINERARY_EXTRA_COLUMNS = """,
+            OPSView.Supplier_Code  Supplier_Code,
+            OPSView.Product_Option Product_Option_Code,
+            OPSView.Product_Location_Name Product_Location_Name,
+            OPSView.Agent_Price    Service_Sell,
+            OPSView.Singles        Singles,
+            OPSView.Doubles        Doubles,
+            OPSView.Twins          Twins,
+            OPSView.Triples        Triples,
+            OPSView.Quads          Quads,
+            OPSView.Others         Others,
+            OPSView.Nights         Nights,
+            OPSView.Rate_Voucher_Text2 Rate_Voucher_Text2,
+            OPSView.Voucher_Number Voucher_Number
+"""
+
+_ITINERARY_FROM_WHERE = """
         FROM OPSView
         JOIN sst ON sst.code = opsview.service_status
         JOIN CRC  ON CRC.CODE = OPSVIEW.Supplier_Code
                  AND crc.CURRENCY = opsview.Service_Cost_Currency
-        WHERE opsview.Booking_Branch IN ('AL')
+        WHERE opsview.Booking_Branch IN ({branch_in})
           AND OPSView.Booking_Travel_Date >= %s
           AND OPSView.Booking_Travel_Date <= %s
           AND Booking_Reference = %s
+"""
+
+
+def discover_opsview_columns(booking_ref):
     """
+    Diagnostic helper — NOT used by the app. Run manually (Django shell, from an environment
+    with real network access to Tourplan) against a real booking to list every column OPSView
+    exposes, so _ITINERARY_EXTRA_COLUMNS above can be filled in with confirmed names:
+
+        from tariff.quality_ai import discover_opsview_columns
+        discover_opsview_columns("ALFI123456")
+    """
+    from intranet.utils import get_tourplan_connection
+
+    conn = get_tourplan_connection()
     try:
-        conn   = get_tourplan_connection()
         cursor = conn.cursor()
-        cursor.execute(sql, (date_from, date_to, booking_ref.upper()))
-        rows = []
-        for row in cursor.fetchall():
-            svc = (row.get('Product_service') or '').strip().upper()
-            if svc in SKIP_SERVICE_TYPES:
-                continue
-            if hasattr(row.get('Service_Date'), 'strftime'):
-                row['Service_Date'] = row['Service_Date'].strftime('%d/%m/%Y')
-            rows.append(dict(row))
-        conn.close()
+        cursor.execute("SELECT TOP 3 * FROM OPSView WHERE Booking_Reference = %s", (booking_ref.upper(),))
+        rows = [dict(row) for row in cursor.fetchall()]
+        if rows:
+            print(sorted(rows[0].keys()))
         return rows
+    finally:
+        conn.close()
+
+
+def discover_product_notes(option_code):
+    """
+    Diagnostic helper — NOT used by the app. Run manually (Django shell, from an environment
+    with real network access to Tourplan) to figure out how NTS notes attach to a product/
+    option (e.g. the "DAY" note that holds the polished display name of the product), which
+    is a level below the booking-scoped NTS join already used elsewhere in this file
+    (NTS.BHD_ID). The foreign-key column NTS would use to point at OPT is NOT confirmed —
+    this tries a few plausible names and reports which one actually returns rows:
+
+        from tariff.quality_ai import discover_product_notes
+        discover_product_notes("CLASIC")
+    """
+    from intranet.utils import get_tourplan_connection
+
+    conn = get_tourplan_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT OPT_ID, CODE, SERVICE, LOCATION, SUPPLIER FROM OPT WHERE CODE = %s",
+            (option_code.upper(),),
+        )
+        opt_rows = [dict(row) for row in cursor.fetchall()]
+        print(f"OPT rows for CODE={option_code!r}:", opt_rows)
+        if not opt_rows:
+            print("No se encontró ningún OPT con ese CODE — probá con otro option_code.")
+            return {}
+
+        results = {}
+        for opt_row in opt_rows:
+            opt_id = opt_row["OPT_ID"]
+            for fk_column in ("OPT_ID", "OPTION_ID", "OPT"):
+                try:
+                    cursor.execute(f"SELECT * FROM NTS WHERE {fk_column} = %s", (opt_id,))
+                    rows = [dict(r) for r in cursor.fetchall()]
+                    print(f"NTS.{fk_column} = {opt_id} -> {len(rows)} fila(s)")
+                    for r in rows:
+                        print(" ", r)
+                    if rows:
+                        results[fk_column] = rows
+                except Exception as exc:
+                    print(f"NTS.{fk_column} no es una columna válida ({exc})")
+        if not results:
+            print(
+                "Ninguna de las columnas probadas funcionó. Corré "
+                "'SELECT TOP 5 * FROM NTS' directamente para ver los nombres reales de columna "
+                "y decime cuál referencia al producto/opción."
+            )
+        return results
+    finally:
+        conn.close()
+
+
+def fetch_itinerary_from_tourplan(booking_ref, branches=('AL',), skip_service_types=None):
+    """
+    Query Tourplan SQL Server for itinerary rows of a specific booking.
+    Date window: 4 months back to 12 months forward from today.
+    Returns list of dicts ready for format_rows_for_prompt / get_relevant_rows.
+    Returns [] if booking_ref is None or the connection fails.
+
+    branches: Tourplan BRANCH codes to filter on. Defaults to ('AL',) to keep existing
+    Calidad-module behaviour unchanged; callers outside Calidad (e.g. the public-itinerary
+    feature, which spans every department) should pass the full branch list, mirroring
+    sync_from_tourplan_db()'s default in intranet/intranet/utils.py.
+
+    skip_service_types: Product_Service codes to drop from the result. Defaults to
+    SKIP_SERVICE_TYPES (Calidad's original behaviour, unchanged) — the public-itinerary
+    feature passes a smaller set, since it wants to show WE/IM/IN/FT lines (welcome
+    messages, hotel taxes, "not included" notes, flights) that Calidad doesn't care about.
+    """
+    if not booking_ref:
+        return []
+    if skip_service_types is None:
+        skip_service_types = SKIP_SERVICE_TYPES
+
+    from datetime import date, timedelta
+    from intranet.utils import get_tourplan_connection
+
+    today     = date.today()
+    date_from = (today - timedelta(days=120)).strftime('%Y%m%d')
+    date_to   = (today + timedelta(days=365)).strftime('%Y%m%d')
+    branch_in = ', '.join(f"'{b}'" for b in branches)
+
+    sql_extended = (
+        "SELECT" + _ITINERARY_BASE_COLUMNS + _ITINERARY_EXTRA_COLUMNS
+        + _ITINERARY_FROM_WHERE.format(branch_in=branch_in)
+    )
+    sql_base = "SELECT" + _ITINERARY_BASE_COLUMNS + _ITINERARY_FROM_WHERE.format(branch_in=branch_in)
+
+    def _run(sql):
+        conn   = get_tourplan_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql, (date_from, date_to, booking_ref.upper()))
+            rows = []
+            for row in cursor.fetchall():
+                svc = (row.get('Product_service') or '').strip().upper()
+                if svc in skip_service_types:
+                    continue
+                if hasattr(row.get('Service_Date'), 'strftime'):
+                    row['Service_Date'] = row['Service_Date'].strftime('%d/%m/%Y')
+                rows.append(dict(row))
+            return rows
+        finally:
+            conn.close()
+
+    import logging as _log
+    try:
+        return _run(sql_extended)
     except Exception as exc:
-        import logging as _log
+        _log.getLogger(__name__).info(
+            "Extended OPSView columns unavailable (%s), falling back to base itinerary query", exc
+        )
+    try:
+        return _run(sql_base)
+    except Exception as exc:
         _log.getLogger(__name__).warning("Tourplan itinerary fetch failed for %s: %s", booking_ref, exc)
         return []
 

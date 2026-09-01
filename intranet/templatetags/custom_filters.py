@@ -49,6 +49,25 @@ def divided(value, arg):
         return None
 
 @register.filter
+def safe_divide(value, arg):
+    """División sin truncar a entero (a diferencia de `divided`) — para montos con
+    centavos, ej. precio por persona en el itinerario público."""
+    try:
+        value = float(value)
+        arg = float(arg)
+        if arg == 0:
+            return None
+        return value / arg
+    except (TypeError, ValueError):
+        return None
+
+@register.filter
+def line_photos(line):
+    """Lista de hasta 3 URLs de foto de una ItineraryLine, sin huecos (para el carrusel del
+    itinerario público) — descarta las que sean None/vacías, sin importar en qué slot esten."""
+    return [u for u in (getattr(line, "image_url", None), getattr(line, "image_url_2", None), getattr(line, "image_url_3", None)) if u]
+
+@register.filter
 def dict_get(d, key):
     try:
         return d[key]

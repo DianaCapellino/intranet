@@ -29,6 +29,17 @@
                         <div class="mb-3 col">
                             <input class="form-control" type="number" name="quantity_pax" id="quantity_pax" placeholder="Cantidad de pasajeros" value=2>
                         </div>
+                        <div class="mb-3 col">
+                            <select class="form-select" aria-label="trip_type" name="trip_type" id="trip_type">
+                                {% for option in trip_types %}
+                                    {% if option.0 == "FIT's" %}
+                                        <option selected value="{{ option.0 }}">{{ option.1 }}</option>
+                                    {% else %}
+                                        <option value="{{ option.0 }}">{{ option.1 }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                     <div class="row">
                         <div class="mb-3 col">
@@ -546,23 +557,10 @@
                                                                 </div>
                                                                 <div class="mb-3 col">
                                                                     <label class="form-label">VR (Vendedor Responsable)</label>
-                                                                    {% if request.user.isAdmin %}
-                                                                    <select class="form-select" aria-label="vr" name="responsable_user">
-                                                                        {% for user in users %}
-                                                                            {% if user.userType == "Ventas" or user.id == 19 %}
-                                                                                {% if user.id == trip.responsable_user.id %}
-                                                                                    <option selected value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
-                                                                                {% else %}
-                                                                                    <option value="{{ user.id }}">{{ user.username }} - {{ user.other_name }}</option>
-                                                                                {% endif %}
-                                                                            {% endif %}
-                                                                        {% endfor %}
-                                                                    </select>
-                                                                    {% else %}
                                                                     <div class="form-control-plaintext">
                                                                         {% if trip.responsable_user %}<span style="background-color:{{ trip.responsable_user.color }};color:{{ trip.responsable_user.color|contrast_color }};padding:2px 10px;border-radius:999px;font-size:.85em;">{{ trip.responsable_user }}</span>{% else %}<span class="text-muted">Sin asignar</span>{% endif %}
+                                                                        <span class="text-muted small ms-1">(se asigna desde Planilla de Reservas)</span>
                                                                     </div>
-                                                                    {% endif %}
                                                                 </div>
                                                                 <div class="mb-3 col">
                                                                     <label for="modify_operations_user{{trip.id}}" class="form-label">Operador</label>
@@ -683,6 +681,13 @@
     if (listDiv) listDiv.className = "d-none";
     if (btn)     btn.className     = "d-none";
   }
+
+  {% if open_trip_id %}
+  (function () {
+    const modalEl = document.getElementById("windowTrip{{ open_trip_id }}");
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  })();
+  {% endif %}
 
   // Dynamic contacts per client
   const clientSel  = document.getElementById('newTripClient');

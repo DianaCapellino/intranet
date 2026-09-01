@@ -1,5 +1,6 @@
 {% extends 'intranet/layout.html' %}
 {% load static %}
+{% load custom_filters %}
 
 {% block title %}Correcciones de Itinerarios{% endblock %}
 
@@ -47,14 +48,6 @@
     border-style: dashed;
     margin-top: 4px;
   }
-  .seniority-badge {
-    font-size: .65rem;
-    padding: 1px 5px;
-    border-radius: 10px;
-    margin-left: auto;
-  }
-  .badge-junior { background:#dbeafe; color:#1e40af; }
-  .badge-senior { background:#fef9c3; color:#713f12; }
   .revision-day-col.today-col {
     border: 2.5px solid #1a1a1a;
     background: #f0f4ff;
@@ -62,7 +55,66 @@
   .revision-day-col.today-col h6 { color: #1a1a1a; }
   #schedule-grid.schedule-readonly .revision-user-chip { cursor: default; }
   #schedule-grid.schedule-readonly .remove-chip { display: none; }
+  #schedule-grid.schedule-readonly .toggle-block-chip { display: none; }
   #schedule-grid.schedule-readonly .add-user-select { display: none; }
+  .revision-user-chip.blocked-chip {
+    opacity: .6;
+    border-style: dashed;
+    border-color: #dc3545;
+  }
+  .revision-legend {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 14px 16px;
+    flex: 1 1 280px;
+    min-width: 260px;
+    max-width: 380px;
+  }
+  .revision-legend h6 {
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 12px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-bottom: 12px;
+    font-size: .82rem;
+  }
+  .legend-row:last-child { margin-bottom: 0; }
+  .legend-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .legend-name-pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .legend-arrow {
+    color: #d98875;
+    font-size: .8rem;
+    flex-shrink: 0;
+  }
+  .legend-text {
+    color: #4a4544;
+    line-height: 1.35;
+  }
+  .difficulty-hint {
+    cursor: help;
+    border-bottom: 1px dotted #999;
+  }
+  tr.reviewed-row td { text-decoration: line-through; opacity: 0.5; }
 </style>
 {% endblock %}
 
@@ -72,27 +124,42 @@
   <div class="d-flex align-items-center justify-content-between mb-4">
     <h4 class="mb-0 fw-semibold">Esquema de Correcciones</h4>
     {% if user.isAdmin %}
-    <button class="btn btn-outline-secondary btn-sm" id="edit-schedule-btn">
-      <i class="fa-solid fa-pencil me-1"></i>Editar esquema
-    </button>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-secondary btn-sm d-none" id="cancel-schedule-btn">
+        Cancelar
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" id="edit-schedule-btn">
+        <i class="fa-solid fa-pencil me-1"></i>Editar esquema
+      </button>
+    </div>
     {% endif %}
   </div>
 
+  <div class="d-flex gap-3 mb-5 flex-wrap align-items-start">
   <!-- Weekly schedule grid -->
-  <div class="d-flex gap-3 mb-5 flex-wrap schedule-readonly" id="schedule-grid">
+  <div class="d-flex gap-3 flex-wrap schedule-readonly flex-grow-1" id="schedule-grid">
     {% for wd, wd_label, day_users in grid_rows %}
     <div class="revision-day-col{% if wd == today_weekday %} today-col{% endif %}" data-weekday="{{ wd }}">
       <h6>{{ wd_label }}</h6>
       <div class="day-users" data-weekday="{{ wd }}">
         {% for u in day_users %}
-        <div class="revision-user-chip{% if u.id in absent_ids and wd == today_weekday %} opacity-50{% endif %}" draggable="true" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">
+        <div class="revision-user-chip{% if u.revision_blocked %} blocked-chip{% endif %}{% if u.id in absent_ids and wd == today_weekday %} opacity-50{% endif %}" draggable="true" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">
           <span class="chip-dot" style="background-color:{{ u.color|default:'#6c757d' }};"></span>
           <span>{{ u.username }}</span>
-          {% if u.seniority %}<span class="seniority-badge {% if u.seniority == 'Junior' %}badge-junior{% else %}badge-senior{% endif %}">{{ u.seniority }}</span>{% endif %}
+          {% if u.revision_blocked %}
+          <span class="blocked-icon" title="Bloqueado — no se le asignan revisiones automáticamente" style="font-size:.8em;margin-left:2px;">🚫</span>
+          {% endif %}
           {% if u.id in absent_ids and wd == today_weekday %}
           <span title="Ausente hoy – no se le asignarán correcciones" style="font-size:.8em;margin-left:2px;">🏖️</span>
           {% endif %}
-          {% if user.isAdmin %}<button class="btn btn-link btn-sm p-0 ms-1 text-muted remove-chip" title="Quitar" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">&times;</button>{% endif %}
+          {% if user.isAdmin %}
+          <button class="btn btn-link btn-sm p-0 ms-1 text-muted toggle-block-chip"
+                  title="{% if u.revision_blocked %}Desbloquear{% else %}Bloquear para revisiones{% endif %}"
+                  data-user-id="{{ u.id }}">
+            <i class="fa-solid {% if u.revision_blocked %}fa-lock{% else %}fa-lock-open{% endif %} fa-xs"></i>
+          </button>
+          <button class="btn btn-link btn-sm p-0 ms-1 text-muted remove-chip" title="Quitar" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">&times;</button>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -100,12 +167,53 @@
       <select class="form-select form-select-sm mt-2 add-user-select" data-weekday="{{ wd }}" style="font-size:.8rem;">
         <option value="">+ Agregar usuario</option>
         {% for u in all_dept_users %}
-        <option value="{{ u.id }}" data-color="{{ u.color|default:'#6c757d' }}" data-username="{{ u.username }}" data-seniority="{{ u.seniority }}">{{ u.username }}</option>
+        <option value="{{ u.id }}" data-color="{{ u.color|default:'#6c757d' }}" data-username="{{ u.username }}" data-blocked="{{ u.revision_blocked|yesno:'1,' }}">{{ u.username }}{% if u.revision_blocked %} (bloqueado){% endif %}</option>
         {% endfor %}
       </select>
       {% endif %}
     </div>
     {% endfor %}
+  </div>
+
+  <!-- Revision rules legend, by name (no seniority labels shown) -->
+  {% if scheduled_seniors or scheduled_juniors or scheduled_principiantes %}
+  <div class="revision-legend">
+    <h6>Reglas de revisión</h6>
+    {% if scheduled_seniors %}
+    <div class="legend-row">
+      <span class="legend-names">
+        {% for u in scheduled_seniors %}
+        <span class="legend-name-pill" style="background-color:{{ u.color }};color:{{ u.color|contrast_color }};">{{ u.username }}</span>
+        {% endfor %}
+      </span>
+      <i class="fa-solid fa-arrow-right-long legend-arrow"></i>
+      <span class="legend-text">Pueden revisar todos los itinerarios de todos.</span>
+    </div>
+    {% endif %}
+    {% if scheduled_juniors %}
+    <div class="legend-row">
+      <span class="legend-names">
+        {% for u in scheduled_juniors %}
+        <span class="legend-name-pill" style="background-color:{{ u.color }};color:{{ u.color|contrast_color }};">{{ u.username }}</span>
+        {% endfor %}
+      </span>
+      <i class="fa-solid fa-arrow-right-long legend-arrow"></i>
+      <span class="legend-text">Pueden revisar itinerarios de estos dos grupos, hasta dificultad 3 inclusive.</span>
+    </div>
+    {% endif %}
+    {% if scheduled_principiantes %}
+    <div class="legend-row">
+      <span class="legend-names">
+        {% for u in scheduled_principiantes %}
+        <span class="legend-name-pill" style="background-color:{{ u.color }};color:{{ u.color|contrast_color }};">{{ u.username }}</span>
+        {% endfor %}
+      </span>
+      <i class="fa-solid fa-arrow-right-long legend-arrow"></i>
+      <span class="legend-text">No revisan itinerarios.</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
   </div>
 
   <!-- Pending revision entries table -->
@@ -127,30 +235,48 @@
       </thead>
       <tbody>
         {% for e in pending_entries %}
-        <tr data-entry-id="{{ e.id }}">
+        <tr data-entry-id="{{ e.id }}"{% if e.is_revised %} class="reviewed-row"{% endif %}>
           <td><strong>{{ e.trip.name }}</strong></td>
           <td>{{ e.trip.client.name|default:"—" }}</td>
           <td>{{ e.trip.travelling_date|date:"d/m/Y"|default:"—" }}</td>
-          <td>{{ e.trip.difficulty|default:"—" }}</td>
+          <td>
+            {% if e.trip.difficulty == "1" %}
+            <span class="difficulty-hint" data-bs-toggle="tooltip" title="1 – Muy Fácil – 1 solo destino / cruceristas simples">1</span>
+            {% elif e.trip.difficulty == "2" %}
+            <span class="difficulty-hint" data-bs-toggle="tooltip" title="2 – Fácil – 2 destinos">2</span>
+            {% elif e.trip.difficulty == "3" %}
+            <span class="difficulty-hint" data-bs-toggle="tooltip" title="3 – Moderado – 3 destinos o 2 con dificultades">3</span>
+            {% elif e.trip.difficulty == "4" %}
+            <span class="difficulty-hint" data-bs-toggle="tooltip" title="4 – Complejo – 4 destinos o más">4</span>
+            {% elif e.trip.difficulty == "5" %}
+            <span class="difficulty-hint" data-bs-toggle="tooltip" title="5 – Muy Complejo – Itinerarios con destinos no conocidos o muy largos">5</span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
           <td>{{ e.user_working.username|default:"—" }}</td>
           <td>
             {% if e.revising_user %}
               {% with c=e.revising_user.color|default:"#6c757d" %}
-              <span style="display:inline-flex;align-items:center;gap:5px;background:{{ c }};color:#222;padding:2px 10px 2px 6px;border-radius:999px;font-size:.82em;font-weight:500;">
+              <span style="display:inline-flex;align-items:center;gap:5px;background:{{ c }};color:{{ c|contrast_color }};padding:2px 10px 2px 6px;border-radius:999px;font-size:.82em;font-weight:500;">
                 <span style="width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,0.15);flex-shrink:0;"></span>
                 {{ e.revising_user.username }}
               </span>
               {% endwith %}
+              {% if not e.is_revised %}
               <button class="btn btn-link btn-sm p-0 ms-1 change-reviewer-btn"
                       data-entry-id="{{ e.id }}" data-user-id="{{ e.revising_user.id }}"
                       data-link="{{ e.revision_link|default:'' }}"
                       title="Editar revisión"><i class="fa-solid fa-pen fa-xs"></i></button>
+              {% endif %}
             {% else %}
               <span class="text-muted small">⚠️ Sin asignar</span>
+              {% if not e.is_revised %}
               <button class="btn btn-link btn-sm p-0 ms-1 change-reviewer-btn"
                       data-entry-id="{{ e.id }}" data-user-id=""
                       data-link="{{ e.revision_link|default:'' }}"
                       title="Editar revisión"><i class="fa-solid fa-plus fa-xs"></i></button>
+              {% endif %}
             {% endif %}
           </td>
           <td>
@@ -165,7 +291,8 @@
           </td>
           <td>
             <button class="btn btn-sm btn-success mark-revised-btn"
-                    data-entry-id="{{ e.id }}" title="Marcar como revisado">
+                    data-entry-id="{{ e.id }}" title="Marcar como revisado"
+                    {% if e.is_revised %}disabled{% endif %}>
               <i class="fa-solid fa-check"></i>
             </button>
           </td>
@@ -194,7 +321,7 @@
           <select id="page-crm-select" class="form-select">
             <option value="">Sin asignar</option>
             {% for u in all_dept_users %}
-            <option value="{{ u.id }}">{{ u.username }}</option>
+            <option value="{{ u.id }}">{{ u.username }}{% if u.revision_blocked %} (bloqueado){% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -211,6 +338,30 @@
   </div>
 </div>
 
+<!-- Mark as revised modal (optional comment) -->
+<div class="modal fade" id="markRevisedModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-check me-2"></i>Marcar como revisado</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-2">Se le avisa por chat a quien trabajó el file que la revisión está lista.</p>
+        <label for="mark-revised-comment" class="form-label small text-muted mb-1">Comentario (opcional)</label>
+        <textarea id="mark-revised-comment" class="form-control" rows="3"
+                  placeholder="Si completás esto, se incluye en el aviso del chat. Si lo dejás vacío, se avisa que todos los comentarios están en el documento."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success" id="mark-revised-confirm">
+          <i class="fa-solid fa-check me-1"></i>Marcar como revisado
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -218,6 +369,13 @@
 (function () {
   const csrf = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
   const isAdmin = {{ user.isAdmin|yesno:"true,false" }};
+
+  // ── Bootstrap tooltips (difficulty reference) ───────────────────────────────
+  // Tooltips/popovers aren't auto-initialized by data-bs-toggle like modals are —
+  // they need an explicit instance per element.
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+    bootstrap.Tooltip.getOrCreateInstance(el);
+  });
 
   // ── Build the grid state from DOM ────────────────────────────────────────
   function getGridData() {
@@ -230,19 +388,23 @@
   }
 
   // ── Add chip to a day column ──────────────────────────────────────────────
-  function addChip(col, uid, username, color, seniority) {
+  function addChip(col, uid, username, color, blocked) {
     // Prevent duplicates within same day
     if (col.querySelector(`.revision-user-chip[data-user-id="${uid}"]`)) return;
     const wd = col.dataset.weekday;
     const chip = document.createElement('div');
-    chip.className = 'revision-user-chip';
+    chip.className = 'revision-user-chip' + (blocked ? ' blocked-chip' : '');
     chip.draggable = true;
     chip.dataset.userId = uid;
     chip.dataset.weekday = wd;
-    const badgeCls = seniority === 'Junior' ? 'badge-junior' : seniority === 'Senior' ? 'badge-senior' : '';
-    const badgeHtml = seniority ? `<span class="seniority-badge ${badgeCls}">${seniority}</span>` : '';
+    const blockedIconHtml = blocked
+      ? `<span class="blocked-icon" title="Bloqueado — no se le asignan revisiones automáticamente" style="font-size:.8em;margin-left:2px;">🚫</span>` : '';
+    const toggleBlockHtml = isAdmin
+      ? `<button class="btn btn-link btn-sm p-0 ms-1 text-muted toggle-block-chip" title="${blocked ? 'Desbloquear' : 'Bloquear para revisiones'}" data-user-id="${uid}">
+           <i class="fa-solid ${blocked ? 'fa-lock' : 'fa-lock-open'} fa-xs"></i>
+         </button>` : '';
     const removeHtml = isAdmin ? `<button class="btn btn-link btn-sm p-0 ms-1 text-muted remove-chip" data-user-id="${uid}" data-weekday="${wd}">&times;</button>` : '';
-    chip.innerHTML = `<span class="chip-dot" style="background-color:${color};"></span><span>${username}</span>${badgeHtml}${removeHtml}`;
+    chip.innerHTML = `<span class="chip-dot" style="background-color:${color};"></span><span>${username}</span>${blockedIconHtml}${toggleBlockHtml}${removeHtml}`;
     attachChipDrag(chip);
     col.insertBefore(chip, col.querySelector('.add-user-select'));
   }
@@ -296,22 +458,76 @@
       const opt = this.options[this.selectedIndex];
       if (!opt.value) return;
       const col = this.closest('.revision-day-col').querySelector('.day-users');
-      addChip(col, opt.value, opt.dataset.username, opt.dataset.color || '#6c757d', opt.dataset.seniority || '');
+      addChip(col, opt.value, opt.dataset.username, opt.dataset.color || '#6c757d', opt.dataset.blocked === '1');
       this.value = '';
     });
   });
 
-  // ── Remove chip ────────────────────────────────────────────────────────────
+  // ── Toggle block (temporary, for automatic revision assignment) ────────────
   document.addEventListener('click', function (e) {
+    const toggleBtn = e.target.closest('.toggle-block-chip');
+    if (toggleBtn) {
+      const uid = toggleBtn.dataset.userId;
+      fetch(`/revision/user/${uid}/toggle_block`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrf() },
+      }).then(r => r.json()).then(d => {
+        if (!d.ok) return;
+        document.querySelectorAll(`.revision-user-chip[data-user-id="${uid}"]`).forEach(chip => {
+          chip.classList.toggle('blocked-chip', d.blocked);
+          const icon = toggleBtn.querySelector('i');
+          if (chip.contains(toggleBtn)) {
+            toggleBtn.title = d.blocked ? 'Desbloquear' : 'Bloquear para revisiones';
+            icon.className = `fa-solid ${d.blocked ? 'fa-lock' : 'fa-lock-open'} fa-xs`;
+          } else {
+            const otherBtn = chip.querySelector('.toggle-block-chip');
+            if (otherBtn) {
+              otherBtn.title = d.blocked ? 'Desbloquear' : 'Bloquear para revisiones';
+              otherBtn.querySelector('i').className = `fa-solid ${d.blocked ? 'fa-lock' : 'fa-lock-open'} fa-xs`;
+            }
+          }
+          let badge = chip.querySelector('.blocked-icon');
+          if (d.blocked && !badge) {
+            badge = document.createElement('span');
+            badge.className = 'blocked-icon';
+            badge.title = 'Bloqueado — no se le asignan revisiones automáticamente';
+            badge.style.cssText = 'font-size:.8em;margin-left:2px;';
+            badge.textContent = '🚫';
+            chip.insertBefore(badge, chip.querySelector('.toggle-block-chip'));
+          } else if (!d.blocked && badge) {
+            badge.remove();
+          }
+        });
+        // Keep the "+ Agregar usuario" dropdown options in sync too
+        document.querySelectorAll(`.add-user-select option[value="${uid}"]`).forEach(opt => {
+          opt.dataset.blocked = d.blocked ? '1' : '';
+          const base = opt.textContent.replace(/ \(bloqueado\)$/, '');
+          opt.textContent = d.blocked ? `${base} (bloqueado)` : base;
+        });
+        document.querySelectorAll(`#page-crm-select option[value="${uid}"]`).forEach(opt => {
+          const base = opt.textContent.replace(/ \(bloqueado\)$/, '');
+          opt.textContent = d.blocked ? `${base} (bloqueado)` : base;
+        });
+      });
+      return;
+    }
     if (e.target.closest('.remove-chip')) {
       e.target.closest('.revision-user-chip').remove();
     }
   });
 
   // ── Edit / Save schedule toggle ────────────────────────────────────────────
-  const editBtn = document.getElementById('edit-schedule-btn');
-  const grid    = document.getElementById('schedule-grid');
-  let _editing  = false;
+  const editBtn   = document.getElementById('edit-schedule-btn');
+  const cancelBtn = document.getElementById('cancel-schedule-btn');
+  const grid      = document.getElementById('schedule-grid');
+  let _editing    = false;
+
+  function cancelEdit() {
+    if (!_editing) return;
+    // Nothing was persisted yet (chip adds/removes/moves live only in the DOM) —
+    // reload discards them and restores the last saved schedule.
+    window.location.reload();
+  }
 
   if (editBtn) {
     editBtn.addEventListener('click', function () {
@@ -321,6 +537,7 @@
         grid.classList.remove('schedule-readonly');
         editBtn.className = 'btn btn-dark btn-sm';
         editBtn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Guardar';
+        if (cancelBtn) cancelBtn.classList.remove('d-none');
       } else {
         // Save and return to readonly
         fetch('/revision/schedule/update', {
@@ -333,6 +550,7 @@
             grid.classList.add('schedule-readonly');
             editBtn.className = 'btn btn-outline-secondary btn-sm';
             editBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Guardado';
+            if (cancelBtn) cancelBtn.classList.add('d-none');
             setTimeout(() => {
               editBtn.innerHTML = '<i class="fa-solid fa-pencil me-1"></i>Editar esquema';
             }, 2000);
@@ -342,16 +560,54 @@
     });
   }
 
-  // ── Mark as revised ────────────────────────────────────────────────────────
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', cancelEdit);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && _editing) cancelEdit();
+  });
+
+  // ── Mark as revised (with optional comment) ─────────────────────────────────
+  let _markRevisedEntryId = null;
+  const markRevisedModal = new bootstrap.Modal(document.getElementById('markRevisedModal'));
+
   document.querySelectorAll('.mark-revised-btn').forEach(btn => {
     btn.addEventListener('click', function () {
-      const entryId = this.dataset.entryId;
-      fetch(`/entries/${entryId}/mark_revised`, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrf() },
-      }).then(r => r.json()).then(d => {
-        if (d.ok) this.closest('tr').remove();
-      });
+      _markRevisedEntryId = this.dataset.entryId;
+      document.getElementById('mark-revised-comment').value = '';
+      markRevisedModal.show();
+    });
+  });
+
+  document.getElementById('mark-revised-confirm').addEventListener('click', function () {
+    if (!_markRevisedEntryId) return;
+    const comment = document.getElementById('mark-revised-comment').value.trim();
+    const confirmBtn = this;
+    const orig = confirmBtn.innerHTML;
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Marcando...';
+    fetch(`/entries/${_markRevisedEntryId}/mark_revised`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+      body: JSON.stringify({ comment }),
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        const row = document.querySelector(`tr[data-entry-id="${_markRevisedEntryId}"]`);
+        if (row) {
+          row.classList.add('reviewed-row');
+          const btn = row.querySelector('.mark-revised-btn');
+          if (btn) btn.disabled = true;
+          // Also pull the "Editar revisión" button — once revised it can't be
+          // reassigned (the backend rejects it too), so don't leave it clickable.
+          const editBtn = row.querySelector('.change-reviewer-btn');
+          if (editBtn) editBtn.remove();
+        }
+        markRevisedModal.hide();
+      }
+    }).finally(() => {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = orig;
     });
   });
 
@@ -434,6 +690,7 @@
       body: JSON.stringify({ user_id: userId, revision_link: link }),
     }).then(r => r.json()).then(d => {
       if (d.ok) { crmModal.hide(); location.reload(); }
+      else { alert(d.error || 'No se pudo guardar.'); crmModal.hide(); location.reload(); }
     });
   });
 

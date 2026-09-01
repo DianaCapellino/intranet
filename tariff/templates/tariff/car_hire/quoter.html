@@ -6,7 +6,7 @@
     <div class="d-flex align-items-center justify-content-between mb-4">
         <h2><i class="fa-solid fa-car me-2"></i>Car Hire — Quote</h2>
         <div class="d-flex gap-2">
-            {% if user.isAdmin %}
+            {% if user.userType != "Cliente" %}
             <button class="btn btn-outline-secondary btn-lg" data-bs-toggle="modal" data-bs-target="#hertzImportModal" title="Importar cotización Hertz">
                 <i class="fa-solid fa-file-import"></i>
             </button>
@@ -16,6 +16,15 @@
             </a>
         </div>
     </div>
+
+    {% if user.userType != "Cliente" %}
+    <div class="d-flex flex-wrap gap-3 align-items-center small text-muted mb-3 px-1" id="generalSettingsStrip">
+        <span class="fw-semibold text-uppercase" style="font-size:.72rem;letter-spacing:.06em;">Ajustes generales:</span>
+        <span>Markup <strong class="text-dark">{{ config_markup }}</strong></span>
+        <span>Tipo de cambio <strong class="text-dark">${{ config_exchange }}</strong></span>
+        <span>Aumento del período <strong class="text-dark" id="periodIncreaseVal">0%</strong></span>
+    </div>
+    {% endif %}
 
     {# ── Form ──────────────────────────────────────────────────────────────── #}
     <div class="card shadow-sm mb-4">
@@ -61,6 +70,15 @@
     <div id="capacityWarn" class="alert alert-warning align-items-center gap-2 mb-3" style="display:none;">
         <i class="fa-solid fa-triangle-exclamation fa-lg"></i>
         <span id="capacityWarnMsg"></span>
+    </div>
+
+    {# ── Special dates / peak-period surcharge warning ────────────────────── #}
+    <div id="specialDatesWarn" class="alert alert-danger align-items-start gap-2 mb-3" style="display:none;">
+        <i class="fa-solid fa-calendar-day fa-lg mt-1"></i>
+        <div>
+            <div class="fw-semibold">Special dates — surcharges apply</div>
+            <div class="small" id="specialDatesMsg"></div>
+        </div>
     </div>
 
     {# ── Result ────────────────────────────────────────────────────────────── #}
@@ -117,6 +135,10 @@
                     <tbody id="priceBody"></tbody>
                 </table>
 
+                {% if user.userType != "Cliente" %}
+                {% include "tariff/car_hire/_manual_item_form.html" with prefix="mi" %}
+                {% endif %}
+
                 <div class="d-flex justify-content-end mt-3 border-top pt-3">
                     <div class="d-flex gap-5 align-items-end">
                         <div class="text-center">
@@ -148,7 +170,61 @@
 const CSRF_TOKEN  = '{{ csrf_token }}';
 const CATS_BY_LOC = {{ cats_by_location_json|safe }};
 
+const MANUAL_ITEM_URL = '{% url "car_hire_quoter_manual_item" %}';
+let manualRows   = [];    // manually-added rows for the online quoter
+let lastCalcData = null;  // last quoter_calculate payload (for re-render)
+
+// Reads the manual-item form identified by `prefix`, asks the backend to price
+// the line, clears the inputs and hands the computed item to `onDone`. The raw
+// payload is attached as `_raw` on the returned item so it can be re-priced
+// later (e.g. when the Hertz modal's "Aumento" box changes).
+async function readManualItem(prefix, days, passengers, onDone, extraIncrease) {
+    const g = id => document.getElementById(`${prefix}_${id}`);
+    const label  = (g('label').value || '').trim();
+    const amount = parseFloat(g('amount').value);
+    if (!label || !(amount > 0)) { alert('Ingresá descripción y monto.'); return; }
+    const payload = {
+        label, amount,
+        currency:     g('currency').value,
+        iva_included: g('iva').value === '1',
+        per_day:      g('per_day').checked,
+        days, passengers,
+    };
+    if (extraIncrease !== undefined) payload.extra_increase = extraIncrease;
+    try {
+        const res  = await fetch(MANUAL_ITEM_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!data.ok) { alert(data.error || 'Error al agregar el item.'); return; }
+        g('label').value = '';
+        g('amount').value = '';
+        g('per_day').checked = false;
+        onDone({ ...data.item, _raw: payload });
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+document.getElementById('mi_add_btn')?.addEventListener('click', () => {
+    if (!lastCalcData) { alert('Primero calculá una cotización.'); return; }
+    const days = Math.max(1, lastCalcData.days || 1);
+    const pax  = lastCalcData.effective_passengers
+        || Math.max(1, parseInt(document.getElementById('q_passengers').value) || 1);
+    readManualItem('mi', days, pax, item => {
+        manualRows.push(item);
+        renderResult(lastCalcData);
+    });
+});
+
 // ─── Destination / date → populate vehicle types sorted by price ──────
+function setPeriodIncrease(val) {
+    const el = document.getElementById('periodIncreaseVal');
+    if (el) el.textContent = `${(val ?? 0)}%`;
+}
+
 async function fetchCategoryOptions() {
     const locId      = document.getElementById('q_location').value;
     const date       = document.getElementById('q_date').value;
@@ -157,6 +233,7 @@ async function fetchCategoryOptions() {
     if (!locId) {
         catSel.innerHTML = '<option value="">— Select destination first —</option>';
         catSel.disabled = true;
+        setPeriodIncrease(0);
         return;
     }
     const prevVal = catSel.value;
@@ -169,6 +246,7 @@ async function fetchCategoryOptions() {
             body: JSON.stringify({ location_id: locId, date: date || null, passengers }),
         });
         const data = await res.json();
+        setPeriodIncrease(date ? data.period_increase : 0);
         catSel.innerHTML = '<option value="">— Select vehicle type —</option>';
         if (data.categories && data.categories.length) {
             data.categories.forEach(c => {
@@ -185,6 +263,7 @@ async function fetchCategoryOptions() {
     } catch (e) {
         catSel.innerHTML = '<option value="">— Select vehicle type —</option>';
         catSel.disabled = false;
+        setPeriodIncrease(0);
     }
 }
 
@@ -203,10 +282,13 @@ async function calculate() {
     const passengers = Math.max(1, parseInt(document.getElementById('q_passengers').value) || 1);
 
     hideError();
-    document.getElementById('resultSection').style.display = 'none';
-    document.getElementById('capacityWarn').style.display  = 'none';
+    document.getElementById('resultSection').style.display    = 'none';
+    document.getElementById('capacityWarn').style.display     = 'none';
+    document.getElementById('specialDatesWarn').style.display = 'none';
 
     if (!locId || !catId || !date) { showError('Please fill in all fields.'); return; }
+
+    manualRows = [];  // fresh calculation → drop manually-added items
 
     const res  = await fetch('{% url "car_hire_quoter_calculate" %}', {
         method: 'POST',
@@ -221,6 +303,8 @@ async function calculate() {
 
 // ─── Render ───────────────────────────────────────────────────────────
 function renderResult(data) {
+    lastCalcData = data;
+    document.getElementById('mi_form')?.style.removeProperty('display');
     const cat  = data.category;
     const days = data.days;
 
@@ -234,6 +318,20 @@ function renderResult(data) {
         warn.style.display = 'flex';
     } else {
         warn.style.display = 'none';
+    }
+
+    // Special dates / peak-period surcharge (British English)
+    const sd = data.special_dates;
+    const sdWarn = document.getElementById('specialDatesWarn');
+    if (sd && sd.surcharge_pct > 0) {
+        const names = (sd.entries || []).map(e => e.name).filter(Boolean);
+        const nameStr = names.length ? ` (${names.join('; ')})` : '';
+        document.getElementById('specialDatesMsg').textContent =
+            `The hire period falls on public holidays or a long weekend${nameStr}. ` +
+            `A ${sd.surcharge_pct}% peak-period surcharge has been applied to the rates below.`;
+        sdWarn.style.display = 'flex';
+    } else {
+        sdWarn.style.display = 'none';
     }
 
     // Vehicle card
@@ -302,8 +400,23 @@ function renderResult(data) {
         });
     });
 
+    manualRows.forEach((mi, i) => {
+        rows.push({
+            id: `mi_${i}`, label: mi.label,
+            perDay: mi.per_day ? mi.sell_per_day : mi.sell_total,
+            perDayFlag: mi.per_day, checked: true, alwaysOn: false,
+            badge: mi.per_day ? 'manual' : 'manual · por reserva',
+            removeIdx: i,
+        });
+    });
+
     renderTable(rows, days);
     document.getElementById('resultSection').style.display = '';
+}
+
+function removeManualRow(idx) {
+    manualRows.splice(idx, 1);
+    if (lastCalcData) renderResult(lastCalcData);
 }
 
 function renderTable(rows, days) {
@@ -314,11 +427,15 @@ function renderTable(rows, days) {
         const checked  = r.checked  ? 'checked' : '';
         const disabled = r.alwaysOn ? 'disabled' : '';
         const badge    = r.badge    ? `<span class="badge bg-secondary ms-2 fw-normal" style="font-size:.7em;">${r.badge}</span>` : '';
+        const removeBtn = (r.removeIdx !== undefined)
+            ? ` <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1 align-baseline"
+                       onclick="${r.removeHandler || 'removeManualRow'}(${r.removeIdx})" title="Quitar"><i class="fa-solid fa-xmark"></i></button>`
+            : '';
         return `<tr class="price-row"
                     data-per-day="${r.perDay}"
                     data-per-day-flag="${r.perDayFlag ? 1 : 0}">
             <td><input type="checkbox" class="form-check-input price-cb" ${checked} ${disabled}></td>
-            <td>${r.label}${badge}</td>
+            <td>${r.label}${badge}${removeBtn}</td>
             <td class="text-end text-muted">${r.perDayFlag ? fmt(r.perDay) : '—'}</td>
             <td class="text-end fw-semibold row-total">${fmt(total)}</td>
         </tr>`;
@@ -366,7 +483,7 @@ function showError(msg) {
 }
 function hideError() { document.getElementById('errorMsg').style.display = 'none'; }
 </script>
-{% if user.isAdmin %}
+{% if user.userType != "Cliente" %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <div class="modal fade" id="hertzImportModal" tabindex="-1">
@@ -377,6 +494,14 @@ function hideError() { document.getElementById('errorMsg').style.display = 'none
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+
+                {% if user.userType != "Cliente" %}
+                <div class="d-flex flex-wrap gap-3 align-items-center small text-muted mb-3">
+                    <span class="fw-semibold text-uppercase" style="font-size:.72rem;letter-spacing:.06em;">Ajustes generales:</span>
+                    <span>Markup <strong class="text-dark">{{ config_markup }}</strong></span>
+                    <span>Tipo de cambio <strong class="text-dark">${{ config_exchange }}</strong></span>
+                </div>
+                {% endif %}
 
                 <ul class="nav nav-tabs mb-3">
                     <li class="nav-item">
@@ -409,6 +534,10 @@ function hideError() { document.getElementById('errorMsg').style.display = 'none
                         <input type="number" class="form-control" id="hertz_passengers" min="1" value="2" style="width:90px;">
                     </div>
                     <div class="col-auto">
+                        <label class="form-label fw-semibold mb-1" title="Aumento aplicado a esta cotización. Viene por defecto con el aumento general; podés cambiarlo.">Aumento %</label>
+                        <input type="number" class="form-control" id="hertz_increase" min="0" step="0.1" value="{{ config_increase }}" style="width:90px;">
+                    </div>
+                    <div class="col-auto">
                         <button class="btn btn-primary" id="parseHertzBtn">
                             <i class="fa-solid fa-calculator me-1"></i> Calcular
                         </button>
@@ -417,6 +546,8 @@ function hideError() { document.getElementById('errorMsg').style.display = 'none
 
                 <div id="hertzResult" style="display:none;">
                     <div id="hertzResultTable"></div>
+
+                    {% include "tariff/car_hire/_manual_item_form.html" with prefix="hmi" %}
 
                     <div class="mt-4 pt-3 border-top">
                         <h6 class="mb-3 fw-semibold">Generar cotización</h6>
@@ -507,8 +638,7 @@ document.getElementById('hertzImportModal').addEventListener('show.bs.modal', ()
 });
 
 // ── Location → category cascade ──────────────────────────────────────────
-document.getElementById('hertz_loc_sel').addEventListener('change', function () {
-    const locId  = parseInt(this.value);
+function hertzPopulateCats(locId) {
     const catSel = document.getElementById('hertz_cat_sel');
     catSel.innerHTML = '<option value="">— Seleccioná categoría —</option>';
     if (!locId || !CATS_BY_LOC[locId]) { catSel.disabled = true; return; }
@@ -519,15 +649,128 @@ document.getElementById('hertz_loc_sel').addEventListener('change', function () 
         catSel.appendChild(opt);
     });
     catSel.disabled = false;
+}
+document.getElementById('hertz_loc_sel').addEventListener('change', function () {
+    hertzPopulateCats(parseInt(this.value));
+    // pick up location-specific fixed costs for the chosen destination
+    if (_hertzParsed) hertzLoadFixedCosts().then(() => renderHertzModalResult(_hertzParsed));
 });
 
 // ── Parse / Calculate ────────────────────────────────────────────────────
 let _hertzParsed = null;
+let _hertzManualItems = [];        // manually-added lines for the Hertz importer
+let _hertzFixedCosts  = [];        // loaded fixed costs, priced for this quote
+let _hertzFixedSel    = new Set(); // ids of the fixed costs the user ticked
 
-document.getElementById('parseHertzBtn').addEventListener('click', async () => {
-    const text       = hertzGetText();
-    const passengers = parseInt(document.getElementById('hertz_passengers').value) || 2;
-    if (!text) { alert('Pegá el texto del email o subí el PDF.'); return; }
+function hertzAllItems() {
+    return (_hertzParsed ? _hertzParsed.items : []).concat(_hertzManualItems);
+}
+
+// ── Match a parsed line against a loaded fixed cost (ES/EN, fuzzy) ────────────
+function hertzNormLabel(s) {
+    return (s || '').toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip accents
+        .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// Bilingual keyword groups: a parsed line and a fixed cost match if their
+// normalized text both hit the same group.
+const FC_SYNONYMS = [
+    ['conductor adicional', 'segundo conductor', 'additional driver', 'extra driver', 'second driver'],
+    ['silla', 'sillita', 'asiento infantil', 'asiento para nino', 'baby seat', 'child seat', 'infant seat', 'booster'],
+    ['gps', 'navegador', 'navigation'],
+    ['cadena', 'snow chain', 'chains', 'cadenas para nieve'],
+    ['cruce de frontera', 'cruce fronterizo', 'border cross', 'border crossing', 'frontera'],
+    ['mapa', 'road map'],
+    ['peaje', 'toll'],
+    ['wifi', 'wi fi', 'hotspot', 'mifi'],
+    ['combustible', 'nafta', 'fuel', 'tanque de combustible', 'full tank'],
+    ['devolucion fuera de hora', 'fuera de horario', 'after hours', 'return after hours', 'entrega fuera de hora'],
+    ['limpieza', 'cleaning fee'],
+];
+function hertzFixedCostFor(parsedLabel) {
+    const p = hertzNormLabel(parsedLabel);
+    if (!p) return null;
+    for (const fc of _hertzFixedCosts) {
+        const f = hertzNormLabel(fc.label);
+        if (!f) continue;
+        if (p === f || p.includes(f) || f.includes(p)) return fc;
+        for (const grp of FC_SYNONYMS) {
+            if (grp.some(k => p.includes(k)) && grp.some(k => f.includes(k))) return fc;
+        }
+    }
+    return null;
+}
+// ids of fixed costs already represented by a parsed line (shown in the compare
+// column, not offered again as a tickable row)
+function hertzMatchedFcIds() {
+    const ids = new Set();
+    (_hertzParsed ? _hertzParsed.items : []).forEach(it => {
+        const fc = hertzFixedCostFor(it.label);
+        if (fc) ids.add(fc.id);
+    });
+    return ids;
+}
+
+// Fixed costs the user selected (never one already matched to a parsed line).
+function hertzSelectedFixed() {
+    const matched = hertzMatchedFcIds();
+    return _hertzFixedCosts.filter(fc => _hertzFixedSel.has(fc.id) && !matched.has(fc.id));
+}
+
+// (Re)fetch the loaded fixed costs priced with the current passengers / Aumento.
+async function hertzLoadFixedCosts() {
+    if (!_hertzParsed) return;
+    const passengers    = parseInt(document.getElementById('hertz_passengers').value) || 2;
+    const extraIncrease  = parseFloat(document.getElementById('hertz_increase').value) || 0;
+    const locId = document.getElementById('hertz_loc_sel').value || null;
+    try {
+        const res = await fetch('{% url "car_hire_quoter_hertz_fixed_costs" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({
+                passengers, days: _hertzParsed.days,
+                extra_increase: extraIncrease, location_id: locId,
+            }),
+        });
+        const data = await res.json();
+        _hertzFixedCosts = data.ok ? data.fixed_costs : [];
+        // drop selections that no longer exist
+        _hertzFixedSel = new Set([..._hertzFixedSel].filter(
+            id => _hertzFixedCosts.some(fc => fc.id === id)));
+    } catch (e) {
+        _hertzFixedCosts = [];
+    }
+}
+
+function hertzToggleFixed(id, checked) {
+    if (checked) _hertzFixedSel.add(id); else _hertzFixedSel.delete(id);
+    hertzRecalcModalTotal();
+}
+
+document.getElementById('hmi_add_btn')?.addEventListener('click', () => {
+    if (!_hertzParsed) { alert('Primero calculá la cotización.'); return; }
+    const extraIncrease = parseFloat(document.getElementById('hertz_increase').value) || 0;
+    readManualItem('hmi', _hertzParsed.days, _hertzParsed.passengers, item => {
+        _hertzManualItems.push(item);
+        renderHertzModalResult(_hertzParsed);
+    }, extraIncrease);
+});
+
+function removeHertzManualRow(idx) {
+    _hertzManualItems.splice(idx, 1);
+    renderHertzModalResult(_hertzParsed);
+}
+
+// Re-parses the current text against the backend (Hertz items + the "Aumento"
+// comparison column) and, unless `resetManual` is true, re-prices the already
+// added manual items instead of discarding them — used both by the Calcular
+// button (resets manual items, it's effectively a fresh quote) and by changes
+// to the Aumento box (keeps them, just rescales everything).
+async function hertzCalculate(resetManual) {
+    const text          = hertzGetText();
+    const passengers    = parseInt(document.getElementById('hertz_passengers').value) || 2;
+    const extraIncrease = parseFloat(document.getElementById('hertz_increase').value) || 0;
+    if (!text) { if (resetManual) alert('Pegá el texto del email o subí el PDF.'); return; }
 
     const btn = document.getElementById('parseHertzBtn');
     btn.disabled = true;
@@ -537,55 +780,185 @@ document.getElementById('parseHertzBtn').addEventListener('click', async () => {
         const res  = await fetch('{% url "car_hire_quoter_parse_email" %}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-            body: JSON.stringify({ text, passengers }),
+            body: JSON.stringify({ text, passengers, extra_increase: extraIncrease }),
         });
         const data = await res.json();
         if (!data.ok) { alert(data.error || 'Error al procesar.'); return; }
         _hertzParsed = data;
-        renderHertzModalResult(data);
+        if (resetManual) {
+            _hertzManualItems = [];
+            // Pre-select the destination + vehicle detected from the pasted text
+            // (still editable below).
+            if (data.detected_location_id) {
+                document.getElementById('hertz_loc_sel').value = data.detected_location_id;
+                hertzPopulateCats(data.detected_location_id);
+                if (data.detected_category_id)
+                    document.getElementById('hertz_cat_sel').value = data.detected_category_id;
+            }
+        }
+        await hertzLoadFixedCosts();
+        if (resetManual) {
+            renderHertzModalResult(data);
+        } else {
+            await hertzRecalcManualItems();
+        }
     } catch (e) {
         alert('Error: ' + e.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-calculator me-1"></i> Calcular';
     }
+}
+
+// Re-prices every already-added manual item against the current Aumento value
+// (using each one's original inputs, kept in `_raw`) and re-renders.
+async function hertzRecalcManualItems() {
+    const extraIncrease = parseFloat(document.getElementById('hertz_increase').value) || 0;
+    const days = _hertzParsed.days, pax = _hertzParsed.passengers;
+    const recalced = [];
+    for (const mi of _hertzManualItems) {
+        if (!mi._raw) { recalced.push(mi); continue; }
+        const payload = { ...mi._raw, days, passengers: pax, extra_increase: extraIncrease };
+        try {
+            const res  = await fetch(MANUAL_ITEM_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            recalced.push(data.ok ? { ...data.item, _raw: mi._raw } : mi);
+        } catch (e) {
+            recalced.push(mi);
+        }
+    }
+    _hertzManualItems = recalced;
+    renderHertzModalResult(_hertzParsed);
+}
+
+document.getElementById('parseHertzBtn').addEventListener('click', () => hertzCalculate(true));
+
+// Debounced: recalculating re-parses the text, so don't fire on every keystroke.
+let _hertzIncreaseTimer = null;
+document.getElementById('hertz_increase').addEventListener('input', () => {
+    clearTimeout(_hertzIncreaseTimer);
+    _hertzIncreaseTimer = setTimeout(() => {
+        if (_hertzParsed) hertzCalculate(false);
+    }, 600);
 });
+
+function hertzRecalcModalTotal() {
+    const pax = (_hertzParsed && _hertzParsed.passengers) || 1;
+    let total = 0, perDay = 0;
+    document.querySelectorAll('.hertz-price-row').forEach(row => {
+        const cb = row.querySelector('.hertz-price-cb');
+        if (!(cb && cb.checked)) return;
+        total  += parseFloat(row.dataset.total)  || 0;
+        perDay += parseFloat(row.dataset.perday) || 0;
+    });
+    const perPax = Math.ceil(total / Math.max(1, pax));
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = `USD ${fmt(v)}`; };
+    set('hertzPerPax', perPax);
+    set('hertzGrandTotal', total);
+    set('hertzSubPerDay', perDay);
+    set('hertzSubTotal', total);
+}
 
 function renderHertzModalResult(data) {
     const pl  = n => n !== 1 ? 's' : '';
-    const rows = data.items.map(item => {
+    const parsedCount = data.items.length;
+    const matchedFcIds = hertzMatchedFcIds();
+
+    const rows = hertzAllItems().map((item, i) => {
         const perDayStr = item.per_day ? `USD ${fmt(item.sell_per_day)}` : '—';
-        return `<tr>
-            <td>${item.label}</td>
+        const manualIdx = i - parsedCount;
+        const removeBtn = manualIdx >= 0
+            ? ` <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1 align-baseline"
+                       onclick="removeHertzManualRow(${manualIdx})" title="Quitar"><i class="fa-solid fa-xmark"></i></button>`
+            : '';
+        const badge = manualIdx >= 0
+            ? ' <span class="badge bg-secondary fw-normal" style="font-size:.7em;">manual</span>'
+            : '';
+        const isBase = item.label === 'Alquiler base';
+
+        // "Cálculo %" column: a matching loaded fixed cost takes priority over the
+        // %-of-base airport/Smart/cover comparison.
+        const fcMatch = hertzFixedCostFor(item.label);
+        let calcVal = 0, calcStr = '<span class="text-muted">—</span>';
+        if (fcMatch) {
+            calcVal = fcMatch.sell_total;
+            calcStr = `USD ${fmt(calcVal)} <span class="badge bg-light text-secondary border fw-normal" style="font-size:.7em;">costo fijo</span>`;
+        } else if (item.compare) {
+            calcVal = item.compare.sell_total;
+            calcStr = `USD ${fmt(calcVal)} <span class="text-muted" style="font-size:.75em;">(${item.compare.pct}%)</span>`;
+        }
+        const perDayVal = item.per_day ? item.sell_per_day : 0;
+        return `<tr class="hertz-price-row" data-total="${item.sell_total}" data-perday="${perDayVal}">
+            <td><input type="checkbox" class="form-check-input hertz-price-cb" checked ${isBase ? 'disabled' : ''}></td>
+            <td>${item.label}${badge}${removeBtn}</td>
             <td class="text-end text-muted">${perDayStr}</td>
             <td class="text-end fw-semibold">USD ${fmt(item.sell_total)}</td>
+            <td class="text-end">${calcStr}</td>
         </tr>`;
     }).join('');
+
+    const offerableFixed = _hertzFixedCosts.filter(fc => !matchedFcIds.has(fc.id));
+    const fixedRows = offerableFixed.map(fc => {
+        const sel = _hertzFixedSel.has(fc.id);
+        const perDayStr = fc.per_day ? `USD ${fmt(fc.sell_per_day)}` : '—';
+        const perDayVal = fc.per_day ? fc.sell_per_day : 0;
+        const locBadge = `<span class="badge ${fc.global ? 'bg-light text-secondary border' : 'bg-info-subtle text-info-emphasis border'} fw-normal ms-1" style="font-size:.7em;">${fc.location}</span>`;
+        return `<tr class="hertz-price-row" data-total="${fc.sell_total}" data-perday="${perDayVal}">
+            <td><input type="checkbox" class="form-check-input hertz-price-cb" ${sel ? 'checked' : ''}
+                       onchange="hertzToggleFixed(${fc.id}, this.checked)"></td>
+            <td>${fc.label} <span class="badge bg-light text-secondary border fw-normal" style="font-size:.7em;">costo fijo</span>${locBadge}</td>
+            <td class="text-end text-muted">${perDayStr}</td>
+            <td class="text-end fw-semibold">USD ${fmt(fc.sell_total)}</td>
+            <td class="text-end"><span class="text-muted">—</span></td>
+        </tr>`;
+    }).join('');
+    const fixedHeader = offerableFixed.length
+        ? `<tr class="table-light"><td colspan="5" class="small fw-semibold text-uppercase text-muted"
+             style="font-size:.7rem;letter-spacing:.05em;">Costos fijos
+             <span class="fw-normal text-lowercase">— tildá los que quieras sumar a la cotización</span></td></tr>`
+        : '';
 
     document.getElementById('hertzResultTable').innerHTML = `
         <h6 class="mb-2 text-muted">${data.days} día${pl(data.days)} · ${data.passengers} pasajero${pl(data.passengers)}</h6>
         <table class="table table-sm align-middle">
             <thead class="table-light">
                 <tr>
+                    <th style="width:36px;"></th>
                     <th>Item</th>
-                    <th class="text-end" style="width:150px;">Por día (USD)</th>
-                    <th class="text-end" style="width:150px;">Total (USD)</th>
+                    <th class="text-end" style="width:140px;">Por día (USD)</th>
+                    <th class="text-end" style="width:140px;">Total (USD)</th>
+                    <th class="text-end" style="width:170px;" title="Nuestro cálculo para ese renglón: costo fijo cargado si coincide el nombre, o % de la base diaria (aeropuerto / Smart / cubiertas) — para cotejar contra el monto de Hertz">Cálculo %</th>
                 </tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>${rows}${fixedHeader}${fixedRows}</tbody>
+            <tfoot class="table-light">
+                <tr class="fw-semibold">
+                    <td></td>
+                    <td class="text-end text-uppercase text-muted" style="font-size:.72rem;letter-spacing:.05em;">Subtotales (tildados)</td>
+                    <td class="text-end" id="hertzSubPerDay">—</td>
+                    <td class="text-end" id="hertzSubTotal">—</td>
+                    <td></td>
+                </tr>
+            </tfoot>
         </table>
         <div class="d-flex justify-content-end gap-5 align-items-end mb-2">
             <div class="text-center">
                 <div class="text-muted small mb-1 text-uppercase">Por pasajero</div>
-                <div class="fs-3 fw-semibold text-primary">USD ${fmt(data.per_passenger)}</div>
+                <div class="fs-3 fw-semibold text-primary" id="hertzPerPax">USD 0</div>
             </div>
             <div class="text-center">
                 <div class="text-muted small mb-1 text-uppercase">Total vehículo</div>
-                <div class="display-6 fw-bold text-success">USD ${fmt(data.grand_total)}</div>
+                <div class="display-6 fw-bold text-success" id="hertzGrandTotal">USD 0</div>
             </div>
         </div>
     `;
     document.getElementById('hertzResult').style.display = '';
+    document.querySelectorAll('.hertz-price-cb').forEach(cb => cb.addEventListener('change', hertzRecalcModalTotal));
+    hertzRecalcModalTotal();
 }
 
 // ── Generate full quote ──────────────────────────────────────────────────
@@ -611,12 +984,24 @@ document.getElementById('showHertzQuoteBtn').addEventListener('click', async () 
     }
 });
 
+let _hertzQuoteCat = null;
+
+function removeHertzQuoteManualRow(idx) {
+    _hertzManualItems.splice(idx, 1);
+    if (_hertzQuoteCat) renderHertzQuote(_hertzQuoteCat, _hertzParsed);
+}
+
 function renderHertzQuote(cat, data) {
+    _hertzQuoteCat = cat;
+    // The online-quoter manual-item form doesn't apply to an imported quote;
+    // manual lines here are managed from the Hertz import modal.
+    document.getElementById('mi_form')?.style.setProperty('display', 'none');
     const days = data.days;
     const pax  = data.passengers;
 
     // Vehicle card
     document.getElementById('capacityWarn').style.display = 'none';
+    document.getElementById('specialDatesWarn').style.display = 'none';
     document.getElementById('res_code').textContent = cat.code || '';
     document.getElementById('res_name').textContent = cat.name || '';
     const pic   = document.getElementById('res_pic');
@@ -646,16 +1031,36 @@ function renderHertzQuote(cat, data) {
     document.getElementById('res_subtitle').textContent =
         `${days} día${days !== 1 ? 's' : ''} · ${pax} pasajero${pax !== 1 ? 's' : ''}`;
 
-    // Build rows from parsed Hertz items
-    const rows = data.items.map((item, i) => ({
-        id:         `h_${i}`,
-        label:      item.label,
-        perDay:     item.per_day ? item.sell_per_day : item.sell_total,
-        perDayFlag: item.per_day,
-        checked:    true,
-        alwaysOn:   item.label === 'Alquiler base',
-        badge:      item.per_day ? null : 'por reserva',
-    }));
+    // Build rows from parsed Hertz items + manually-added ones
+    const parsedCount = data.items.length;
+    const rows = hertzAllItems().map((item, i) => {
+        const manualIdx = i - parsedCount;
+        return {
+            id:         `h_${i}`,
+            label:      item.label,
+            perDay:     item.per_day ? item.sell_per_day : item.sell_total,
+            perDayFlag: item.per_day,
+            checked:    true,
+            alwaysOn:   item.label === 'Alquiler base',
+            badge:      manualIdx >= 0 ? 'manual' : (item.per_day ? null : 'por reserva'),
+            removeIdx:     manualIdx >= 0 ? manualIdx : undefined,
+            removeHandler: manualIdx >= 0 ? 'removeHertzQuoteManualRow' : undefined,
+        };
+    });
+
+    // Fixed costs the user ticked in the modal
+    hertzSelectedFixed().forEach(fc => {
+        rows.push({
+            id:         `hfc_${fc.id}`,
+            label:      fc.label,
+            perDay:     fc.per_day ? fc.sell_per_day : fc.sell_total,
+            perDayFlag: fc.per_day,
+            checked:    true,
+            alwaysOn:   false,
+            badge:      (fc.per_day ? 'costo fijo' : 'costo fijo · por reserva')
+                        + (fc.global ? '' : ` · ${fc.location}`),
+        });
+    });
 
     renderTable(rows, days);
 

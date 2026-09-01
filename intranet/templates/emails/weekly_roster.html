@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="x-apple-disable-message-reformatting"/>
-  <title>Aliwen – Roster Semanal</title>
+  <title>{{ company_name }} – Roster Semanal</title>
   <style type="text/css">
     body { margin: 0 !important; padding: 0 !important; background-color: #EDEAE5 !important; }
     table { border-collapse: collapse !important; }
@@ -38,16 +38,16 @@
         <tr>
           <td style="background-color:#1C1C1C;padding:36px 48px 28px;text-align:center;" class="pad-sides">
             <img src="{{ logo_url }}"
-                 alt="Aliwen Incoming" height="40"
+                 alt="{{ company_name }}" height="40"
                  style="display:inline-block;height:40px;margin:0 auto 18px;" />
             <table role="presentation" width="48" cellpadding="0" cellspacing="0" border="0"
                    style="margin:0 auto 18px;">
               <tr>
-                <td height="2" style="background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+                <td height="2" style="background-color:{{ accent_color }};font-size:0;line-height:0;">&nbsp;</td>
               </tr>
             </table>
             <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:10px;
-                      letter-spacing:0.2em;text-transform:uppercase;color:#d7998b;">
+                      letter-spacing:0.2em;text-transform:uppercase;color:{{ accent_subtitle }};">
               Destination Management Company &nbsp;&middot;&nbsp; Argentina
             </p>
           </td>
@@ -55,7 +55,7 @@
 
         <!-- ══ EYEBROW BANNER ════════════════════════════════ -->
         <tr>
-          <td style="background-color:#D88775;padding:11px 48px;text-align:center;" class="pad-sides">
+          <td style="background-color:{{ accent_color }};padding:11px 48px;text-align:center;" class="pad-sides">
             <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
                       font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">
               Roster Semanal &nbsp;&middot;&nbsp; {{ today }}
@@ -69,7 +69,7 @@
             <h1 class="greeting"
                 style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
                        font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
-              Hola <span style="color:#D88775;">{{ recipient_name }}</span>!
+              Hola <span style="color:{{ accent_color }};">{{ recipient_name }}</span>!
             </h1>
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
                       color:#5A5A5A;margin:0;">
@@ -86,7 +86,7 @@
           <td style="background-color:#F5F0EB;padding:14px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
             <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;
                       font-weight:bold;color:#1C1C1C;">
-              Esta semana &nbsp;<span style="color:#D88775;">·</span>&nbsp;
+              Esta semana &nbsp;<span style="color:{{ accent_color }};">·</span>&nbsp;
               <span style="font-weight:normal;font-size:13px;color:#7A6E68;">{{ this_week.label }}</span>
             </p>
           </td>
@@ -97,13 +97,13 @@
         <tr>
           <td style="padding:24px 48px 16px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Feriados
             </p>
             {% for h in this_week.holidays %}
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                   style="margin-bottom:10px;border-left:3px solid #D88775;background-color:#FFF4F2;">
+                   style="margin-bottom:10px;border-left:3px solid {{ accent_color }};background-color:{{ accent_tint_bg }};">
               <tr>
                 <td style="padding:10px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
                   <strong>{{ h.name }}</strong>
@@ -141,7 +141,7 @@
         <tr>
           <td style="padding:16px 48px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Ausencias
             </p>
@@ -168,7 +168,7 @@
         <tr>
           <td style="padding:16px 48px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Home / Fuera de oficina
             </p>
@@ -195,7 +195,7 @@
         <tr>
           <td style="padding:16px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Cumpleaños
             </p>
@@ -225,7 +225,7 @@
           <td style="background-color:#F5F0EB;padding:14px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
             <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;
                       font-weight:bold;color:#1C1C1C;">
-              Semana siguiente &nbsp;<span style="color:#D88775;">·</span>&nbsp;
+              Semana siguiente &nbsp;<span style="color:{{ accent_color }};">·</span>&nbsp;
               <span style="font-weight:normal;font-size:13px;color:#7A6E68;">{{ next_week.label }}</span>
             </p>
           </td>
@@ -236,13 +236,13 @@
         <tr>
           <td style="padding:24px 48px 16px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Feriados
             </p>
             {% for h in next_week.holidays %}
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                   style="margin-bottom:10px;border-left:3px solid #D88775;background-color:#FFF4F2;">
+                   style="margin-bottom:10px;border-left:3px solid {{ accent_color }};background-color:{{ accent_tint_bg }};">
               <tr>
                 <td style="padding:10px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1C1C1C;line-height:1.5;">
                   <strong>{{ h.name }}</strong>
@@ -280,7 +280,7 @@
         <tr>
           <td style="padding:16px 48px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Ausencias
             </p>
@@ -307,7 +307,7 @@
         <tr>
           <td style="padding:16px 48px;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Home / Fuera de oficina
             </p>
@@ -334,7 +334,7 @@
         <tr>
           <td style="padding:16px 48px 32px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
             <p style="margin:0 0 10px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
-                      letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                      letter-spacing:0.15em;text-transform:uppercase;color:{{ accent_color }};
                       border-bottom:1px solid #D9CFC6;padding-bottom:6px;">
               Cumpleaños
             </p>
@@ -360,8 +360,9 @@
         <tr>
           <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
             <img src="{{ logo_url }}"
-                 alt="Aliwen" height="26"
+                 alt="{{ company_name }}" height="26"
                  style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
+            {% if show_social %}
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"
                    style="margin:0 auto 14px;">
               <tr>
@@ -391,10 +392,11 @@
                 </td>
               </tr>
             </table>
+            {% endif %}
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
                       color:#666666;line-height:1.6;margin:0;">
-              &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
-              E.V.T. - Leg 11320
+              &copy; {% now "Y" %} {{ company_name }} &nbsp;&middot;&nbsp; Argentina{% if legal_line %}<br />
+              {{ legal_line }}{% endif %}
             </p>
           </td>
         </tr>

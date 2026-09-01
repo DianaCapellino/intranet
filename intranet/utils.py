@@ -105,6 +105,7 @@ _ABSENCE_TYPES_REDUCE_WORK = frozenset({
     'Enfermedad', 'Exámenes/Día de Estudio',
     'Sin goce de sueldo', 'Viernes OFF alta', 'Viernes OFF',
     'FAM/Trabajando fuera ofi',
+    'Licencia con goce', 'Licencia sin goce',
 })
 
 
@@ -355,9 +356,11 @@ def build_margin_warning_context(user):
     site_url = _site_url.rstrip("/")
     static_url = settings.STATIC_URL.strip("/")
     icons_base_url = f"{site_url}/{static_url}/intranet/images/"
-    logo_url = f"{icons_base_url}logo.png"
 
-    subject = "⚠️ Aliwen – Advertencias de Rentabilidad"
+    theme = _BRAND_THEMES["AI"] if user.department == "AI" else _BRAND_THEMES["SAY"]
+    logo_url = f"{icons_base_url}{theme['logo_file']}"
+
+    subject = f"⚠️ {theme['company_name']} – Advertencias de Rentabilidad"
     to_emails = [user.email]
     template = "emails/margin_warning.html"
     context = {
@@ -367,6 +370,11 @@ def build_margin_warning_context(user):
         "logo_url": logo_url,
         "icons_base_url": icons_base_url,
         "site_url": site_url,
+        "company_name": theme["company_name"],
+        "accent_color": theme["accent"],
+        "accent_subtitle": theme["accent_subtitle"],
+        "show_social": theme["show_social"],
+        "legal_line": theme["legal_line"],
     }
 
     return subject, to_emails, template, context
@@ -624,7 +632,7 @@ def send_tariff_client_weekly(stdout=None):
     date_from  = today - timedelta(days=7)
 
     clients = (
-        User.objects.filter(isActivated=True, userType='Cliente')
+        User.objects.filter(isActivated=True, userType='Cliente', department='AI')
         .exclude(email='')
     )
 
@@ -739,7 +747,7 @@ def build_tariff_team_news_context(date_from=None):
             })
 
     internal_users = User.objects.filter(
-        userType__in=["Admin", "Regular"]
+        userType__in=["Ventas", "Manager"], department="AI"
     ).exclude(email="").values_list("email", flat=True)
     to_emails = list(internal_users)
 
@@ -893,7 +901,7 @@ LEFT JOIN BSD ON BSD.BHD_ID = BHD.BHD_ID AND BSD.BSL_ID = 0
 WHERE BHD.BRANCH IN ('AL', 'DM', 'GR')
   AND BHD.TRAVELDATE >= %s
   AND BHD.TRAVELDATE <= %s
-  AND BHD.STATUS IN ('OK','FI','CT','B1','B2','B3','B4','B5','B6','B7','B8','RX','XC','XX')
+  AND BHD.STATUS IN ('OK','FI','CT','B1','B2','B3','B4','B5','B6','B7','B8','BL','RX','XC','XX')
 """
 
 _SEGUIMIENTO_QUERY = """
@@ -916,7 +924,7 @@ WHERE BHD.BRANCH IN ('AL', 'DM', 'GR')
 GROUP BY BHD.FULL_REFERENCE
 """
 
-_BOOKING_STATUSES  = {"OK", "FI", "CT", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"}
+_BOOKING_STATUSES  = {"OK", "FI", "CT", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "BL"}
 _CANCELLED_STATUSES = {"RX", "XC", "XX"}
 
 
@@ -1473,12 +1481,14 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
         return str(v).strip() if v is not None else ""
 
     _intranet_trips = list(
-        Trip.objects.select_related("responsable_user", "vr_requested_by")
+        Trip.objects.select_related("responsable_user", "responsable_user_2", "vr_requested_by", "contact")
         .exclude(tourplanId="").exclude(tourplanId__isnull=True)
     )
     trips_by_tp = {t.tourplanId.strip(): t.id for t in _intranet_trips if t.tourplanId}
     _difficulty_by_tp = {t.tourplanId.strip(): (t.difficulty or "") for t in _intranet_trips if t.tourplanId}
+    _contact_by_tp = {t.tourplanId.strip(): (t.contact.name if t.contact_id else "") for t in _intranet_trips if t.tourplanId}
     _vr_by_tp = {}
+    _vr2_by_tp = {}
     _vr_requested_by_tp = {}
     for _t in _intranet_trips:
         if not _t.tourplanId:
@@ -1492,6 +1502,14 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
             }
         else:
             _vr_by_tp[_key] = None
+        if _t.responsable_user_2:
+            _vr2_by_tp[_key] = {
+                "id": _t.responsable_user_2.id,
+                "username": _t.responsable_user_2.username,
+                "color": str(_t.responsable_user_2.color) if _t.responsable_user_2.color else "#6c757d",
+            }
+        else:
+            _vr2_by_tp[_key] = None
         if _t.vr_requested_by:
             _vr_requested_by_tp[_key] = {
                 "id": _t.vr_requested_by.id,
@@ -1588,6 +1606,7 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
             "travelling_date_sort": td.strftime("%Y%m%d") if td else "00000000",
             "travelling_date_month": td.strftime("%Y-%m") if td else "",
             "out_date":           od.strftime("%d/%m/%Y") if od else "",
+            "out_date_sort":      od.strftime("%Y%m%d") if od else "",
             "raw_status":         raw_status,
             "num_pax":            num_pax,
             "amount":             amount_display,
@@ -1608,8 +1627,10 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
             "in_intranet":        trip_id is not None,
             "intranet_trip_id":   trip_id,
             "intranet_vr":        _vr_by_tp.get(tp_id) if trip_id else None,
+            "intranet_vr2":       _vr2_by_tp.get(tp_id) if trip_id else None,
             "vr_requested_by":    _vr_requested_by_tp.get(tp_id) if trip_id else None,
             "difficulty":         _difficulty_by_tp.get(tp_id, "") if trip_id else "",
+            "vendedor_cliente":   _contact_by_tp.get(tp_id, "") if trip_id else "",
             "seguimiento":        _SEG_MAP.get(_seg.get("code", ""), ""),
             # Fields needed for single-trip creation
             "contact_name":       "",
@@ -1650,7 +1671,7 @@ def _date_range(date_from, date_to):
         yield current
         current += timedelta(days=1)
 
-def _get_week_data(monday, friday):
+def _get_week_data(monday, friday, departments=None):
     """
     Reúne toda la información de una semana laboral (lunes a viernes).
     Devuelve un dict con:
@@ -1658,6 +1679,9 @@ def _get_week_data(monday, friday):
       - holidays: lista de dicts con info de feriados que caen en la semana
       - absences: lista de dicts {user_display, type, date_from, date_to}
       - birthdays: lista de dicts {user_display, date}
+
+    `departments`, si se pasa, limita usuarios (ausencias, home, cumpleaños,
+    feriados trabajados) a esos departamentos. None = todos.
     """
     from .models import Holidays, Absence, User as IntranetUser
 
@@ -1683,6 +1707,8 @@ def _get_week_data(monday, friday):
             date_to__gte=h_start,
             absence_user__isActivated=True,
         ).select_related("absence_user")
+        if departments is not None:
+            workers_qs = workers_qs.filter(absence_user__department__in=departments)
         workers = [
             {
                 "name": a.absence_user.other_name or a.absence_user.username,
@@ -1709,6 +1735,8 @@ def _get_week_data(monday, friday):
     ).exclude(
         type_absence__in=EXCLUDE_ABSENCE
     ).select_related("absence_user").order_by("absence_user__other_name", "date_from")
+    if departments is not None:
+        absences_qs = absences_qs.filter(absence_user__department__in=departments)
 
     absences_data = []
     for a in absences_qs:
@@ -1729,6 +1757,8 @@ def _get_week_data(monday, friday):
         date_to__gte=monday,
         absence_user__isActivated=True,
     ).select_related("absence_user").order_by("absence_user__other_name")
+    if departments is not None:
+        home_qs = home_qs.filter(absence_user__department__in=departments)
 
     home_data = []
     for a in home_qs:
@@ -1754,6 +1784,8 @@ def _get_week_data(monday, friday):
             date_to__gte=day,
             absence_user__isActivated=True,
         ).select_related("absence_user")
+        if departments is not None:
+            bday_absences = bday_absences.filter(absence_user__department__in=departments)
         for b in bday_absences:
             birthdays_data.append({
                 "name": b.absence_user.other_name or b.absence_user.username,
@@ -1775,15 +1807,45 @@ def _week_has_content(week):
     return bool(week["holidays"] or week["absences"] or week["birthdays"] or week["home"])
 
 
-def build_weekly_roster_context():
+# ── Branding per department group (Aliwen vs. Say Hueque DMC/Grupos) ──────────
+
+_BRAND_THEMES = {
+    "AI": {
+        "departments":      ["AI"],
+        "logo_file":        "logo.png",
+        "company_name":     "Aliwen Incoming",
+        "accent":           "#D88775",
+        "accent_subtitle":  "#d7998b",
+        "accent_tint_bg":   "#FFF4F2",
+        "show_social":      True,
+        "legal_line":       "E.V.T. - Leg 11320",
+    },
+    "SAY": {
+        "departments":      ["DM", "GR"],
+        "logo_file":        "say.png",
+        "company_name":     "Say Hueque",
+        "accent":           "#F49E00",
+        "accent_subtitle":  "#FAD38C",
+        "accent_tint_bg":   "#FEF3E3",
+        "show_social":      False,
+        "legal_line":       "",
+    },
+}
+
+
+def build_weekly_roster_context(brand_key="AI"):
     """
-    Construye el contexto para el email semanal de roster.
-    Destinatarios: todos los usuarios Ventas, Operaciones y Manager con email.
+    Construye el contexto para el email semanal de roster de un grupo de
+    departamentos (brand_key: "AI" para Aliwen, "SAY" para Say Hueque DMC/Grupos).
+    Destinatarios: usuarios Ventas, Operaciones y Manager con email de esos departamentos.
     Devuelve None si no hay ningún contenido en ninguna de las dos semanas.
 
     Returns (subject, to_emails, template, context) tuple, or None.
     """
     from .models import User as IntranetUser
+
+    theme = _BRAND_THEMES[brand_key]
+    departments = theme["departments"]
 
     today = date.today()
     this_monday = today - timedelta(days=today.weekday())
@@ -1791,17 +1853,17 @@ def build_weekly_roster_context():
     next_monday = this_monday + timedelta(weeks=1)
     next_friday = next_monday + timedelta(days=4)
 
-    this_week = _get_week_data(this_monday, this_friday)
-    next_week = _get_week_data(next_monday, next_friday)
+    this_week = _get_week_data(this_monday, this_friday, departments=departments)
+    next_week = _get_week_data(next_monday, next_friday, departments=departments)
 
     if not _week_has_content(this_week) and not _week_has_content(next_week):
         return None
 
-    # Destinatarios: Ventas + Operaciones + Manager de Aliwen con email
+    # Destinatarios: Ventas + Operaciones + Manager del/de los departamento(s) con email
     opted_out = _get_opted_out_user_ids('weekly_roster')
     to_emails = list(
         IntranetUser.objects
-        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department="AI")
+        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department__in=departments)
         .exclude(email="")
         .exclude(id__in=opted_out)
         .values_list("email", flat=True)
@@ -1815,7 +1877,7 @@ def build_weekly_roster_context():
     site_url = _site_url.rstrip("/")
     static_url = settings.STATIC_URL.strip("/")
     icons_base_url = f"{site_url}/{static_url}/intranet/images/"
-    logo_url = f"{icons_base_url}logo.png"
+    logo_url = f"{icons_base_url}{theme['logo_file']}"
 
     subject = f"📅 Roster semanal: {this_week['label']}"
     template = "emails/weekly_roster.html"
@@ -1828,6 +1890,12 @@ def build_weekly_roster_context():
         "logo_url": logo_url,
         "icons_base_url": icons_base_url,
         "site_url": site_url,
+        "company_name": theme["company_name"],
+        "accent_color": theme["accent"],
+        "accent_subtitle": theme["accent_subtitle"],
+        "accent_tint_bg": theme["accent_tint_bg"],
+        "show_social": theme["show_social"],
+        "legal_line": theme["legal_line"],
     }
 
     return subject, to_emails, template, context
@@ -1835,21 +1903,23 @@ def build_weekly_roster_context():
 
 def send_weekly_roster():
     """
-    Envía el email de roster semanal a todos los usuarios Ventas, Operaciones y Manager.
-    No envía si no hay contenido para ninguna de las dos semanas.
+    Envía el email de roster semanal a Aliwen y, por separado, a Say Hueque DMC/Grupos
+    (cada uno con su propia marca y datos, sin mezclar departamentos).
+    No envía si no hay contenido para ninguna de las dos semanas de ese grupo.
     Llamar desde el scheduler todos los lunes.
 
     Usage desde Django shell:
         from intranet.utils import send_weekly_roster
         send_weekly_roster()
     """
-    result = build_weekly_roster_context()
-    if result is None:
-        print("Weekly roster: sin contenido, email no enviado.")
-        return
-    subject, to_emails, template, context = result
-    send_templated_email(subject, to_emails, template, context)
-    print(f"Weekly roster sent to {to_emails}")
+    for brand_key in ("AI", "SAY"):
+        result = build_weekly_roster_context(brand_key)
+        if result is None:
+            print(f"Weekly roster ({brand_key}): sin contenido, email no enviado.")
+            continue
+        subject, to_emails, template, context = result
+        send_templated_email(subject, to_emails, template, context)
+        print(f"Weekly roster ({brand_key}) sent to {to_emails}")
 
 
 # ── English date helpers ─────────────────────────────────────────────────────
@@ -1931,7 +2001,7 @@ def _find_consecutive_holiday_group(today):
     return group
 
 
-def _get_holiday_workers(group):
+def _get_holiday_workers(group, departments=None):
     group_from = min(h.date_from for h in group)
     group_to   = max(h.date_to   for h in group)
     qs = (
@@ -1944,6 +2014,8 @@ def _get_holiday_workers(group):
         .select_related("absence_user")
         .order_by("absence_user__other_name")
     )
+    if departments is not None:
+        qs = qs.filter(absence_user__department__in=departments)
     seen, result = set(), []
     for a in qs:
         uid = a.absence_user_id
@@ -2029,14 +2101,49 @@ def _build_ooo_text(group, workers, office_closed=False):
     return "\n".join(paragraphs)
 
 
+def _build_ooo_text_say(group):
+    """
+    Modelo de auto-respuesta para Say Hueque DMC/Grupos (más simple: sin
+    contactos/mailboxes de Aliwen, que no aplican a este departamento).
+    """
+    dates_en = [_holiday_range_en(h) for h in group]
+    if len(dates_en) == 1:
+        dates_phrase, verb = dates_en[0], "is"
+    elif len(dates_en) == 2:
+        dates_phrase, verb = f"{dates_en[0]} and {dates_en[1]}", "are"
+    else:
+        dates_phrase = ", ".join(dates_en[:-1]) + f" and {dates_en[-1]}"
+        verb = "are"
+
+    names = ", ".join(h.name or h.get_type_holidays_display() for h in group)
+    holiday_word = "National Holidays" if len(group) > 1 else "a National Holiday"
+
+    paragraphs = [
+        "Dear friends & colleagues,",
+        "",
+        "Thank you for your message.",
+        "",
+        f"Please note that in Argentina, {dates_phrase} {verb} considered {holiday_word} ({names}). "
+        "During this period, I will have limited access to my e-mail.",
+        "",
+        "For any emergencies do not hesitate to contact us at our emergency telephone: + 54 911 6991 7018.",
+        "",
+        "Thank you for your understanding.",
+    ]
+    return "\n".join(paragraphs)
+
+
 # ── Holiday reminder email ────────────────────────────────────────────────────
 
-def build_holiday_reminder_context(today=None):
+def build_holiday_reminder_context(today=None, brand_key="AI"):
     """
     Returns (subject, to_emails, template, context) if a holiday starts in exactly 7 days,
-    None otherwise.
+    None otherwise. brand_key: "AI" (Aliwen) o "SAY" (Say Hueque DMC/Grupos).
     """
     from .models import User as IntranetUser
+
+    theme = _BRAND_THEMES[brand_key]
+    departments = theme["departments"]
 
     if today is None:
         today = date.today()
@@ -2045,7 +2152,8 @@ def build_holiday_reminder_context(today=None):
     if not group:
         return None
 
-    workers = _get_holiday_workers(group)
+    workers = _get_holiday_workers(group, departments=departments)
+
     office_closed = all(h.type_holidays == "Día no laborable" for h in group) and not workers
 
     holidays_info = []
@@ -2063,19 +2171,24 @@ def build_holiday_reminder_context(today=None):
             "single_day":    single,
         })
 
-    # Signature line
+    # Signature line y mensaje del banner "oficina cerrada": iguales para ambas marcas.
+    # Lo único que cambia entre Aliwen y Say Hueque en este mail es el out of the office (ooo_text).
     dates_en = [_holiday_range_en(h) for h in group]
     if office_closed:
         if len(dates_en) == 1:
             sig = f"Please bear in mind that our office will be closed on {dates_en[0]} (Argentine national holiday). We will reply to your emails on the next working day."
         else:
             sig = f"Please bear in mind that our office will be closed from {dates_en[0]} to {dates_en[-1]} (Argentine national holidays). We will reply to your emails on the next working day."
+        office_closed_message = "La oficina estará cerrada este día no laborable."
     elif len(dates_en) == 1:
         sig = f"Please bear in mind that {dates_en[0]} is a national holiday in Argentina."
+        office_closed_message = ""
     elif len(dates_en) == 2:
         sig = f"Please bear in mind that {dates_en[0]} and {dates_en[1]} are national holidays in Argentina."
+        office_closed_message = ""
     else:
         sig = f"Please bear in mind that {', '.join(dates_en[:-1])} and {dates_en[-1]} are national holidays in Argentina."
+        office_closed_message = ""
 
     # Subject
     if len(group) == 1:
@@ -2094,7 +2207,7 @@ def build_holiday_reminder_context(today=None):
     opted_out = _get_opted_out_user_ids('holiday_reminder')
     to_emails = list(
         IntranetUser.objects
-        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department="AI")
+        .filter(userType__in=["Ventas", "Operaciones", "Manager"], isActivated=True, department__in=departments)
         .exclude(email="")
         .exclude(id__in=opted_out)
         .values_list("email", flat=True)
@@ -2108,37 +2221,159 @@ def build_holiday_reminder_context(today=None):
     site_url = _site_url.rstrip("/")
     static_url = settings.STATIC_URL.strip("/")
     icons_base_url = f"{site_url}/{static_url}/intranet/images/"
-    logo_url = f"{icons_base_url}logo.png"
+    logo_url = f"{icons_base_url}{theme['logo_file']}"
+
+    ooo_text = _build_ooo_text_say(group) if brand_key != "AI" else _build_ooo_text(group, workers, office_closed=office_closed)
 
     return subject, to_emails, "emails/holiday_reminder.html", {
-        "logo_url":       logo_url,
-        "icons_base_url": icons_base_url,
-        "site_url":       site_url,
-        "today":          today.strftime("%d/%m/%Y"),
-        "holidays":       holidays_info,
-        "workers":        workers,
-        "office_closed":  office_closed,
-        "signature_line": sig,
-        "ooo_text":       _build_ooo_text(group, workers, office_closed=office_closed),
+        "logo_url":             logo_url,
+        "icons_base_url":       icons_base_url,
+        "site_url":             site_url,
+        "today":                today.strftime("%d/%m/%Y"),
+        "holidays":             holidays_info,
+        "workers":              workers,
+        "office_closed":        office_closed,
+        "office_closed_message": office_closed_message,
+        "signature_line":       sig,
+        "ooo_text":             ooo_text,
+        "company_name":         theme["company_name"],
+        "accent_color":         theme["accent"],
+        "accent_subtitle":      theme["accent_subtitle"],
+        "show_social":          theme["show_social"],
+        "legal_line":           theme["legal_line"],
     }
 
 
 def send_holiday_reminder(today=None):
     """
-    Send the holiday reminder email if a holiday starts in exactly 7 days.
-    Call daily from daily_tasks.
+    Send the holiday reminder email (Aliwen y, por separado, Say Hueque DMC/Grupos)
+    if a holiday starts in exactly 7 days. Call daily from daily_tasks.
 
     Usage:
         from intranet.utils import send_holiday_reminder
         send_holiday_reminder()
     """
-    result = build_holiday_reminder_context(today)
-    if result is None:
-        print("Holiday reminder: no holiday starting in 7 days, email not sent.")
+    for brand_key in ("AI", "SAY"):
+        result = build_holiday_reminder_context(today, brand_key)
+        if result is None:
+            print(f"Holiday reminder ({brand_key}): no holiday starting in 7 days, email not sent.")
+            continue
+        subject, to_emails, template, context = result
+        send_templated_email(subject, to_emails, template, context)
+        print(f"Holiday reminder ({brand_key}) sent to {to_emails}")
+
+
+# Tourplan statuses considered "live" bookings for the closure reminder
+# (matches the booking_sheet listing: OK, FI, XC, RX).
+_CLOSURE_REMINDER_STATUSES = frozenset({"OK", "FI", "XC", "RX"})
+
+
+def build_closure_reminder_context(user, trips):
+    """
+    Build context for closure_reminder.html for a single Operaciones user.
+    trips: list of booking_sheet row dicts (from get_booking_sheet_data) whose
+    out_date is exactly 7 days ago.
+
+    Returns (subject, to_emails, template, context) tuple.
+    """
+    def _first_name(u):
+        if not u:
+            return ""
+        full = getattr(u, "other_name", None) or u.get_full_name() or u.username
+        return full.split()[0] if full else ""
+
+    today = date.today()
+
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+
+    theme = _BRAND_THEMES["AI"] if user.department == "AI" else _BRAND_THEMES["SAY"]
+    logo_url = f"{icons_base_url}{theme['logo_file']}"
+
+    subject = f"🔔 {theme['company_name']} – Recordatorio de Cierre de File"
+    to_emails = [user.email]
+    template = "emails/closure_reminder.html"
+    context = {
+        "user_name": _first_name(user),
+        "today": today.strftime("%d/%m/%Y"),
+        "trips": trips,
+        "logo_url": logo_url,
+        "icons_base_url": icons_base_url,
+        "site_url": site_url,
+        "company_name": theme["company_name"],
+        "accent_color": theme["accent"],
+        "accent_subtitle": theme["accent_subtitle"],
+        "show_social": theme["show_social"],
+        "legal_line": theme["legal_line"],
+    }
+    return subject, to_emails, template, context
+
+
+def send_closure_reminders(today=None):
+    """
+    Send closure reminder emails to Operaciones users for Tourplan bookings
+    (status OK, FI, XC or RX — same listing as booking_sheet) whose out_date
+    was exactly 7 days ago. Call daily from daily_tasks.
+
+    Usage:
+        from intranet.utils import send_closure_reminders
+        send_closure_reminders()
+    """
+    from collections import defaultdict
+    import time
+    from .models import User as IntranetUser
+
+    today = today or date.today()
+    target_out = today - timedelta(days=7)
+    target_out_sort = target_out.strftime("%Y%m%d")
+
+    # Travelling date window wide enough to catch any trip whose out_date lands
+    # exactly 7 days ago, regardless of how long before that its IN date was.
+    date_from = (target_out - timedelta(days=120)).strftime("%Y%m%d")
+    date_to = today.strftime("%Y%m%d")
+
+    try:
+        rows = get_booking_sheet_data(date_from, date_to, branches=["AL", "DM", "GR"])
+    except Exception as exc:
+        print(f"Closure reminders: error fetching booking sheet data — {exc}")
         return
-    subject, to_emails, template, context = result
-    send_templated_email(subject, to_emails, template, context)
-    print(f"Holiday reminder sent to {to_emails}")
+
+    qualifying = [
+        r for r in rows
+        if r.get("out_date_sort") == target_out_sort and r.get("raw_status") in _CLOSURE_REMINDER_STATUSES
+    ]
+    if not qualifying:
+        print("Closure reminders: no files with out_date exactly 7 days ago.")
+        return
+
+    ops_users = IntranetUser.objects.filter(userType="Operaciones", isActivated=True).exclude(email="")
+    opted_out = _get_opted_out_user_ids("closure_reminder")
+    users_by_other_tp = {u.other_tp.strip(): u for u in ops_users if u.other_tp and u.other_tp.strip()}
+    users_by_username = {u.username.strip(): u for u in ops_users if u.username}
+
+    by_user = defaultdict(list)
+    for r in qualifying:
+        code = (r.get("operations_code") or "").strip()
+        if not code:
+            continue
+        u = users_by_other_tp.get(code) or users_by_username.get(code)
+        if not u or u.id in opted_out:
+            continue
+        by_user[u].append(r)
+
+    sent = 0
+    for user, trips in by_user.items():
+        subject, to_emails, template, context = build_closure_reminder_context(user, trips)
+        send_templated_email(subject, to_emails, template, context)
+        print(f"  Closure reminder sent to {user.email} — {len(trips)} file(s)")
+        sent += 1
+        time.sleep(10)
+
+    print(f"Closure reminders sent: {sent}")
 
 
 def send_quality_closure_notification(entry, feedbacks):

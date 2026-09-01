@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import views_itinerary
 
 urlpatterns = [
     # General paths
@@ -85,8 +86,10 @@ urlpatterns = [
     path("booking_sheet/set_vr", views.booking_sheet_set_vr, name="booking_sheet_set_vr"),
     path("booking_sheet/auto_assign_vr", views.booking_sheet_auto_assign_vr, name="booking_sheet_auto_assign_vr"),
     path("booking_sheet/request_vr", views.booking_sheet_request_vr, name="booking_sheet_request_vr"),
+    path("booking_sheet/cancel_vr_request", views.booking_sheet_cancel_vr_request, name="booking_sheet_cancel_vr_request"),
     path("booking_sheet/bulk_set_vr", views.booking_sheet_bulk_set_vr, name="booking_sheet_bulk_set_vr"),
-    path("booking_sheet/test_vr_email", views.booking_sheet_test_vr_email, name="booking_sheet_test_vr_email"),
+    path("table_preferences", views.table_preferences_get, name="table_preferences_get"),
+    path("table_preferences/set", views.table_preferences_set, name="table_preferences_set"),
     path("intranet_files", views.intranet_files, name="intranet_files"),
     path("advanced_search", views.advanced_search, name="advanced_search"),
     path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),
@@ -106,9 +109,20 @@ urlpatterns = [
     # Revision / Correcciones
     path("revising_itineraries", views.revising_itineraries, name="revising_itineraries"),
     path("revision/schedule/update", views.revision_schedule_update, name="revision_schedule_update"),
+    path("revision/user/<int:user_id>/toggle_block", views.revision_toggle_block, name="revision_toggle_block"),
     path("entries/<int:entry_id>/send_for_revision", views.entry_send_for_revision, name="entry_send_for_revision"),
+    path("entries/<int:entry_id>/suggested_reviewer", views.entry_suggested_reviewer, name="entry_suggested_reviewer"),
+    path("entries/my_revision_pending_count", views.entry_my_revision_pending_count, name="entry_my_revision_pending_count"),
     path("entries/<int:entry_id>/revising_user", views.entry_update_revising_user, name="entry_update_revising_user"),
     path("entries/<int:entry_id>/mark_revised", views.entry_mark_revised, name="entry_mark_revised"),
+
+    # Itinerario público (link único, sin login)
+    path("entries/<int:entry_id>/itinerary/", views_itinerary.entry_itinerary_edit, name="entry_itinerary_edit"),
+    path("entries/<int:entry_id>/itinerary/resync", views_itinerary.entry_itinerary_resync, name="entry_itinerary_resync"),
+    path("entries/<int:entry_id>/itinerary/save", views_itinerary.entry_itinerary_save, name="entry_itinerary_save"),
+    path("entries/<int:entry_id>/itinerary/publish", views_itinerary.entry_itinerary_publish, name="entry_itinerary_publish"),
+    path("entries/<int:entry_id>/itinerary/upload_image", views_itinerary.entry_itinerary_upload_image, name="entry_itinerary_upload_image"),
+    path("i/<uuid:token>/", views_itinerary.public_itinerary_view, name="public_itinerary"),
 
     # Notification management
     path("notifications", views.notifications_management, name="notifications_management"),

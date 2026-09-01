@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly, send_tariff_team_weekly
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly, send_tariff_team_weekly, send_closure_reminders
 
 
 class Command(BaseCommand):
@@ -118,3 +118,12 @@ class Command(BaseCommand):
             send_holiday_reminder()
         except Exception as exc:
             self.stdout.write(self.style.ERROR(f"Error al enviar recordatorio de feriado: {exc}"))
+
+        # Closure reminder to Operaciones — every day, fires only for files whose
+        # out_date was exactly 7 days ago
+        self.stdout.write("-" * 30)
+        self.stdout.write("Verificando recordatorios de cierre de files...")
+        try:
+            send_closure_reminders()
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error al enviar recordatorios de cierre: {exc}"))

@@ -65,6 +65,7 @@
                        font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
               Hola <span style="color:#D88775;">{{ user_name }}</span>!
             </h1>
+            {% if trips %}
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
                       color:#5A5A5A;margin:0 0 10px;">
               Estos son tus files asignados para
@@ -73,9 +74,18 @@
             <p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#888888;margin:0;">
               {{ total_files }} file{{ total_files|pluralize }} &nbsp;&middot;&nbsp; {{ total_pax }} pax en total
             </p>
+            {% elif vr2_trips %}
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0;">
+              No tenés files propios asignados para <strong style="color:#1C1C1C;">{{ month_label }}</strong>,
+              pero quedaste como <strong style="color:#1C1C1C;">VR2 (sustituto)</strong> en
+              {{ vr2_trips|length }} file{{ vr2_trips|length|pluralize }}.
+            </p>
+            {% endif %}
           </td>
         </tr>
 
+        {% if trips %}
         <!-- TRIPS TABLE -->
         <tr>
           <td style="padding:32px 48px;border-bottom:1px solid #D9CFC6;" class="pad-sides">
@@ -146,17 +156,86 @@
                   {% if trip.amount %}USD {{ trip.amount }}{% else %}—{% endif %}
                 </td>
               </tr>
-              {% empty %}
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if vr2_trips %}
+        <!-- VR2 (SUSTITUTO) SECTION -->
+        <tr>
+          <td style="padding:32px 48px;border-bottom:1px solid #D9CFC6;background-color:#FBF6F2;" class="pad-sides">
+            <p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;
+                      letter-spacing:0.12em;text-transform:uppercase;color:#D88775;">
+              Sos VR2 (sustituto)
+            </p>
+            <p style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                      color:#5A5A5A;line-height:1.7;">
+              Además quedaste como sustituto (VR2) en los siguientes files, por si el VR original
+              no está disponible. La responsabilidad y el trabajo del file siguen siendo del VR
+              original — esto es solo para cubrir una eventual ausencia.
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td colspan="5" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
-                                       color:#5A5A5A;padding-top:16px;">
-                  No hay files asignados para este mes.
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;">
+                  File
+                </td>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;padding-left:12px;">
+                  Cliente
+                </td>
+                <td width="80" style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;white-space:nowrap;
+                           padding-left:12px;">
+                  Fecha viaje
+                </td>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;
+                           letter-spacing:0.15em;text-transform:uppercase;color:#D88775;
+                           padding-bottom:8px;border-bottom:1px solid #D9CFC6;white-space:nowrap;
+                           padding-left:12px;">
+                  VR original
+                </td>
+              </tr>
+              {% for trip in vr2_trips %}
+              <tr>
+                <td valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                           color:#1C1C1C;line-height:1.4;padding:10px 0;
+                           border-bottom:1px dashed #D9CFC6;">
+                  <strong>{{ trip.name }}</strong>
+                  {% if trip.tourplanId %}
+                  <br><span style="font-size:11px;color:#999999;">{{ trip.tourplanId }}</span>
+                  {% endif %}
+                </td>
+                <td valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.client_name }}
+                </td>
+                <td width="80" valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                           color:#5A5A5A;white-space:nowrap;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.travelling_date|date:"d/m/Y" }}
+                </td>
+                <td valign="middle"
+                    style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;
+                           color:#1C1C1C;white-space:nowrap;padding:10px 0 10px 12px;
+                           border-bottom:1px dashed #D9CFC6;">
+                  {{ trip.original_vr_name }}
                 </td>
               </tr>
               {% endfor %}
             </table>
           </td>
         </tr>
+        {% endif %}
 
         {% if mismatch_trips %}
         <!-- MISMATCH WARNING -->

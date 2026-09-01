@@ -1,0 +1,69 @@
+<div class="border rounded p-2 mb-2 itinerary-line">
+    <div class="d-flex gap-2 align-items-start">
+        <div style="width:110px;flex-shrink:0;">
+            <select class="form-select form-select-sm line-service-code">
+                {% for code, val in service_labels.items %}
+                <option value="{{ code }}" {% if line.service_code == code %}selected{% endif %}>{{ val.0 }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="flex-grow-1">
+            <input type="text" class="form-control form-control-sm mb-1 line-title"
+                   placeholder="Título automático: {{ line.title_note|default:line.supplier_name|truncatechars:50 }}"
+                   value="{{ line.custom_title }}">
+            <textarea class="form-control form-control-sm line-description" rows="2"
+                      placeholder="Descripción automática: {{ line.option_description|truncatechars:60 }}">{{ line.custom_description }}</textarea>
+            <input type="text" class="form-control form-control-sm mt-1 line-room-summary"
+                   value="{{ line.room_summary }}" placeholder="Habitación / noches (solo alojamiento) — ej: 1 Double — 3 nights">
+            <textarea class="form-control form-control-sm mt-1 line-conditions" rows="2"
+                      placeholder="Condiciones / avisos de esta línea (política de niños, restricciones, etc.)">{{ line.conditions_note }}</textarea>
+            <div class="d-flex gap-2 mt-1 align-items-center flex-wrap">
+                <div class="d-flex gap-1 align-items-center image-upload-group">
+                    <input type="text" class="form-control form-control-sm image-url-input line-image"
+                           style="width:180px;" value="{{ line.image_url|default:'' }}" placeholder="URL de foto 1">
+                    <label class="btn btn-sm btn-outline-secondary mb-0 py-0 px-2" title="Subir foto">
+                        <i class="fa-solid fa-upload"></i>
+                        <input type="file" class="d-none itinerary-upload-input" accept="image/*">
+                    </label>
+                </div>
+                <div class="d-flex gap-1 align-items-center image-upload-group">
+                    <input type="text" class="form-control form-control-sm image-url-input line-image-2"
+                           style="width:180px;" value="{{ line.image_url_2|default:'' }}" placeholder="URL de foto 2">
+                    <label class="btn btn-sm btn-outline-secondary mb-0 py-0 px-2" title="Subir foto">
+                        <i class="fa-solid fa-upload"></i>
+                        <input type="file" class="d-none itinerary-upload-input" accept="image/*">
+                    </label>
+                </div>
+                <div class="d-flex gap-1 align-items-center image-upload-group">
+                    <input type="text" class="form-control form-control-sm image-url-input line-image-3"
+                           style="width:180px;" value="{{ line.image_url_3|default:'' }}" placeholder="URL de foto 3">
+                    <label class="btn btn-sm btn-outline-secondary mb-0 py-0 px-2" title="Subir foto">
+                        <i class="fa-solid fa-upload"></i>
+                        <input type="file" class="d-none itinerary-upload-input" accept="image/*">
+                    </label>
+                </div>
+                <input type="number" step="0.01" class="form-control form-control-sm line-amount"
+                       style="width:110px;" value="{{ line.amount|default:'' }}" placeholder="Monto">
+                <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input line-is-optional" type="checkbox"
+                           {% if line.is_optional %}checked{% endif %}>
+                    <label class="form-check-label small text-muted">Upgrade opcional</label>
+                </div>
+                {% if line.supplier_name %}
+                <span class="text-muted small">{{ line.supplier_name }}</span>
+                {% endif %}
+            </div>
+            <input type="hidden" class="line-supplier-code" value="{{ line.supplier_code }}">
+            <input type="hidden" class="line-option-code" value="{{ line.option_code }}">
+            <input type="hidden" class="line-location-code" value="{{ line.location_code }}">
+            <input type="hidden" class="line-location-name" value="{{ line.location_name }}">
+            <input type="hidden" class="line-title-note" value="{{ line.title_note }}">
+            <input type="hidden" class="line-option-description" value="{{ line.option_description }}">
+            <input type="hidden" class="line-supplier-name" value="{{ line.supplier_name }}">
+            <input type="hidden" class="line-nights" value="{{ line.nights|default:'' }}">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-danger remove-line-btn" title="Eliminar ítem">
+            <i class="fa-solid fa-trash"></i>
+        </button>
+    </div>
+</div>
