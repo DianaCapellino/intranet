@@ -8,6 +8,7 @@ from django.urls import reverse
 from collections import defaultdict
 from datetime import date
 from django.db.models import Avg
+from tariff.utils import save_pic_upload, parse_optional_float
 import json
 import math
 
@@ -70,6 +71,10 @@ def locations(request):
                 "INTERESTS": INTERESTS,
             })
 
+        pic1 = request.FILES.get("pic1")
+        pic2 = request.FILES.get("pic2")
+        pic3 = request.FILES.get("pic3")
+
         Location.objects.create(
             code=code.upper(),
             name=name,
@@ -83,10 +88,13 @@ def locations(request):
             max_nights=max_nights,
             margin_acc=margin_acc,
             margin_svs=margin_svs,
-            pic1_url=request.POST.get("pic1_url"),
-            pic2_url=request.POST.get("pic2_url"),
-            pic3_url=request.POST.get("pic3_url"),
+            pic1_url=save_pic_upload(pic1, "locations") if pic1 else None,
+            pic2_url=save_pic_upload(pic2, "locations") if pic2 else None,
+            pic3_url=save_pic_upload(pic3, "locations") if pic3 else None,
             order=order,
+            latitude=parse_optional_float(request.POST.get("latitude")),
+            longitude=parse_optional_float(request.POST.get("longitude")),
+            isActivated=request.POST.get("isActivated") == "on",
         )
 
         last_order = Location.objects.order_by('-order').values_list('order', flat=True).first() or 0
@@ -153,10 +161,21 @@ def modify_location(request, location_id):
         location.max_nights=max_nights
         location.margin_acc=margin_acc
         location.margin_svs=margin_svs
-        location.pic1_url=request.POST.get("pic1_url")
-        location.pic2_url=request.POST.get("pic2_url")
-        location.pic3_url=request.POST.get("pic3_url")
+        # Solo se pisa la foto de un slot si se subió una nueva para ese slot — si el
+        # usuario no tocó el drop-zone (ya mostraba la foto existente), no hay que borrarla.
+        pic1 = request.FILES.get("pic1")
+        pic2 = request.FILES.get("pic2")
+        pic3 = request.FILES.get("pic3")
+        if pic1:
+            location.pic1_url = save_pic_upload(pic1, "locations")
+        if pic2:
+            location.pic2_url = save_pic_upload(pic2, "locations")
+        if pic3:
+            location.pic3_url = save_pic_upload(pic3, "locations")
         location.order=request.POST.get("order", location.order)
+        location.latitude = parse_optional_float(request.POST.get("latitude"))
+        location.longitude = parse_optional_float(request.POST.get("longitude"))
+        location.isActivated = request.POST.get("isActivated") == "on"
 
         location.save()
 
@@ -505,9 +524,17 @@ def modify_supplier(request, supplier_id):
         supplier.interests=request.POST.getlist("interests")
         supplier.margin=request.POST["margin"]
         supplier.note=request.POST.get("note")
-        supplier.pic1_url=request.POST.get("pic1_url")
-        supplier.pic2_url=request.POST.get("pic2_url")
-        supplier.pic3_url=request.POST.get("pic3_url")
+        # Solo se pisa la foto de un slot si se subió una nueva para ese slot — si el
+        # usuario no tocó el drop-zone (ya mostraba la foto existente), no hay que borrarla.
+        pic1 = request.FILES.get("pic1")
+        pic2 = request.FILES.get("pic2")
+        pic3 = request.FILES.get("pic3")
+        if pic1:
+            supplier.pic1_url = save_pic_upload(pic1, "suppliers")
+        if pic2:
+            supplier.pic2_url = save_pic_upload(pic2, "suppliers")
+        if pic3:
+            supplier.pic3_url = save_pic_upload(pic3, "suppliers")
         supplier.save()
 
         if type_service == "AC":
@@ -636,6 +663,11 @@ def modify_supplier_rates(request, supplier_id):
         .prefetch_related("line_rates", "line_rates__cost_items", "line_rates__rates_with_fixed")
         .order_by("date_from", "group__product__order")
     )
+
+    from tariff.utils import get_ratelines_last_update
+    _last_update_by_rl = get_ratelines_last_update([rl.id for rl in rate_lines])
+    for line in rate_lines:
+        line.last_update = _last_update_by_rl.get(line.id)
 
     if type_service == "AC":
         for line in rate_lines:
@@ -972,9 +1004,17 @@ def modify_product(request, product_id):
         product.sustentability_ranking = request.POST["sustentability_ranking"]
         product.attractions = request.POST.getlist("attractions")
         product.interests = request.POST.getlist("interests")
-        product.pic1_url = request.POST.get("pic1_url", "")
-        product.pic2_url = request.POST.get("pic2_url", "")
-        product.pic3_url = request.POST.get("pic3_url", "")
+        # Solo se pisa la foto de un slot si se subió una nueva para ese slot — si el
+        # usuario no tocó el drop-zone (ya mostraba la foto existente), no hay que borrarla.
+        pic1 = request.FILES.get("pic1")
+        pic2 = request.FILES.get("pic2")
+        pic3 = request.FILES.get("pic3")
+        if pic1:
+            product.pic1_url = save_pic_upload(pic1, "products")
+        if pic2:
+            product.pic2_url = save_pic_upload(pic2, "products")
+        if pic3:
+            product.pic3_url = save_pic_upload(pic3, "products")
         product.shown = request.POST.get("shown") == "on"
         product.recommended = request.POST.get("recommended") == "on"
         product.isActivated = request.POST.get("isActivated") == "on"
@@ -1034,10 +1074,15 @@ def update_rate_block(request):
             return JsonResponse({"ok": False, "error": "No se recibieron datos"}, status=400)
         
         data = json.loads(request.body)
-        
+
         if "rates" not in data:
             return JsonResponse({"ok": False, "error": "Falta el campo 'rates'"}, status=400)
-        
+
+        # Whether to record this edit in the rate-change history (Change model) —
+        # the user is asked before saving; defaults to True so any other caller
+        # that doesn't send it keeps the original always-track behavior.
+        save_history = data.get("save_history", True)
+
         updated_count = 0
         errors = []
         
@@ -1175,8 +1220,9 @@ def update_rate_block(request):
                 change_type = "Update"
                 percent = ((new_avg - old_avg) / old_avg * 100) if old_avg != 0 else 0
 
-            # Only track history for Confirmed rate lines
-            if rl.line_rates.filter(status="Confirmed").exists():
+            # Only track history for Confirmed rate lines, and only when the
+            # user chose to save it for this edit.
+            if save_history and rl.line_rates.filter(status="Confirmed").exists():
                 Change.objects.create(
                     rate_line=rl,
                     type=change_type,

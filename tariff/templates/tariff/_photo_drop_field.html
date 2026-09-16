@@ -1,0 +1,10 @@
+{% load tariff_filters %}
+<div class="tariff-photo-drop">
+    <div class="tariff-photo-dropzone" tabindex="0" role="button" aria-label="Subir foto">
+        <img class="tariff-photo-preview" src="{{ existing|pic_url }}" alt="" {% if not existing %}style="display:none;"{% endif %}>
+        <span class="tariff-photo-placeholder" {% if existing %}style="display:none;"{% endif %}>
+            <i class="fa-solid fa-cloud-arrow-up"></i><br>{{ label|default:"Arrastrá una foto o hacé clic" }}
+        </span>
+    </div>
+    <input type="file" name="{{ name }}" accept="image/*" class="tariff-photo-input" hidden>
+</div>

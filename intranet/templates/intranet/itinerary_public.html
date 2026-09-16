@@ -9,6 +9,8 @@
 <title>{% if unavailable %}Itinerary not available{% else %}{{ itinerary.title|default:"Your itinerary" }}{% endif %} — Aliwen</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <script src="https://kit.fontawesome.com/6f082d5aab.js" crossorigin="anonymous"></script>
 <style>
   :root{
@@ -29,7 +31,7 @@
   .brand img{height:34px;width:auto;filter:brightness(0);}
   .toptabs{display:flex;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none;}
   .toptabs::-webkit-scrollbar{display:none;}
-  .toptab{appearance:none;border:none;background:none;cursor:pointer; font-family:'Work Sans',sans-serif; font-size:.78rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); padding:8px 14px; border-radius:999px; white-space:nowrap; transition:color .15s ease, background .15s ease;}
+  .toptab{appearance:none;border:none;background:none;cursor:pointer; font-family:'Work Sans',sans-serif; font-size:.74rem; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--ink-soft); padding:8px 10px; border-radius:999px; white-space:nowrap; transition:color .15s ease, background .15s ease;}
   .toptab:hover{color:var(--charcoal);}
   .toptab.active{color:#fff; background:var(--charcoal);}
   .cta-btn{display:inline-flex; align-items:center; gap:7px; appearance:none; border:none; cursor:pointer; white-space:nowrap; background:var(--clay); color:#fff; font-family:'Work Sans',sans-serif; font-weight:600; font-size:.78rem; letter-spacing:.04em; text-transform:uppercase; padding:10px 18px; border-radius:999px; transition:background .15s ease;}
@@ -56,7 +58,8 @@
   .sec-head{display:flex;align-items:baseline;justify-content:space-between;margin:44px 0 18px;flex-wrap:wrap;gap:8px;}
   .sec-head h2{font-size:1.5rem;} .sec-head .sub{color:var(--ink-soft);font-size:.85rem;}
 
-  .acc-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:20px;}
+  .acc-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:20px;}
+  .dest-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:20px;}
   .acc-card{background:var(--card); border-radius:var(--radius); overflow:hidden; border:1px solid var(--line); box-shadow:var(--shadow);}
   .acc-body{padding:18px 20px 20px;} .acc-body h3{font-size:1.15rem;}
   .acc-dates{color:var(--ink-soft); font-size:.82rem; margin-top:4px;}
@@ -68,9 +71,9 @@
 
   .highlights{display:flex; flex-direction:column; gap:22px;}
   .hl-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
-  .hl-photo{position:relative; min-height:150px; background:linear-gradient(150deg,#c9705a,#4a3530); background-size:cover; background-position:center;}
-  .hl-photo .daytag{position:absolute; left:14px; top:14px; background:rgba(255,255,255,.92); color:var(--charcoal); font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:5px 10px; border-radius:999px;}
-  .hl-photo .daynum{position:absolute; right:16px; bottom:14px; color:#fff; font-family:'Fraunces',serif; font-size:1.9rem; font-weight:600; opacity:.85;}
+  .hl-photo{position:relative; min-height:56px; display:flex; align-items:center; padding:0 16px; background:linear-gradient(150deg,#c9705a,#4a3530); background-size:cover; background-position:center;}
+  .hl-photo .daytag{background:rgba(255,255,255,.92); color:var(--charcoal); font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:5px 10px; border-radius:999px;}
+  .hl-photo .daynum{margin-left:auto; color:#fff; font-family:'Fraunces',serif; font-size:1.3rem; font-weight:600; opacity:.85;}
   .hl-body{padding:22px 24px 6px;}
   .hl-body .hl-date{font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--clay-deep); font-weight:700;}
   .hl-body h3{font-size:1.25rem; margin-top:4px;}
@@ -84,17 +87,33 @@
   .item.type-transfer .ic{background:#eaf0f6; color:#4a6a86;}
   .item.type-excursion .ic{background:#faf0e2; color:var(--gold);}
   .item.type-meal .ic{background:#fbe9e6; color:var(--clay-deep);}
+  .item.type-welcome .ic{background:#fdf6d8; color:var(--gold);}
   .item.type-fee .ic{background:#f1eeea; color:var(--ink-soft);}
   .item.type-flight .ic{background:#eef0fb; color:#5b5ba0;}
+  .item.type-not-included{background:#eef0f1; border-radius:8px; padding:12px 14px; margin:4px 0; border-top:none;}
+  .item.type-not-included + .item{border-top:none;}
+  .item.type-not-included .ic{background:#e2e5e7; color:var(--ink-soft);}
+  .item.type-car-rental{background:#e8f2f7; border-radius:8px; padding:12px 14px; margin:4px 0; border-top:none;}
+  .item.type-car-rental + .item{border-top:none;}
+  .item.type-car-rental .ic{background:#cfe4ee; color:var(--ink-soft);}
   .item-body{flex:1; min-width:0;}
   .item-title{font-weight:600; color:var(--charcoal); font-size:.92rem;}
+  .dest-name-title{text-transform:uppercase; letter-spacing:.02em; font-size:1.05rem;}
   .item-desc{color:var(--ink-soft); font-size:.85rem; margin-top:3px;}
   .item-flag{margin-top:7px; display:inline-block; font-size:.72rem; color:var(--gold); background:#faf3e5; padding:3px 8px; border-radius:6px;}
 
   /* ---------- Fotos + descriptivo lado a lado (Day by Day, Upgrade Options) ---------- */
-  .photo-with-desc{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px;}
-  .photo-with-desc .photo-carousel{flex:0 0 220px; width:220px;}
+  .photo-with-desc{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; align-items:flex-start;}
+  .photo-with-desc.reverse{flex-direction:row-reverse;}
+  .photo-with-desc .photo-carousel{flex:0 0 320px; width:320px;}
   .photo-with-desc .side-desc{flex:1 1 220px; min-width:200px;}
+  /* Fotos del destino (Welcome) — las 3 fotos de Location, una al lado de la otra, no un
+     carrusel. */
+  .dest-photos-row{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .dest-photos-row img{flex:1 1 0; min-width:90px; aspect-ratio:4/3; object-fit:cover; border-radius:8px; display:block;}
+  /* Mini-mapa del tramo anterior -> este destino, en Day by Day (ver drawCurvedSegment). Solo
+     decorativo (sin interacción), por eso no hace falta tanto alto. */
+  .mini-route-map{width:100%; height:312px; border-radius:10px; overflow:hidden; background:var(--line); margin-bottom:10px;}
 
   /* ---------- Pestañas Photos/Description (Accommodation) ---------- */
   .card-tabs{display:flex; gap:4px; margin-top:10px; border-bottom:1px solid var(--line);}
@@ -106,6 +125,10 @@
   .photo-carousel{position:relative; border-radius:10px; overflow:hidden; background:var(--line); aspect-ratio:4/3;}
   .photo-carousel-track{display:flex; height:100%; transition:transform .25s ease;}
   .photo-carousel-track img{flex:0 0 100%; width:100%; height:100%; object-fit:cover; display:block;}
+  /* Fotos de catálogo (ej. categoría de auto) recortadas mal con object-fit:cover a 4:3 —
+     se ven completas (sin recortar bordes) y sin el fondo gris del carrusel normal. */
+  .photo-carousel.contain{background:transparent;}
+  .photo-carousel.contain .photo-carousel-track img{object-fit:contain;}
   .carousel-nav-btn{position:absolute; top:50%; transform:translateY(-50%); width:28px; height:28px; border-radius:50%; border:none; background:rgba(35,31,32,.55); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.9rem; line-height:1;}
   .carousel-nav-btn.prev{left:8px;} .carousel-nav-btn.next{right:8px;}
   .carousel-dots{position:absolute; bottom:8px; left:0; right:0; display:flex; justify-content:center; gap:5px;}
@@ -114,14 +137,38 @@
 
   .tbl-card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); margin-bottom:22px;}
   .tbl-card h4{padding:16px 20px 0; font-size:1.02rem;}
+  .tbl-card h4.dest-title{text-transform:uppercase; letter-spacing:.03em;}
   table{width:100%; border-collapse:collapse; font-size:.86rem;}
+  /* table-layout:fixed + anchos explícitos por columna, solo en la tabla de Itinerary in
+     Brief (.quote-table) — cada bloque de destino/vuelo ahí es una <table> independiente, así
+     que sin esto el ancho de columnas varía de una a otra según su propio contenido (más
+     notorio en los bloques de vuelo, que no tienen <thead> y tienen texto corto) y quedan
+     desalineadas entre bloques. No se aplica a Passenger Summary ni otras tablas del resto de
+     la página, que tienen su propia cantidad/proporción de columnas. */
+  .quote-table{table-layout:fixed;}
+  .quote-table th:nth-child(1), .quote-table td:nth-child(1){width:110px;}
+  .quote-table th:nth-child(3), .quote-table td:nth-child(3){width:56px;}
+  .quote-table th:nth-child(4), .quote-table td:nth-child(4){width:135px;}
+  .quote-table th:nth-child(5), .quote-table td:nth-child(5){width:135px;}
   thead th{text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-soft); padding:12px 20px; border-bottom:1px solid var(--line); font-weight:700;}
   tbody td{padding:13px 20px; border-bottom:1px solid var(--line); vertical-align:top;}
   tbody tr:last-child td{border-bottom:none;}
+  tr.row-not-included td{background:#eef0f1;}
+  tr.row-car-rental td{background:#e8f2f7;}
   .muted{color:var(--ink-soft); font-size:.8rem;}
   td.num{white-space:nowrap; font-weight:600; color:var(--charcoal);}
 
   .price-hero{background:var(--charcoal); color:#fff; border-radius:var(--radius); padding:26px 28px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; margin-top:8px;}
+  /* Banner chico con los datos básicos del viaje, para las pestañas que no tienen la foto
+     grande de portada (todas menos Overview) — mismo look que .price-hero pero mucho más
+     bajo. */
+  .mini-banner{background:var(--charcoal); color:#fff; border-radius:var(--radius); padding:14px 22px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 20px;}
+  .mini-banner-eyebrow{font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:#cbb9ae; margin-bottom:2px;}
+  .mini-banner-tab-title{font-family:'Fraunces',serif; font-size:1.4rem; font-weight:600;}
+  .mini-banner-tab-sub{font-family:'Work Sans',sans-serif; font-size:.82rem; font-weight:400; color:#cbb9ae;}
+  .mini-banner-meta{display:flex; gap:18px; flex-wrap:wrap; font-size:.78rem; color:#cbb9ae;}
+  .mini-banner-meta i{margin-right:5px; opacity:.85;}
+  @media (max-width:640px){ .mini-banner{flex-direction:column; align-items:flex-start;} }
   .price-hero .lbl{font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:#cbb9ae;}
   .price-hero .big{font-family:'Fraunces',serif; font-size:2.1rem; font-weight:600; margin-top:4px;}
   .price-hero .per{font-size:.82rem; color:#d8cec7; margin-top:6px;}
@@ -148,7 +195,7 @@
 
   .itin-unavailable{min-height:80vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px;}
 
-  @media (max-width:640px){ .hero h1{font-size:1.6rem;} .hero-inner{padding:24px 20px;} .price-hero{flex-direction:column; align-items:flex-start;} .acc-grid{grid-template-columns:1fr;} }
+  @media (max-width:640px){ .hero h1{font-size:1.6rem;} .hero-inner{padding:24px 20px;} .price-hero{flex-direction:column; align-items:flex-start;} .acc-grid{grid-template-columns:1fr;} .dest-grid{grid-template-columns:1fr;} .quote-table{table-layout:auto;} }
   @media print{
     *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .topbar, footer, .cta-btn{display:none !important;}
@@ -156,6 +203,15 @@
     .tabpanel{display:none !important; padding:0;} .tabpanel.active{display:block !important;}
     .hero{border-radius:0;}
     .tbl-card, .hl-card, .acc-card, .note-card, details.tc{box-shadow:none; break-inside:avoid;}
+    /* Sin esto, el título de sección (ej. "Day by Day") podía quedar solo al pie de una
+       página — con el resto vacío — porque la primera tarjeta de abajo no entraba entera
+       (break-inside:avoid) y se empujaba completa a la página siguiente. Con break-after el
+       navegador arranca una página nueva ANTES del título en vez de después. */
+    .sec-head{break-after:avoid-page; page-break-after:avoid;}
+    /* El banner chico (título/fecha/pax) queda pegado al título que sigue — mismo criterio
+       que .sec-head — para que no quede solo al pie de una página con el resto empujado a
+       la siguiente (ya es lo primero de la página igual, al ser el inicio del tab activo). */
+    .mini-banner{break-after:avoid-page; page-break-after:avoid;}
   }
 </style>
 </head>
@@ -173,6 +229,8 @@
     <nav class="toptabs" id="toptabs">
       <button class="toptab active" data-tab="inicio">Overview</button>
       <button class="toptab" data-tab="itinerario">Day by Day</button>
+      <button class="toptab" data-tab="map">Map</button>
+      {% if itinerary_destinations %}<button class="toptab" data-tab="destinations">Destinations</button>{% endif %}
       {% if accommodation_cards %}<button class="toptab" data-tab="alojamiento">Accommodation</button>{% endif %}
       <button class="toptab" data-tab="info">Good to Know</button>
     </nav>
@@ -188,7 +246,9 @@
         <span class="eyebrow">Ref. {{ itinerary.entry.tourplanId|default:itinerary.entry.trip.tourplanId }}</span>
         <h1>{{ itinerary.title|default:"Your itinerary" }}</h1>
         <div class="hero-meta">
-          {% if dated_days_first %}<span><i class="fa-solid fa-calendar"></i> {{ dated_days_first|date:"j M Y" }} – {{ dated_days_last|date:"j M Y" }} · {{ nights_total }} nights</span>{% endif %}
+          {% if is_program %}
+          {% if valid_until_date %}<span><i class="fa-solid fa-calendar"></i> Valid until {{ valid_until_date|date:"j M Y" }}</span>{% endif %}
+          {% elif dated_days_first %}<span><i class="fa-solid fa-calendar"></i> {{ dated_days_first|date:"j M Y" }} – {{ dated_days_last|date:"j M Y" }} · {{ nights_total }} nights</span>{% endif %}
           {% if itinerary.pax_count %}<span><i class="fa-solid fa-users"></i> {{ itinerary.pax_count }} traveller{{ itinerary.pax_count|pluralize }}</span>{% endif %}
         </div>
       </div>
@@ -227,40 +287,49 @@
 
     <div class="sec-head">
       <h2>Itinerary Quote Brief</h2>
-      <span class="sub">Service by service{% if itinerary.show_prices %} · net rates in {{ itinerary.currency }}{% endif %}</span>
+      <span class="sub">Service by service{% if itinerary.show_prices and not is_program %} · net rates in {{ itinerary.currency }}{% endif %}</span>
     </div>
     <div id="overviewExport">
-      {% for loc_name, rows in quote_brief_groups %}
+      {% for block_title, rows in quote_brief_blocks %}
+      {% if rows %}
       <div class="tbl-card">
-        <h4>{{ loc_name }}</h4>
-        <table>
-          <thead><tr><th>Date</th><th>Service or Hotel</th><th>Pax</th>{% if itinerary.show_prices %}<th>Per Person</th><th>Subtotal</th>{% endif %}</tr></thead>
+        {% if block_title %}<h4 class="dest-title">{{ block_title }}</h4>{% endif %}
+        <table class="quote-table">
+          {% if not rows.0.1.is_flight_placeholder %}
+          <thead><tr><th>{% if is_program %}Day{% else %}Date{% endif %}</th><th>Service or Hotel</th><th>Pax</th>{% if itinerary.show_prices and not is_program %}<th>Per Person</th><th>Subtotal</th>{% endif %}</tr></thead>
+          {% endif %}
           <tbody>
-          {% for day, line in rows %}
-          <tr>
-            <td class="muted" style="white-space:nowrap;">{{ day.date|date:"D j M" }}</td>
+          {% for day, line, end_date in rows %}
+          <tr{% if line.is_not_included_style %} class="row-not-included"{% elif line.service_code == "CI" %} class="row-car-rental"{% endif %}>
+            <td class="muted" style="white-space:nowrap;">
+              {% if is_program %}Day {{ day.order|add:1 }}
+              {% else %}{{ day.date|date:"D j M" }}{% if end_date %}<br>{{ end_date|date:"D j M" }}{% endif %}{% endif %}
+            </td>
             <td>
               {% if line.service_code == "AC" %}
               <div style="font-weight:600;color:var(--charcoal);">{{ line.custom_title|default:line.supplier_name }}</div>
               {% if line.title_note or line.room_summary %}<div class="muted">{{ line.title_note }}{% if line.title_note and line.room_summary %} · {% endif %}{{ line.room_summary }}</div>{% endif %}
               {% else %}
               <div style="font-weight:600;color:var(--charcoal);">{{ line.custom_title|default:line.title_note|default:line.supplier_name }}</div>
-              {% with desc=line.custom_description|default:line.option_description %}
-              {% if desc %}<div class="muted">{{ desc|truncatechars:140 }}</div>{% endif %}
-              {% endwith %}
+              {% if line.custom_description %}<div class="muted">{{ line.custom_description|linebreaksbr }}</div>
+              {% elif line.is_main_car_item and line.option_description %}<div class="muted">{{ line.option_description|linebreaksbr }}</div>{% endif %}
               {% endif %}
-              {% if line.conditions_note %}<div class="item-flag" style="margin-top:5px;">{{ line.conditions_note|truncatechars:100 }}</div>{% endif %}
+              {% if line.conditions_note %}
+                {% if line.is_flight_placeholder %}<div class="muted" style="margin-top:5px;">{{ line.conditions_note|linebreaksbr }}</div>
+                {% else %}<div class="item-flag" style="margin-top:5px;">{{ line.conditions_note|linebreaksbr }}</div>{% endif %}
+              {% endif %}
             </td>
             <td class="muted">{{ itinerary.pax_count|default:"—" }}</td>
-            {% if itinerary.show_prices %}
-            <td class="num">{% with pp=line.amount|safe_divide:itinerary.pax_count %}{% if pp %}{{ itinerary.currency }} {{ pp|floatformat:2 }}{% else %}—{% endif %}{% endwith %}</td>
-            <td class="num">{% if line.amount %}{{ itinerary.currency }} {{ line.amount|floatformat:2 }}{% else %}—{% endif %}</td>
+            {% if itinerary.show_prices and not is_program %}
+            <td class="num">{% if not line.is_not_included_style %}{% with pp=line.amount|safe_divide:itinerary.pax_count %}{% if pp %}{{ itinerary.currency }} {{ pp|floatformat:2 }}{% else %}—{% endif %}{% endwith %}{% endif %}</td>
+            <td class="num">{% if not line.is_not_included_style %}{% if line.amount %}{{ itinerary.currency }} {{ line.amount|floatformat:2 }}{% else %}—{% endif %}{% endif %}</td>
             {% endif %}
           </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
+      {% endif %}
       {% endfor %}
 
       {% if passengers %}
@@ -269,8 +338,8 @@
         <table>
           <thead><tr><th>Name</th>{% if itinerary.show_prices %}<th>Subtotal</th>{% endif %}</tr></thead>
           <tbody>
-          {% for name in passengers %}
-          <tr><td>{{ name }}</td>{% if itinerary.show_prices %}<td class="num">{% if per_person_amount %}{{ itinerary.currency }} {{ per_person_amount|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}</tr>
+          {% for passenger in passengers %}
+          <tr><td>{{ passenger.name }}</td>{% if itinerary.show_prices %}<td class="num">{% if passenger.amount %}{{ itinerary.currency }} {{ passenger.amount|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}</tr>
           {% endfor %}
           </tbody>
         </table>
@@ -279,10 +348,6 @@
 
       {% if itinerary.show_prices and itinerary.total_amount %}
       <div class="price-hero">
-        <div>
-          <div class="lbl">Grand total for the group</div>
-          <div class="big">{{ itinerary.currency }} {{ itinerary.total_amount|floatformat:2 }}</div>
-        </div>
         {% if per_person_amount %}
         <div>
           <div class="lbl">Per person</div>
@@ -290,6 +355,10 @@
           <div class="per">× {{ itinerary.pax_count }} traveller{{ itinerary.pax_count|pluralize }}</div>
         </div>
         {% endif %}
+        <div>
+          <div class="lbl">Grand total for the group</div>
+          <div class="big">{{ itinerary.currency }} {{ itinerary.total_amount|floatformat:2 }}</div>
+        </div>
       </div>
       {% endif %}
 
@@ -313,7 +382,7 @@
 <!-- ============ TAB: DAY BY DAY ============ -->
 <section class="tabpanel" id="tab-itinerario">
   <div class="wrap">
-    <div class="sec-head"><h2>Day by Day</h2><span class="sub">{{ days_total }} days</span></div>
+    {% include "intranet/_itinerary_mini_banner.html" with tab_title="Day by Day" tab_sub=days_total_label %}
     <div class="highlights" id="highlights">
       {% for day, lines in regular_days %}
       <div class="hl-card">
@@ -322,13 +391,18 @@
           <span class="daynum">{{ forloop.counter|stringformat:"02d" }}</span>
         </div>
         <div class="hl-body">
-          {% if day.date %}<div class="hl-date">Day {{ forloop.counter }} · {{ day.date|date:"l, F j" }}</div>{% endif %}
+          {% if is_program %}<div class="hl-date">Day {{ day.order|add:1 }}</div>
+          {% elif day.date %}<div class="hl-date">{{ day.date|date:"l, F j" }}</div>{% endif %}
           {% if day.description %}<p class="hl-blurb">{{ day.description }}</p>{% endif %}
         </div>
         <div class="hl-items">
-          {% for line in lines %}
-          {% include "intranet/_itinerary_public_item.html" with line=line show_amount=False %}
-          {% endfor %}
+          {% if lines %}
+            {% for line in lines %}
+            {% include "intranet/_itinerary_public_item.html" with line=line show_amount=False %}
+            {% endfor %}
+          {% else %}
+            <div class="item"><div class="item-body"><div class="item-title">Day at leisure</div></div></div>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -336,11 +410,56 @@
   </div>
 </section>
 
+<!-- ============ TAB: MAP ============ -->
+<section class="tabpanel" id="tab-map">
+  <div class="wrap">
+    {% include "intranet/_itinerary_mini_banner.html" with tab_title="Map" %}
+    {% if itinerary_map_points_json != "[]" and mapbox_token %}
+    <div id="itinerary-map" class="tbl-card" style="height:520px; overflow:hidden; padding:0;"></div>
+    {% else %}
+    <div class="tbl-card" style="position:relative; overflow:hidden; padding:0;">
+      <img src="{% static 'intranet/images/map.png' %}" alt="Map" style="width:100%; display:block; opacity:.5;">
+      <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;">
+        <span style="background:var(--charcoal); color:#fff; padding:10px 22px; border-radius:999px; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; font-weight:700;">Map not available yet</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- ============ TAB: DESTINATIONS ============ -->
+{% if itinerary_destinations %}
+<section class="tabpanel" id="tab-destinations">
+  <div class="wrap">
+    {% include "intranet/_itinerary_mini_banner.html" with tab_title="Destinations" tab_sub=destinations_count_label %}
+    <div class="dest-grid">
+      {% for dest in itinerary_destinations %}
+      <div class="acc-card">
+        <div class="acc-body card-tabs-host">
+          <h3>{{ dest.name }}</h3>
+          <div class="card-tabs">
+            <button type="button" class="card-tab active" data-tab="photos">Photos</button>
+            <button type="button" class="card-tab" data-tab="info">Description</button>
+          </div>
+          <div class="card-tabpanel active" data-tabpanel="photos">
+            {% include "intranet/_photo_carousel.html" with photos=dest.photos %}
+          </div>
+          <div class="card-tabpanel" data-tabpanel="info">
+            {% if dest.description %}<p class="item-desc">{{ dest.description|linebreaksbr }}</p>{% else %}<p class="muted">Description coming soon.</p>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <!-- ============ TAB: ACCOMMODATION ============ -->
 {% if accommodation_cards %}
 <section class="tabpanel" id="tab-alojamiento">
   <div class="wrap">
-    <div class="sec-head"><h2>Accommodation Summary</h2><span class="sub">{{ accommodation_cards|length }} hotel{{ accommodation_cards|length|pluralize }}</span></div>
+    {% include "intranet/_itinerary_mini_banner.html" with tab_title="Accommodation Summary" tab_sub=accommodation_count_label %}
     <div class="acc-grid">
       {% for acc in accommodation_cards %}
       <div class="acc-card">
@@ -349,7 +468,7 @@
           {% if acc.line.title_note or acc.line.room_summary %}
           <div class="acc-room">{{ acc.line.title_note }}{% if acc.line.title_note and acc.line.room_summary %} · {% endif %}{{ acc.line.room_summary }}</div>
           {% endif %}
-          <div class="acc-dates">{% if acc.line.location_name %}{{ acc.line.location_name }} · {% endif %}{{ acc.checkin|date:"D j M Y" }} – {{ acc.checkout|date:"D j M Y" }}</div>
+          <div class="acc-dates">{% if acc.line.location_name %}{{ acc.line.location_name }} · {% endif %}{% if is_program %}Day {{ acc.day_start }} – Day {{ acc.day_end }}{% else %}{{ acc.checkin|date:"D j M Y" }} – {{ acc.checkout|date:"D j M Y" }}{% endif %}</div>
 
           <div class="card-tabs">
             <button type="button" class="card-tab active" data-tab="photos">Photos</button>
@@ -360,9 +479,9 @@
           </div>
           <div class="card-tabpanel" data-tabpanel="info">
             {% with desc=acc.line.custom_description|default:acc.line.option_description %}
-            {% if desc %}<p class="item-desc">{{ desc }}</p>{% else %}<p class="muted">Hotel description coming soon.</p>{% endif %}
+            {% if desc %}<p class="item-desc">{{ desc|linebreaksbr }}</p>{% else %}<p class="muted">Hotel description coming soon.</p>{% endif %}
             {% endwith %}
-            {% if acc.line.conditions_note %}<div class="acc-note">{{ acc.line.conditions_note }}</div>{% endif %}
+            {% if acc.line.conditions_note %}<div class="acc-note">{{ acc.line.conditions_note|linebreaksbr }}</div>{% endif %}
           </div>
 
           {% if itinerary.show_prices and acc.line.amount %}
@@ -384,7 +503,7 @@
 <!-- ============ TAB: GOOD TO KNOW ============ -->
 <section class="tabpanel" id="tab-info">
   <div class="wrap">
-    <div class="sec-head"><h2>Good to Know</h2><span class="sub">Important comments &amp; conditions</span></div>
+    {% include "intranet/_itinerary_mini_banner.html" with tab_title="Good to Know" tab_sub="Important comments & conditions" %}
 
     {% if itinerary.important_comments %}
     <div class="note-card"><h4>Important Comments</h4><p class="muted" style="margin:0;">{{ itinerary.important_comments|linebreaksbr }}</p></div>
@@ -392,6 +511,18 @@
 
     {% if itinerary.prepayments_required %}
     <div class="note-card"><h4>Prepayments Required</h4><p class="muted" style="margin:0;">{{ itinerary.prepayments_required|linebreaksbr }}</p></div>
+    {% endif %}
+
+    {% if special_dates %}
+    <div class="note-card">
+        <h4>Special Dates</h4>
+        {% for sd in special_dates %}
+        <p class="muted" style="margin:0 0 10px;">
+            <strong>{{ sd.date_from|date:"j M Y" }}{% if sd.date_to and sd.date_to != sd.date_from %} – {{ sd.date_to|date:"j M Y" }}{% endif %}</strong>
+            · {{ sd.destination }}: {{ sd.name }}{% if sd.notes %}<br>{{ sd.notes|linebreaksbr }}{% endif %}
+        </p>
+        {% endfor %}
+    </div>
     {% endif %}
 
     <details class="tc">
@@ -468,7 +599,217 @@ function activateTab(tab){
   document.querySelectorAll('.toptab').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+tab));
   window.scrollTo({top:0, behavior:'smooth'});
+  if (tab === 'map') initItineraryMapIfNeeded();
+  if (tab === 'itinerario') initMiniRouteMaps();
 }
+
+// ---------- Mapa del itinerario (Mapbox GL) ----------
+const MAP_POINTS = {{ itinerary_map_points_json|safe }};
+const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+let itineraryMapInstance = null;
+
+// Cartel de destino reutilizable (mapa grande y mini-mapas de Day by Day): un badge opcional
+// arriba (ej. el rango de días) + el nombre del destino debajo, en un cartel blanco sólido
+// para que se lea claro sobre cualquier fondo del mapa.
+function createDestMarkerEl(name, badgeText){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;`;
+
+  if (badgeText) {
+    const badge = document.createElement('div');
+    badge.style.cssText = `
+      background:#a85641; color:#fff; border:2.5px solid #fff; border-radius:999px;
+      padding:5px 11px; font-family:'Work Sans',sans-serif; font-size:.72rem; font-weight:700;
+      white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,.35);
+    `;
+    badge.textContent = badgeText;
+    wrap.appendChild(badge);
+  }
+
+  const label = document.createElement('div');
+  label.style.cssText = `
+    background:#fff; color:#231f20; font-family:'Work Sans',sans-serif; font-size:.7rem;
+    font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap;
+    box-shadow:0 1px 4px rgba(0,0,0,.3);
+  `;
+  label.textContent = name;
+  wrap.appendChild(label);
+
+  return wrap;
+}
+
+// Variante para los mini-mapas de 2 puntos: un punto (el lugar exacto) con el cartel de
+// nombre AL LADO (no encima), para no tapar ni el punto ni la ruta curva entre ambos. side
+// indica de qué lado del punto va el cartel — usar 'left' para el origen y 'right' para el
+// destino separa los dos carteles hacia afuera, lejos de la curva que va por el medio. El
+// anchor del Marker tiene que ser el lado CONTRARIO a donde queda el punto dentro del wrap
+// (row-reverse cuando el cartel va a la izquierda), para que el punto en sí quede exacto
+// sobre la coordenada real y el cartel cuelgue para el costado que corresponda.
+function createSideLabelMarkerEl(name, side){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `display:flex; align-items:center; gap:6px; cursor:pointer;${side === 'left' ? ' flex-direction:row-reverse;' : ''}`;
+
+  const dot = document.createElement('div');
+  dot.style.cssText = `
+    width:14px; height:14px; border-radius:50%; flex:0 0 auto;
+    background:#a85641; border:2.5px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4);
+  `;
+
+  const label = document.createElement('div');
+  label.style.cssText = `
+    background:#fff; color:#231f20; font-family:'Work Sans',sans-serif; font-size:.7rem;
+    font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap;
+    box-shadow:0 1px 4px rgba(0,0,0,.3);
+  `;
+  label.textContent = name;
+
+  wrap.appendChild(dot);
+  wrap.appendChild(label);
+  return wrap;
+}
+
+function drawCurvedSegment(map, from, to, index){
+  const dx = to.lng - from.lng, dy = to.lat - from.lat;
+  const len = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+  // Perpendicular a la dirección del segmento, rotada 90° antihoraria (-dy, dx) — con esta
+  // ÚNICA fórmula (sin distinguir casos a mano) la curva ya sale hacia la derecha cuando el
+  // tramo va de norte a sur, y hacia la izquierda cuando va de sur a norte, porque el sentido
+  // de (dx, dy) ya cambia solo entre ambos casos.
+  const perpX = -dy / len, perpY = dx / len;
+  const bulge = len * 0.18;
+  const ctrlLng = (from.lng + to.lng) / 2 + perpX * bulge;
+  const ctrlLat = (from.lat + to.lat) / 2 + perpY * bulge;
+
+  const n = 48;
+  const coords = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, mt = 1 - t;
+    coords.push([
+      mt * mt * from.lng + 2 * mt * t * ctrlLng + t * t * to.lng,
+      mt * mt * from.lat + 2 * mt * t * ctrlLat + t * t * to.lat,
+    ]);
+  }
+
+  const srcId = `route-src-${index}`, layerId = `route-layer-${index}`;
+  map.addSource(srcId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
+  map.addLayer({
+    id: layerId, type: 'line', source: srcId,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#a85641', 'line-width': 2.5, 'line-opacity': .85 },
+  });
+
+  // Flecha de dirección un poco antes de llegar al destino (no exactamente en la punta, para
+  // no superponerse con el marcador circular) — orientada según la tangente de la curva ahí.
+  const tArrow = 0.88, mtArrow = 1 - tArrow;
+  const arrowLng = mtArrow * mtArrow * from.lng + 2 * mtArrow * tArrow * ctrlLng + tArrow * tArrow * to.lng;
+  const arrowLat = mtArrow * mtArrow * from.lat + 2 * mtArrow * tArrow * ctrlLat + tArrow * tArrow * to.lat;
+  const tanLng = 2 * mtArrow * (ctrlLng - from.lng) + 2 * tArrow * (to.lng - ctrlLng);
+  const tanLat = 2 * mtArrow * (ctrlLat - from.lat) + 2 * tArrow * (to.lat - ctrlLat);
+  const angleDeg = Math.atan2(tanLng, tanLat) * 180 / Math.PI;
+
+  const arrowEl = document.createElement('div');
+  arrowEl.style.cssText = `
+    width:0; height:0;
+    border-left:6px solid transparent; border-right:6px solid transparent;
+    border-bottom:11px solid #a85641;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));
+  `;
+  new mapboxgl.Marker({ element: arrowEl, anchor: 'center', rotationAlignment: 'map', pitchAlignment: 'map' })
+    .setLngLat([arrowLng, arrowLat])
+    .setRotation(angleDeg)
+    .addTo(map);
+}
+
+function initItineraryMapIfNeeded(){
+  if (itineraryMapInstance) { itineraryMapInstance.resize(); return; }
+  const container = document.getElementById('itinerary-map');
+  if (!container || !MAP_POINTS.length || !MAPBOX_TOKEN) return;
+
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+  const map = new mapboxgl.Map({
+    container: 'itinerary-map',
+    style: 'mapbox://styles/mapbox/outdoors-v12',
+    center: [MAP_POINTS[0].lng, MAP_POINTS[0].lat],
+    zoom: 4,
+    projection: 'mercator',
+  });
+  itineraryMapInstance = map;
+
+  map.on('load', () => {
+    for (let i = 0; i < MAP_POINTS.length - 1; i++) {
+      drawCurvedSegment(map, MAP_POINTS[i], MAP_POINTS[i + 1], i);
+    }
+
+    // Si el itinerario pasa más de una vez por el mismo destino, sus marcadores caen en las
+    // mismas coordenadas y el cartel de la visita siguiente tapa al de la anterior — se
+    // separan con un offset en píxeles (fijo en pantalla, no en grados, así se ve igual en
+    // cualquier zoom): 1ª visita a la derecha, 2ª a la izquierda, 3ª arriba, 4ª abajo (más de
+    // 4 visitas al mismo lugar es prácticamente imposible, pero por las dudas se cicla).
+    const MARKER_OFFSETS = [[60, 0], [-60, 0], [0, -46], [0, 46]];
+    const visitCounts = new Map();
+    MAP_POINTS.forEach(p => {
+      const key = `${p.lat},${p.lng}`;
+      const visitIndex = visitCounts.get(key) || 0;
+      visitCounts.set(key, visitIndex + 1);
+
+      const badgeText = (p.day_start === p.day_end) ? `Day ${p.day_start}` : `Day ${p.day_start}-${p.day_end}`;
+      const wrap = createDestMarkerEl(p.name, badgeText);
+
+      new mapboxgl.Marker({ element: wrap, anchor: 'center', offset: MARKER_OFFSETS[visitIndex % MARKER_OFFSETS.length] })
+        .setLngLat([p.lng, p.lat])
+        .setPopup(new mapboxgl.Popup({ offset: 16 }).setText(p.name))
+        .addTo(map);
+    });
+
+    if (MAP_POINTS.length >= 2) {
+      const bounds = MAP_POINTS.reduce(
+        (b, p) => b.extend([p.lng, p.lat]),
+        new mapboxgl.LngLatBounds([MAP_POINTS[0].lng, MAP_POINTS[0].lat], [MAP_POINTS[0].lng, MAP_POINTS[0].lat])
+      );
+      map.fitBounds(bounds, { padding: 70, maxZoom: 9, duration: 0 });
+    } else {
+      map.setZoom(6);
+    }
+  });
+}
+if (document.querySelector('.toptab.active[data-tab="map"]')) initItineraryMapIfNeeded();
+
+// ---------- Mini-mapas por tramo, en Day by Day (mismo drawCurvedSegment que arriba) ----------
+const initializedRouteMaps = new Set();
+function initMiniRouteMaps(){
+  if (!MAPBOX_TOKEN) return;
+  document.querySelectorAll('.mini-route-map').forEach(container => {
+    if (initializedRouteMaps.has(container.id)) return;
+    let route;
+    try { route = JSON.parse(container.dataset.route); } catch (e) { return; }
+    if (!route || !route.from || !route.to) return;
+    initializedRouteMaps.add(container.id);
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const miniMap = new mapboxgl.Map({
+      container: container.id,
+      style: 'mapbox://styles/mapbox/outdoors-v12',
+      center: [route.from.lng, route.from.lat],
+      zoom: 4,
+      interactive: false,
+      projection: 'mercator',
+    });
+    miniMap.on('load', () => {
+      drawCurvedSegment(miniMap, route.from, route.to, 0);
+      // Cartel del origen a la izquierda del punto, el del destino a la derecha — así ninguno
+      // tapa el punto en sí ni la curva que pasa por el medio.
+      new mapboxgl.Marker({ element: createSideLabelMarkerEl(route.from.name, 'left'), anchor: 'right' })
+        .setLngLat([route.from.lng, route.from.lat]).addTo(miniMap);
+      new mapboxgl.Marker({ element: createSideLabelMarkerEl(route.to.name, 'right'), anchor: 'left' })
+        .setLngLat([route.to.lng, route.to.lat]).addTo(miniMap);
+      const bounds = new mapboxgl.LngLatBounds([route.from.lng, route.from.lat], [route.from.lng, route.from.lat])
+        .extend([route.to.lng, route.to.lat]);
+      miniMap.fitBounds(bounds, { padding: 40, duration: 0 });
+    });
+  });
+}
+if (document.querySelector('.toptab.active[data-tab="itinerario"]')) initMiniRouteMaps();
+
 document.getElementById('toptabs').addEventListener('click', e=>{
   const btn = e.target.closest('.toptab');
   if(!btn) return;

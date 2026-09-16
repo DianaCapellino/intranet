@@ -2,6 +2,78 @@ import math
 from django.db.models import Q
 
 
+def parse_optional_float(value):
+    """Convierte un campo de formulario opcional (ej. latitude/longitude de Location) a float,
+    o None si vino vacío/ausente/no numérico — para no reventar con un ValueError cuando el
+    destino todavía no tiene coordenadas cargadas."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def resolve_pic_url(filename):
+    """
+    pic1_url/pic2_url/pic3_url de Location/Supplier/Product venían siendo un nombre de
+    archivo suelto que alguien tipeaba a mano (ej. "bue1.jpg"), relativo a static/tariff/ —
+    ahora que se suben como archivo real (ver save_pic_upload), quedan como una URL completa
+    de MEDIA_ROOT en su lugar. Esta función resuelve CUALQUIERA de las dos formas, así las
+    fotos viejas (nombre suelto) siguen andando exactamente igual sin necesidad de migrar
+    datos, y las nuevas (URL completa) también — se usa tanto para mostrarlas (filtro de
+    template) como en cualquier lugar que necesite la URL real a partir del valor guardado.
+    """
+    if not filename:
+        return None
+    if filename.startswith("http") or filename.startswith("/"):
+        return filename
+    from django.templatetags.static import static
+    return static(f"tariff/{filename}")
+
+
+def save_pic_upload(file, subfolder):
+    """
+    Guarda una foto subida (Location/Supplier/Product) en MEDIA_ROOT y devuelve su URL
+    completa — mismo patrón ya usado por CarCategory (tariff/views/car_hire.py) e
+    ItineraryLine (intranet/views_itinerary.py: entry_itinerary_upload_image), reutilizado acá
+    para no reinventar el mecanismo de subida de fotos por tercera vez.
+    """
+    from django.core.files.storage import default_storage
+    path = default_storage.save(f"tariff_photos/{subfolder}/{file.name}", file)
+    return default_storage.url(path)
+
+
+def get_ratelines_last_update(rateline_ids):
+    """Returns {rateline_id: date} — the most recent Change (history) record
+    date for each rate line. A rate line with no Change record (never went
+    through a tracked create/update, or history was explicitly skipped) is
+    simply absent from the dict."""
+    from django.db.models import Max
+    from tariff.models import Change
+    rows = (
+        Change.objects.filter(rate_line_id__in=list(rateline_ids))
+        .values('rate_line_id')
+        .annotate(last_date=Max('date'))
+    )
+    return {r['rate_line_id']: r['last_date'] for r in rows}
+
+
+def get_suppliers_last_update(supplier_ids):
+    """Returns {supplier_id: date} — the most recent Change (history) record
+    date across all of that supplier's rate lines. A supplier with no tracked
+    changes at all is absent from the dict."""
+    from django.db.models import Max
+    from tariff.models import Change
+    rows = (
+        Change.objects
+        .filter(rate_line__group__product__supplier_id__in=list(supplier_ids))
+        .values('rate_line__group__product__supplier_id')
+        .annotate(last_date=Max('date'))
+    )
+    return {r['rate_line__group__product__supplier_id']: r['last_date'] for r in rows}
+
+
 _AMOUNT_QUERY = """
     SELECT
         BHD.FULL_REFERENCE AS tourplan_id,

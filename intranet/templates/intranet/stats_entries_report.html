@@ -1,6 +1,19 @@
 {% extends "intranet/layout.html" %}
 {% load custom_filters %}
 
+{% block extra_head %}
+<style>
+    /* Only the pie charts (cantidad/monto/clientes/correcciones) get capped —
+       the monthly-evolution line/bar charts still need the full column width. */
+    .chart-box-pie {
+        position: relative;
+        height: 406px;
+        max-width: 593px;
+        margin: 0 auto;
+    }
+</style>
+{% endblock %}
+
 {% block body %}
 {% if user.userType != "Cliente" %}
     <div class="container-fluid">
@@ -343,13 +356,13 @@
                         <h4 class="mt-4">📈 Análisis Visual - Cotizaciones</h4>
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Por Cantidad</h5>
                                     <canvas id="chartCantidadCanvas"></canvas>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Por Monto</h5>
                                     <canvas id="chartMontoCanvas"></canvas>
                                 </div>
@@ -379,18 +392,52 @@
                         <h4 class="mt-4">📈 Análisis Visual - Reservas</h4>
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Por Cantidad</h5>
                                     <canvas id="chartCantidadBookingsCanvas"></canvas>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Por Monto</h5>
                                     <canvas id="chartMontoBookingsCanvas"></canvas>
                                 </div>
                             </div>
                         </div>
+                        <!-- Correcciones por Vendedor -->
+                        <hr class="my-5">
+                        <h3>📋 Correcciones por Vendedor</h3>
+                        <p class="text-muted small mb-2">
+                            <i class="fas fa-circle-info me-1"></i>
+                            Cantidad de entries que cada usuario revisó y marcó como corregidas en el período seleccionado, por dificultad del viaje.
+                        </p>
+                        <table class="report-table table table-striped" id="vendor-corrections-table">
+                            <thead>
+                                <tr>
+                                    <th>Vendedor</th>
+                                    <th>Total Corregidas</th>
+                                    <th>Dif. 1</th>
+                                    <th>Dif. 2</th>
+                                    <th>Dif. 3</th>
+                                    <th>Dif. 4</th>
+                                    <th>Dif. 5</th>
+                                    <th>Promedio Dificultad</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vendor-corrections-tbody"></tbody>
+                            <tfoot id="vendor-corrections-tfoot"></tfoot>
+                        </table>
+
+                        <h4 class="mt-4">📈 Análisis Visual - Correcciones</h4>
+                        <div class="row">
+                            <div class="col-md-6 offset-md-3">
+                                <div class="chart-box chart-box-pie">
+                                    <h5 class="text-center">Por Cantidad</h5>
+                                    <canvas id="chartCantidadCorrectionsCanvas"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
                         <hr class="my-5">
                         <div class="row">
                             <!-- Insights Cotizaciones -->
@@ -627,13 +674,13 @@
                         <br>
                         <div class="row">
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Facturación Cotizaciones</h5>
                                     <canvas id="chartClientsQuotesCanvas"></canvas>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="chart-box">
+                                <div class="chart-box chart-box-pie">
                                     <h5 class="text-center">Facturación Reservas</h5>
                                     <canvas id="chartClientsBookingsCanvas"></canvas>
                                 </div>

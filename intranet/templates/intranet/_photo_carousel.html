@@ -1,5 +1,5 @@
 {% if photos %}
-<div class="photo-carousel" data-index="0">
+<div class="photo-carousel{% if fit_contain %} contain{% endif %}" data-index="0">
     <div class="photo-carousel-track">
         {% for url in photos %}<img src="{{ url }}" alt="">{% endfor %}
     </div>

@@ -45,9 +45,10 @@ urlpatterns = [
     path("entries/client-inquiry/", views.client_entry_inquiry, name="client_entry_inquiry"),
     path("entries/json/pendings", views.json_pendings, name="json_pendings"),
     path("entries/json/last_entry", views.json_last_entry, name="json_last_entry"),
-    path("stats/data/", views.stats_data, name="stats_data"),   
+    path("stats/data/", views.stats_data, name="stats_data"),
     path("stats/data/entries/presentation/", views.stats_presentation_entries, name="stats_presentation_entries"),
     path("stats/data/trips/presentation/", views.stats_presentation_trips, name="stats_presentation_trips"),
+    path("stats/data/itinerary/presentation/", views.stats_presentation_itinerary, name="stats_presentation_itinerary"),
 
     # API routes for configurations
     path("countries/json/<int:country_id>", views.jsoncountry, name="jsoncountry"),
@@ -88,12 +89,18 @@ urlpatterns = [
     path("booking_sheet/request_vr", views.booking_sheet_request_vr, name="booking_sheet_request_vr"),
     path("booking_sheet/cancel_vr_request", views.booking_sheet_cancel_vr_request, name="booking_sheet_cancel_vr_request"),
     path("booking_sheet/bulk_set_vr", views.booking_sheet_bulk_set_vr, name="booking_sheet_bulk_set_vr"),
+    path("booking_sheet/cavo/<int:trip_id>/send", views.booking_sheet_cavo_send, name="booking_sheet_cavo_send"),
+    path("booking_sheet/cavo/<int:trip_id>/mark_done", views.booking_sheet_cavo_mark_done, name="booking_sheet_cavo_mark_done"),
+    path("booking_sheet/cavo/<int:trip_id>/suggested_reviewer", views.booking_sheet_cavo_suggested_reviewer, name="booking_sheet_cavo_suggested_reviewer"),
+    path("booking_sheet/cavo/<int:trip_id>/update_reviewer", views.booking_sheet_cavo_update_reviewer, name="booking_sheet_cavo_update_reviewer"),
+    path("booking_sheet/cavo/<int:trip_id>/dismiss", views.booking_sheet_cavo_dismiss, name="booking_sheet_cavo_dismiss"),
     path("table_preferences", views.table_preferences_get, name="table_preferences_get"),
     path("table_preferences/set", views.table_preferences_set, name="table_preferences_set"),
     path("intranet_files", views.intranet_files, name="intranet_files"),
     path("advanced_search", views.advanced_search, name="advanced_search"),
     path("stats/entries/", views.stats_entries_report, name="stats_entries_report"),
     path("stats/trips/", views.stats_trips_report, name="stats_trips_report"),
+    path("stats/itinerary/", views.stats_itinerary_report, name="stats_itinerary_report"),
 
     # Email processor
     path("email_processor", views.email_processor, name="email_processor"),
@@ -125,9 +132,14 @@ urlpatterns = [
     path("i/<uuid:token>/", views_itinerary.public_itinerary_view, name="public_itinerary"),
 
     # Notification management
+    path("rules", views.rules_management, name="rules_management"),
+    path("rules/cavo_roster/add", views.rules_cavo_roster_add, name="rules_cavo_roster_add"),
+    path("rules/cavo_roster/remove", views.rules_cavo_roster_remove, name="rules_cavo_roster_remove"),
+    path("rules/cavo_roster/move", views.rules_cavo_roster_move, name="rules_cavo_roster_move"),
     path("notifications", views.notifications_management, name="notifications_management"),
     path("notifications/toggle", views.notification_toggle, name="notification_toggle"),
     path("notifications/add", views.notification_add, name="notification_add"),
+    path("notifications/webhook", views.notification_webhook_set, name="notification_webhook_set"),
     path("notifications/unsubscribe/<uuid:token>/", views.notification_unsubscribe, name="notification_unsubscribe"),
 
     # Margin management

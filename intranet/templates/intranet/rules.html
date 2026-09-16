@@ -1,0 +1,94 @@
+{% extends "intranet/layout.html" %}
+
+{% block body %}
+<div class="container-fluid mt-3">
+    <h2 class="mb-1">Gestión de Reglas</h2>
+    <p class="text-muted small mb-4">Reglas automáticas del sistema, configurables por unidad de negocio.</p>
+
+    <div class="card mb-4 border rounded" id="cavo-roster">
+        <div class="card-header fw-semibold">
+            <i class="fa-solid fa-file-circle-check me-1"></i>Corrección de CAVOs — asignación automática
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-4">
+                Cada tipo de seguimiento tiene su propia lista y su propio balanceo — son independientes entre sí.
+                Se asigna siempre a quien tenga menos CAVOs de <strong>ese mismo tipo</strong> asignadas
+                <strong>esta semana</strong> (lunes a domingo); el orden solo desempata cuando hay igualdad.
+                Con un solo corrector en la lista, siempre le toca a esa persona.
+            </p>
+
+            <div class="row g-4">
+            {% for ct in cavo_types %}
+                <div class="col-lg-4">
+                    <h6 class="fw-semibold mb-2">{{ ct.label }}</h6>
+                    <table class="table table-sm table-hover mb-2 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>Usuario</th>
+                                <th style="width:110px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for entry in ct.roster %}
+                            <tr>
+                                <td class="text-muted">{{ forloop.counter }}</td>
+                                <td class="fw-semibold" style="font-size:0.85rem;">
+                                    {{ entry.user.other_name|default:entry.user.username }}
+                                    <div class="text-muted fw-normal" style="font-size:0.7rem;">{{ entry.user.username }}</div>
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <form method="post" action="{% url 'rules_cavo_roster_move' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                        <input type="hidden" name="direction" value="up">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-1" {% if forloop.first %}disabled{% endif %} title="Subir">
+                                            <i class="fa-solid fa-arrow-up"></i>
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'rules_cavo_roster_move' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                        <input type="hidden" name="direction" value="down">
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-1" {% if forloop.last %}disabled{% endif %} title="Bajar">
+                                            <i class="fa-solid fa-arrow-down"></i>
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'rules_cavo_roster_remove' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Quitar">
+                                            <i class="fa-solid fa-xmark"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-muted small text-center py-3">Sin correctores — no se sugiere a nadie para {{ ct.label }}.</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+
+                    {% if ct.available_users %}
+                    <form method="post" action="{% url 'rules_cavo_roster_add' %}" class="d-flex align-items-center gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="seguimiento_type" value="{{ ct.type }}">
+                        <select name="user_id" class="form-select form-select-sm">
+                            {% for u in ct.available_users %}
+                            <option value="{{ u.id }}">{{ u.username }} – {{ u.other_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-dark text-nowrap">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

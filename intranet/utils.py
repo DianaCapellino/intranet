@@ -1,7 +1,7 @@
 import re
 from html import unescape
 from datetime import datetime, date, timedelta
-from .models import Entry, Holidays, Trip, Absence, NotificationPreference
+from .models import Entry, Holidays, Trip, Absence, NotificationPreference, VrAssignmentRound
 from django.urls import reverse
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -288,7 +288,7 @@ def get_explicit_subscriber_emails(notification_type):
     )
 
 
-def send_templated_email(subject, to_emails, template_name, context):
+def send_templated_email(subject, to_emails, template_name, context, cc_emails=None):
     html_content = render_to_string(template_name, context)
 
     msg = EmailMultiAlternatives(
@@ -296,6 +296,7 @@ def send_templated_email(subject, to_emails, template_name, context):
         body="Este email requiere HTML.",
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=to_emails,
+        cc=cc_emails or None,
     )
 
     msg.attach_alternative(html_content, "text/html")
@@ -746,9 +747,10 @@ def build_tariff_team_news_context(date_from=None):
                 "na_changes": na_changes,
             })
 
+    opted_out = _get_opted_out_user_ids("tariff_team")
     internal_users = User.objects.filter(
-        userType__in=["Ventas", "Manager"], department="AI"
-    ).exclude(email="").values_list("email", flat=True)
+        userType__in=["Ventas", "Manager"], department="AI", isActivated=True
+    ).exclude(email="").exclude(id__in=opted_out).values_list("email", flat=True)
     to_emails = list(internal_users)
 
     _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
@@ -1481,7 +1483,7 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
         return str(v).strip() if v is not None else ""
 
     _intranet_trips = list(
-        Trip.objects.select_related("responsable_user", "responsable_user_2", "vr_requested_by", "contact")
+        Trip.objects.select_related("responsable_user", "responsable_user_2", "vr_requested_by", "contact", "cavo_revising_user")
         .exclude(tourplanId="").exclude(tourplanId__isnull=True)
     )
     trips_by_tp = {t.tourplanId.strip(): t.id for t in _intranet_trips if t.tourplanId}
@@ -1490,6 +1492,7 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
     _vr_by_tp = {}
     _vr2_by_tp = {}
     _vr_requested_by_tp = {}
+    _cavo_by_tp = {}
     for _t in _intranet_trips:
         if not _t.tourplanId:
             continue
@@ -1517,6 +1520,15 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
             }
         else:
             _vr_requested_by_tp[_key] = None
+        _cavo_by_tp[_key] = {
+            "link": _t.cavo_link or "",
+            "is_revised": _t.cavo_is_revised,
+            "revising_user": {
+                "id": _t.cavo_revising_user.id,
+                "username": _t.cavo_revising_user.username,
+                "color": str(_t.cavo_revising_user.color) if _t.cavo_revising_user.color else "#6c757d",
+            } if _t.cavo_revising_user else None,
+        }
 
     _all_users = list(User.objects.all())
     users_by_other_tp_bs = {
@@ -1629,6 +1641,7 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
             "intranet_vr":        _vr_by_tp.get(tp_id) if trip_id else None,
             "intranet_vr2":       _vr2_by_tp.get(tp_id) if trip_id else None,
             "vr_requested_by":    _vr_requested_by_tp.get(tp_id) if trip_id else None,
+            "cavo":               _cavo_by_tp.get(tp_id) if trip_id else None,
             "difficulty":         _difficulty_by_tp.get(tp_id, "") if trip_id else "",
             "vendedor_cliente":   _contact_by_tp.get(tp_id, "") if trip_id else "",
             "seguimiento":        _SEG_MAP.get(_seg.get("code", ""), ""),
@@ -1643,6 +1656,262 @@ def get_booking_sheet_data(date_from_str, date_to_str, branches=None):
 
     result.sort(key=lambda r: r["travelling_date_sort"], reverse=True)
     return result
+
+
+def send_vr_missing_reminders():
+    """
+    Every Tuesday: for each department + travelling-date month that already had
+    a full VR round ("Asignar todo" in the booking sheet), find files that still
+    don't have a VR assigned in the intranet — including brand-new bookings that
+    don't even have a local Trip yet — and email that department's Managers a
+    summary grouped by month, with a direct link back to the booking sheet.
+
+    Usage from Django shell:
+        from intranet.utils import send_vr_missing_reminders
+        send_vr_missing_reminders()
+    """
+    from collections import defaultdict
+    from calendar import monthrange
+
+    _DEPT_TO_BRANCH = {"AI": ["AL"], "DM": ["DM"], "GR": ["GR"]}
+    _BS_DEFAULT_OFF = {"PP", "SI", "TE"}   # personal trips / sites / TE — not real bookings
+    _BS_STATUS_ON = {"OK", "FI"}           # closed/blocked files don't need a VR
+    _MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+              "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+    today = date.today()
+    this_month_start = today.replace(day=1)
+
+    _site_url = getattr(settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    logo_url = f"{icons_base_url}logo.png"
+
+    sent_count = 0
+    for dept in ["AI", "DM", "GR"]:
+        rounded_months = list(
+            VrAssignmentRound.objects
+            .filter(department=dept, month__gte=this_month_start)
+            .order_by("month")
+            .values_list("month", flat=True)
+        )
+        if not rounded_months:
+            continue
+
+        date_from = rounded_months[0]
+        last_month = rounded_months[-1]
+        date_to = date(last_month.year, last_month.month, monthrange(last_month.year, last_month.month)[1])
+
+        branches = _DEPT_TO_BRANCH.get(dept, ["AL", "DM", "GR"])
+        try:
+            rows = get_booking_sheet_data(
+                date_from.strftime("%Y%m%d"), date_to.strftime("%Y%m%d"), branches=branches
+            )
+        except Exception:
+            continue
+
+        rounded_month_keys = {m.strftime("%Y-%m") for m in rounded_months}
+        missing_by_month = defaultdict(list)
+        for r in rows:
+            mk = r.get("travelling_date_month")
+            if mk not in rounded_month_keys:
+                continue
+            if r.get("tp_prefix") in _BS_DEFAULT_OFF:
+                continue
+            if r.get("raw_status") not in _BS_STATUS_ON:
+                continue
+            if r.get("intranet_vr"):
+                continue
+            missing_by_month[mk].append(r)
+
+        if not missing_by_month:
+            print(f"VR reminder ({dept}): sin files pendientes de VR.")
+            continue
+
+        month_groups = []
+        for mk in sorted(missing_by_month.keys()):
+            yr, mo = (int(x) for x in mk.split("-"))
+            season = yr if mo >= 5 else yr - 1
+            month_groups.append({
+                "month_label": f"{_MESES[mo-1]} {yr}",
+                "vr_month": mk,
+                "season": season,
+                "trips": missing_by_month[mk],
+                "total": len(missing_by_month[mk]),
+            })
+
+        total_missing = sum(g["total"] for g in month_groups)
+
+        opted_out = _get_opted_out_user_ids("vr_missing_reminder")
+        managers = (
+            User.objects.filter(userType="Manager", isActivated=True, department=dept)
+            .exclude(email="").exclude(id__in=opted_out)
+        )
+        if not managers.exists():
+            print(f"VR reminder ({dept}): {total_missing} file(s) sin VR, pero no hay managers con email.")
+            continue
+
+        for manager in managers:
+            send_templated_email(
+                subject=f"Files sin VR asignado – {total_missing} pendiente{'s' if total_missing != 1 else ''}",
+                to_emails=[manager.email],
+                template_name="emails/vr_missing_reminder.html",
+                context={
+                    "user_name": manager.other_name or manager.username,
+                    "month_groups": month_groups,
+                    "total_missing": total_missing,
+                    "logo_url": logo_url,
+                    "icons_base_url": icons_base_url,
+                    "site_url": site_url,
+                },
+            )
+            sent_count += 1
+
+        print(f"VR reminder ({dept}): {total_missing} file(s) sin VR — enviado a {managers.count()} manager(s).")
+
+    return {"sent": sent_count}
+
+
+def mark_cavo_revised(trip, comment='', seguimiento=''):
+    """
+    Marks a trip's CAVO as revisada and notifies the operator — shared by the
+    manual "Confirmar CAVO revisada" modal (booking_sheet_cavo_mark_done) and
+    run_cavo_close_check's automatic email-reply detection, so both paths stay
+    in sync.
+    """
+    from django.utils import timezone as _tz
+    trip.cavo_is_revised = True
+    trip.cavo_revised_date = _tz.now()
+    trip.save(update_fields=['cavo_is_revised', 'cavo_revised_date'])
+
+    try:
+        operator = trip.operations_user
+        if operator:
+            from intranet.views import _send_gchat_notification, _cavo_email_brand_context
+            closing = f"Comentario: {comment}" if comment else "Sin comentarios adicionales."
+            if (seguimiento or '').strip().upper() == 'BASIC':
+                _send_gchat_notification(
+                    trip.department,
+                    f"tu CAVO ya está revisada — {trip.name}. {closing}",
+                    mention_user=operator,
+                    thread_key=f"trip-{trip.id}-cavo",
+                    purpose='cavo',
+                )
+            elif operator.email:
+                send_templated_email(
+                    subject=f"CAVO revisada — {trip.name}",
+                    to_emails=[operator.email],
+                    template_name="emails/cavo_done.html",
+                    context={
+                        "user_name": operator.other_name or operator.username,
+                        "trip_name": trip.name,
+                        "comment": comment,
+                        **_cavo_email_brand_context(),
+                    },
+                )
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("mark_cavo_revised: notification failed for trip %s: %s", trip.id, exc)
+
+
+def run_cavo_close_check(stdout=None):
+    """
+    Check the aliwen@aliwenincoming.com.ar inbox for replies to CAVO assignment
+    emails ([ref:CV-N] in subject, sent for STD/FULL seguimiento files). A reply
+    from the ASSIGNED CORRECTOR auto-marks that trip's CAVO as revisada — same
+    idea as run_quality_close_check, but no AI step: match the token, mark it
+    done. Replies from anyone else (e.g. the operator, CC'd on the original
+    email) are archived but don't mark anything — only the corrector's own
+    reply counts.
+    Returns dict with keys: processed, marked, error.
+    """
+    import os, re as _re
+    from dotenv import load_dotenv
+    from imap_tools import MailBox
+
+    load_dotenv(override=True)
+    username = os.environ.get('ALIWEN_MAIL_USERNAME')
+    password = os.environ.get('ALIWEN_MAIL_PASSWORD')
+    server   = os.environ.get('ALIWEN_MAIL_SERVER') or os.environ.get('MAIL_SERVER')
+
+    def _log(msg):
+        if stdout:
+            stdout.write(msg)
+
+    if not all([username, password, server]):
+        return {
+            'error': 'Faltan variables de entorno ALIWEN_MAIL_USERNAME / ALIWEN_MAIL_PASSWORD / ALIWEN_MAIL_SERVER',
+            'processed': 0, 'marked': 0,
+        }
+
+    _CV_PATTERN = _re.compile(r'\[ref:CV-(\d+)\]', _re.IGNORECASE)
+    processed = marked = 0
+    seen_ids = set()
+
+    def _get_message_id(msg):
+        raw = msg.headers.get('message-id') or msg.headers.get('Message-ID') or []
+        if isinstance(raw, list) and raw:
+            return raw[0].strip()
+        return raw.strip() if isinstance(raw, str) else f'uid-{msg.uid}'
+
+    try:
+        with MailBox(server).login(username, password, 'INBOX') as mb:
+            to_archive = []
+            for msg in mb.fetch('SUBJECT "[ref:CV-"', mark_seen=False, bulk=True):
+                msg_id       = _get_message_id(msg)
+                subject      = msg.subject or ''
+                from_raw     = msg.from_ or ''
+                m_addr       = _re.search(r'<([^>]+)>', from_raw)
+                sender_email = m_addr.group(1).lower() if m_addr else from_raw.lower().strip()
+
+                m = _CV_PATTERN.search(subject)
+                if not m:
+                    continue
+
+                if msg_id in seen_ids:
+                    to_archive.append(msg.uid)
+                    continue
+                seen_ids.add(msg_id)
+
+                own = {e.lower() for e in getattr(settings, 'ALIWEN_OWN_EMAILS', set())}
+                own.add((settings.DEFAULT_FROM_EMAIL or '').lower())
+                own.add(username.lower())
+                if sender_email in own:
+                    to_archive.append(msg.uid)
+                    continue
+
+                trip_id = int(m.group(1))
+                try:
+                    trip = Trip.objects.select_related('operations_user', 'cavo_revising_user').get(pk=trip_id)
+                except Trip.DoesNotExist:
+                    to_archive.append(msg.uid)
+                    continue
+
+                processed += 1
+                corrector_email = (trip.cavo_revising_user.email or '').lower() if trip.cavo_revising_user else ''
+                if not trip.cavo_is_revised and corrector_email and sender_email == corrector_email:
+                    mark_cavo_revised(trip, comment='Confirmado automáticamente por respuesta de mail.')
+                    marked += 1
+                    _log(f"  ✓ CAVO marcada revisada — trip {trip_id}")
+                elif not trip.cavo_is_revised:
+                    _log(f"  · Respuesta de {sender_email} para trip {trip_id} ignorada (no es el corrector asignado)")
+
+                to_archive.append(msg.uid)
+
+            if to_archive:
+                try:
+                    from intranet.management.commands.process_quality_inbox import _gmail_archive
+                    _gmail_archive(mb, to_archive)
+                except Exception:
+                    pass
+
+    except Exception as exc:
+        return {'error': str(exc), 'processed': processed, 'marked': marked}
+
+    return {'processed': processed, 'marked': marked}
 
 
 # ---------------------------------------------------------------------------

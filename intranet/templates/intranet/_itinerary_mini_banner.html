@@ -1,0 +1,13 @@
+<div class="mini-banner">
+    <div>
+        <div class="mini-banner-eyebrow">{{ itinerary.title|default:"Your itinerary" }}</div>
+        <div class="mini-banner-tab-title">{{ tab_title }}{% if tab_sub %}<span class="mini-banner-tab-sub"> · {{ tab_sub }}</span>{% endif %}</div>
+    </div>
+    <div class="mini-banner-meta">
+        <span><i class="fa-solid fa-hashtag"></i> {{ itinerary.entry.tourplanId|default:itinerary.entry.trip.tourplanId }}</span>
+        {% if is_program %}
+        {% if valid_until_date %}<span><i class="fa-solid fa-calendar"></i> Valid until {{ valid_until_date|date:"j M Y" }}</span>{% endif %}
+        {% elif dated_days_first %}<span><i class="fa-solid fa-calendar"></i> {{ dated_days_first|date:"j M Y" }} – {{ dated_days_last|date:"j M Y" }} · {{ nights_total }} night{{ nights_total|pluralize }}</span>{% endif %}
+        {% if itinerary.pax_count %}<span><i class="fa-solid fa-users"></i> {{ itinerary.pax_count }} traveller{{ itinerary.pax_count|pluralize }}</span>{% endif %}
+    </div>
+</div>

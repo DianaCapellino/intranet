@@ -4,7 +4,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from intranet.models import Entry
-from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly, send_tariff_team_weekly, send_closure_reminders
+from intranet.utils import update_entries, send_margin_warnings, send_margin_warning_manager, sync_from_tourplan_db, send_holiday_reminder, run_quality_close_check, run_quality_followups, send_tariff_client_weekly, send_tariff_team_weekly, send_closure_reminders, send_vr_missing_reminders, run_cavo_close_check
 
 
 class Command(BaseCommand):
@@ -41,6 +41,7 @@ class Command(BaseCommand):
         is_wednesday = today.weekday() == 2
         is_thursday  = today.weekday() == 3
         is_monday = today.weekday() == 0
+        is_tuesday = today.weekday() == 1
         is_first_wednesday = is_wednesday and today.day <= 7
 
         # Quality inbox — every day
@@ -67,6 +68,20 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"Seguimientos enviados: {r['sent']}"))
         except Exception as exc:
             self.stdout.write(self.style.ERROR(f"Error en seguimientos de calidad: {exc}"))
+
+        # CAVO close-reply check — every day (auto-marks CAVO revisada on reply)
+        self.stdout.write("-" * 30)
+        self.stdout.write("Verificando respuestas de CAVO...")
+        try:
+            r = run_cavo_close_check(stdout=self.stdout)
+            if r.get('error'):
+                self.stdout.write(self.style.WARNING(f"CAVO close-check sin ejecutar: {r['error']}"))
+            else:
+                self.stdout.write(self.style.SUCCESS(
+                    f"Respuestas de CAVO procesadas: {r['processed']} | Marcadas revisadas: {r['marked']}"
+                ))
+        except Exception as exc:
+            self.stdout.write(self.style.ERROR(f"Error en close-check de CAVO: {exc}"))
 
         # Margin warnings to sellers — every Wednesday
         if is_wednesday:
@@ -98,6 +113,16 @@ class Command(BaseCommand):
                 ))
             except Exception as exc:
                 self.stdout.write(self.style.ERROR(f"Error al enviar tarifas a clientes: {exc}"))
+
+        # VR missing reminder to managers — every Tuesday
+        if is_tuesday:
+            self.stdout.write("-" * 30)
+            self.stdout.write("Enviando recordatorio de files sin VR a managers...")
+            try:
+                r = send_vr_missing_reminders()
+                self.stdout.write(self.style.SUCCESS(f"Recordatorio de VR enviado — {r['sent']} email(s)"))
+            except Exception as exc:
+                self.stdout.write(self.style.ERROR(f"Error al enviar recordatorio de VR: {exc}"))
 
         # Tariff team update — every Thursday
         if is_thursday:

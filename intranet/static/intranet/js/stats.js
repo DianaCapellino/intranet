@@ -176,6 +176,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // ✅ Detectar si estamos en la página de itinerario
+    if (window.location.pathname.startsWith("/stats/itinerary/")) {
+
+        const params = new URLSearchParams(window.location.search);
+        const filters = Object.fromEntries(params.entries());
+
+        const statusLabel = filters.status_filter === 'all' ? 'Todos (incl. cotizado no confirmado)' : 'Solo confirmados';
+        const reportPeriod = `${filters.date_from || ''} → ${filters.date_to || ''} · ${statusLabel}`;
+        const periodEl = document.getElementById('report-period');
+        if (periodEl) periodEl.textContent = `Período: ${reportPeriod}`;
+
+        // Llamar a la función que obtiene los datos del backend
+        await generatePresentationItineraryData(filters);
+
+        // Mostrar contenido cuando los datos llegan
+        const loadingEl = document.getElementById('loading');
+        const contentEl = document.getElementById('report-content');
+        if (loadingEl) loadingEl.classList.remove('show');
+        if (contentEl) {
+            contentEl.style.display = 'block';
+            loadingEl.classList.add('d-none');
+        }
+
+        const btnWarnings = document.querySelectorAll('.btn-warnings');
+        if (btnWarnings) {
+            btnWarnings.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    btn.parentNode.classList.add("d-none");
+                });
+            });
+        }
+
+        // 🛑 IMPORTANTE: no ejecutar el resto del JS (DataTables, formularios, etc.)
+        return;
+    }
+
     // Display functionality of the btn
     stats_btn_display();
 
@@ -208,8 +244,10 @@ let reportPeriod = '';
 // ==================== DATA ENTRIES ====================
 let vendorQuoteData = {};
 let vendorBookingData = {};
+let vendorCorrectionsData = {};
 let chartsQuotes = {};
 let chartsBookings = {};
+let chartsCorrections = {};
 let chartsTripsVendor = {};
 let chartsTripsOperator = {};
 let chartsClients = {};
@@ -270,6 +308,7 @@ async function generatePresentationEntriesData(filters = {}) {
         // Guardamos el objeto global vendorData para reutilizarlo
         window.vendorQuoteData = result.vendors_quote || {};
         window.vendorBookingData = result.vendors_bookings || {};
+        vendorCorrectionsData = result.vendors_corrections || {};
 
         window.summaryTableQuotes = result.summary_table_quotes || {};
         window.summaryTableBookings = result.summary_table_bookings || {};
@@ -620,6 +659,8 @@ async function loadSection(sectionName) {
             case 'vendor':
                 renderVendorTableQuote();
                 renderVendorTableBooking();
+                renderVendorTableCorrections();
+                renderChartsCorrections();
                 renderMonthlyByVendorEntries();
                 renderMonthlySummaryTable();
                 renderChartsQuotes();
@@ -1432,6 +1473,108 @@ function renderVendorTableQuote() {
 
 }
 
+
+// ==================== FUNCIÓN: Renderizar tabla de correcciones ====================
+function renderVendorTableCorrections() {
+
+    if ($.fn.DataTable.isDataTable("#vendor-corrections-table")) {
+        $("#vendor-corrections-table").DataTable().clear().destroy();
+    }
+
+    const tbody = document.getElementById('vendor-corrections-tbody');
+    const tfoot = document.getElementById('vendor-corrections-tfoot');
+    if (!tbody || !tfoot) {
+        console.error("❌ No se encontró tbody o tfoot de correcciones en el HTML.");
+        return;
+    }
+
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    Object.entries(vendorCorrectionsData).forEach(([vendor, vals]) => {
+        const color = vals.color || '#FFFFFF';
+        const cellStyle = `background-color: ${color} !important; color: #333333;`;
+
+        const row = document.createElement('tr');
+        row.setAttribute('style', cellStyle);
+        row.innerHTML = `
+            <td style="${cellStyle}">${vendor}</td>
+            <td style="${cellStyle}">${vals.total}</td>
+            <td style="${cellStyle}">${vals.diff1}</td>
+            <td style="${cellStyle}">${vals.diff2}</td>
+            <td style="${cellStyle}">${vals.diff3}</td>
+            <td style="${cellStyle}">${vals.diff4}</td>
+            <td style="${cellStyle}">${vals.diff5}</td>
+            <td style="${cellStyle}">${vals.avgDifficulty.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    const totals = Object.values(vendorCorrectionsData).reduce((acc, v) => {
+        acc.total += v.total;
+        acc.diff1 += v.diff1; acc.diff2 += v.diff2; acc.diff3 += v.diff3;
+        acc.diff4 += v.diff4; acc.diff5 += v.diff5;
+        return acc;
+    }, { total: 0, diff1: 0, diff2: 0, diff3: 0, diff4: 0, diff5: 0 });
+    const diffSum = totals.diff1 * 1 + totals.diff2 * 2 + totals.diff3 * 3 + totals.diff4 * 4 + totals.diff5 * 5;
+    const diffCount = totals.diff1 + totals.diff2 + totals.diff3 + totals.diff4 + totals.diff5;
+    const avgDifficultyTotal = diffCount > 0 ? (diffSum / diffCount).toFixed(2) : '0.00';
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'total-row table-secondary fw-bold';
+    totalRow.innerHTML = `
+        <td><strong>TOTAL</strong></td>
+        <td>${totals.total}</td>
+        <td>${totals.diff1}</td>
+        <td>${totals.diff2}</td>
+        <td>${totals.diff3}</td>
+        <td>${totals.diff4}</td>
+        <td>${totals.diff5}</td>
+        <td>${avgDifficultyTotal}</td>
+    `;
+    tfoot.appendChild(totalRow);
+
+    create_datatable_stats("vendor-corrections-table");
+}
+
+// ==================== FUNCIÓN: Renderizar gráfico de correcciones ====================
+function renderChartsCorrections() {
+    const vendors = Object.keys(vendorCorrectionsData);
+    const cantidades = vendors.map(v => vendorCorrectionsData[v].total);
+    const colors = vendors.map(vendor => vendorCorrectionsData[vendor].color || '#999999');
+
+    if (chartsCorrections.cantidad) chartsCorrections.cantidad.destroy();
+
+    const canvas = document.getElementById('chartCantidadCorrectionsCanvas');
+    if (!canvas) return;
+    const ctxCantidad = canvas.getContext('2d');
+    chartsCorrections.cantidad = new Chart(ctxCantidad, {
+        type: 'pie',
+        data: {
+            labels: vendors,
+            datasets: [{
+                data: cantidades,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        font: { family: 'Arial', size: 12 },
+                        padding: 15
+                    }
+                }
+            }
+        }
+    });
+}
+
 // ==================== FUNCIÓN: Renderizar tabla ====================
 function renderVendorTableBooking() {
 
@@ -2162,7 +2305,7 @@ function renderChartsQuotes() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -2190,7 +2333,7 @@ function renderChartsQuotes() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -2239,7 +2382,7 @@ function renderChartsBookings() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -2267,7 +2410,7 @@ function renderChartsBookings() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -2429,7 +2572,7 @@ function renderChartsClients() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -2462,7 +2605,7 @@ function renderChartsClients() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -3215,6 +3358,16 @@ function stats_btn_display() {
             });
         });
     }
+
+    // El destino y el filtro de status solo tienen sentido para el tipo "Itinerario"
+    document.querySelectorAll('.type-select').forEach((sel) => {
+        const form = sel.closest('.stats-form');
+        if (!form) return;
+        const fields = form.querySelectorAll('.itinerary-only');
+        const toggle = () => fields.forEach((f) => f.classList.toggle('d-none', sel.value !== 'itinerary'));
+        sel.addEventListener('change', toggle);
+        toggle();
+    });
 }
 
 function show_form(btn_id) {
@@ -3254,6 +3407,22 @@ function show_form(btn_id) {
                 reportType = typeSelect.value;
             }
             extraData.type = reportType;
+
+            // 🚩 Itinerario no tiene tabla fila-por-fila (son rankings, no entradas/viajes
+            // sueltos) — pide destino, y va directo a habilitar "Ver Reporte Completo".
+            if (reportType === "itinerary") {
+                const locationSelect = document.getElementById(`location-select-${btn_id}`);
+                extraData.location_id = locationSelect ? locationSelect.value : "";
+                if (!extraData.location_id) {
+                    alert("Seleccioná un destino.");
+                    return;
+                }
+                document.getElementById('report_results').innerHTML = "";
+                document.getElementById('stats-sum').classList.add('d-none');
+                document.getElementById('presentation-buttons').classList.remove('d-none');
+                inicialize_presentations();
+                return;
+            }
 
             // 🚩 definir columnas distintas para cada tipo
             let columnsDef = [];
@@ -3528,6 +3697,10 @@ function inicialize_presentations() {
                 queryParams.append('filter', 'weekly');
 
                 const typeReport = document.getElementById('type-select-1').value;
+                if (typeReport === "itinerary") {
+                    queryParams.append('location_id', document.getElementById('location-select-1').value);
+                    queryParams.append('status_filter', document.getElementById('status-filter-1').value);
+                }
 
                 // Redirigir a la página de reporte
                 window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
@@ -3546,6 +3719,10 @@ function inicialize_presentations() {
                 queryParams.append('filter', 'monthly');
                 
                 const typeReport = document.getElementById('type-select-2').value;
+                if (typeReport === "itinerary") {
+                    queryParams.append('location_id', document.getElementById('location-select-2').value);
+                    queryParams.append('status_filter', document.getElementById('status-filter-2').value);
+                }
 
                 // Redirigir a la página de reporte
                 window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
@@ -3565,6 +3742,10 @@ function inicialize_presentations() {
                 queryParams.append('filter', 'season');
                 
                 const typeReport = document.getElementById('type-select-3').value;
+                if (typeReport === "itinerary") {
+                    queryParams.append('location_id', document.getElementById('location-select-3').value);
+                    queryParams.append('status_filter', document.getElementById('status-filter-3').value);
+                }
 
                 // Redirigir a la página de reporte
                 window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
@@ -3581,6 +3762,10 @@ function inicialize_presentations() {
                 queryParams.append('date_to', `${dateTo}`);
                 queryParams.append('filter', 'custom');
                 const typeReport = document.getElementById('type-select-4').value;
+                if (typeReport === "itinerary") {
+                    queryParams.append('location_id', document.getElementById('location-select-4').value);
+                    queryParams.append('status_filter', document.getElementById('status-filter-4').value);
+                }
 
                 // Redirigir a la página de reporte
                 window.location.href = `/stats/${typeReport}/?${queryParams.toString()}`;
@@ -3635,4 +3820,133 @@ function create_datatable_stats(id) {
             url: 'https://cdn.datatables.net/plug-ins/2.2.2/i18n/es-AR.json',
         },
     });
+}
+
+// ==================== ITINERARIO: hoteles / tours / combinaciones más repetidos ====================
+
+async function generatePresentationItineraryData(filters = {}) {
+    try {
+        const params = new URLSearchParams(filters);
+        const response = await fetch(`/stats/data/itinerary/presentation/?${params.toString()}`);
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+            const banner = document.getElementById('error-warning-1');
+            if (banner) {
+                banner.textContent = result.error || `Error al cargar datos (HTTP ${response.status})`;
+                banner.classList.remove('d-none');
+            }
+            window.hotelsRankingData = [];
+            window.toursRankingData = [];
+            window.combosRankingData = [];
+            return;
+        }
+
+        window.hotelsRankingData = result.hotels_ranking || [];
+        window.toursRankingData  = result.tours_ranking  || [];
+        window.combosRankingData = result.combos_ranking || [];
+
+        const kpiEl = document.getElementById('kpi-itinerary-bookings');
+        if (kpiEl) kpiEl.textContent = result.bookings_scanned ?? '—';
+    } catch (error) {
+        console.error("Error al cargar datos de itinerario:", error);
+        const banner = document.getElementById('error-warning-1');
+        if (banner) {
+            banner.textContent = `Error al cargar datos: ${error.message}`;
+            banner.classList.remove('d-none');
+        }
+        window.hotelsRankingData = [];
+        window.toursRankingData = [];
+        window.combosRankingData = [];
+    }
+}
+
+const sectionsLoadedItinerary = {
+    hotels: false,
+    tours: false,
+    combos: false
+};
+
+async function loadSectionItinerary(sectionName) {
+    if (sectionsLoadedItinerary[sectionName]) return;
+
+    switch (sectionName) {
+        case 'hotels':
+            _renderRankingTable('hotels-ranking-tbody', window.hotelsRankingData || []);
+            _renderRankingChart('chartHotelsRanking', window.hotelsRankingData || [], '#4e79a7');
+            sectionsLoadedItinerary.hotels = true;
+            break;
+
+        case 'tours':
+            _renderRankingTable('tours-ranking-tbody', window.toursRankingData || []);
+            _renderRankingChart('chartToursRanking', window.toursRankingData || [], '#59a14f');
+            sectionsLoadedItinerary.tours = true;
+            break;
+
+        case 'combos':
+            _renderCombosTable(window.combosRankingData || []);
+            sectionsLoadedItinerary.combos = true;
+            break;
+    }
+}
+
+// Shared by the Hoteles/Tours sections: a plain #-Nombre-Reservas ranking table.
+function _renderRankingTable(tbodyId, data) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center">Sin datos para este destino y período.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map((row, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>${row.name}</td>
+            <td class="text-end">${row.count}</td>
+        </tr>
+    `).join('');
+}
+
+// Shared by the Hoteles/Tours sections: a horizontal bar chart of the top rows.
+function _renderRankingChart(canvasId, data, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+    if (!data.length) return;
+
+    const top = data.slice(0, 10);
+    new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: top.map(r => r.name),
+            datasets: [{
+                label: 'Reservas',
+                data: top.map(r => r.count),
+                backgroundColor: color,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+    });
+}
+
+function _renderCombosTable(data) {
+    const tbody = document.getElementById('combos-ranking-tbody');
+    if (!tbody) return;
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center">Sin datos para este destino y período.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map((row, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>${(row.items || [row.name]).join(' + ')}</td>
+            <td class="text-end">${row.count}</td>
+        </tr>
+    `).join('');
 }

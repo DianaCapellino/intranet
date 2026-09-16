@@ -17,6 +17,7 @@ import json
 import os
 import re
 import unicodedata
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 import anthropic
@@ -135,7 +136,7 @@ _ITINERARY_BASE_COLUMNS = """
             supplier_confirmation,
             Service_Status       Service_status,
             sst.NAME             Service_StatusName,
-            pickup_time, dropoff_time, pickup_date, pickup, dropoff,
+            pickup_time, dropoff_time, pickup_date, dropoff_date, pickup, dropoff,
             Booking_Analysis1_Name   Operador,
             Booking_Consultant_Name  Consultant,
             Booking_Analysis3_Name   GR
@@ -143,15 +144,19 @@ _ITINERARY_BASE_COLUMNS = """
 
 # Extra columns for the public-itinerary use case (price + codes to match Product/Supplier
 # for photos). Confirmed against the real OPSView schema via discover_opsview_columns().
-# Agent_Price (not Retail_Price) is used for consistency with how "amount" is defined
-# everywhere else in this app (Entry.amount / Trip.amount both come from BSD.AGENT, whose
-# OPSView equivalent is Agent_Price) — if the public itinerary should instead show the
-# client-facing retail price, swap this for OPSView.Retail_Price.
+# Agent_Price_Inc (impuesto incluido), NOT Agent_Price (neto de impuesto) — confirmado con
+# datos reales de la reserva ALFI121940/1577/TRPG17: OPSView.Agent_Price traía 150.71 pero el
+# monto real de la reserva, BSD.AGENT, es 174.00 — que coincide exacto con
+# OPSView.Agent_Price_Inc, no con Agent_Price. El comentario anterior (que decía que
+# Agent_Price era el equivalente de BSD.AGENT) estaba mal — causaba montos con centavos raros
+# en cualquier línea con impuesto. Si el itinerario público debiera mostrar el precio de lista
+# (retail) en vez del que paga el agente, cambiar por OPSView.Retail_Price_Inc (mismo criterio
+# de "_Inc", no Retail_Price a secas).
 _ITINERARY_EXTRA_COLUMNS = """,
             OPSView.Supplier_Code  Supplier_Code,
             OPSView.Product_Option Product_Option_Code,
             OPSView.Product_Location_Name Product_Location_Name,
-            OPSView.Agent_Price    Service_Sell,
+            OPSView.Agent_Price_Inc Service_Sell,
             OPSView.Singles        Singles,
             OPSView.Doubles        Doubles,
             OPSView.Twins          Twins,
@@ -172,6 +177,7 @@ _ITINERARY_FROM_WHERE = """
           AND OPSView.Booking_Travel_Date >= %s
           AND OPSView.Booking_Travel_Date <= %s
           AND Booking_Reference = %s
+        ORDER BY OPSView.Service_Date, OPSView.Day_Number, OPSView.Sequence_Number
 """
 
 
@@ -315,6 +321,154 @@ def fetch_itinerary_from_tourplan(booking_ref, branches=('AL',), skip_service_ty
     except Exception as exc:
         _log.getLogger(__name__).warning("Tourplan itinerary fetch failed for %s: %s", booking_ref, exc)
         return []
+
+
+_LOCATION_BOOKINGS_COLUMNS = """
+    OPSView.Booking_Reference,
+    OPSView.Booking_Status,
+    OPSView.Product_Service,
+    OPSView.Product_Option        AS Product_Option_Code,
+    OPSView.Product_Option_name   AS Product_Name,
+    OPSView.Supplier_Code,
+    OPSView.Supplier_Name
+"""
+
+_LOCATION_BOOKINGS_FROM_WHERE = """
+        FROM OPSView
+        WHERE OPSView.Booking_Branch IN ({branch_in})
+          AND OPSView.Product_Location = %s
+          AND OPSView.Product_Service IN ('AC', 'EX')
+          AND OPSView.Booking_Travel_Date >= %s
+          AND OPSView.Booking_Travel_Date <= %s
+          {status_clause}
+        ORDER BY OPSView.Booking_Reference
+"""
+
+
+def fetch_bookings_by_location(location_code, date_from, date_to, branches, status_filter="confirmed"):
+    """
+    Query Tourplan OPSView for hotel (AC) and tour (EX) booking lines across ALL
+    bookings for one destination within a date range — unlike
+    fetch_itinerary_from_tourplan, this is NOT scoped to a single Booking_Reference.
+    Used by the "Itinerario" stats report to rank most-booked hotels/tours and find
+    repeated hotel+tour combinations (see aggregate_itinerary_stats).
+
+    location_code: tariff.Location.code (matches OPSView.Product_Location).
+    date_from/date_to: date objects.
+    branches: Tourplan BRANCH codes to filter on (see intranet.views._user_tp_branches).
+    status_filter: filters on OPSView.Booking_Status (confirmed live in the query,
+    not via a local-DB cross-reference):
+      - "confirmed" (default): only intranet.utils._BOOKING_STATUSES (OK/FI/CT/B1-B8/BL)
+        — the same "confirmed booking" definition already used by sync_from_tourplan_db
+        for Trip.status, so this report doesn't invent a second, inconsistent one.
+      - "all": everything except intranet.utils._CANCELLED_STATUSES (RX/XC/XX) — i.e.
+        confirmed + quoted/not-yet-confirmed, but never cancelled.
+
+    Returns a list of dicts with keys: Booking_Reference, Booking_Status,
+    Product_Service, Product_Option_Code, Product_Name, Supplier_Code, Supplier_Name.
+    Returns [] if the connection/query fails (logged, not raised) so the report
+    degrades to an empty state instead of a 500.
+    """
+    if not location_code:
+        return []
+
+    from intranet.utils import get_tourplan_connection, _BOOKING_STATUSES, _CANCELLED_STATUSES
+
+    p1 = date_from.strftime('%Y%m%d')
+    p2 = date_to.strftime('%Y%m%d')
+    branch_in = ', '.join(f"'{b}'" for b in branches)
+
+    if status_filter == "all":
+        codes = ', '.join(f"'{c}'" for c in sorted(_CANCELLED_STATUSES))
+        status_clause = f"AND OPSView.Booking_Status NOT IN ({codes})"
+    else:
+        codes = ', '.join(f"'{c}'" for c in sorted(_BOOKING_STATUSES))
+        status_clause = f"AND OPSView.Booking_Status IN ({codes})"
+
+    sql = (
+        "SELECT" + _LOCATION_BOOKINGS_COLUMNS
+        + _LOCATION_BOOKINGS_FROM_WHERE.format(branch_in=branch_in, status_clause=status_clause)
+    )
+
+    import logging as _log
+    conn = None
+    try:
+        conn = get_tourplan_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, (location_code, p1, p2))
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as exc:
+        _log.getLogger(__name__).warning(
+            "Tourplan location-bookings fetch failed for %s (%s to %s): %s",
+            location_code, date_from, date_to, exc,
+        )
+        return []
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def aggregate_itinerary_stats(rows, top_n=20):
+    """
+    Ranks hotels, tours and repeated hotel+tour combinations from the rows returned
+    by fetch_bookings_by_location. Counts DISTINCT bookings (Booking_Reference), not
+    raw line rows — one booking can have several AC lines for the same hotel
+    (multiple nights / rate components) and must only count once.
+
+    Returns {"hotels": [...], "tours": [...], "combos": [...]}:
+    - hotels/tours: [{"name": str, "count": int}, ...] sorted by count desc.
+    - combos: [{"name": str, "items": [str, ...], "count": int}, ...] — "items" is
+      the sorted list of hotel/tour names in that combination (order-independent
+      identity: two bookings with the same set of hotels+tours, in any order,
+      count as the same combination), "name" is that list joined for display.
+    """
+    hotel_bookings = defaultdict(set)   # product key -> {Booking_Reference, ...}
+    hotel_names    = {}                 # product key -> display name
+    tour_bookings  = defaultdict(set)
+    tour_names     = {}
+    booking_items  = defaultdict(set)   # Booking_Reference -> {product key, ...} (AC+EX)
+
+    for row in rows:
+        service = (row.get('Product_Service') or '').strip().upper()
+        if service not in ('AC', 'EX'):
+            continue
+        ref = row.get('Booking_Reference')
+        code = (row.get('Product_Option_Code') or '').strip()
+        if not ref or not code:
+            continue
+        name = (row.get('Product_Name') or '').strip()
+        supplier = (row.get('Supplier_Name') or '').strip()
+        display = f"{name} ({supplier})" if name and supplier else (name or code)
+
+        key = f"{service}:{code}"
+        if service == 'AC':
+            hotel_bookings[key].add(ref)
+            hotel_names.setdefault(key, display)
+        else:
+            tour_bookings[key].add(ref)
+            tour_names.setdefault(key, display)
+        booking_items[ref].add(key)
+
+    def _rank(bookings_by_key, names):
+        ranked = sorted(bookings_by_key.items(), key=lambda kv: len(kv[1]), reverse=True)
+        return [{"name": names.get(key, key), "count": len(refs)} for key, refs in ranked[:top_n]]
+
+    hotels = _rank(hotel_bookings, hotel_names)
+    tours  = _rank(tour_bookings, tour_names)
+
+    all_names = {**hotel_names, **tour_names}
+    combo_bookings = defaultdict(set)  # frozenset of keys -> {Booking_Reference, ...}
+    for ref, keys in booking_items.items():
+        if keys:
+            combo_bookings[frozenset(keys)].add(ref)
+
+    ranked_combos = sorted(combo_bookings.items(), key=lambda kv: len(kv[1]), reverse=True)
+    combos = []
+    for combo, refs in ranked_combos[:top_n]:
+        items = sorted(all_names.get(k, k) for k in combo)
+        combos.append({"name": " + ".join(items), "items": items, "count": len(refs)})
+
+    return {"hotels": hotels, "tours": tours, "combos": combos}
 
 
 def load_itinerario_csv():

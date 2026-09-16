@@ -67,8 +67,9 @@
                       {% endif %}
                     </ul>
                   </li>
-                  <li class="nav-item">
+                  <li class="nav-item d-flex align-items-center">
                       <a class="nav-link text-light" href="{% url 'entries' %}" id="pendings">Pendientes</a>
+                      {% if user.userType != "Cliente" %}<a href="{% url 'entries' %}?user_filter={{ user.username|urlencode }}" id="nav-pending-entries-badge" title="Pendientes para enviar" class="badge rounded-pill text-bg-danger text-decoration-none{% if not nav_pending_entries %} d-none{% endif %}" style="font-size:0.65rem;padding:2px 5px;margin-left:3px;">{{ nav_pending_entries|default:0 }}</a><a href="{% url 'revising_itineraries' %}" id="nav-correction-count-badge" title="Pendientes para revisar" class="badge rounded-pill text-bg-warning text-decoration-none{% if not nav_pending_corrections %} d-none{% endif %}" style="font-size:0.65rem;padding:2px 5px;margin-left:2px;">{{ nav_pending_corrections|default:0 }}</a>{% endif %}
                   </li>
                   {% if user.department == "AI" %}
                   <li class="nav-item">
@@ -113,10 +114,11 @@
                       {% endif %}
                       <li><hr class="dropdown-divider"></li>
                       <li><a class="dropdown-item" href="{% url 'notifications_management' %}"><i class="fa-solid fa-bell me-2"></i>Notificaciones</a></li>
+                      <li><a class="dropdown-item" href="{% url 'rules_management' %}"><i class="fa-solid fa-scale-balanced me-2"></i>Reglas</a></li>
                     </ul>
                   </li>
                   {% endif %}
-                  {% if user.isAdmin and user.department == "AI" %}
+                  {% if user.userType != "Cliente" and user.department == "AI" %}
                   <li class="nav-item">
                     <a class="nav-link text-success fw-semibold" href="{% url 'aliwen_green' %}">🌿 Aliwen Green</a>
                   </li>

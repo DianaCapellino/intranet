@@ -1,0 +1,162 @@
+{% extends "intranet/layout.html" %}
+{% load custom_filters %}
+
+{% block body %}
+{% if user.userType != "Cliente" %}
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>🗺️ ESTADÍSTICAS ITINERARIO{% if location_name %} — {{ location_name }}{% endif %}</h1>
+            <div>
+                <a href="javascript:history.back()">
+                    <button class="btn btn-dark" data-toggle="tooltip" title="Volver">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </a>
+            </div>
+        </div>
+
+        <p id="report-period" class="lead">Periodo: Cargando...</p>
+        <hr>
+
+        <!-- Error warning -->
+        <div id="error-warning-1" class="alert alert-danger d-none m-0 mb-3" role="alert"></div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <p class="mt-3">Cargando estadísticas...</p>
+        </div>
+
+        <!-- Contenido Principal -->
+        <div id="report-content" style="display: none;">
+
+            <div class="row g-3 mb-4 text-center">
+                <div class="col-6 col-md">
+                    <div class="card border-primary h-100">
+                        <div class="card-body py-3">
+                            <div class="text-muted small mb-1">Reservas analizadas</div>
+                            <div class="display-5 fw-bold text-primary" id="kpi-itinerary-bookings">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== SECCIÓN 1: HOTELES ========== -->
+            <div class="stats-section mb-4">
+                <button class="btn btn-lg btn-secondary w-100 text-start" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#section-hotels-itinerary"
+                        aria-expanded="false" aria-controls="section-hotels-itinerary"
+                        onclick="loadSectionItinerary('hotels')">
+                    <i class="fas fa-bed me-2"></i>
+                    <strong>1. Hoteles más reservados</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </button>
+
+                <div class="collapse mt-3" id="section-hotels-itinerary">
+                    <div class="card card-body">
+                        <div class="d-flex justify-content-end mb-3">
+                            <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-hotels-itinerary')">
+                                <i class="fas fa-file-pdf"></i> Exportar PDF
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fas fa-print"></i> Imprimir
+                            </button>
+                        </div>
+                        <table class="report-table table table-striped" id="hotels-ranking-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Hotel</th>
+                                    <th class="text-end">Reservas</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hotels-ranking-tbody"></tbody>
+                        </table>
+                        <div class="chart-box mt-3">
+                            <canvas id="chartHotelsRanking"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== SECCIÓN 2: TOURS ========== -->
+            <div class="stats-section mb-4">
+                <button class="btn btn-lg btn-success w-100 text-start" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#section-tours-itinerary"
+                        aria-expanded="false" aria-controls="section-tours-itinerary"
+                        onclick="loadSectionItinerary('tours')">
+                    <i class="fas fa-person-hiking me-2"></i>
+                    <strong>2. Tours / excursiones más reservados</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </button>
+
+                <div class="collapse mt-3" id="section-tours-itinerary">
+                    <div class="card card-body">
+                        <div class="d-flex justify-content-end mb-3">
+                            <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-tours-itinerary')">
+                                <i class="fas fa-file-pdf"></i> Exportar PDF
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fas fa-print"></i> Imprimir
+                            </button>
+                        </div>
+                        <table class="report-table table table-striped" id="tours-ranking-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Tour</th>
+                                    <th class="text-end">Reservas</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tours-ranking-tbody"></tbody>
+                        </table>
+                        <div class="chart-box mt-3">
+                            <canvas id="chartToursRanking"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== SECCIÓN 3: COMBINACIONES DE ITINERARIO ========== -->
+            <div class="stats-section mb-3">
+                <button class="btn btn-lg btn-danger w-100 text-start" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#section-combos-itinerary"
+                        aria-expanded="false" aria-controls="section-combos-itinerary"
+                        onclick="loadSectionItinerary('combos')">
+                    <i class="fas fa-route me-2"></i>
+                    <strong>3. Combinaciones de itinerario más repetidas</strong>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </button>
+
+                <div class="collapse mt-3" id="section-combos-itinerary">
+                    <div class="card card-body">
+                        <p class="text-muted small">
+                            Conjunto de hoteles + tours que compartieron las mismas reservas, sin importar el orden.
+                        </p>
+                        <div class="d-flex justify-content-end mb-3">
+                            <button class="btn btn-primary me-2" onclick="exportSectionToPDF('section-combos-itinerary')">
+                                <i class="fas fa-file-pdf"></i> Exportar PDF
+                            </button>
+                            <button class="btn btn-primary" onclick="window.print()">
+                                <i class="fas fa-print"></i> Imprimir
+                            </button>
+                        </div>
+                        <table class="table table-bordered table-striped" id="combos-ranking-table" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Combinación (hoteles + tours)</th>
+                                    <th class="text-end">Reservas</th>
+                                </tr>
+                            </thead>
+                            <tbody id="combos-ranking-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,138 @@
+{% load i18n %}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting"/>
+  <title>Aliwen – CAVO para revisar</title>
+  <style type="text/css">
+    body { margin: 0 !important; padding: 0 !important; background-color: #EDEAE5 !important; }
+    table { border-collapse: collapse !important; }
+    img   { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    a     { text-decoration: none; }
+    @media screen and (max-width: 600px) {
+      .email-wrapper  { width: 100% !important; }
+      .pad-sides      { padding-left: 24px !important; padding-right: 24px !important; }
+      .greeting       { font-size: 18px !important; }
+    }
+    u + #body a { color: inherit !important; text-decoration: none !important; }
+  </style>
+</head>
+<body id="body" style="margin:0;padding:0;background-color:#EDEAE5;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#EDEAE5;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+
+      <table role="presentation" class="email-wrapper" width="640" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:640px;background-color:#ffffff;">
+
+        <!-- HEADER -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:36px 48px 28px;text-align:center;" class="pad-sides">
+            <img src="{{ logo_url }}" alt="Aliwen Incoming" height="40"
+                 style="display:inline-block;height:40px;margin:0 auto 18px;" />
+            <table role="presentation" width="48" cellpadding="0" cellspacing="0" border="0"
+                   style="margin:0 auto 18px;">
+              <tr>
+                <td height="2" style="background-color:#D88775;font-size:0;line-height:0;">&nbsp;</td>
+              </tr>
+            </table>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:10px;
+                      letter-spacing:0.2em;text-transform:uppercase;color:#d7998b;">
+              Destination Management Company &nbsp;&middot;&nbsp; Argentina
+            </p>
+          </td>
+        </tr>
+
+        <!-- EYEBROW BANNER -->
+        <tr>
+          <td style="background-color:#D88775;padding:11px 48px;text-align:center;" class="pad-sides">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#ffffff;">
+              CAVO para revisar
+            </p>
+          </td>
+        </tr>
+
+        <!-- INTRO -->
+        <tr>
+          <td style="padding:44px 48px 32px;" class="pad-sides">
+            <h1 class="greeting"
+                style="font-family:Georgia,'Times New Roman',serif;font-size:22px;
+                       font-weight:normal;color:#1C1C1C;line-height:1.3;margin:0 0 18px;">
+              Hola <span style="color:#D88775;">{{ user_name }}</span>!
+            </h1>
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.75;
+                      color:#5A5A5A;margin:0 0 18px;">
+              Te asignaron la revisión de la CAVO de <strong style="color:#1C1C1C;">{{ trip_name }}</strong>
+              {% if tp_id %}<span style="color:#999999;">({{ tp_id }})</span>{% endif %}.
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#FBF6F2;border-radius:4px;margin:0 0 18px;">
+              <tr>
+                <td style="padding:16px 20px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="4" border="0"
+                         style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#5A5A5A;">
+                    {% if cliente %}<tr><td style="color:#999999;width:120px;">Cliente</td><td style="color:#1C1C1C;font-weight:600;">{{ cliente }}</td></tr>{% endif %}
+                    {% if operador %}<tr><td style="color:#999999;">Operador</td><td style="color:#1C1C1C;">{{ operador }}</td></tr>{% endif %}
+                    {% if vr %}<tr><td style="color:#999999;">VR</td><td style="color:#1C1C1C;">{{ vr }}</td></tr>{% endif %}
+                    {% if dh %}<tr><td style="color:#999999;">DH</td><td style="color:#1C1C1C;">{{ dh }}</td></tr>{% endif %}
+                    {% if guia %}<tr><td style="color:#999999;">Guía</td><td style="color:#1C1C1C;">{{ guia }}</td></tr>{% endif %}
+                    {% if dificultad %}<tr><td style="color:#999999;">Dificultad</td><td style="color:#1C1C1C;">{{ dificultad }}</td></tr>{% endif %}
+                    {% if facturacion %}<tr><td style="color:#999999;">Facturación Total</td><td style="color:#1C1C1C;font-weight:600;">USD {{ facturacion }}</td></tr>{% endif %}
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            {% if link %}
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#5A5A5A;margin:0 0 6px;">
+              Link/ruta: <a href="{{ link }}" style="color:#D88775;">{{ link }}</a>
+            </p>
+            {% endif %}
+            {% if note %}
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#5A5A5A;
+                      font-style:italic;margin:12px 0 0;">
+              Nota: {{ note }}
+            </p>
+            {% endif %}
+          </td>
+        </tr>
+
+        <!-- CTA -->
+        <tr>
+          <td style="padding:0 48px 40px;text-align:center;" class="pad-sides">
+            <a href="{{ site_url }}/booking_sheet"
+               style="display:inline-block;background-color:#1C1C1C;
+                      font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;
+                      letter-spacing:0.08em;text-transform:uppercase;
+                      padding:14px 36px;text-decoration:none;">
+              <span style="color:#ffffff !important;">Ver Planilla</span>
+            </a>
+          </td>
+        </tr>
+
+        <!-- FOOTER -->
+        <tr>
+          <td style="background-color:#1C1C1C;padding:28px 48px;text-align:center;" class="pad-sides">
+            <img src="{{ logo_url }}" alt="Aliwen" height="26"
+                 style="display:inline-block;height:26px;margin:0 auto 14px;opacity:0.85;" />
+            <p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;
+                      color:#666666;line-height:1.6;margin:0;">
+              &copy; {% now "Y" %} Aliwen Incoming &nbsp;&middot;&nbsp; Argentina<br />
+              E.V.T. - Leg 11320
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>

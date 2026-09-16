@@ -11,6 +11,7 @@ urlpatterns = [
     path('download_holidays_pdf/<int:year>', tariff.download_holidays_pdf, name='download_holidays_pdf'),
     path('history_of_changes', tariff.history_of_changes, name="history_of_changes"),
     path("export/services/excel/", tariff.export_services_excel, name="export_services_excel"),
+    path("export/excel/", tariff.export_excel_selected, name="export_excel_selected"),
     
     # Urls for tariff management
     path("modify", modify.modify_tariff, name="modify_tariff"),
@@ -20,6 +21,7 @@ urlpatterns = [
 
     # Urls for accommodation management
     path("modify/acc_supplier", accommodation.supplier, name="acc_supplier"),
+    path("modify/acc_supplier/notes-excel/", accommodation.export_notes_excel, name="acc_supplier_notes_excel"),
     path("modify/acc_supplier_group", accommodation.supplier_group, name="acc_supplier_group"),
     path("modify/acc_product/<int:supplier_id>", accommodation.product, name="acc_product"),
     path("modify/acc_product_group", accommodation.product_group, name="acc_product_group"),

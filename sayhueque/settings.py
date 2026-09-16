@@ -179,6 +179,10 @@ LOGIN_URL = 'login'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(os.path.dirname(BASE_DIR), 'media')
 
+# Mapbox GL (mapa del itinerario público) — mismo token que ya usa Golden Dot Maps. Se define
+# como variable de entorno, nunca hardcodeado acá.
+MAPBOX_TOKEN = os.environ.get("MAPBOX_TOKEN", "")
+
 CACHE_MIDDLEWARE_SECONDS = 36000
 
 # Tourplan SQL Server connection

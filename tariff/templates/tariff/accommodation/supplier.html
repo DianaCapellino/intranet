@@ -1,4 +1,10 @@
 {% extends "intranet/layout.html" %}
+{% load custom_filters %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'tariff/css/photo_drop.css' %}">
+{% endblock %}
 
 {% block body %}
     <div class="container">
@@ -19,7 +25,7 @@
             <br>
             <div class="text-center col">
                 <br>
-                <form class="rw-3 text-center" action="{% url 'acc_supplier' %}" method="post">
+                <form class="rw-3 text-center" action="{% url 'acc_supplier' %}" method="post" enctype="multipart/form-data">
                     {% csrf_token %}
                     <h5 class="mb-3">Información básica</h5>
 
@@ -221,17 +227,12 @@
 
                     <hr>
 
-                    <h5 class="mb-3">Imágenes (URLs)</h5>
-                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
+                    <h5 class="mb-3">Imágenes</h5>
 
-                    <div class="mb-3">
-                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo">
+                    <div class="row mb-3">
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" %}</div>
                     </div>
 
                     <button class="btn btn-dark">GUARDAR</button>
@@ -260,6 +261,7 @@
                             <i class="fa-solid fa-arrow-up-wide-short"></i>
                         </button>
                         {% endif %}
+                        <a href="{% url 'acc_supplier_notes_excel' %}"><button type="button" class="btn btn-outline-dark btn-lg" title="Descargar Excel con todas las notas especiales de los hoteles (prepago, niños, estadía mínima, cierre, etc.)"><i class="fa-solid fa-file-excel me-1"></i>Descargar Notas</button></a>
                         <a href="{% url 'modify_tariff' %}"><button class="btn btn-dark btn-lg" title="Volver"><i class="fa-solid fa-rotate-left"></i></button></a>
                     </div>
                 </div>
@@ -292,7 +294,14 @@
                             <td id="supplier-{{supplier.id}}">{{ supplier.name }}</td>
                             <td id="supplier-{{supplier.id}}">{{ supplier.group.location.code }}</td>
                             <td id="supplier-code-{{supplier.id}}">{{ supplier.code }}</td>
-                            <td id="supplier-margen{{supplier.id}}">{{ supplier.margin }}</td>
+                            <td id="supplier-margen{{supplier.id}}">
+                                {{ supplier.margin }}
+                                {% with sup_last_update=supplier_last_update|dict_get:supplier.id %}
+                                {% if sup_last_update %}
+                                <br><span class="text-muted fst-italic" style="font-size:0.72rem;">act. {{ sup_last_update|date:"d M Y" }}</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
                             <td id="supplier-order{{supplier.id}}">{{ supplier.order }}</td>
                             <td id="supplier-quality{{supplier.id}}">{{ supplier.hotel_quality }}</td>
                             <td id="supplier-group{{supplier.id}}">{{ supplier.group.name }}</td>
@@ -323,7 +332,7 @@
                                         <button id="btn-close-supplier-modify-{{ supplier.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <form class="rw-3 text-center" action="{% url 'modify_supplier' supplier.id %}" method="post">
+                                        <form class="rw-3 text-center" action="{% url 'modify_supplier' supplier.id %}" method="post" enctype="multipart/form-data">
                                             {% csrf_token %}
 
                                             <h5 class="mb-3">Información básica</h5>
@@ -554,17 +563,12 @@ High – 0.82 - Tarifas especiales negociadas
 
                                             <hr>
 
-                                            <h5 class="mb-3">Imágenes (URLs)</h5>
-                                            <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
+                                            <h5 class="mb-3">Imágenes</h5>
 
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ supplier.pic1_url|default:'' }}">
-                                            </div>
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ supplier.pic2_url|default:'' }}">
-                                            </div>
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ supplier.pic3_url|default:'' }}">
+                                            <div class="row mb-3">
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" existing=supplier.pic1_url %}</div>
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" existing=supplier.pic2_url %}</div>
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" existing=supplier.pic3_url %}</div>
                                             </div>
 
                                             <input id="modify-supplier-{{ supplier.id }}" class="btn btn-dark btn-lg modify-supplier-btn" type="submit" value="MODIFICAR">
@@ -1203,4 +1207,8 @@ High – 0.82 - Tarifas especiales negociadas
 })();
 </script>
 
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'tariff/js/photo_drop.js' %}"></script>
 {% endblock %}

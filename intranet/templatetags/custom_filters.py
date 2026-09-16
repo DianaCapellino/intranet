@@ -71,7 +71,7 @@ def line_photos(line):
 def dict_get(d, key):
     try:
         return d[key]
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, IndexError):
         return None
 
 @register.filter

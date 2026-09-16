@@ -25,7 +25,7 @@
                         <div class="mb-3 col">
                             <select class="form-control" aria-label="location" name="location">
                                 <option selected value="">Destino</option>
-                                {% for location in locations %}
+                                {% for location in active_locations %}
                                 <option value="{{ location.id }}">{{ location.name }}</option>
                                 {% endfor %}
                             </select>

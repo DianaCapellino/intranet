@@ -202,6 +202,17 @@ class Location(models.Model):
     margin_acc = models.FloatField()
     order = models.PositiveSmallIntegerField()
 
+    # Para el mapa del itinerario público (ver intranet/views_itinerary.py). Sin las dos
+    # coordenadas cargadas, este destino no puede ubicarse en el mapa — el editor de
+    # itinerarios avisa cuando falta alguna.
+    latitude = models.FloatField(null=True, blank=True, verbose_name="Latitud")
+    longitude = models.FloatField(null=True, blank=True, verbose_name="Longitud")
+
+    # Activo/inactivo en el tarifario: en las pantallas de Alojamiento/Servicios que listan
+    # destinos para elegir (ej. al cargar un proveedor), solo se ofrecen los activos — no
+    # afecta esta misma pantalla de gestión de destinos, donde siguen viéndose todos.
+    isActivated = models.BooleanField(default=True, verbose_name="Activo en el tarifario")
+
     def __str__(self):
         return f"{self.name}"
 

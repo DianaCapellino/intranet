@@ -8,7 +8,7 @@
         <a href="{% url 'tariff' %}" class="text-decoration-none text-dark">
             <i class="fa-solid fa-arrow-left"></i>
         </a>
-        <h2 class="mb-0">{% if is_client %}Generate Tariff PDF{% else %}Generar PDF de Tarifario{% endif %}</h2>
+        <h2 class="mb-0">{% if is_client %}Generate Tariff{% else %}Generar Tarifario{% endif %}</h2>
     </div>
 
     <form id="pdf-form" method="get" action="{% url 'pdf_view' %}" target="_blank">
@@ -203,7 +203,11 @@
 
         </div>{# tab-content #}
 
-        <div class="d-flex justify-content-end mt-4 pb-5">
+        <div class="d-flex justify-content-end gap-2 mt-4 pb-5">
+            <button type="submit" class="btn btn-outline-dark btn-lg px-5"
+                    formaction="{% url 'export_excel_selected' %}" formtarget="_self">
+                <i class="fa-solid fa-file-excel me-2"></i>{% if is_client %}Generate Excel{% else %}Generar Excel{% endif %}
+            </button>
             <button type="submit" class="btn btn-dark btn-lg px-5">
                 <i class="fa-solid fa-file-pdf me-2"></i>{% if is_client %}Generate PDF{% else %}Generar PDF{% endif %}
             </button>

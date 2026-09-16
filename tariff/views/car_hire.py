@@ -15,7 +15,7 @@ import unicodedata
 from datetime import date, timedelta
 from collections import defaultdict
 
-from django.shortcuts import render, get_object_or_404, redirect
+from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse, HttpResponse
@@ -941,10 +941,6 @@ def category_update_model(request):
 
 @login_required
 def quoter_page(request):
-    # Por ahora el cotizador de alquiler es solo para usuarios internos.
-    if getattr(request.user, "userType", None) == "Cliente":
-        return redirect("tariff")
-
     locations_with_cats = (
         Location.objects
         .filter(car_categories__isnull=False, car_categories__isActivated=True)

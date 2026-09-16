@@ -157,7 +157,6 @@ class User(AbstractUser):
     tariff_news = models.BooleanField(default=True)
     show_in_calendar = models.BooleanField(default=True)
     show_in_client_team = models.BooleanField(default=True)
-    chat_webhook_url = models.URLField(blank=True, default='', verbose_name='Google Chat Webhook URL')
     chat_user_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Google Chat User ID')
     revision_blocked = models.BooleanField(
         default=False,
@@ -296,6 +295,17 @@ class Trip(models.Model):
     consultant_tp = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_consultant_tp_users", null=True, blank=True)
     vr_requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="trip_vr_requests", null=True, blank=True)
     operations_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trip_operations_users", null=True)
+    # CAVO: pre-arrival documentation review, sent for correction from the booking
+    # sheet's CAVO tab. Mirrors Entry's revision_link/revising_user/is_revised.
+    cavo_link = models.CharField(max_length=500, null=True, blank=True)
+    cavo_revising_user = models.ForeignKey(User, on_delete=models.SET_NULL, related_name="cavo_revising_trips", null=True, blank=True)
+    cavo_is_revised = models.BooleanField(default=False)
+    cavo_assigned_date = models.DateTimeField(null=True, blank=True)
+    cavo_revised_date = models.DateTimeField(null=True, blank=True)
+    # Seguimiento type (BASIC/STD/FULL) at the moment the CAVO was (re)assigned —
+    # persisted rather than re-derived live from Tourplan, so weekly-balance
+    # counts per type stay accurate even if the file's seguimiento changes later.
+    cavo_seguimiento = models.CharField(max_length=10, blank=True, default='')
     quantity_pax = models.IntegerField(default=2)
     rent_perc = models.FloatField(default=0, blank=True, null=True)
     guide = models.CharField(max_length=64, null=True, blank=True, default="")
@@ -324,6 +334,54 @@ class Trip(models.Model):
 
     class Meta:
         ordering = ["-creation_date"]
+
+
+class VrAssignmentRound(models.Model):
+    """
+    Tracks the last time an admin pressed "Asignar todo" (booking sheet VR modal,
+    mode "all") for a given department + travelling-date month. Used to detect
+    bookings that appear afterward without a VR, for the Tuesday reminder email.
+    """
+    department = models.CharField(max_length=64, choices=DEPARTMENTS)
+    month = models.DateField(help_text="Día 1 del mes de viaje (travelling_date).")
+    assigned_at = models.DateTimeField(auto_now=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        unique_together = [("department", "month")]
+
+    def __str__(self):
+        return f"{self.department} {self.month:%Y-%m}"
+
+
+CAVO_SEGUIMIENTO_TYPES = [
+    ('BASIC', 'Basic'),
+    ('STD', 'Standard'),
+    ('FULL', 'Full'),
+]
+
+
+class CavoCorrectorRoster(models.Model):
+    """
+    Who is eligible to auto-receive CAVO correction assignments, per department
+    AND per seguimiento type (BASIC/STD/FULL each have their own rotation —
+    e.g. STD is always the same person, FULL another, BASIC split among several
+    operators) — configured from Gestión de Reglas. Unlike RevisionScheduleDay
+    (entries' per-weekday schedule), this has no day-of-week slot: auto-assignment
+    picks whoever in that type's roster has the fewest CAVOs of that same type
+    assigned so far THIS WEEK.
+    """
+    department = models.CharField(max_length=64, choices=DEPARTMENTS)
+    seguimiento_type = models.CharField(max_length=10, choices=CAVO_SEGUIMIENTO_TYPES)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cavo_roster_entries')
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = [('department', 'seguimiento_type', 'user')]
+        ordering = ['department', 'seguimiento_type', 'order']
+
+    def __str__(self):
+        return f"{self.department} / {self.seguimiento_type} – {self.user.username}"
 
 
 class Notes(models.Model):
@@ -487,9 +545,57 @@ class ItineraryLine(models.Model):
     image_url_2 = models.CharField(max_length=500, blank=True, null=True)
     image_url_3 = models.CharField(max_length=500, blank=True, null=True)
     amount = models.FloatField(null=True, blank=True)
+    # True para líneas de alojamiento (AC) sin nota de prepago (CPP) a nivel proveedor en
+    # Tourplan — un hotel SIEMPRE debería tener una, así que esto dispara el aviso en el
+    # editor (ver _missing_hotel_prepayments) para que el staff la complete a mano en
+    # PublicItinerary.prepayments_required.
+    missing_prepayment = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order"]
+
+    @property
+    def is_flight_placeholder(self):
+        """Línea 'informativa' de vuelo (proveedor NOAPLI, producto VUELOS) — su
+        conditions_note es el texto armado de pickup/dropoff, no una nota de condiciones
+        real, así que se muestra como texto plano en vez del recuadro resaltado."""
+        return self.supplier_code == "NOAPLI" and self.option_code == "VUELOS"
+
+    @property
+    def is_aliwen_green_item(self):
+        """Línea 'Aliwen Green' (proveedor Say Green código 1862, producto SAYALI) — Tourplan
+        la agrega siempre al final de la reserva, sin corresponder a ningún destino puntual
+        del viaje. Como los vuelos (is_flight_placeholder), en Quote Brief va en su propio
+        bloque sin título de destino, en vez de heredar el del último Welcome."""
+        return self.supplier_code == "1862" and self.option_code == "SAYALI"
+
+    @property
+    def is_not_included_style(self):
+        """True para 'Not included' (IN) y para el placeholder de vuelo (NOAPLI/VUELOS) —
+        ambos se muestran con el mismo formato visual (fondo gris) y sin monto por
+        pasajero ni total."""
+        return self.service_code == "IN" or self.is_flight_placeholder
+
+
+class ItineraryPassenger(models.Model):
+    """Snapshot de un pasajero nombrado del viaje ("Passengers Travelling" en Tourplan) —
+    reemplaza los placeholders "Adult 1"/"Adult 2" del resumen de pasajeros (Overview). El
+    total NO es el total del itinerario dividido en partes iguales: es la suma de lo que le
+    corresponde a ESTE pasajero según las líneas de servicio que tiene asignadas puntualmente
+    (ver _fetch_passenger_assignments/_fetch_passenger_details en views_itinerary.py) — un
+    ítem asignado solo a algunos pasajeros del grupo se reparte solo entre ellos, no entre
+    todos."""
+    itinerary = models.ForeignKey(PublicItinerary, on_delete=models.CASCADE, related_name="passengers")
+    order = models.IntegerField(default=0)
+    full_name = models.CharField(max_length=200, blank=True, default="")
+    age = models.IntegerField(null=True, blank=True)
+    total_amount = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.full_name or f"Passenger {self.order + 1}"
 
 class RevisionScheduleDay(models.Model):
     WEEKDAYS = [(0,'Lunes'),(1,'Martes'),(2,'Miércoles'),(3,'Jueves'),(4,'Viernes')]
@@ -687,10 +793,11 @@ NOTIFICATION_TYPES = [
     ('holiday_reminder', 'Holiday Reminder'),
     ('quality_closure', 'Calidad – Resumen de cierre'),
     ('closure_reminder', 'Recordatorio de Cierre de Files (Operaciones)'),
+    ('vr_missing_reminder', 'Files sin VR asignado (Manager)'),
 ]
 
 # Types whose base recipient list is auto-derived from user type queries
-NOTIFICATION_AUTO_TYPES = {'margin_warning', 'weekly_roster', 'holiday_reminder', 'closure_reminder'}
+NOTIFICATION_AUTO_TYPES = {'margin_warning', 'weekly_roster', 'holiday_reminder', 'closure_reminder', 'vr_missing_reminder', 'tariff_team'}
 
 
 class NotificationPreference(models.Model):
@@ -725,6 +832,32 @@ class NotificationPreference(models.Model):
 
     def get_display_name(self):
         return self.user.other_name or self.user.username
+
+
+CHAT_WEBHOOK_PURPOSES = [
+    ('entries_correction', 'Correcciones de entradas'),
+    ('cavo', 'Corrección de CAVOs'),
+]
+
+
+class ChatWebhook(models.Model):
+    """
+    Google Chat webhook URL per department + purpose, editable from Gestión de
+    Notificaciones. Centralized here (instead of on a User row) so it survives
+    that user being deactivated/changed, and so a new chat space can be swapped
+    in from one place without hunting for which user had it configured.
+    """
+    department = models.CharField(max_length=64, choices=DEPARTMENTS)
+    purpose = models.CharField(max_length=40, choices=CHAT_WEBHOOK_PURPOSES)
+    webhook_url = models.URLField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        unique_together = [('department', 'purpose')]
+
+    def __str__(self):
+        return f"{self.department} / {self.get_purpose_display()}"
 
 
 class UserTablePreference(models.Model):

@@ -18,6 +18,24 @@
         </div>
     </div>
 
+    {% if missing_map_locations %}
+    <div class="alert alert-warning">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+        No se pueden ubicar en el mapa estos destinos del itinerario (falta cargarlos, activarlos
+        o completar sus coordenadas en <a href="{% url 'locations' %}" target="_blank">Destinos</a>):
+        <strong>{{ missing_map_locations|join:", " }}</strong>
+    </div>
+    {% endif %}
+
+    {% if missing_hotel_prepayments %}
+    <div class="alert alert-warning">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+        Estos hoteles no tienen nota de prepago (CPP) cargada en Tourplan:
+        <strong>{{ missing_hotel_prepayments|join:", " }}</strong>.
+        Completá manualmente lo que corresponda en "Prepagos requeridos" más abajo.
+    </div>
+    {% endif %}
+
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap gap-2 align-items-center justify-content-between">
             <div class="form-check form-switch">

@@ -120,5 +120,36 @@
     </div>
     {% endfor %}
     </div>
+
+    <div class="card mb-4 border rounded" id="chat-webhooks">
+        <div class="card-header fw-semibold">
+            <i class="fa-brands fa-google me-1"></i>Google Chat Webhooks
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                URL del espacio de Chat al que se postean los avisos automáticos, por unidad de negocio.
+                Cambiar esto acá alcanza para mover el aviso a otro espacio — no depende de ningún usuario en particular.
+            </p>
+            <div class="row g-3">
+                {% for w in webhooks %}
+                <div class="col-md-6">
+                    <form method="post" action="{% url 'notification_webhook_set' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="purpose" value="{{ w.purpose }}">
+                        <label class="form-label small fw-semibold">{{ w.label }}</label>
+                        <div class="input-group">
+                            <input type="url" name="webhook_url" class="form-control form-control-sm"
+                                   value="{{ w.url }}" placeholder="https://chat.googleapis.com/v1/spaces/...">
+                            <button type="submit" class="btn btn-sm btn-dark">Guardar</button>
+                        </div>
+                        {% if not w.url %}
+                        <div class="form-text text-warning small">Sin configurar — los avisos de este tipo no se envían todavía.</div>
+                        {% endif %}
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

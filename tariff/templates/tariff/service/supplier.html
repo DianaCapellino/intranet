@@ -1,4 +1,9 @@
 {% extends "intranet/layout.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'tariff/css/photo_drop.css' %}">
+{% endblock %}
 
 {% block body %}
     <div class="container">
@@ -19,7 +24,7 @@
             <br>
             <div class="text-center col">
                 <br>
-                <form class="rw-3 text-center" action="{% url 'svs_supplier' %}" method="post">
+                <form class="rw-3 text-center" action="{% url 'svs_supplier' %}" method="post" enctype="multipart/form-data">
                     {% csrf_token %}
                     <h5 class="mb-3">Información básica</h5>
 
@@ -110,17 +115,12 @@
 
                     <hr>
 
-                    <h5 class="mb-3">Imágenes (URLs)</h5>
-                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
+                    <h5 class="mb-3">Imágenes</h5>
 
-                    <div class="mb-3">
-                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo">
+                    <div class="row mb-3">
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" %}</div>
                     </div>
 
                     <button class="btn btn-dark">GUARDAR</button>
@@ -199,7 +199,7 @@
                                         <button id="btn-close-supplier-modify-{{ supplier.id }}" tyle="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <form class="rw-3 text-center" action="{% url 'modify_supplier' supplier.id %}" method="post">
+                                        <form class="rw-3 text-center" action="{% url 'modify_supplier' supplier.id %}" method="post" enctype="multipart/form-data">
                                             {% csrf_token %}
 
                                             <h5 class="mb-3">Información básica</h5>
@@ -286,18 +286,13 @@ High – 0.7 - Tangos
 
                                             <hr>
 
-                                            <h5 class="mb-3">Imágenes (URLs)</h5>
-                                            <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: bue1.jpg</small>
+                                            <h5 class="mb-3">Imágenes</h5>
 
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ supplier.pic1_url|default:'' }}">
+                                            <div class="row mb-3">
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" existing=supplier.pic1_url %}</div>
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" existing=supplier.pic2_url %}</div>
+                                                <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" existing=supplier.pic3_url %}</div>
                                             </div>
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ supplier.pic2_url|default:'' }}">
-                                            </div>
-                                            <div class="mb-3">
-                                                <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ supplier.pic3_url|default:'' }}">
-                                            </div>                                                        
 
                                             <input id="modify-supplier-{{ supplier.id }}" class="btn btn-dark btn-lg modify-supplier-btn" type="submit" value="MODIFICAR">
 
@@ -433,4 +428,8 @@ High – 0.7 - Tangos
 })();
 </script>
 
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'tariff/js/photo_drop.js' %}"></script>
 {% endblock %}

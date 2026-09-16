@@ -31,9 +31,24 @@
                         </select>
                     </div>
                     <div class="m-3 col">
-                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-1">
+                        <select class="form-control type-select" aria-label="Tipo" name="type" id="type-select-1">
                             <option value="entries">Entradas</option>
                             <option value="trips">Viajes</option>
+                            <option value="itinerary">Itinerario</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="location-select-1-wrapper">
+                        <select class="form-control" aria-label="Destino" name="location_id" id="location-select-1">
+                            <option value="">— Destino —</option>
+                            {% for location in locations %}
+                                <option value="{{ location.id }}">{{ location.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="status-filter-1-wrapper">
+                        <select class="form-control" aria-label="Status" name="status_filter" id="status-filter-1">
+                            <option value="confirmed" selected>Solo confirmados</option>
+                            <option value="all">Todos (incl. cotizado no confirmado)</option>
                         </select>
                     </div>
                     <div class="m-3 col"><input id="2-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
@@ -66,9 +81,24 @@
                         </select>
                     </div>
                     <div class="m-3 col">
-                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-2">
+                        <select class="form-control type-select" aria-label="Tipo" name="type" id="type-select-2">
                             <option value="entries">Entradas</option>
                             <option value="trips">Viajes</option>
+                            <option value="itinerary">Itinerario</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="location-select-2-wrapper">
+                        <select class="form-control" aria-label="Destino" name="location_id" id="location-select-2">
+                            <option value="">— Destino —</option>
+                            {% for location in locations %}
+                                <option value="{{ location.id }}">{{ location.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="status-filter-2-wrapper">
+                        <select class="form-control" aria-label="Status" name="status_filter" id="status-filter-2">
+                            <option value="confirmed" selected>Solo confirmados</option>
+                            <option value="all">Todos (incl. cotizado no confirmado)</option>
                         </select>
                     </div>
                     <div class="m-3 col"><input id="2-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
@@ -90,9 +120,24 @@
                         </select>
                     </div>
                     <div class="m-3 col">
-                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-3">
+                        <select class="form-control type-select" aria-label="Tipo" name="type" id="type-select-3">
                             <option value="entries">Entradas</option>
                             <option value="trips">Viajes</option>
+                            <option value="itinerary">Itinerario</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="location-select-3-wrapper">
+                        <select class="form-control" aria-label="Destino" name="location_id" id="location-select-3">
+                            <option value="">— Destino —</option>
+                            {% for location in locations %}
+                                <option value="{{ location.id }}">{{ location.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="status-filter-3-wrapper">
+                        <select class="form-control" aria-label="Status" name="status_filter" id="status-filter-3">
+                            <option value="confirmed" selected>Solo confirmados</option>
+                            <option value="all">Todos (incl. cotizado no confirmado)</option>
                         </select>
                     </div>
                     <div class="m-3 col"><input id="3-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>
@@ -112,9 +157,24 @@
                         <input class="form-control datetime-input col" type="datetime-local" name="date-to" id="date-to" data-mdb-inline="true" placeholder="Fecha Hasta">
                     </div>
                     <div class="m-3 col">
-                        <select class="form-control" aria-label="Tipo" name="type" id="type-select-4">
+                        <select class="form-control type-select" aria-label="Tipo" name="type" id="type-select-4">
                             <option value="entries">Entradas</option>
                             <option value="trips">Viajes</option>
+                            <option value="itinerary">Itinerario</option>
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="location-select-4-wrapper">
+                        <select class="form-control" aria-label="Destino" name="location_id" id="location-select-4">
+                            <option value="">— Destino —</option>
+                            {% for location in locations %}
+                                <option value="{{ location.id }}">{{ location.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="m-3 col d-none itinerary-only" id="status-filter-4-wrapper">
+                        <select class="form-control" aria-label="Status" name="status_filter" id="status-filter-4">
+                            <option value="confirmed" selected>Solo confirmados</option>
+                            <option value="all">Todos (incl. cotizado no confirmado)</option>
                         </select>
                     </div>
                     <div class="m-3 col"><input id="4-generate-btn" class="btn btn-dark" type="submit" value="GENERAR"></div>

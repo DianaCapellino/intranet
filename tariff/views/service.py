@@ -5,6 +5,7 @@ from intranet.models import Client
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from datetime import date
+from tariff.utils import save_pic_upload
 
 MARGIN_SVS_OPTIONS = [
     ("Low", "0.86"),
@@ -74,9 +75,9 @@ def supplier(request):
             interests=request.POST.getlist("interests"),
             margin=margin,
             note=request.POST.get("note"),
-            pic1_url=request.POST.get("pic1_url"),
-            pic2_url=request.POST.get("pic2_url"),
-            pic3_url=request.POST.get("pic3_url"),
+            pic1_url=save_pic_upload(request.FILES.get("pic1"), "suppliers") if request.FILES.get("pic1") else None,
+            pic2_url=save_pic_upload(request.FILES.get("pic2"), "suppliers") if request.FILES.get("pic2") else None,
+            pic3_url=save_pic_upload(request.FILES.get("pic3"), "suppliers") if request.FILES.get("pic3") else None,
         )
         # Auto-resolve any provisional suppliers with a similar name
         from tariff.models import Feedback
@@ -183,9 +184,9 @@ def product(request, supplier_id):
             lw_date=today,
             order=order,
             group=group,
-            pic1_url=request.POST.get("pic1_url"),
-            pic2_url=request.POST.get("pic2_url"),
-            pic3_url=request.POST.get("pic3_url"),
+            pic1_url=save_pic_upload(request.FILES.get("pic1"), "products") if request.FILES.get("pic1") else None,
+            pic2_url=save_pic_upload(request.FILES.get("pic2"), "products") if request.FILES.get("pic2") else None,
+            pic3_url=save_pic_upload(request.FILES.get("pic3"), "products") if request.FILES.get("pic3") else None,
         )
 
         new_product.save()
@@ -228,6 +229,11 @@ def product(request, supplier_id):
 
 @login_required
 def product_group(request):
+    # Ver comentario análogo en accommodation.supplier_group: "locations" (todos) es para el
+    # modal de edición de cada grupo existente, "active_locations" solo para el alta de uno
+    # nuevo.
+    active_locations = Location.objects.filter(isActivated=True)
+
     if request.method == "POST":
 
         # Attempt to create group supplier
@@ -240,6 +246,7 @@ def product_group(request):
                 "message": "Todos los campos deben ser completados",
                 "groups": ProductGroup.objects.filter(type_service="NA"),
                 "locations": Location.objects.all(),
+                "active_locations": active_locations,
             })
 
         location = Location.objects.get(id=location_form)
@@ -252,7 +259,7 @@ def product_group(request):
         last_group = existing_groups.last()
 
         order = (last_group.order + 5) if last_group else 1
-        
+
         # Creates the model of the group from the form information
         new_group = ProductGroup.objects.create(
             name=name,
@@ -265,10 +272,12 @@ def product_group(request):
         return render(request, "tariff/service/product_group.html", {
             "groups": ProductGroup.objects.filter(type_service="NA"),
             "locations": Location.objects.all(),
+            "active_locations": active_locations,
         })
 
     else:
         return render(request, "tariff/service/product_group.html", {
             "groups": ProductGroup.objects.filter(type_service="NA"),
             "locations": Location.objects.all(),
+            "active_locations": active_locations,
         })

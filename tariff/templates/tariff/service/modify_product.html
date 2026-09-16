@@ -1,4 +1,9 @@
 {% extends "intranet/layout.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'tariff/css/photo_drop.css' %}">
+{% endblock %}
 
 {% block body %}
 <div class="container mt-4">
@@ -15,7 +20,7 @@
         <div class="alert alert-warning text-center">{{ message }}</div>
     {% endif %}
 
-    <form action="{% url 'modify_product' product.id %}" method="post">
+    <form action="{% url 'modify_product' product.id %}" method="post" enctype="multipart/form-data">
         {% csrf_token %}
 
         <!-- Información básica -->
@@ -253,22 +258,13 @@
         <!-- Imágenes -->
         <div class="card mb-4">
             <div class="card-header bg-dark text-white">
-                <h5 class="mb-0">Imágenes (URLs)</h5>
+                <h5 class="mb-0">Imágenes</h5>
             </div>
             <div class="card-body">
-                <small class="text-muted d-block mb-3">Ingresar nombre del archivo con su extensión. Ejemplo: room1.jpg</small>
-                
-                <div class="mb-3">
-                    <label class="form-label">Imagen 1</label>
-                    <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo" value="{{ product.pic1_url|default:'' }}">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Imagen 2</label>
-                    <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo" value="{{ product.pic2_url|default:'' }}">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Imagen 3</label>
-                    <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo" value="{{ product.pic3_url|default:'' }}">
+                <div class="row">
+                    <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" existing=product.pic1_url %}</div>
+                    <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" existing=product.pic2_url %}</div>
+                    <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" existing=product.pic3_url %}</div>
                 </div>
             </div>
         </div>
@@ -284,4 +280,8 @@
         </div>
     </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'tariff/js/photo_drop.js' %}"></script>
 {% endblock %}

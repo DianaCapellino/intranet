@@ -1,4 +1,9 @@
 {% extends "intranet/layout.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'tariff/css/photo_drop.css' %}">
+{% endblock %}
 
 {% block body %}
     <div class="container">
@@ -19,7 +24,7 @@
             <br>
             <div class="text-center col">
                 <br>
-                <form class="rw-3 text-center" action="{% url 'svs_product' supplier.id %}" method="post">
+                <form class="rw-3 text-center" action="{% url 'svs_product' supplier.id %}" method="post" enctype="multipart/form-data">
                     {% csrf_token %}
                     <h5 class="mb-3">Información básica</h5>
 
@@ -142,17 +147,12 @@
 
                     <hr>
 
-                    <h5 class="mb-3">Imágenes (URLs)</h5>
-                    <small class="mb-3" muted>Ingresar nombre del archivo con su extensión. Ejemplo: melia1.jpg</small>
+                    <h5 class="mb-3">Imágenes</h5>
 
-                    <div class="mb-3">
-                        <input class="form-control" name="pic1_url" placeholder="Imagen 1 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic2_url" placeholder="Imagen 2 - Ingresar nombre del archivo">
-                    </div>
-                    <div class="mb-3">
-                        <input class="form-control" name="pic3_url" placeholder="Imagen 3 - Ingresar nombre del archivo">
+                    <div class="row mb-3">
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic1" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic2" %}</div>
+                        <div class="col-4">{% include "tariff/_photo_drop_field.html" with name="pic3" %}</div>
                     </div>
 
                     <button class="btn btn-dark">GUARDAR</button>
@@ -160,6 +160,10 @@
             </div>
         </div>
     </div>
-    
+
     <br>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'tariff/js/photo_drop.js' %}"></script>
 {% endblock %}

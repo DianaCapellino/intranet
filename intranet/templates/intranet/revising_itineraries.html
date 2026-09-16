@@ -143,7 +143,7 @@
       <h6>{{ wd_label }}</h6>
       <div class="day-users" data-weekday="{{ wd }}">
         {% for u in day_users %}
-        <div class="revision-user-chip{% if u.revision_blocked %} blocked-chip{% endif %}{% if u.id in absent_ids and wd == today_weekday %} opacity-50{% endif %}" draggable="true" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">
+        <div class="revision-user-chip{% if u.revision_blocked %} blocked-chip{% endif %}{% if wd == today_weekday and u.id in absent_ids or wd == today_weekday and u.id in buffer_ids %} opacity-50{% endif %}" draggable="true" data-user-id="{{ u.id }}" data-weekday="{{ wd }}">
           <span class="chip-dot" style="background-color:{{ u.color|default:'#6c757d' }};"></span>
           <span>{{ u.username }}</span>
           {% if u.revision_blocked %}
@@ -151,6 +151,8 @@
           {% endif %}
           {% if u.id in absent_ids and wd == today_weekday %}
           <span title="Ausente hoy – no se le asignarán correcciones" style="font-size:.8em;margin-left:2px;">🏖️</span>
+          {% elif u.id in buffer_ids and wd == today_weekday %}
+          <span title="2 días previos/posteriores a ausencia larga – no se le asignarán correcciones estos días" style="font-size:.8em;margin-left:2px;">⚠️</span>
           {% endif %}
           {% if user.isAdmin %}
           <button class="btn btn-link btn-sm p-0 ms-1 text-muted toggle-block-chip"
@@ -217,8 +219,22 @@
   </div>
 
   <!-- Pending revision entries table -->
-  <h5 class="fw-semibold mb-3">Pendientes de revisión</h5>
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <h5 class="fw-semibold mb-0">Pendientes de revisión</h5>
+    {% if pending_entries %}
+    <div class="d-flex align-items-center gap-2">
+      <label for="revision-user-filter" class="form-label small text-muted mb-0">Usuario:</label>
+      <select id="revision-user-filter" class="form-select form-select-sm" style="width:auto;min-width:170px;">
+        <option value="">Todos</option>
+        {% for u in all_dept_users %}
+        <option value="{{ u.username }}"{% if u.username == user.username %} selected{% endif %}>{{ u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+  </div>
   {% if pending_entries %}
+  <div id="revision-empty-msg" class="text-muted fst-italic mb-3 d-none"></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="pending-revision-table">
       <thead class="table-light">
@@ -235,7 +251,10 @@
       </thead>
       <tbody>
         {% for e in pending_entries %}
-        <tr data-entry-id="{{ e.id }}"{% if e.is_revised %} class="reviewed-row"{% endif %}>
+        <tr class="pending-entry-row{% if e.is_revised %} reviewed-row{% endif %}" data-entry-id="{{ e.id }}"
+            data-revising-username="{{ e.revising_user.username|default:'' }}"
+            data-working-username="{{ e.user_working.username|default:'' }}"
+            data-assigned-sort="{{ e.revision_assigned_date|date:'U'|default:'0' }}">
           <td><strong>{{ e.trip.name }}</strong></td>
           <td>{{ e.trip.client.name|default:"—" }}</td>
           <td>{{ e.trip.travelling_date|date:"d/m/Y"|default:"—" }}</td>
@@ -291,8 +310,9 @@
           </td>
           <td>
             <button class="btn btn-sm btn-success mark-revised-btn"
-                    data-entry-id="{{ e.id }}" title="Marcar como revisado"
-                    {% if e.is_revised %}disabled{% endif %}>
+                    data-entry-id="{{ e.id }}"
+                    title="{% if e.is_revised %}Marcar como revisado{% elif e.revising_user_id == user.id %}Marcar como revisado{% else %}Solo quien tiene asignada esta revisión puede marcarla como revisada{% endif %}"
+                    {% if e.is_revised or e.revising_user_id != user.id %}disabled{% endif %}>
               <i class="fa-solid fa-check"></i>
             </button>
           </td>
@@ -376,6 +396,69 @@
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
     bootstrap.Tooltip.getOrCreateInstance(el);
   });
+
+  // ── Pending-entries filter by user ──────────────────────────────────────────
+  // Defaults to the logged-in user, split into "Para corregir" (assigned to
+  // them as reviewer) and "Enviados a corregir" (itineraries they worked that
+  // are pending someone else's review) — each newest-first. "Todos" restores
+  // the original flat, unfiltered list.
+  (function () {
+    const filterSelect = document.getElementById('revision-user-filter');
+    const tbody = document.querySelector('#pending-revision-table tbody');
+    const emptyMsg = document.getElementById('revision-empty-msg');
+    if (!filterSelect || !tbody) return;
+
+    const allRows = Array.from(tbody.querySelectorAll('.pending-entry-row'));
+
+    function makeHeaderRow(label, count) {
+      const tr = document.createElement('tr');
+      tr.className = 'revision-group-header-row';
+      const td = document.createElement('td');
+      td.colSpan = 8;
+      td.className = 'fw-semibold text-uppercase small text-muted bg-light';
+      td.style.cssText = 'letter-spacing:.05em;padding:6px 10px;';
+      td.textContent = `${label} (${count})`;
+      tr.appendChild(td);
+      return tr;
+    }
+
+    function applyFilter() {
+      const value = filterSelect.value;
+      tbody.querySelectorAll('.revision-group-header-row').forEach(r => r.remove());
+      emptyMsg.classList.add('d-none');
+      allRows.forEach(row => row.remove());
+
+      const sortDesc = (a, b) => (parseInt(b.dataset.assignedSort) || 0) - (parseInt(a.dataset.assignedSort) || 0);
+
+      if (!value) {
+        // "Todos" — pending first (newest first), reviewed (tachados) below, same criterion
+        const notReviewed = allRows.filter(r => !r.classList.contains('reviewed-row')).sort(sortDesc);
+        const reviewed = allRows.filter(r => r.classList.contains('reviewed-row')).sort(sortDesc);
+        notReviewed.forEach(row => tbody.appendChild(row));
+        reviewed.forEach(row => tbody.appendChild(row));
+        return;
+      }
+
+      const correcting = allRows.filter(r => r.dataset.revisingUsername === value).sort(sortDesc);
+      const sent = allRows.filter(r => r.dataset.workingUsername === value && r.dataset.revisingUsername !== value).sort(sortDesc);
+
+      if (correcting.length) {
+        tbody.appendChild(makeHeaderRow('Para corregir', correcting.length));
+        correcting.forEach(row => tbody.appendChild(row));
+      }
+      if (sent.length) {
+        tbody.appendChild(makeHeaderRow('Enviados a corregir', sent.length));
+        sent.forEach(row => tbody.appendChild(row));
+      }
+      if (!correcting.length && !sent.length) {
+        emptyMsg.textContent = `${value} no tiene correcciones pendientes ni enviadas.`;
+        emptyMsg.classList.remove('d-none');
+      }
+    }
+
+    filterSelect.addEventListener('change', applyFilter);
+    applyFilter();
+  })();
 
   // ── Build the grid state from DOM ────────────────────────────────────────
   function getGridData() {
@@ -571,13 +654,17 @@
   // ── Mark as revised (with optional comment) ─────────────────────────────────
   let _markRevisedEntryId = null;
   const markRevisedModal = new bootstrap.Modal(document.getElementById('markRevisedModal'));
+  const _revisionTbody = document.querySelector('#pending-revision-table tbody');
 
-  document.querySelectorAll('.mark-revised-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
-      _markRevisedEntryId = this.dataset.entryId;
-      document.getElementById('mark-revised-comment').value = '';
-      markRevisedModal.show();
-    });
+  // Delegated on the (never-removed) tbody rather than bound per-button: the
+  // user filter above detaches/reappends rows on the fly, so a button not in
+  // the DOM at page-load time would otherwise never get its own listener.
+  _revisionTbody?.addEventListener('click', function (e) {
+    const btn = e.target.closest('.mark-revised-btn');
+    if (!btn || btn.disabled) return;
+    _markRevisedEntryId = btn.dataset.entryId;
+    document.getElementById('mark-revised-comment').value = '';
+    markRevisedModal.show();
   });
 
   document.getElementById('mark-revised-confirm').addEventListener('click', function () {
@@ -604,6 +691,7 @@
           if (editBtn) editBtn.remove();
         }
         markRevisedModal.hide();
+        window.refreshDeptCorrectionBadge?.();
       }
     }).finally(() => {
       confirmBtn.disabled = false;
@@ -615,13 +703,13 @@
   let _crmEntryId = null;
   const crmModal = new bootstrap.Modal(document.getElementById('pageChangeReviewerModal'));
 
-  document.querySelectorAll('.change-reviewer-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
-      _crmEntryId = this.dataset.entryId;
-      document.getElementById('page-crm-select').value = this.dataset.userId || '';
-      document.getElementById('page-crm-link').value   = this.dataset.link   || '';
-      crmModal.show();
-    });
+  _revisionTbody?.addEventListener('click', function (e) {
+    const btn = e.target.closest('.change-reviewer-btn');
+    if (!btn) return;
+    _crmEntryId = btn.dataset.entryId;
+    document.getElementById('page-crm-select').value = btn.dataset.userId || '';
+    document.getElementById('page-crm-link').value   = btn.dataset.link   || '';
+    crmModal.show();
   });
 
   // ── Copy link ────────────────────────────────────────────────────────────
@@ -656,28 +744,27 @@
     return Promise.resolve(true);
   }
 
-  document.querySelectorAll('.copy-link-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const url = this.dataset.link || '';
-      const self = this;
-      copyToClipboard(url).then(() => {
-        const origHtml = self.innerHTML;
-        self.innerHTML = '<i class="fa-solid fa-check fa-xs"></i> Link';
-        self.classList.add('text-success');
-        let fb = self.parentElement.querySelector('.copy-feedback');
-        if (!fb) {
-          fb = document.createElement('div');
-          fb.className = 'copy-feedback';
-          fb.style.cssText = 'font-size:.7rem;color:#6c757d;line-height:1;margin-top:3px;';
-          self.parentElement.appendChild(fb);
-        }
-        fb.textContent = 'link copiado';
-        setTimeout(() => {
-          self.innerHTML = origHtml;
-          self.classList.remove('text-success');
-          fb.textContent = '';
-        }, 2000);
-      });
+  _revisionTbody?.addEventListener('click', function (e) {
+    const self = e.target.closest('.copy-link-btn');
+    if (!self) return;
+    const url = self.dataset.link || '';
+    copyToClipboard(url).then(() => {
+      const origHtml = self.innerHTML;
+      self.innerHTML = '<i class="fa-solid fa-check fa-xs"></i> Link';
+      self.classList.add('text-success');
+      let fb = self.parentElement.querySelector('.copy-feedback');
+      if (!fb) {
+        fb = document.createElement('div');
+        fb.className = 'copy-feedback';
+        fb.style.cssText = 'font-size:.7rem;color:#6c757d;line-height:1;margin-top:3px;';
+        self.parentElement.appendChild(fb);
+      }
+      fb.textContent = 'link copiado';
+      setTimeout(() => {
+        self.innerHTML = origHtml;
+        self.classList.remove('text-success');
+        fb.textContent = '';
+      }, 2000);
     });
   });
 

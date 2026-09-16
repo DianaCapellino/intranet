@@ -180,11 +180,20 @@ function create_datatable (type) {
         const _drillSeason        = _urlParams.get("season") || "";
         const _drillShowAll       = _urlParams.get("show_all") || "0";
         const _drillStatus        = _urlParams.get("status_filter") || "";
+        // Direct "show only my own" link, e.g. from the red nav badge — matches
+        // the manual user_filter_select dropdown (username), not the stats
+        // drilldown below (which matches other_name instead).
+        const _urlUserFilter     = _urlParams.get("user_filter") || "";
         const _hasDrillFilter = _drillUserOtherName || _drillClient ||
             _drillDateFrom || _drillMonth || _drillWeek || _drillSeason;
 
         let showAll = _drillShowAll === "1" ? 1 : 0;
-        let userFilter = "";
+        let userFilter = _urlUserFilter;
+
+        if (_urlUserFilter) {
+            const $userSelect = document.getElementById("user_filter_select");
+            if ($userSelect) $userSelect.value = _urlUserFilter;
+        }
 
         if (_hasDrillFilter) {
             const $banner = document.getElementById("drilldown-banner");
@@ -410,31 +419,50 @@ function create_datatable (type) {
         // ── Revision column handlers ─────────────────────────────────────────
         if (!_isClient) {
             let _srmEntryId = null;
+            let _srmUserPickedReviewer = false; // true once the user touches the reviewer dropdown themselves
             let _crmEntryId = null;
             const csrfToken = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
 
-            // Refresh the "Correcciones" badge without a full page reload — called
-            // right after an assignment happens here, and polled periodically so it
-            // also picks up assignments made elsewhere (e.g. from Esquema de Correcciones).
+            // Refresh the "Correcciones" badge (pendings.html), the nav "Pendientes"
+            // correction badge (yellow) and the nav "Pendientes" own-entries badge
+            // (red) without a full page reload — all personal to the logged-in
+            // user. Called right after a correction gets (re)assigned here, and
+            // polled periodically so it also picks up changes made elsewhere
+            // (e.g. from Esquema de Correcciones, or entries closed/reassigned).
             function refreshRevisionBadge() {
-                const badge = document.getElementById('revision-count-badge');
-                if (!badge) return;
+                const pageBadge = document.getElementById('revision-count-badge');
+                const navCorrectionBadge = document.getElementById('nav-correction-count-badge');
+                const navEntriesBadge = document.getElementById('nav-pending-entries-badge');
+                if (!pageBadge && !navCorrectionBadge && !navEntriesBadge) return;
                 fetch('/entries/my_revision_pending_count')
                     .then(r => r.json())
                     .then(d => {
                         if (!d.ok) return;
-                        badge.textContent = d.count;
-                        badge.classList.toggle('d-none', !d.count);
+                        [pageBadge, navCorrectionBadge].forEach(badge => {
+                            if (!badge) return;
+                            badge.textContent = d.count;
+                            badge.classList.toggle('d-none', !d.count);
+                        });
+                        if (navEntriesBadge) {
+                            navEntriesBadge.textContent = d.entries_count;
+                            navEntriesBadge.classList.toggle('d-none', !d.entries_count);
+                        }
                     })
                     .catch(() => {});
             }
-            if (document.getElementById('revision-count-badge')) {
+            // Exposed globally so other pages' own scripts (e.g. Esquema de
+            // Correcciones, which assigns/marks reviews outside this file) can
+            // also trigger an immediate refresh right when it happens.
+            window.refreshDeptCorrectionBadge = refreshRevisionBadge;
+            if (document.getElementById('revision-count-badge') || document.getElementById('nav-correction-count-badge') || document.getElementById('nav-pending-entries-badge')) {
                 setInterval(refreshRevisionBadge, 45000);
             }
 
             // Send-for-revision: open modal
             $('#entries').on('click', '.send-revision-btn', function () {
                 _srmEntryId = $(this).data('entry-id');
+                _srmUserPickedReviewer = false;
+                const openedForId = _srmEntryId;
                 $('#srm-trip-name').text($(this).data('trip') || 'este file');
                 $('#srm-link').val('');
                 $('#srm-note').val('');
@@ -443,10 +471,16 @@ function create_datatable (type) {
                 new bootstrap.Modal(document.getElementById('sendRevisionModal')).show();
 
                 // Preview who would be auto-assigned right now, and pre-select it
-                // (the admin/user can still change it before confirming).
-                fetch(`/entries/${_srmEntryId}/suggested_reviewer`)
+                // (the admin/user can still change it before confirming). Skip
+                // applying the suggestion if the user already picked someone
+                // manually, or if the modal was reopened for a different entry
+                // while this request was still in flight — otherwise a slow
+                // response can silently overwrite the user's own choice right
+                // before they hit "Mandar a revisar".
+                fetch(`/entries/${openedForId}/suggested_reviewer`)
                     .then(r => r.json())
                     .then(d => {
+                        if (_srmEntryId !== openedForId || _srmUserPickedReviewer) return;
                         if (d.ok && d.reviewer_id) {
                             $('#srm-reviewer-select').val(d.reviewer_id);
                             $('#srm-reviewer-hint').text(`Sugerido: ${d.reviewer_username}`);
@@ -455,6 +489,10 @@ function create_datatable (type) {
                         }
                     })
                     .catch(() => $('#srm-reviewer-hint').text(''));
+            });
+
+            $('#srm-reviewer-select').on('change', function () {
+                _srmUserPickedReviewer = true;
             });
 
             // Send-for-revision: confirm
@@ -1252,7 +1290,10 @@ function editing_blocks() {
                 const rows = document.querySelectorAll(
                     `.row-rateline[data-block="${blockId}"]`
                 );
-                saveBlock(blockId, rows, this);
+                const btn = this;
+                confirmSaveHistory(function (saveHistory) {
+                    saveBlock(blockId, rows, btn, saveHistory);
+                });
             } else {
                 // Si ya hay otro bloque en edición, cancelarlo primero
                 if (currentEditingBlock && currentEditingBlock !== blockId) {
@@ -1612,7 +1653,56 @@ function copyBlocks() {
 }
 
 
-function saveBlock(blockId, rows, button) {
+// Asks the user whether this save should be recorded in the rate-change
+// history (Change model) before it actually happens. Builds the modal once
+// and reuses it. `onChoice` is called with true/false; "Cancelar" just closes
+// the modal without calling it (aborts the save).
+let _saveHistoryModalEl = null;
+function confirmSaveHistory(onChoice) {
+    if (!_saveHistoryModalEl) {
+        _saveHistoryModalEl = document.createElement("div");
+        _saveHistoryModalEl.className = "modal fade";
+        _saveHistoryModalEl.tabIndex = -1;
+        _saveHistoryModalEl.innerHTML = `
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fa-solid fa-clock-rotate-left me-2"></i>Guardar historial</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-0">¿Querés guardar este cambio en el historial de actualizaciones de tarifas?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-outline-dark" id="saveHistoryNoBtn">Guardar sin historial</button>
+                        <button type="button" class="btn btn-dark" id="saveHistoryYesBtn">Guardar con historial</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(_saveHistoryModalEl);
+    }
+    const bsModal = bootstrap.Modal.getOrCreateInstance(_saveHistoryModalEl);
+    const yesBtn = _saveHistoryModalEl.querySelector("#saveHistoryYesBtn");
+    const noBtn = _saveHistoryModalEl.querySelector("#saveHistoryNoBtn");
+    // Replace the buttons to drop any listener from a previous call before
+    // attaching this call's own onChoice.
+    const newYesBtn = yesBtn.cloneNode(true);
+    yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+    const newNoBtn = noBtn.cloneNode(true);
+    noBtn.parentNode.replaceChild(newNoBtn, noBtn);
+    newYesBtn.addEventListener("click", function () {
+        bsModal.hide();
+        onChoice(true);
+    });
+    newNoBtn.addEventListener("click", function () {
+        bsModal.hide();
+        onChoice(false);
+    });
+    bsModal.show();
+}
+
+function saveBlock(blockId, rows, button, saveHistory) {
     const rateData = [];
     const groupData = [];
 
@@ -1695,6 +1785,7 @@ function saveBlock(blockId, rows, button) {
             increase: newIncrease,
             status: newStatus,
             margin_info: newMarginInfo,
+            save_history: saveHistory,
         })
     })
     .then(r => r.json())

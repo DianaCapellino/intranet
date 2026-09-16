@@ -1,0 +1,42 @@
+/* Cajas de "arrastrar o cliquear" para subir fotos (Location/Supplier/Product) — ver
+   tariff/_photo_drop_field.html y tariff/js/photo_drop.js. */
+.tariff-photo-dropzone {
+    position: relative;
+    width: 100%;
+    height: 140px;
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: #fafafa;
+    overflow: hidden;
+    transition: border-color .15s ease, background .15s ease;
+}
+.tariff-photo-dropzone:hover,
+.tariff-photo-dropzone:focus {
+    border-color: #999;
+    outline: none;
+}
+.tariff-photo-dropzone.drag-over {
+    border-color: #333;
+    background: #f0f0f0;
+}
+.tariff-photo-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.tariff-photo-placeholder {
+    color: #888;
+    font-size: .78rem;
+    text-align: center;
+    padding: 8px;
+    line-height: 1.4;
+}
+.tariff-photo-placeholder i {
+    font-size: 1.3rem;
+    margin-bottom: 4px;
+}

@@ -45,6 +45,7 @@
         <button type="button" class="btn btn-outline-secondary" data-bs-view="default">General</button>
         <button type="button" class="btn btn-outline-secondary active" data-bs-view="vr">Vendedor Responsable</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-view="ops">Operaciones</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-view="cavo">CAVO</button>
       </div>
       {% if is_admin %}
       <button type="button" class="btn btn-sm btn-outline-primary d-none" id="bs-auto-assign-btn"
@@ -165,50 +166,55 @@
     <table id="booking-sheet-table" class="table table-hover table-bordered table-striped" style="width:100%">
       <thead class="table-dark">
         <tr>
-          <th>TP#</th>
-          <th>Nombre</th>
-          <th>Cliente</th>
-          <th title="Contacto del cliente (ClientContact)">Vendedor Cliente</th>
-          <th>Ref</th>
-          <th>Fecha IN</th>
-          <th>Fecha OUT</th>
-          <th>Status</th>
-          <th>Pax</th>
-          <th>Monto</th>
-          <th title="Monto facturado (Tourplan)">Invoiced</th>
-          <th>Rent.%</th>
-          <th>Coti por</th>
-          <th>Consultant</th>
-          <th>VR</th>
-          <th title="Sustituto del VR por ausencia">VR2</th>
-          <th>OP</th>
-          <th>DH</th>
-          <th>Guía</th>
-          <th>Intranet</th>
-          <th title="Nota de Rentabilidad (Tourplan)">Rentabilidad</th>
-          <th title="Nota PNR (Tourplan)">PNR</th>
-          <th title="Seguimiento">Seguimiento</th>
+          <th data-col-idx="0">TP#</th>
+          <th data-col-idx="1">Nombre</th>
+          <th data-col-idx="2">Cliente</th>
+          <th data-col-idx="3" title="Contacto del cliente (ClientContact)">Vendedor Cliente</th>
+          <th data-col-idx="4">Ref</th>
+          <th data-col-idx="5">Fecha IN</th>
+          <th data-col-idx="6">Fecha OUT</th>
+          <th data-col-idx="7">Status</th>
+          <th data-col-idx="8">Pax</th>
+          <th data-col-idx="9">Monto</th>
+          <th data-col-idx="10" title="Monto facturado (Tourplan)">Invoiced</th>
+          <th data-col-idx="11">Rent.%</th>
+          <th data-col-idx="12">Coti por</th>
+          <th data-col-idx="13">Consultant</th>
+          <th data-col-idx="14">VR</th>
+          <th data-col-idx="15" title="Sustituto del VR por ausencia">VR2</th>
+          <th data-col-idx="16">OP</th>
+          <th data-col-idx="17">DH</th>
+          <th data-col-idx="18">Guía</th>
+          <th data-col-idx="19">Intranet</th>
+          <th data-col-idx="20" title="Nota de Rentabilidad (Tourplan)">Rentabilidad</th>
+          <th data-col-idx="21" title="Nota PNR (Tourplan)">PNR</th>
+          <th data-col-idx="22" title="Seguimiento">Seguimiento</th>
+          <th data-col-idx="23" title="Revisor de la CAVO">Revisor</th>
+          <th data-col-idx="24" title="CAVO — documentación de pre-ingreso">CAVO</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
         <tr data-tp-prefix="{{ r.tp_prefix }}" data-vr-code="{{ r.responsable_code }}" data-op-code="{{ r.operations_code }}" data-status="{{ r.raw_status }}"
             data-trip-id="{{ r.intranet_trip_id|default:'' }}"
+            data-seguimiento="{{ r.seguimiento }}"
             data-month="{{ r.travelling_date_month }}"
             data-pax="{{ r.num_pax|default:0 }}"
             data-amount-num="{{ r.amount|default:0 }}"
             data-intranet-vr-code="{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}"
             data-intranet-vr-color="{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% endif %}"
             data-intranet-vr-id="{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% endif %}"
-            data-vr-requested-by="{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}">
-          <td>{{ r.tp_id }}</td>
-          <td class="bs-col-text bs-col-name" title="{{ r.name }}">{{ r.name }}</td>
-          <td class="bs-col-text bs-col-client" title="{{ r.client_name }}">{{ r.client_name }}</td>
-          <td class="bs-col-text" title="{{ r.vendedor_cliente }}">{{ r.vendedor_cliente }}</td>
-          <td>{{ r.client_reference }}</td>
-          <td data-order="{{ r.travelling_date_sort }}">{{ r.travelling_date }}</td>
-          <td>{{ r.out_date }}</td>
-          <td>
+            data-vr-requested-by="{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}"
+            data-cavo-revising-code="{% if r.cavo and r.cavo.revising_user %}{{ r.cavo.revising_user.username }}{% endif %}"
+            data-cavo-is-revised="{% if r.cavo and r.cavo.is_revised %}1{% else %}0{% endif %}">
+          <td data-col-idx="0">{{ r.tp_id }}</td>
+          <td data-col-idx="1" class="bs-col-text bs-col-name" title="{{ r.name }}">{{ r.name }}</td>
+          <td data-col-idx="2" class="bs-col-text bs-col-client" title="{{ r.client_name }}">{{ r.client_name }}</td>
+          <td data-col-idx="3" class="bs-col-text" title="{{ r.vendedor_cliente }}">{{ r.vendedor_cliente }}</td>
+          <td data-col-idx="4">{{ r.client_reference }}</td>
+          <td data-col-idx="5" data-order="{{ r.travelling_date_sort }}">{{ r.travelling_date }}</td>
+          <td data-col-idx="6">{{ r.out_date }}</td>
+          <td data-col-idx="7">
             {% if r.raw_status == "FI" %}
               <span class="status-badge status-fi">Final IT</span>
             {% elif r.raw_status == "OK" %}
@@ -219,9 +225,9 @@
               <span class="status-badge status-bx">{{ r.raw_status }}</span>
             {% endif %}
           </td>
-          <td class="text-end">{{ r.num_pax }}</td>
-          <td class="text-end">{% if r.amount %}{{ r.amount }}{% endif %}</td>
-          <td class="text-end" style="white-space:nowrap;">
+          <td data-col-idx="8" class="text-end">{{ r.num_pax }}</td>
+          <td data-col-idx="9" class="text-end">{% if r.amount %}{{ r.amount }}{% endif %}</td>
+          <td data-col-idx="10" class="text-end" style="white-space:nowrap;">
             {% if r.invoiced %}
               {{ r.invoiced }}
               {% if r.amount == r.invoiced %}
@@ -231,18 +237,18 @@
               {% endif %}
             {% endif %}
           </td>
-          <td class="text-end">{{ r.rent_perc }}</td>
-          <td class="text-center">
+          <td data-col-idx="11" class="text-end">{{ r.rent_perc }}</td>
+          <td data-col-idx="12" class="text-center">
             {% if r.cotizado_code %}{% with color=r.cotizado_user.color|default:"#6c757d" %}
             <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.cotizado_code }}</span>
             {% endwith %}{% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="13" class="text-center">
             {% if r.responsable_code %}{% with color=r.responsable_user.color|default:"#6c757d" %}
             <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.responsable_code }}</span>
             {% endwith %}{% endif %}
           </td>
-          <td class="text-center bs-vr-cell">
+          <td data-col-idx="14" class="text-center bs-vr-cell">
             {% if r.intranet_trip_id %}
               {% if r.intranet_vr %}
                 <span class="bs-vr-pill" style="background-color:{{ r.intranet_vr.color }};color:{{ r.intranet_vr.color|contrast_color }};">{{ r.intranet_vr.username }}</span>
@@ -265,27 +271,27 @@
               <span class="text-muted" style="font-size:.75em;">—</span>
             {% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="15" class="text-center">
             {% if r.intranet_vr2 %}
             <span class="bs-vr-pill" style="background:#fff;color:{{ r.intranet_vr2.color }};border:1.5px dashed {{ r.intranet_vr2.color }};" title="Sustituto por ausencia">{{ r.intranet_vr2.username }}</span>
             {% else %}
               <span class="text-muted" style="font-size:.75em;">—</span>
             {% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="16" class="text-center">
             {% if r.operations_code %}{% with color=r.operations_user.color|default:"#6c757d" %}
             <span style="background-color:{{ color }};color:{{ color|contrast_color }};padding:1px 7px;border-radius:999px;font-size:.78em;font-weight:500;white-space:nowrap;">{{ r.operations_code }}</span>
             {% endwith %}{% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="17" class="text-center">
             {% if r.seguimiento_supplier == "__SIN_ASIGNAR__" %}
               <span class="status-badge" style="background:#fff3cd;color:#856404;">Sin asignar</span>
             {% elif r.seguimiento_supplier %}
               {{ r.seguimiento_supplier }}
             {% endif %}
           </td>
-          <td class="bs-col-text" title="{{ r.guide }}">{{ r.guide }}</td>
-          <td class="text-center" id="bs-cell-{{ r.tp_id|slugify }}">
+          <td data-col-idx="18" class="bs-col-text" title="{{ r.guide }}">{{ r.guide }}</td>
+          <td data-col-idx="19" class="text-center" id="bs-cell-{{ r.tp_id|slugify }}">
             {% if r.in_intranet %}
               <i class="fa-solid fa-check bs-check" title="En intranet (file #{{ r.intranet_trip_id }})"></i>
             {% else %}
@@ -298,7 +304,7 @@
               </button>
             {% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="20" class="text-center">
             {% if r.tp_notes %}
             <button type="button" class="btn btn-sm btn-link p-0"
                     onclick="bsOpenNote('{{ r.name|escapejs }}', '{{ r.tp_notes|escapejs }}', 'Rentabilidad')"
@@ -307,7 +313,7 @@
             </button>
             {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="21" class="text-center">
             {% if r.pnr_notes %}
             <button type="button" class="btn btn-sm btn-link p-0"
                     onclick="bsOpenNote('{{ r.name|escapejs }}', '{{ r.pnr_notes|escapejs }}', 'PNR')"
@@ -316,10 +322,48 @@
             </button>
             {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
           </td>
-          <td class="text-center">
+          <td data-col-idx="22" class="text-center">
             {% if r.seguimiento %}
             <span class="status-badge" style="background:#e0d7f5;color:#3d2085;">{{ r.seguimiento }}</span>
             {% else %}<span class="text-muted" style="font-size:.8rem;">—</span>{% endif %}
+          </td>
+          <td data-col-idx="23" class="text-center bs-cavo-revisor-cell">
+            {% if r.cavo and r.cavo.revising_user %}
+            <span class="bs-vr-pill" style="background-color:{{ r.cavo.revising_user.color }};color:{{ r.cavo.revising_user.color|contrast_color }};">{{ r.cavo.revising_user.username }}</span>
+              {% if not r.cavo.is_revised %}
+              <button class="btn btn-link btn-sm p-0 ms-1 bs-cavo-edit-btn" data-trip-id="{{ r.intranet_trip_id }}"
+                      data-seguimiento="{{ r.seguimiento }}" title="Editar corrector / link"
+                      onclick="bsCavoOpenEdit(this)">
+                <i class="fa-solid fa-pen fa-xs"></i>
+              </button>
+              {% endif %}
+            {% else %}<span class="text-muted" style="font-size:.75em;">—</span>{% endif %}
+          </td>
+          <td data-col-idx="24" class="text-center bs-cavo-cell">
+            {% if r.intranet_trip_id %}
+              {% if r.cavo and r.cavo.is_revised %}
+                <i class="fa-solid fa-check" style="color:#198754;" title="CAVO revisada"></i>
+              {% elif r.cavo and r.cavo.revising_user %}
+                <button class="btn btn-sm btn-link p-0 bs-cavo-confirm-btn" data-trip-id="{{ r.intranet_trip_id }}"
+                        data-seguimiento="{{ r.seguimiento }}"
+                        title="{% if r.cavo.revising_user.id == current_user_id %}Confirmar CAVO revisada{% else %}Asignada a {{ r.cavo.revising_user.username }}{% endif %}"
+                        {% if r.cavo.revising_user.id != current_user_id %}disabled{% endif %}
+                        onclick="bsCavoOpenConfirm(this)">
+                  <i class="fa-solid fa-triangle-exclamation" style="color:#dc3545;"></i>
+                </button>
+                <button class="btn btn-sm btn-link p-0 text-danger bs-cavo-dismiss-btn" data-trip-id="{{ r.intranet_trip_id }}"
+                        data-seguimiento="{{ r.seguimiento }}" title="Desestimar pedido de corrección"
+                        onclick="bsCavoOpenDismiss(this)">
+                  <i class="fa-solid fa-ban"></i>
+                </button>
+              {% else %}
+                <button class="btn btn-sm btn-link p-0 text-muted" data-trip-id="{{ r.intranet_trip_id }}"
+                        data-seguimiento="{{ r.seguimiento }}" title="Mandar CAVO a revisar"
+                        onclick="bsCavoOpenSend(this)">—</button>
+              {% endif %}
+            {% else %}
+              <span class="text-muted" style="font-size:.75em;">—</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -346,14 +390,99 @@
   </div>
 </div>
 
+<!-- Modal: mandar CAVO a revisar -->
+<div class="modal fade" id="bsCavoSendModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-file-circle-check me-2"></i>Mandar CAVO a revisar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3">
+        <div>
+          <label class="form-label small text-muted mb-1">Link / Ruta de la documentación</label>
+          <input type="text" id="bs-cavo-send-link" class="form-control" placeholder="Ruta o link de la CAVO..." />
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Enviar a</label>
+          <select id="bs-cavo-send-reviewer" class="form-select">
+            <option value="">-- elegir --</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Nota (opcional)</label>
+          <textarea id="bs-cavo-send-note" class="form-control" rows="2" placeholder="Se incluye en el aviso al corrector..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-dark" id="bs-cavo-send-confirm">Enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: editar corrector / link de una CAVO ya enviada -->
+<div class="modal fade" id="bsCavoEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-pen me-2"></i>Editar CAVO</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-3">
+        <div>
+          <label class="form-label small text-muted mb-1">Link / Ruta de la documentación</label>
+          <input type="text" id="bs-cavo-edit-link" class="form-control" placeholder="Ruta o link de la CAVO..." />
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Corrector</label>
+          <select id="bs-cavo-edit-reviewer" class="form-select">
+            <option value="">-- elegir --</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-dark" id="bs-cavo-edit-confirm">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar CAVO revisada -->
+<div class="modal fade" id="bsCavoConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-check me-2"></i>Confirmar CAVO revisada</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label for="bs-cavo-confirm-comment" class="form-label small text-muted mb-1">Nota para el operador (opcional)</label>
+        <textarea id="bs-cavo-confirm-comment" class="form-control" rows="3"
+                  placeholder="Si es seguimiento BASIC se envía por chat; si es STD o FULL se envía por mail."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success" id="bs-cavo-confirm-btn-modal">
+          <i class="fa-solid fa-check me-1"></i>Marcar como revisada
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script id="bs-row-data" type="application/json">
-[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","op_code":"{{ r.operations_code }}","op_color":"{{ r.operations_user.color|default:'#6c757d' }}","op_label":"{{ r.operations_user.name|default:r.operations_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","intranet_vr2_code":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.username }}{% endif %}","intranet_vr2_id":{% if r.intranet_vr2 %}{{ r.intranet_vr2.id }}{% else %}null{% endif %},"intranet_vr2_color":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}","out_date":"{{ r.out_date }}","date_sort":"{{ r.travelling_date_sort }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+[{% for r in rows %}{"prefix":"{{ r.tp_prefix }}","status":"{{ r.raw_status }}","pax":{{ r.num_pax|default:0 }},"amount":{% if r.amount %}{{ r.amount }}{% else %}0{% endif %},"month":"{{ r.travelling_date_month }}","tp_id":"{{ r.tp_id }}","name":"{{ r.name|escapejs }}","client":"{{ r.client_name|escapejs }}","amount_str":"{{ r.amount }}","difficulty":"{{ r.difficulty }}","vr_code":"{{ r.responsable_code }}","vr_color":"{{ r.responsable_user.color|default:'#6c757d' }}","vr_label":"{{ r.responsable_user.name|default:r.responsable_code }}","op_code":"{{ r.operations_code }}","op_color":"{{ r.operations_user.color|default:'#6c757d' }}","op_label":"{{ r.operations_user.name|default:r.operations_code }}","intranet_vr_code":"{% if r.intranet_vr %}{{ r.intranet_vr.username }}{% endif %}","intranet_vr_id":{% if r.intranet_vr %}{{ r.intranet_vr.id }}{% else %}null{% endif %},"intranet_vr_color":"{% if r.intranet_vr %}{{ r.intranet_vr.color }}{% else %}{% endif %}","intranet_vr2_code":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.username }}{% endif %}","intranet_vr2_id":{% if r.intranet_vr2 %}{{ r.intranet_vr2.id }}{% else %}null{% endif %},"intranet_vr2_color":"{% if r.intranet_vr2 %}{{ r.intranet_vr2.color }}{% else %}{% endif %}","trip_id":{% if r.intranet_trip_id %}{{ r.intranet_trip_id }}{% else %}null{% endif %},"vr_requested_by":"{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.username }}{% endif %}","vr_requested_by_id":{% if r.vr_requested_by and not r.intranet_vr %}{{ r.vr_requested_by.id }}{% else %}null{% endif %},"date":"{{ r.travelling_date }}","out_date":"{{ r.out_date }}","date_sort":"{{ r.travelling_date_sort }}","seguimiento":"{{ r.seguimiento }}","cavo_link":"{% if r.cavo %}{{ r.cavo.link|escapejs }}{% endif %}","cavo_revising_id":{% if r.cavo and r.cavo.revising_user %}{{ r.cavo.revising_user.id }}{% else %}null{% endif %},"cavo_revising_code":"{% if r.cavo and r.cavo.revising_user %}{{ r.cavo.revising_user.username }}{% endif %}","cavo_revising_color":"{% if r.cavo and r.cavo.revising_user %}{{ r.cavo.revising_user.color }}{% else %}#6c757d{% endif %}","cavo_is_revised":{% if r.cavo and r.cavo.is_revised %}true{% else %}false{% endif %}}{% if not forloop.last %},{% endif %}{% endfor %}]
 </script>
 <script>
 // ── Row data indexed by tp_id for summary recalculation ──────────────────────
 const _BS_ROWS = JSON.parse(document.getElementById('bs-row-data').textContent || '[]');
 const _BS_CURRENT_USER_TP = "{{ current_user_tp|escapejs }}";
 const _BS_CURRENT_USER_USERNAME = "{{ current_user_username|escapejs }}";
+const _BS_CURRENT_USER_ID = {{ current_user_id|default:"null" }};
+const _BS_CAVO_USERS = {{ cavo_users_json|safe }};
 
 // ── VR filter state ───────────────────────────────────────────────────────────
 let _bsVrFilter = null;         // null = Todos
@@ -389,11 +518,14 @@ let _BS_PREFS = {};             // table_key → { visible: {idx:bool}, widths: 
 let _bsApplyingPreset = false;  // true while bsSetView() bulk-applies visibility, to skip re-saving
 let _bsSaveTimer = null;
 let _bsResizing = null;         // { idx, startX, startWidth }
+// Deep-link from the VR missing-files reminder email (?vr_month=YYYY-MM):
+// forces that month's tab to be the default when the "Asignar VR" modal opens.
+let _bsTargetMonth = new URLSearchParams(window.location.search).get('vr_month');
 
 function _bsTableKey(viewKey) { return `${_BS_TABLE_ID}:${viewKey}`; }
 
 function _bsLoadPrefs() {
-  const keys = ['default', 'vr', 'ops'].map(_bsTableKey).join(',');
+  const keys = ['default', 'vr', 'ops', 'cavo'].map(_bsTableKey).join(',');
   return fetch(`{% url 'table_preferences_get' %}?keys=${encodeURIComponent(keys)}`)
     .then(r => r.ok ? r.json() : {})
     .then(data => { _BS_PREFS = data || {}; })
@@ -420,8 +552,10 @@ function _bsApplyColWidths(viewKey) {
   let css = '';
   idxs.forEach(idx => {
     const px = widths[idx] !== undefined ? widths[idx] : _BS_DEFAULT_COL_WIDTHS[idx];
-    const n = idx + 1;
-    css += `#booking-sheet-table th:nth-child(${n}), #booking-sheet-table td:nth-child(${n}) { width:${px}px; max-width:${px}px; overflow:hidden; text-overflow:ellipsis; }\n`;
+    // DataTables removes hidden columns' <th>/<td> from the DOM entirely (it doesn't
+    // just hide them), so nth-child position shifts depending on what's currently
+    // visible — a stable data-col-idx attribute is required instead.
+    css += `#booking-sheet-table th[data-col-idx="${idx}"], #booking-sheet-table td[data-col-idx="${idx}"] { width:${px}px; max-width:${px}px; overflow:hidden; text-overflow:ellipsis; }\n`;
   });
   let styleEl = document.getElementById('bs-col-width-style');
   if (!styleEl) {
@@ -441,11 +575,14 @@ function _bsSetColWidth(idx, px) {
 }
 
 function _bsInitColResize() {
-  document.querySelectorAll('#booking-sheet-table thead th').forEach((th, idx) => {
+  // Safe to call repeatedly: DataTables removes hidden columns' <th> from the DOM
+  // and re-inserts them when shown again, so newly-(re)inserted <th> need their
+  // handle (re-)attached — this must be re-run after every visibility change.
+  document.querySelectorAll('#booking-sheet-table thead th[data-col-idx]').forEach((th) => {
     if (th.querySelector('.bs-col-resize-handle')) return;
     const handle = document.createElement('span');
     handle.className = 'bs-col-resize-handle';
-    handle.dataset.colIdx = idx;
+    handle.dataset.colIdx = th.dataset.colIdx;
     th.appendChild(handle);
   });
 }
@@ -488,10 +625,11 @@ function _bsBuildVrFilter() {
 
   const isVrView = _bsCurrentView === 'vr';
   const isOpsView = _bsCurrentView === 'ops';
+  const isCavoView = _bsCurrentView === 'cavo';
 
   // Update label
   const filterLabel = document.getElementById('bs-vr-filter-label');
-  if (filterLabel) filterLabel.textContent = isVrView ? 'VR:' : (isOpsView ? 'Operador:' : 'Consultor:');
+  if (filterLabel) filterLabel.textContent = isVrView ? 'VR:' : (isOpsView ? 'Operador:' : (isCavoView ? 'Revisor CAVO:' : 'Consultor:'));
 
   // Only include users that have files in the currently active types and statuses
   const activePrefixes = new Set(
@@ -510,6 +648,14 @@ function _bsBuildVrFilter() {
       if (code && !seen.has(code)) {
         seen.set(code, { color: r.intranet_vr_color || '#6c757d', label: code });
       }
+    } else if (isCavoView) {
+      // CAVO view: any user with a CAVO assigned (pending or already revised) —
+      // so their pill stays visible and shows all their checkmarks too, not
+      // just what's left to do.
+      const code = r.cavo_revising_code;
+      if (code && !seen.has(code)) {
+        seen.set(code, { color: r.cavo_revising_color || '#6c757d', label: code });
+      }
     } else if (isOpsView) {
       // Ops view: filter by Tourplan operator
       if (r.op_code && !seen.has(r.op_code)) {
@@ -524,7 +670,7 @@ function _bsBuildVrFilter() {
   });
 
   // Auto-select current user if they have files in active types, else Todos
-  const defaultCode = isVrView
+  const defaultCode = (isVrView || isCavoView)
     ? (seen.has(_BS_CURRENT_USER_USERNAME) ? _BS_CURRENT_USER_USERNAME : null)
     : (seen.has(_BS_CURRENT_USER_TP) ? _BS_CURRENT_USER_TP : null);
   if (!_bsVrFilterUserCleared && _bsVrFilter === null) {
@@ -604,13 +750,15 @@ document.addEventListener('DOMContentLoaded', function () {
   if (tbl) {
     $(tbl).DataTable({
       paging: false,
+      autoWidth: false,  // don't let DataTables inject its own inline th widths — they
+                          // out-specificity our column-resize CSS and make some columns unresizable
       order: [[5, 'asc']],
       dom: "<'d-flex align-items-center gap-2 mb-2'Bf>rtip",
       buttons: [{
         extend: 'colvis',
         text: '<i class="fa-solid fa-table-columns me-1"></i>Columnas',
         className: 'btn btn-sm btn-dark',
-        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22],
+        columns: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24],
       }],
       language: {
         search: 'Buscar:',
@@ -642,6 +790,8 @@ document.addEventListener('DOMContentLoaded', function () {
         { visible: false },  // 20 Rentabilidad
         { visible: false },  // 21 PNR
         { visible: false },  // 22 Seguimiento
+        { visible: false },  // 23 Revisor (CAVO)
+        { visible: false },  // 24 CAVO
       ],
       drawCallback: function() {
         _bsRenderMonthSubtotals();
@@ -652,6 +802,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     _bsInitColResize();
     $(tbl).on('column-visibility.dt', function (e, settings, column, state) {
+      _bsInitColResize(); // re-attach handle if this column's <th> was just re-inserted
       if (_bsApplyingPreset) return;
       const key = _bsTableKey(_bsCurrentView);
       if (!_BS_PREFS[key]) _BS_PREFS[key] = {};
@@ -669,19 +820,24 @@ document.addEventListener('DOMContentLoaded', function () {
   const _BS_VIEWS = {
     default: {
       // General: Vendedor Cliente(3), IN(5), Status(7), Pax(8), Monto(9), Invoiced(10), Rent(11), Consultant(13), OP(16), Intranet(19)
-      // Ref(4), OUT(6), Coti por(12), VR(14), VR2(15), DH(17), Guía(18), Rentabilidad(20), PNR(21), Seguimiento(22) ocultos por defecto
+      // Ref(4), OUT(6), Coti por(12), VR(14), VR2(15), DH(17), Guía(18), Rentabilidad(20), PNR(21), Seguimiento(22), Revisor(23), CAVO(24) ocultos por defecto
       show: [0,1,2,3,5,7,8,9,10,11,13,16,19],
-      hide: [4,6,12,14,15,17,18,20,21,22],
+      hide: [4,6,12,14,15,17,18,20,21,22,23,24],
     },
     vr: {
-      // VR: muestra Consultant(13), VR(14), VR2(15); oculta Vendedor Cliente(3), Status(7), Intranet(19); Seguimiento(22) oculto por defecto
+      // VR: muestra Consultant(13), VR(14), VR2(15); oculta Vendedor Cliente(3), Status(7), Intranet(19); Seguimiento(22), Revisor(23), CAVO(24) ocultos por defecto
       show: [0,1,2,5,6,8,9,10,11,12,13,14,15,16,20,21],
-      hide: [3,4,7,17,18,19,22],
+      hide: [3,4,7,17,18,19,22,23,24],
     },
     ops: {
       // Operaciones: como default pero con Guía(18), DH(17), VR(14), VR2(15), PNR(21) y Rentabilidad(20);
-      // sin Vendedor Cliente(3), Monto(9), Invoiced(10) ni Intranet(19)
+      // sin Vendedor Cliente(3), Monto(9), Invoiced(10) ni Intranet(19); Revisor(23)/CAVO(24) ocultos por defecto
       show: [0,1,2,5,7,8,11,13,14,15,16,17,18,20,21],
+      hide: [3,4,6,9,10,12,19,22,23,24],
+    },
+    cavo: {
+      // CAVO: mismas columnas que Operaciones, sumando Revisor(23) y CAVO(24)
+      show: [0,1,2,5,7,8,11,13,14,15,16,17,18,20,21,23,24],
       hide: [3,4,6,9,10,12,19,22],
     },
   };
@@ -698,6 +854,7 @@ document.addEventListener('DOMContentLoaded', function () {
     preset.hide.forEach(i => dt.column(i).visible(savedVisible[i] !== undefined ? !!savedVisible[i] : false, false));
     dt.columns.adjust();
     _bsApplyingPreset = false;
+    _bsInitColResize(); // re-attach handles to any <th> DataTables just re-inserted
     document.querySelectorAll('#bs-view-btns button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.bsView === viewKey);
     });
@@ -733,6 +890,11 @@ document.addEventListener('DOMContentLoaded', function () {
   if (elIn)  elIn.textContent  = inCount;
   if (elMis) elMis.textContent = missing;
 
+  // Deep-linked from the VR reminder email — jump straight into the assign modal
+  if (_bsTargetMonth && document.getElementById('bs-auto-assign-btn')) {
+    bsAutoAssignVr();
+  }
+
   // ── Type filter pills ────────────────────────────────────────────────────
   const bsTable = $(tbl).DataTable();
   const activeTypes = new Set(
@@ -757,6 +919,7 @@ document.addEventListener('DOMContentLoaded', function () {
       let cmpAttr;
       if (_bsCurrentView === 'vr') cmpAttr = node.dataset.intranetVrCode;
       else if (_bsCurrentView === 'ops') cmpAttr = node.dataset.opCode;
+      else if (_bsCurrentView === 'cavo') cmpAttr = node.dataset.cavoRevisingCode;
       else cmpAttr = node.dataset.vrCode;
       if ((cmpAttr || '') !== _bsVrFilter) return false;
     }
@@ -810,25 +973,22 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function _bsUpdateSummary() {
-  const activeTypes = new Set(
-    [...document.querySelectorAll('.bs-type-cb:checked')].map(el => el.value)
-  );
-  const activeStatuses = new Set(
-    [...document.querySelectorAll('.bs-status-cb:checked')].map(el => el.value)
-  );
-  const visibleRows = _BS_ROWS.filter(r =>
-    activeTypes.has(r.prefix) &&
-    activeStatuses.has(r.status) &&
-    (!_bsMonthFilter || r.month === _bsMonthFilter) &&
-    (_bsVrFilter === null || (_bsCurrentView === 'vr' ? r.intranet_vr_code : (_bsCurrentView === 'ops' ? r.op_code : r.vr_code)) === _bsVrFilter)
-  );
-  const totalFiles  = visibleRows.length;
-  const totalPax    = visibleRows.reduce((s, r) => s + (r.pax || 0), 0);
-  const totalAmt    = visibleRows.reduce((s, r) => s + (r.amount || 0), 0);
-  const fmtAmt      = totalAmt.toLocaleString('de-DE', {maximumFractionDigits: 0});
+  // Read totals straight from whatever DataTables currently considers visible
+  // (search: 'applied' includes the free-text search box AND the custom
+  // type/status/month/VR predicate registered below) — this way typing in the
+  // search box updates the totals too, instead of only filtering the rows.
+  const tbl = document.getElementById('booking-sheet-table');
+  if (!tbl || !$.fn.DataTable.isDataTable(tbl)) return;
+  const nodes = $(tbl).DataTable().rows({ search: 'applied' }).nodes();
 
-  const inIntranet = visibleRows.filter(r => r.trip_id !== null).length;
-  const missing    = visibleRows.filter(r => r.trip_id === null).length;
+  let totalFiles = 0, totalPax = 0, totalAmt = 0, inIntranet = 0, missing = 0;
+  nodes.each(function (node) {
+    totalFiles++;
+    totalPax += parseInt(node.dataset.pax || 0);
+    totalAmt += parseFloat(node.dataset.amountNum || 0);
+    if (node.dataset.tripId) inIntranet++; else missing++;
+  });
+  const fmtAmt = totalAmt.toLocaleString('de-DE', {maximumFractionDigits: 0});
 
   const elF  = document.getElementById('bs-total-files');
   const elP  = document.getElementById('bs-total-pax');
@@ -1105,6 +1265,219 @@ function bsCancelVrRequest(btn) {
   .catch(() => { alert('Error de red'); btn.disabled = false; });
 }
 
+// ── CAVO ─────────────────────────────────────────────────────────────────────
+let _bsCavoTripId = null;
+let _bsCavoSeguimiento = '';
+let _bsCavoTr = null;
+
+function _bsCavoCellHtml(tripId, cavo, seguimiento) {
+  if (!cavo || !cavo.revising_id) {
+    return `<button class="btn btn-sm btn-link p-0 text-muted" data-trip-id="${tripId}" data-seguimiento="${seguimiento || ''}" title="Mandar CAVO a revisar" onclick="bsCavoOpenSend(this)">—</button>`;
+  }
+  if (cavo.is_revised) {
+    return `<i class="fa-solid fa-check" style="color:#198754;" title="CAVO revisada"></i>`;
+  }
+  const isMine = _BS_CURRENT_USER_ID && cavo.revising_id == _BS_CURRENT_USER_ID;
+  const title = isMine ? 'Confirmar CAVO revisada' : `Asignada a ${cavo.revising_code}`;
+  return `<button class="btn btn-sm btn-link p-0 bs-cavo-confirm-btn" data-trip-id="${tripId}" data-seguimiento="${seguimiento || ''}"
+                  title="${title}" ${isMine ? '' : 'disabled'} onclick="bsCavoOpenConfirm(this)">
+            <i class="fa-solid fa-triangle-exclamation" style="color:#dc3545;"></i>
+          </button>
+          <button class="btn btn-sm btn-link p-0 text-danger bs-cavo-dismiss-btn" data-trip-id="${tripId}" data-seguimiento="${seguimiento || ''}"
+                  title="Desestimar pedido de corrección" onclick="bsCavoOpenDismiss(this)">
+            <i class="fa-solid fa-ban"></i>
+          </button>`;
+}
+
+function _bsCavoRevisorHtml(cavo, tripId, seguimiento) {
+  if (!cavo || !cavo.revising_id) return `<span class="text-muted" style="font-size:.75em;">—</span>`;
+  const color = cavo.revising_color || '#6c757d';
+  let html = `<span class="bs-vr-pill" style="background-color:${color};color:${_bsContrastColor(color)};">${cavo.revising_code}</span>`;
+  if (!cavo.is_revised) {
+    html += ` <button class="btn btn-link btn-sm p-0 ms-1 bs-cavo-edit-btn" data-trip-id="${tripId}" data-seguimiento="${seguimiento || ''}"
+                       title="Editar corrector / link" onclick="bsCavoOpenEdit(this)">
+                <i class="fa-solid fa-pen fa-xs"></i>
+              </button>`;
+  }
+  return html;
+}
+
+function _bsCavoRerender(tripId, tr, cavo) {
+  const seguimiento = tr.dataset.seguimiento || _bsCavoSeguimiento;
+  const cellTd = tr.querySelector('.bs-cavo-cell');
+  const revisorTd = tr.querySelector('.bs-cavo-revisor-cell');
+  if (cellTd) cellTd.innerHTML = _bsCavoCellHtml(tripId, cavo, seguimiento);
+  if (revisorTd) revisorTd.innerHTML = _bsCavoRevisorHtml(cavo, tripId, seguimiento);
+  tr.dataset.cavoRevisingCode = cavo ? (cavo.revising_code || '') : '';
+  tr.dataset.cavoIsRevised = cavo && cavo.is_revised ? '1' : '0';
+  const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(tripId));
+  if (rowEntry) {
+    rowEntry.cavo_revising_id = cavo ? cavo.revising_id : null;
+    rowEntry.cavo_revising_code = cavo ? cavo.revising_code : '';
+    rowEntry.cavo_revising_color = cavo ? cavo.revising_color : '#6c757d';
+    rowEntry.cavo_is_revised = cavo ? !!cavo.is_revised : false;
+  }
+  if (_bsCurrentView === 'cavo') _bsBuildVrFilter();
+}
+
+function bsCavoOpenSend(btn) {
+  _bsCavoTripId = btn.dataset.tripId;
+  _bsCavoSeguimiento = btn.dataset.seguimiento || '';
+  _bsCavoTr = btn.closest('tr');
+  document.getElementById('bs-cavo-send-link').value = '';
+  document.getElementById('bs-cavo-send-note').value = '';
+  const sel = document.getElementById('bs-cavo-send-reviewer');
+  sel.innerHTML = '<option value="">-- elegir --</option>' +
+    _BS_CAVO_USERS.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bsCavoSendModal')).show();
+  // Pre-select the auto-suggested corrector (weekly-balanced roster from Gestión de Reglas);
+  // the operator can still change it before confirming.
+  fetch(`/booking_sheet/cavo/${_bsCavoTripId}/suggested_reviewer?seguimiento=${encodeURIComponent(_bsCavoSeguimiento)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok && data.user_id && sel.querySelector(`option[value="${data.user_id}"]`)) {
+        sel.value = data.user_id;
+      }
+    })
+    .catch(() => {});
+}
+
+function bsCavoOpenDismiss(btn) {
+  if (btn.disabled) return;
+  const tripId = btn.dataset.tripId;
+  const seguimiento = btn.dataset.seguimiento || '';
+  const tr = btn.closest('tr');
+  btn.disabled = true;
+  fetch(`/booking_sheet/cavo/${tripId}/dismiss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ seguimiento }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      _bsCavoRerender(tripId, tr, null);
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  }).catch(() => alert('Error de red'))
+    .finally(() => { btn.disabled = false; });
+}
+
+function bsCavoOpenEdit(btn) {
+  _bsCavoTripId = btn.dataset.tripId;
+  _bsCavoSeguimiento = btn.dataset.seguimiento || '';
+  _bsCavoTr = btn.closest('tr');
+  const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(_bsCavoTripId));
+  document.getElementById('bs-cavo-edit-link').value = (rowEntry && rowEntry.cavo_link) || '';
+  const sel = document.getElementById('bs-cavo-edit-reviewer');
+  sel.innerHTML = '<option value="">-- elegir --</option>' +
+    _BS_CAVO_USERS.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+  if (rowEntry && rowEntry.cavo_revising_id) sel.value = rowEntry.cavo_revising_id;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bsCavoEditModal')).show();
+}
+
+document.getElementById('bs-cavo-edit-confirm')?.addEventListener('click', function () {
+  if (!_bsCavoTripId) return;
+  const link = document.getElementById('bs-cavo-edit-link').value.trim();
+  const reviewerId = document.getElementById('bs-cavo-edit-reviewer').value;
+  if (!reviewerId) { alert('Elegí a quién enviar la CAVO.'); return; }
+  const btn = this;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+  fetch(`/booking_sheet/cavo/${_bsCavoTripId}/update_reviewer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ link, reviewer_id: reviewerId, seguimiento: _bsCavoSeguimiento }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      if (_bsCavoTr) {
+        _bsCavoRerender(_bsCavoTripId, _bsCavoTr, {
+          revising_id: data.revising_user_id,
+          revising_code: data.revising_user,
+          revising_color: data.revising_user_color,
+          is_revised: false,
+        });
+      }
+      bootstrap.Modal.getInstance(document.getElementById('bsCavoEditModal'))?.hide();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  }).catch(() => alert('Error de red'))
+    .finally(() => { btn.disabled = false; btn.innerHTML = orig; });
+});
+
+document.getElementById('bs-cavo-send-confirm')?.addEventListener('click', function () {
+  if (!_bsCavoTripId) return;
+  const link = document.getElementById('bs-cavo-send-link').value.trim();
+  const note = document.getElementById('bs-cavo-send-note').value.trim();
+  const reviewerId = document.getElementById('bs-cavo-send-reviewer').value;
+  if (!reviewerId) { alert('Elegí a quién enviar la CAVO.'); return; }
+  const btn = this;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
+  fetch(`/booking_sheet/cavo/${_bsCavoTripId}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ link, note, reviewer_id: reviewerId, seguimiento: _bsCavoSeguimiento }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      if (_bsCavoTr) {
+        _bsCavoTr.dataset.seguimiento = _bsCavoSeguimiento;
+        _bsCavoRerender(_bsCavoTripId, _bsCavoTr, {
+          revising_id: data.revising_user_id,
+          revising_code: data.revising_user,
+          revising_color: data.revising_user_color,
+          is_revised: false,
+        });
+      }
+      bootstrap.Modal.getInstance(document.getElementById('bsCavoSendModal'))?.hide();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  }).catch(() => alert('Error de red'))
+    .finally(() => { btn.disabled = false; btn.innerHTML = orig; });
+});
+
+function bsCavoOpenConfirm(btn) {
+  if (btn.disabled) return;
+  _bsCavoTripId = btn.dataset.tripId;
+  _bsCavoSeguimiento = btn.dataset.seguimiento || '';
+  _bsCavoTr = btn.closest('tr');
+  document.getElementById('bs-cavo-confirm-comment').value = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bsCavoConfirmModal')).show();
+}
+
+document.getElementById('bs-cavo-confirm-btn-modal')?.addEventListener('click', function () {
+  if (!_bsCavoTripId) return;
+  const comment = document.getElementById('bs-cavo-confirm-comment').value.trim();
+  const btn = this;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+  fetch(`/booking_sheet/cavo/${_bsCavoTripId}/mark_done`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ comment, seguimiento: _bsCavoSeguimiento }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      const rowEntry = _BS_ROWS.find(r => r.trip_id == parseInt(_bsCavoTripId));
+      if (_bsCavoTr) {
+        _bsCavoRerender(_bsCavoTripId, _bsCavoTr, {
+          revising_id: rowEntry ? rowEntry.cavo_revising_id : null,
+          revising_code: rowEntry ? rowEntry.cavo_revising_code : '',
+          revising_color: rowEntry ? rowEntry.cavo_revising_color : '#6c757d',
+          is_revised: true,
+        });
+      }
+      bootstrap.Modal.getInstance(document.getElementById('bsCavoConfirmModal'))?.hide();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  }).catch(() => alert('Error de red'))
+    .finally(() => { btn.disabled = false; btn.innerHTML = orig; });
+});
+
 // ── Scheduled draw with loader ───────────────────────────────────────────────
 function _bsScheduleDraw() {
   const _t = document.getElementById('booking-sheet-table');
@@ -1289,8 +1662,9 @@ function _bsRenderAssignModal() {
   if (!sortedMonths.length) { body.innerHTML = '<p class="text-muted">No hay files importados a la intranet.</p>'; return; }
 
   const _today = new Date();
-  const _currentMonth = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}`;
+  const _currentMonth = _bsTargetMonth || `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}`;
   const _defaultIdx = sortedMonths.includes(_currentMonth) ? sortedMonths.indexOf(_currentMonth) : 0;
+  _bsTargetMonth = null; // only force the deep-linked month the first time the modal opens
 
   const _parseDate = d => { if (!d) return '99999999'; const [day,mo,yr] = d.split('/'); return `${yr}${mo}${day}`; };
 

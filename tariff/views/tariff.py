@@ -151,7 +151,11 @@ def get_filtered_rate_lines(request):
             group__product__supplier__is_provisional=False,
         )
 
+    from tariff.utils import get_ratelines_last_update
+    _last_update_by_rl = get_ratelines_last_update(rate_lines.values_list('id', flat=True))
+
     for line in rate_lines:
+        line.last_update = _last_update_by_rl.get(line.id)
         rates = {}
         costs = {}
         provisional_columns = set()
@@ -210,16 +214,30 @@ def tariff_search(request):
 
     has_params = any(request.GET.get(key) for key in ['client', 'location', 'type', 'season'])
     if not has_params or not request.GET.get('type'):
-        return render(request, "tariff/tariff_table_partial.html", {'rate_lines': None})
+        return render(request, "tariff/tariff_table_partial.html", {
+            'rate_lines': None,
+            'tariff_type': None,
+            'is_client': request.user.userType == "Cliente",
+            'show_costs': request.user.userType in ("Ventas", "Operaciones", "Internal"),
+            'supplier_last_update': {},
+        })
 
     rate_lines, t_type, is_client = get_filtered_rate_lines(request)
 
     show_costs = request.user.userType in ("Ventas", "Operaciones", "Internal")
+
+    supplier_last_update = {}
+    if show_costs:
+        from tariff.utils import get_suppliers_last_update
+        supplier_ids = {rl.group.product.supplier_id for rl in rate_lines}
+        supplier_last_update = get_suppliers_last_update(supplier_ids)
+
     return render(request, "tariff/tariff_table_partial.html", {
         "rate_lines": rate_lines,
         "tariff_type": t_type,
         "is_client": is_client,
         "show_costs": show_costs,
+        "supplier_last_update": supplier_last_update,
     })
 
 
@@ -420,6 +438,206 @@ def pdf_view(request):
         "sello_b64": sello_b64,
         "audley_b64": audley_b64,
     })
+
+
+def _style_tariff_excel_sheet(ws):
+    header_fill = PatternFill(start_color="D88775", end_color="D88775", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column_cells[0].column)
+        for cell in column_cells:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except Exception:
+                pass
+        ws.column_dimensions[column_letter].width = max_length + 2
+
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.alignment = Alignment(horizontal="left")
+
+    thin = Side(border_style="thin", color="DDDDDD")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.border = border
+
+    alt_fill = PatternFill(start_color="F7F9FC", end_color="F7F9FC", fill_type="solid")
+    for idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
+        if idx % 2 == 0:
+            for cell in row:
+                cell.fill = alt_fill
+
+
+@login_required
+def export_excel_selected(request):
+    acc_supplier_ids = request.GET.getlist("suppliers")
+    svs_product_ids  = request.GET.getlist("svs_products")
+    season = request.GET.get("season")
+
+    if not acc_supplier_ids and not svs_product_ids:
+        return redirect("pdf_select")
+
+    if request.user.userType == "Cliente":
+        client = getattr(request.user, 'client', None)
+        if client is None:
+            try:
+                client = Client.objects.get(name=request.user.other_name)
+            except Client.DoesNotExist:
+                client = None
+    else:
+        client_id = request.GET.get("client")
+        client = None
+        if client_id:
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                pass
+
+    year = int(season) if season else date.today().year
+    season_start = date(year, 5, 1)
+    season_end = date(year + 1, 4, 30)
+    client_category = client.category if client else "C"
+    is_client_user = request.user.userType == "Cliente"
+
+    def _r(v):
+        return "N/A" if v == 0 else v
+
+    shared_select = [
+        "group__product__supplier__group__location",
+        "group__product__supplier__group",
+        "group__product__supplier",
+        "group__product__group",
+        "group__product",
+        "group",
+    ]
+    shared_order = [
+        "group__product__supplier__group__location__order",
+        "group__product__supplier__group__order",
+        "group__product__supplier__id",
+        "group__product__group__order",
+        "date_from",
+        "date_to",
+        "group__product__order",
+    ]
+    svs_order = [
+        "group__product__supplier__group__location__order",
+        "group__product__group__order",
+        "group__product__order",
+        "group__product__supplier__id",
+        "date_from",
+        "date_to",
+    ]
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    if acc_supplier_ids:
+        qs = (
+            RateLine.objects
+            .filter(
+                group__product__supplier_id__in=acc_supplier_ids,
+                group__product__type_service="AC",
+                date_from__lte=season_end,
+                date_to__gte=season_start,
+            )
+            .select_related(*shared_select)
+            .prefetch_related("line_rates")
+            .order_by(*shared_order)
+        )
+        if client:
+            qs = qs.filter(group__product__clients__id=client.id)
+        if is_client_user:
+            qs = qs.filter(is_revised=True, group__product__supplier__is_provisional=False)
+
+        ws = wb.create_sheet("Accommodation")
+        ws.freeze_panes = "A2"
+        ws.append(["Supplier", "Room", "Type", "Condition", "From", "To", "SGL", "DBL"])
+        for line in qs:
+            rates = {}
+            for r in line.line_rates.all():
+                if is_client_user and r.status != "Confirmed":
+                    continue
+                rates[r.column_options] = apply_client_margin(r, client_category, "AC")
+            if is_client_user and not rates:
+                continue
+            ws.append([
+                getattr(line.group.product.supplier, "name", ""),
+                line.group.product.name,
+                line.group.name,
+                line.group.product.group.name,
+                line.date_from,
+                line.date_to,
+                _r(rates.get('SGL')),
+                _r(rates.get('DBL')),
+            ])
+        _style_tariff_excel_sheet(ws)
+
+    if svs_product_ids:
+        qs = (
+            RateLine.objects
+            .filter(
+                group__product_id__in=svs_product_ids,
+                group__product__type_service="NA",
+                date_from__lte=season_end,
+                date_to__gte=season_start,
+            )
+            .select_related(*shared_select)
+            .prefetch_related("line_rates")
+            .order_by(*svs_order)
+        )
+        if is_client_user:
+            qs = qs.filter(is_revised=True, group__product__supplier__is_provisional=False)
+
+        ws = wb.create_sheet("Services")
+        ws.freeze_panes = "A2"
+        ws.append(["Product", "Type", "Group", "From", "To", "SIB", "1 Pax", "2 Pax", "3 Pax", "4 Pax", "5 Pax", "6 Pax"])
+        for line in qs:
+            rates = {}
+            for r in line.line_rates.all():
+                if is_client_user and r.status != "Confirmed":
+                    continue
+                rates[r.column_options] = apply_client_margin(r, client_category, "NA")
+            if is_client_user and not rates:
+                continue
+            ws.append([
+                line.group.product.name,
+                line.group.name,
+                line.group.product.group.name,
+                line.date_from,
+                line.date_to,
+                _r(rates.get('SIB')),
+                _r(rates.get('1')),
+                _r(rates.get('2')),
+                _r(rates.get('3')),
+                _r(rates.get('4')),
+                _r(rates.get('5')),
+                _r(rates.get('6')),
+            ])
+        _style_tariff_excel_sheet(ws)
+
+    filename = "Aliwen Tariff"
+    if season:
+        filename += f" - {year}/{year + 1}"
+    filename += ".xlsx"
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
 
 
 def export_services_excel(request):
@@ -1429,7 +1647,7 @@ join SRV on SRV.CODE = OPT.SERVICE
 join CRM on CRM.CODE = OPT.SUPPLIER
 join sod on sod.sod_id = opt.SOD_ID
 where OPT.AC in ('Y','A')
-and OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s
+and OSR.DATE_TO >= %s and OSR.DATE_FROM <= %s
 """
 
 _SVS_SYNC_SQL = """
@@ -1535,8 +1753,19 @@ join LOC on LOC.CODE = OPT.LOCATION
 join SRV on SRV.CODE = OPT.SERVICE
 join CRM on CRM.CODE = OPT.SUPPLIER
 where OPT.AC IN ('N')
-and OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s
+and OSR.DATE_TO >= %s and OSR.DATE_FROM <= %s
 """
+
+
+def _sql_filtered_by_suppliers(base_sql, ac_clause, supplier_codes):
+    """Injects an `OPT.SUPPLIER in (...)` filter into one of the Tourplan sync SQL
+    constants above, so Tourplan only returns rows for the given supplier codes
+    instead of the full table. `supplier_codes` must be non-empty; params for the
+    returned SQL are (*supplier_codes, date_from_param, date_to_param)."""
+    placeholders = ", ".join(["%s"] * len(supplier_codes))
+    old = f"where {ac_clause}\nand OSR.DATE_TO >= %s and OSR.DATE_FROM <= %s"
+    new = f"where {ac_clause}\nand OPT.SUPPLIER in ({placeholders})\nand OSR.DATE_TO >= %s and OSR.DATE_FROM <= %s"
+    return base_sql.replace(old, new)
 
 
 def _build_tp_sync_message(stats, label="tarifas"):
@@ -1654,10 +1883,11 @@ def _process_db_acc_rows(rows, today, start_date=None):
         if not product:
             continue
 
-        tp_loc  = (product.tp_location_code or '').strip().upper()
-        row_loc = (row.get('locationCode') or '').strip().upper()
-        if tp_loc and row_loc and tp_loc != row_loc:
-            continue
+        # No location filter for accommodation: unlike services, a hotel's room
+        # code is unique to that property, so there's no cross-destination
+        # collision to guard against — and the check was wrongly dropping valid
+        # rows when a product's tp_location_code didn't match Tourplan's OPT.LOCATION
+        # for that particular rate line.
 
         try:
             if hasattr(date_from_raw, 'date'):
@@ -3529,6 +3759,14 @@ def sync_tariff_from_db_accommodation(request):
         return HttpResponseRedirect(reverse("tp_mod_list"))
 
     try:
+        supplier_codes = sorted({
+            c.strip() for c in Supplier.objects.filter(update_tp=True).values_list("code", flat=True) if c.strip()
+        })
+        if not supplier_codes:
+            messages.warning(request,
+                "No hay proveedores de alojamiento habilitados para 'Actualizar desde TP'.")
+            return HttpResponseRedirect(reverse("tp_mod_list"))
+
         from intranet.utils import get_tourplan_connection
         today = date.today()
         default_start = today - timedelta(days=60)
@@ -3541,10 +3779,14 @@ def sync_tariff_from_db_accommodation(request):
         p1 = start_date.strftime('%Y%m%d')
         p2 = (today + timedelta(days=730)).strftime('%Y%m%d')
 
+        # Only ask Tourplan for the enabled suppliers, instead of pulling the
+        # full table and filtering by update_tp afterwards.
+        supplier_sql = _sql_filtered_by_suppliers(_ACC_SYNC_SQL, "OPT.AC in ('Y','A')", supplier_codes)
+
         conn = get_tourplan_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(_ACC_SYNC_SQL, (p1, p2))
+            cursor.execute(supplier_sql, (*supplier_codes, p1, p2))
             rows = cursor.fetchall()
         finally:
             conn.close()
@@ -3578,6 +3820,15 @@ def sync_tariff_from_db_services(request):
         return HttpResponseRedirect(reverse("tp_mod_list"))
 
     try:
+        supplier_codes = sorted({
+            c.strip() for c in Supplier.objects.filter(update_tp=True, group__type_service='NA')
+                .values_list("code", flat=True) if c.strip()
+        })
+        if not supplier_codes:
+            messages.warning(request,
+                "No hay proveedores de servicios habilitados para 'Actualizar desde TP'.")
+            return HttpResponseRedirect(reverse("tp_mod_list"))
+
         from intranet.utils import get_tourplan_connection
         today = date.today()
         default_start = today - timedelta(days=60)
@@ -3590,10 +3841,14 @@ def sync_tariff_from_db_services(request):
         p1 = start_date.strftime('%Y%m%d')
         p2 = (today + timedelta(days=730)).strftime('%Y%m%d')
 
+        # Only ask Tourplan for the enabled suppliers, instead of pulling the
+        # full table and filtering by update_tp afterwards.
+        supplier_sql = _sql_filtered_by_suppliers(_SVS_SYNC_SQL, "OPT.AC IN ('N')", supplier_codes)
+
         conn = get_tourplan_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(_SVS_SYNC_SQL, (p1, p2))
+            cursor.execute(supplier_sql, (*supplier_codes, p1, p2))
             rows = cursor.fetchall()
         finally:
             conn.close()
@@ -3648,10 +3903,7 @@ def quick_sync_supplier(request, supplier_id):
         sup_code = supplier.code.strip()
         # Inject supplier filter into the SQL WHERE clause so Tourplan
         # only returns rows for this supplier (avoids fetching the full table).
-        supplier_sql = _SVS_SYNC_SQL.replace(
-            "where OPT.AC IN ('N')\nand OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s",
-            "where OPT.AC IN ('N')\nand OPT.SUPPLIER = %s\nand OSR.DATE_FROM >= %s and OSR.DATE_FROM <= %s",
-        )
+        supplier_sql = _sql_filtered_by_suppliers(_SVS_SYNC_SQL, "OPT.AC IN ('N')", [sup_code])
 
         conn = get_tourplan_connection()
         try:
@@ -3902,7 +4154,7 @@ def hotel_comparison(request):
 
 @login_required
 def aliwen_green(request):
-    if not request.user.isAdmin:
+    if request.user.userType == "Cliente":
         return HttpResponseRedirect(reverse('tariff'))
     location_id = request.GET.get('location', '')
     ranking_min = request.GET.get('ranking', '')
@@ -3963,7 +4215,7 @@ def aliwen_green(request):
 
 @login_required
 def aliwen_green_supplier_search(request):
-    if not request.user.isAdmin:
+    if request.user.userType == "Cliente":
         return JsonResponse({'error': 'Forbidden'}, status=403)
     q = request.GET.get('q', '').strip()
     qs = Supplier.objects.filter(group__type_service='AC').order_by('name')
@@ -3984,7 +4236,7 @@ def aliwen_green_supplier_search(request):
 def aliwen_green_ai_extract(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    if not request.user.isAdmin:
+    if request.user.userType == "Cliente":
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
     data = json.loads(request.body)
@@ -4106,7 +4358,7 @@ def aliwen_green_ai_extract(request):
 def aliwen_green_ai_save(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
-    if not request.user.isAdmin:
+    if request.user.userType == "Cliente":
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
     data = json.loads(request.body)
@@ -4150,7 +4402,7 @@ def aliwen_green_ai_save(request):
 
 @login_required
 def aliwen_green_excel(request):
-    if not request.user.isAdmin:
+    if request.user.userType == "Cliente":
         return HttpResponseRedirect(reverse('tariff'))
     location_id = request.GET.get('location', '')
     ranking_min = request.GET.get('ranking', '')

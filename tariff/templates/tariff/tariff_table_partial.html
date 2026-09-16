@@ -1,5 +1,6 @@
 {% load custom_filters %}
 {% load static %}
+{% load tariff_filters %}
 
 <style>
 .provisional-row {
@@ -424,13 +425,20 @@ function markUnrevised(lineId, btn) {
                     <div class="d-flex gap-3 px-3 pb-2 align-items-center cost-col">
                         <span class="text-muted small">
                             <i class="fa-solid fa-percent me-1 text-secondary"></i>
-                            <strong>Markup:</strong>
+                            <strong>Markup (Clientes C):</strong>
                             {% if supplier.margin %}
                                 {{ supplier.margin }}
                             {% else %}
                                 —
                             {% endif %}
                         </span>
+                        {% with sup_last_update=supplier_last_update|dict_get:supplier.id %}
+                        {% if sup_last_update %}
+                        <span class="text-muted small fst-italic">
+                            <i class="fa-solid fa-clock-rotate-left me-1"></i>Últ. act.: {{ sup_last_update|date:"d M Y" }}
+                        </span>
+                        {% endif %}
+                        {% endwith %}
                     </div>
                     {% endif %}
                     {% for pg in product_groups %}
@@ -489,6 +497,9 @@ function markUnrevised(lineId, btn) {
                                                     </span>
                                                     {% if line.group.product.note %}
                                                         <i class="btn btn-sm fa-solid fa-exclamation text-primary fw-bold" aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowProductNote{{ line.group.product.id }}"></i>
+                                                    {% endif %}
+                                                    {% if show_costs and line.last_update %}
+                                                        <span class="cost-col text-muted fst-italic" style="font-size:0.72rem;">— act. {{ line.last_update|date:"d M Y" }}</span>
                                                     {% endif %}
                                                 </div>
                                             </td>
@@ -602,9 +613,9 @@ function markUnrevised(lineId, btn) {
                                 <div class="modal-body text-start">
                                     {% if supplier.pic1_url and supplier.pic2_url and supplier.pic3_url %}
                                     <div class="d-flex justify-content-between">
-                                        <img src="{% static 'tariff/' %}{{ supplier.pic1_url }}" width="230px">
-                                        <img src="{% static 'tariff/' %}{{ supplier.pic2_url }}" width="230px">
-                                        <img src="{% static 'tariff/' %}{{ supplier.pic3_url }}" width="230px">
+                                        <img src="{{ supplier.pic1_url|pic_url }}" width="230px">
+                                        <img src="{{ supplier.pic2_url|pic_url }}" width="230px">
+                                        <img src="{{ supplier.pic3_url|pic_url }}" width="230px">
                                     </div>
                                     {% endif %}
                                     {% if request.user.userType != "Cliente" %}
@@ -977,6 +988,9 @@ function markUnrevised(lineId, btn) {
                 data-service="{{ line.group.product.name|lower }}">
                 <td class="ps-3">
                     <strong aria-hidden="true" data-bs-toggle="modal" data-bs-target="#windowMoreInfoProduct{{ line.group.product.id }}">{{ line.group.product.name }}</strong>
+                        {% if show_costs and line.last_update %}
+                            <span class="cost-col text-muted fst-italic" style="font-size:0.72rem;">— act. {{ line.last_update|date:"d M Y" }}</span>
+                        {% endif %}
                         {% if line.group.product.tour_timing %}
                             {% if line.group.product.tour_timing == "AM" %}
                                 <span data-bs-toggle="tooltip" data-bs-placement="top" title="Morning">
@@ -1172,9 +1186,9 @@ function markUnrevised(lineId, btn) {
                             {% if request.user.userType != "Cliente" %}
                                 {% if line.group.product.pic1_url and line.group.product.pic2_url and line.group.product.pic3_url %}
                                 <div class="d-flex justify-content-between">
-                                    <img src="{% static 'tariff/' %}{{ line.group.product.pic1_url }}" width="230px">
-                                    <img src="{% static 'tariff/' %}{{ line.group.product.pic2_url }}" width="230px">
-                                    <img src="{% static 'tariff/' %}{{ line.group.product.pic3_url }}" width="230px">
+                                    <img src="{{ line.group.product.pic1_url|pic_url }}" width="230px">
+                                    <img src="{{ line.group.product.pic2_url|pic_url }}" width="230px">
+                                    <img src="{{ line.group.product.pic3_url|pic_url }}" width="230px">
                                 </div>
                                 <hr>
                                 {% endif %}

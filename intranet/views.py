@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
 from django.utils.datastructures import MultiValueDictKeyError
 from django.db import IntegrityError
-from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, Driver, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES, RevisionScheduleDay, PublicItinerary, SENIORITY
+from .models import User, Country, Client, Trip, Entry, Notes, ClientContact, CsvFileTourplanFiles, CsvFormTourplanFiles, Search, Holidays, Absence, Guide, DestinationHost, Driver, DEPARTMENTS, STATUS_OPTIONS, IMPORTANCE_OPTIONS, PROGRESS_OPTIONS, TRIP_TYPES, DH_TYPES, USER_TYPES, DIFFICULTY_OPTIONS, CLIENT_CATEGORIES, MONTHS, TYPE_ABSENCE, NotificationPreference, NOTIFICATION_TYPES, NOTIFICATION_AUTO_TYPES, ExternalCalendarEntry, EXT_CALENDAR_CATEGORIES, RevisionScheduleDay, PublicItinerary, SENIORITY, VrAssignmentRound, CavoCorrectorRoster
 from .views_itinerary import render_itinerary_cell
 from tariff.models import Feedback, Supplier, Location, TYPE_QUALITY
 from .utils import update_timingStatus, check_duplicate_trips, check_missing_amounts, check_incongruent_entry_dates, check_incongruent_trip_dates
@@ -27,7 +27,7 @@ from imap_tools import MailBox
 import os
 from dotenv import load_dotenv
 import csv
-from django.db.models import Count, Avg, Q, FloatField, Sum
+from django.db.models import Count, Avg, Q, FloatField, Sum, Max
 from django.db.models.functions import Coalesce, TruncMonth
 from django.core.paginator import Paginator
 from collections import OrderedDict
@@ -749,7 +749,6 @@ def modify_user(request, user_id):
         user.color = color
         user.show_in_client_team = show_in_client_team
         user.client_id = client_id or None
-        user.chat_webhook_url = request.POST.get('chat_webhook_url', '').strip()
         user.chat_user_id = request.POST.get('chat_user_id', '').strip()
 
         try:
@@ -1801,6 +1800,7 @@ def stats(request):
         "this_year":this_year,
         "this_week":this_week,
         "weeks":weeks,
+        "locations": Location.objects.all().order_by("order"),
     })
 
 
@@ -1910,6 +1910,26 @@ def stats_trips_report(request):
     }
 
     return render(request, 'intranet/stats_trips_report.html', context)
+
+
+@require_GET
+def stats_itinerary_report(request):
+    """
+    Renderiza la página de reporte "Itinerario" (hoteles/tours/combinaciones más
+    repetidos para un destino y rango de fechas). Es una vista shell, igual que
+    stats_trips_report: los datos reales llegan después por AJAX a
+    stats_presentation_itinerary.
+    Recibe por GET: date_from, date_to, period, location_id.
+    """
+    location_id = request.GET.get('location_id')
+    location = Location.objects.filter(pk=location_id).first() if location_id else None
+
+    context = {
+        'period': request.GET.get('period', 'Período Personalizado'),
+        'location_id': location_id or '',
+        'location_name': location.name if location else '',
+    }
+    return render(request, 'intranet/stats_itinerary_report.html', context)
 
 
 _HOLIDAY_COLORS = {
@@ -3940,6 +3960,57 @@ def stats_entries_bookings_by_vendor(qs, date_from, date_to):
     return dict(vendors_ordered_bookings)
 
 
+def stats_entries_corrections_by_vendor(department, date_from, date_to):
+    """
+    Entries corregidas (is_revised=True) en el período, agrupadas por quien
+    hizo la revisión (revising_user), con desglose por dificultad del viaje.
+    """
+    from django.utils import timezone as _tz
+    range_start = _tz.make_aware(datetime.combine(date_from, datetime.min.time()))
+    range_end   = _tz.make_aware(datetime.combine(date_to, datetime.min.time())) + timedelta(days=1)
+
+    qs = (
+        Entry.objects
+        .filter(
+            trip__department=department,
+            is_revised=True,
+            revising_user__isnull=False,
+            revised_date__gte=range_start,
+            revised_date__lt=range_end,
+        )
+        .select_related("revising_user", "trip")
+    )
+
+    vendors = {}
+    for entry in qs:
+        vendor = entry.revising_user.other_name
+        if vendor not in vendors:
+            user_color = '#999999'
+            color_value = getattr(entry.revising_user, 'color', None)
+            if color_value:
+                user_color = str(color_value)
+            vendors[vendor] = {
+                "total": 0,
+                "diff1": 0, "diff2": 0, "diff3": 0, "diff4": 0, "diff5": 0,
+                "color": user_color,
+            }
+        vendors[vendor]["total"] += 1
+        diff = entry.trip.difficulty if entry.trip else ""
+        if diff in ("1", "2", "3", "4", "5"):
+            vendors[vendor][f"diff{diff}"] += 1
+
+    for vals in vendors.values():
+        diff_count = vals["diff1"] + vals["diff2"] + vals["diff3"] + vals["diff4"] + vals["diff5"]
+        diff_sum = (
+            vals["diff1"] * 1 + vals["diff2"] * 2 + vals["diff3"] * 3
+            + vals["diff4"] * 4 + vals["diff5"] * 5
+        )
+        vals["avgDifficulty"] = round(diff_sum / diff_count, 2) if diff_count else 0
+
+    sorted_vendors = sorted(vendors.items(), key=lambda x: x[1]['total'], reverse=True)
+    return dict(OrderedDict(sorted_vendors))
+
+
 def stats_entries_by_client(qs):
     # agrupación y agregación
     clients = {}
@@ -4429,16 +4500,15 @@ def stats_presentation_entries(request):
 
     vendors_quote = stats_entries_quotes_by_vendor(qs, d_from, d_to)
     vendors_bookings = stats_entries_bookings_by_vendor(qs, d_from, d_to)
+    vendors_corrections = stats_entries_corrections_by_vendor(department, d_from, d_to)
     summary_speed = stats_entries_by_speed(qs)
     clients = stats_entries_by_client(qs)
 
-    # Monthly breakdown (only for season or multi-month ranges)
+    # Monthly breakdown — only for full-season reports. A week/date-range report
+    # can span two calendar months (e.g. Aug 28 - Sep 3) without being "multi-month",
+    # so this must not be inferred from the range crossing a month boundary.
     import calendar as _cal2
-    _is_multi_month = season or (
-        date_from and date_to and (
-            (d_to.year * 12 + d_to.month) - (d_from.year * 12 + d_from.month) >= 1
-        )
-    )
+    _is_multi_month = bool(season)
     monthly_breakdown = []
     if _is_multi_month:
         rows = (
@@ -4539,6 +4609,7 @@ def stats_presentation_entries(request):
     return JsonResponse({
         "vendors_quote": vendors_quote,
         "vendors_bookings": vendors_bookings,
+        "vendors_corrections": vendors_corrections,
         "summary_table_quotes": summary_table_quotes,
         "summary_table_bookings": summary_table_bookings,
         "by_type_quotes": by_type_quotes,
@@ -5011,6 +5082,76 @@ def stats_presentation_trips(request):
         "monthly_by_vr": monthly_by_vr,
         "monthly_by_operator": monthly_by_operator,
         "monthly_by_client": monthly_by_client,
+    })
+
+
+@login_required
+def stats_presentation_itinerary(request):
+    """
+    Datos del reporte "Itinerario": ranking de hoteles, tours y combinaciones
+    hotel+tour más repetidas para un destino y rango de fechas, consultando
+    directamente Tourplan (OPSView) — no hay tabla local con este detalle.
+    """
+    location_id = request.GET.get("location_id")
+    location = Location.objects.filter(pk=location_id).first()
+    if not location:
+        return JsonResponse({"error": "Seleccioná un destino."}, status=400)
+
+    month = request.GET.get("month")
+    year = request.GET.get("year")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    season = request.GET.get("season")
+
+    # Resolve d_from / d_to — same shape used by stats_presentation_trips/entries
+    import calendar as _cal
+    _today = date.today()
+    if date_from and date_to:
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+            d_to   = datetime.strptime(date_to,   "%Y-%m-%d").date()
+        except ValueError:
+            d_from = d_to = _today
+    elif month and year:
+        _y, _m = int(year), int(month)
+        d_from = date(_y, _m, 1)
+        d_to   = date(_y, _m, _cal.monthrange(_y, _m)[1])
+    elif season:
+        _s = int(season)
+        d_from = date(_s, 5, 1)
+        d_to   = date(_s + 1, 4, 30)
+    else:
+        d_from = d_to = _today
+
+    if (d_to - d_from).days > 730:
+        return JsonResponse(
+            {"error": "Rango de fechas demasiado amplio (máx. 2 años). Achicá el período e intentá de nuevo."},
+            status=400,
+        )
+
+    from tariff.quality_ai import fetch_bookings_by_location, aggregate_itinerary_stats
+
+    status_filter = request.GET.get("status_filter")
+    if status_filter not in ("confirmed", "all"):
+        status_filter = "confirmed"
+
+    branches, _dept_list = _user_tp_branches(request.user)
+    rows = fetch_bookings_by_location(
+        location.code, d_from, d_to, branches=branches, status_filter=status_filter,
+    )
+
+    result = aggregate_itinerary_stats(rows)
+    bookings_scanned = len({r.get("Booking_Reference") for r in rows if r.get("Booking_Reference")})
+
+    return JsonResponse({
+        "location_name": location.name,
+        "date_from": d_from.isoformat(),
+        "date_to": d_to.isoformat(),
+        "status_filter": status_filter,
+        "bookings_scanned": bookings_scanned,
+        "hotels_ranking": result["hotels"],
+        "tours_ranking": result["tours"],
+        "combos_ranking": result["combos"],
     })
 
 
@@ -5712,6 +5853,15 @@ def booking_sheet(request):
         u["color"] = str(u["color"]) if u["color"] else "#6c757d"
         u["other_tp"] = (u.get("other_tp") or "").strip()
 
+    cavo_users = list(
+        User.objects.filter(isActivated=True, department=request.user.department)
+        .exclude(userType="Cliente")
+        .values("id", "username", "other_name", "color")
+        .order_by("other_name")
+    )
+    for u in cavo_users:
+        u["color"] = str(u["color"]) if u["color"] else "#6c757d"
+
     from intranet.models import Absence as _Absence
     _abs_qs = _Absence.objects.filter(
         absence_user__userType__in=["Ventas", "Manager"],
@@ -5743,9 +5893,11 @@ def booking_sheet(request):
         "status_filters": status_filters,
         "current_user_tp": (request.user.other_tp or request.user.username or "").strip(),
         "current_user_username": request.user.username or "",
+        "current_user_id": request.user.id,
         "is_admin": request.user.isAdmin,
         "ventas_users_json": _json.dumps(ventas_users),
         "bs_absences_json": _json.dumps(bs_absences),
+        "cavo_users_json": _json.dumps(cavo_users),
     })
 
 
@@ -6082,6 +6234,16 @@ def booking_sheet_bulk_set_vr(request):
     if mode == "none":
         return JsonResponse({"ok": True, "assigned": len(results), "assignments": results})
 
+    if mode == "all":
+        # Mark this department+month as "rounded" — the Tuesday reminder uses this
+        # to flag bookings that show up afterward still missing a VR.
+        for (yr, mo) in months_affected:
+            VrAssignmentRound.objects.update_or_create(
+                department=request.user.department,
+                month=_date(yr, mo, 1),
+                defaults={"assigned_by": request.user},
+            )
+
     # Send one email per VR user per affected month
     try:
         from intranet.utils import send_templated_email
@@ -6214,6 +6376,360 @@ def booking_sheet_bulk_set_vr(request):
         pass  # Email errors don't block the save response
 
     return JsonResponse({"ok": True, "assigned": len(results), "assignments": results})
+
+
+def _cavo_email_brand_context():
+    from django.conf import settings as _settings
+    _site_url = getattr(_settings, "SITE_URL", "https://intranet.aliwenincoming.com")
+    if isinstance(_site_url, (list, tuple)):
+        _site_url = _site_url[0]
+    site_url = _site_url.rstrip("/")
+    static_url = _settings.STATIC_URL.strip("/")
+    icons_base_url = f"{site_url}/{static_url}/intranet/images/"
+    return {"site_url": site_url, "icons_base_url": icons_base_url, "logo_url": f"{icons_base_url}logo.png"}
+
+
+_CAVO_DIFFICULTY_LABELS = {
+    '1': 'Muy Fácil', '2': 'Fácil', '3': 'Moderado', '4': 'Complejo', '5': 'Muy Complejo',
+}
+
+
+def _cavo_trip_context(trip):
+    """Extra file details shown in the CAVO 'para revisar'/'reasignada' emails
+    (STD/FULL) — Operador, VR, DH, Guía, Cliente, Dificultad, Facturación."""
+    return {
+        "operador": (trip.operations_user.other_name or trip.operations_user.username) if trip.operations_user else "",
+        "vr": (trip.responsable_user.other_name or trip.responsable_user.username) if trip.responsable_user else "",
+        "dh": trip.dh or "",
+        "guia": trip.guide or "",
+        "cliente": trip.client.name if trip.client else "",
+        "dificultad": _CAVO_DIFFICULTY_LABELS.get(trip.difficulty, trip.difficulty or ""),
+        "facturacion": trip.amount,
+    }
+
+
+@login_required
+def booking_sheet_cavo_send(request, trip_id):
+    """Send a trip's CAVO documentation for review — BASIC goes by chat, STD/FULL by email."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        link = (body.get("link") or "").strip()
+        note = (body.get("note") or "").strip()
+        reviewer_id = body.get("reviewer_id")
+        seguimiento = (body.get("seguimiento") or "").strip().upper()
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    try:
+        trip = Trip.objects.select_related("operations_user", "responsable_user", "client").get(
+            id=trip_id, department=request.user.department
+        )
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+
+    if reviewer_id:
+        try:
+            reviewer_id_int = int(reviewer_id)
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Usuario no encontrado"}, status=404)
+        if reviewer_id_int == trip.operations_user_id:
+            return JsonResponse({"error": "No se puede asignar al operador del file como su propio corrector."}, status=400)
+        if reviewer_id_int in {a.absence_user_id for a in _absences_on_day(date.today(), request.user.department)}:
+            return JsonResponse({"error": "Ese usuario está ausente hoy — no se le puede asignar la CAVO."}, status=400)
+        try:
+            reviewer = User.objects.get(id=reviewer_id_int, department=request.user.department)
+        except User.DoesNotExist:
+            return JsonResponse({"error": "Usuario no encontrado"}, status=404)
+    else:
+        reviewer = _auto_assign_cavo_reviewer(trip, request.user.department, seguimiento)
+    if not reviewer:
+        return JsonResponse({"error": "Elegí a quién enviar la CAVO."}, status=400)
+
+    trip.cavo_link = link
+    trip.cavo_revising_user = reviewer
+    trip.cavo_is_revised = False
+    trip.cavo_assigned_date = timezone_now()
+    trip.cavo_seguimiento = seguimiento
+    trip.save(update_fields=["cavo_link", "cavo_revising_user", "cavo_is_revised", "cavo_assigned_date", "cavo_seguimiento"])
+
+    try:
+        note_suffix = f" - _Nota: {note}_" if note else ""
+        if seguimiento == "BASIC":
+            _send_gchat_notification(
+                request.user.department,
+                f"se te asignó una *CAVO* para revisar — {trip.name} - Link: {link or '—'}{note_suffix}",
+                mention_user=reviewer,
+                thread_key=f"trip-{trip.id}-cavo",
+                purpose="cavo",
+            )
+        elif reviewer.email:
+            from intranet.utils import send_templated_email
+            cc = [trip.operations_user.email] if trip.operations_user and trip.operations_user.email else None
+            send_templated_email(
+                subject=f"CAVO para revisar — {trip.name} [ref:CV-{trip.id}]",
+                to_emails=[reviewer.email],
+                cc_emails=cc,
+                template_name="emails/cavo_assigned.html",
+                context={
+                    "user_name": reviewer.other_name or reviewer.username,
+                    "trip_name": trip.name,
+                    "tp_id": trip.tourplanId or "",
+                    "link": link,
+                    "note": note,
+                    **_cavo_trip_context(trip),
+                    **_cavo_email_brand_context(),
+                },
+            )
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("booking_sheet_cavo_send: notification failed for trip %s: %s", trip.id, exc)
+
+    return JsonResponse({
+        "ok": True,
+        "revising_user": reviewer.username,
+        "revising_user_id": reviewer.id,
+        "revising_user_color": str(reviewer.color) if reviewer.color else "#6c757d",
+    })
+
+
+@login_required
+def booking_sheet_cavo_mark_done(request, trip_id):
+    """Only the assigned CAVO reviewer can confirm it's done."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body or "{}")
+    except Exception:
+        body = {}
+    comment = (body.get("comment") or "").strip()
+    seguimiento = (body.get("seguimiento") or "").strip().upper()
+
+    try:
+        trip = Trip.objects.select_related("operations_user").get(id=trip_id, department=request.user.department)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+
+    if trip.cavo_revising_user_id != request.user.id:
+        return JsonResponse({"error": "Solo quien tiene asignada esta CAVO puede marcarla como corregida."}, status=403)
+
+    from intranet.utils import mark_cavo_revised
+    mark_cavo_revised(trip, comment=comment, seguimiento=seguimiento)
+
+    return JsonResponse({"ok": True})
+
+
+def _auto_assign_cavo_reviewer(trip, department, seguimiento):
+    """
+    Pick the CAVO corrector with the fewest CAVOs of this SAME seguimiento type
+    (BASIC/STD/FULL) assigned so far THIS WEEK (Monday–Sunday), from that type's
+    roster configured in Gestión de Reglas. Each type has its own independent
+    roster and balance — e.g. STD is always the same single person, FULL
+    another, BASIC split among several operators — unlike entries'
+    _auto_assign_reviewer, there's no per-weekday schedule here.
+    """
+    from datetime import timedelta
+    from django.utils import timezone as _tz
+    seguimiento = (seguimiento or '').strip().upper()
+    if not seguimiento:
+        return None
+
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # Monday
+    week_end = week_start + timedelta(days=7)
+    week_start_dt = _tz.make_aware(datetime.combine(week_start, datetime.min.time()))
+    week_end_dt = _tz.make_aware(datetime.combine(week_end, datetime.min.time()))
+
+    absent_ids = {a.absence_user_id for a in _absences_on_day(today, department)}
+
+    roster = list(
+        CavoCorrectorRoster.objects
+        .filter(department=department, seguimiento_type=seguimiento, user__isActivated=True)
+        .exclude(user_id=trip.operations_user_id)
+        .exclude(user_id__in=absent_ids)
+        .select_related('user')
+        .order_by('order')
+    )
+    if not roster:
+        return None
+
+    counts = {
+        r.user_id: Trip.objects.filter(
+            department=department,
+            cavo_revising_user_id=r.user_id,
+            cavo_seguimiento=seguimiento,
+            cavo_assigned_date__gte=week_start_dt,
+            cavo_assigned_date__lt=week_end_dt,
+        ).count()
+        for r in roster
+    }
+    best = min(roster, key=lambda r: (counts[r.user_id], r.order))
+    return best.user
+
+
+@login_required
+def booking_sheet_cavo_suggested_reviewer(request, trip_id):
+    try:
+        trip = Trip.objects.get(id=trip_id, department=request.user.department)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+    seguimiento = request.GET.get("seguimiento", "")
+    suggested = _auto_assign_cavo_reviewer(trip, request.user.department, seguimiento)
+    return JsonResponse({
+        "ok": True,
+        "user_id": suggested.id if suggested else None,
+        "username": suggested.username if suggested else None,
+    })
+
+
+@login_required
+def booking_sheet_cavo_update_reviewer(request, trip_id):
+    """Change who's assigned to a CAVO already sent for review — open to any
+    user in the department, matching the entries-correction 'Editar revisión'
+    precedent (only marking it done is restricted to the assigned reviewer)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body)
+        reviewer_id = body.get("reviewer_id")
+        link = body.get("link")
+        seguimiento = (body.get("seguimiento") or "").strip().upper()
+    except Exception:
+        return JsonResponse({"error": "JSON inválido"}, status=400)
+
+    try:
+        trip = Trip.objects.select_related("operations_user", "responsable_user", "client").get(
+            id=trip_id, department=request.user.department
+        )
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+
+    if trip.cavo_is_revised:
+        return JsonResponse({"error": "Esta CAVO ya fue marcada como revisada; no se puede editar."}, status=409)
+
+    if not reviewer_id:
+        return JsonResponse({"error": "Elegí a quién enviar la CAVO."}, status=400)
+    try:
+        reviewer_id_int = int(reviewer_id)
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Usuario no encontrado"}, status=404)
+    if reviewer_id_int == trip.operations_user_id:
+        return JsonResponse({"error": "No se puede asignar al operador del file como su propio corrector."}, status=400)
+    if reviewer_id_int in {a.absence_user_id for a in _absences_on_day(date.today(), request.user.department)}:
+        return JsonResponse({"error": "Ese usuario está ausente hoy — no se le puede asignar la CAVO."}, status=400)
+    try:
+        reviewer = User.objects.get(id=reviewer_id_int, department=request.user.department)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Usuario no encontrado"}, status=404)
+
+    changed = trip.cavo_revising_user_id != reviewer.id
+    trip.cavo_revising_user = reviewer
+    if link is not None:
+        trip.cavo_link = link.strip()
+    if seguimiento:
+        trip.cavo_seguimiento = seguimiento
+    if changed:
+        trip.cavo_assigned_date = timezone_now()
+    trip.save(update_fields=["cavo_revising_user", "cavo_link", "cavo_assigned_date", "cavo_seguimiento"])
+
+    if changed:
+        try:
+            if seguimiento == "BASIC":
+                _send_gchat_notification(
+                    request.user.department,
+                    f"se modificó el corrector de esta CAVO — {trip.name}",
+                    mention_user=reviewer,
+                    thread_key=f"trip-{trip.id}-cavo",
+                    purpose="cavo",
+                )
+            elif reviewer.email:
+                from intranet.utils import send_templated_email
+                cc = [trip.operations_user.email] if trip.operations_user and trip.operations_user.email else None
+                send_templated_email(
+                    subject=f"CAVO reasignada — {trip.name} [ref:CV-{trip.id}]",
+                    to_emails=[reviewer.email],
+                    cc_emails=cc,
+                    template_name="emails/cavo_assigned.html",
+                    context={
+                        "user_name": reviewer.other_name or reviewer.username,
+                        "trip_name": trip.name,
+                        "tp_id": trip.tourplanId or "",
+                        "link": trip.cavo_link or "",
+                        "note": "Se te reasignó esta CAVO.",
+                        **_cavo_trip_context(trip),
+                        **_cavo_email_brand_context(),
+                    },
+                )
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning("booking_sheet_cavo_update_reviewer: notification failed for trip %s: %s", trip.id, exc)
+
+    return JsonResponse({
+        "ok": True,
+        "revising_user": reviewer.username,
+        "revising_user_id": reviewer.id,
+        "revising_user_color": str(reviewer.color) if reviewer.color else "#6c757d",
+    })
+
+
+@login_required
+def booking_sheet_cavo_dismiss(request, trip_id):
+    """Cancel a pending CAVO correction request — clears the assignment and
+    notifies whoever was assigned, in the same chat thread they were assigned in."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    import json as _json
+    try:
+        body = _json.loads(request.body or "{}")
+        seguimiento = (body.get("seguimiento") or "").strip().upper()
+    except Exception:
+        seguimiento = ""
+
+    try:
+        trip = Trip.objects.get(id=trip_id, department=request.user.department)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "File no encontrado"}, status=404)
+
+    if trip.cavo_is_revised:
+        return JsonResponse({"error": "Esta CAVO ya fue marcada como revisada; no se puede desestimar."}, status=409)
+
+    old_reviewer = trip.cavo_revising_user
+    trip.cavo_revising_user = None
+    trip.cavo_link = None
+    trip.cavo_assigned_date = None
+    trip.save(update_fields=["cavo_revising_user", "cavo_link", "cavo_assigned_date"])
+
+    if old_reviewer:
+        try:
+            if seguimiento == "BASIC":
+                _send_gchat_notification(
+                    request.user.department,
+                    f"se desestimó tu corrección de CAVO — {trip.name}",
+                    mention_user=old_reviewer,
+                    thread_key=f"trip-{trip.id}-cavo",
+                    purpose="cavo",
+                )
+            elif old_reviewer.email:
+                from intranet.utils import send_templated_email
+                send_templated_email(
+                    subject=f"CAVO desestimada — {trip.name}",
+                    to_emails=[old_reviewer.email],
+                    template_name="emails/cavo_dismissed.html",
+                    context={
+                        "user_name": old_reviewer.other_name or old_reviewer.username,
+                        "trip_name": trip.name,
+                        **_cavo_email_brand_context(),
+                    },
+                )
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning("booking_sheet_cavo_dismiss: notification failed for trip %s: %s", trip.id, exc)
+
+    return JsonResponse({"ok": True})
 
 
 @login_required
@@ -8361,7 +8877,120 @@ def _auto_logic_users(notification_type):
             User.objects.filter(userType='Operaciones', isActivated=True)
             .exclude(email='').order_by('username')
         )
+    if notification_type == 'vr_missing_reminder':
+        return list(
+            User.objects.filter(userType='Manager', isActivated=True)
+            .exclude(email='').order_by('username')
+        )
+    if notification_type == 'tariff_team':
+        return list(
+            User.objects.filter(userType__in=['Ventas', 'Manager'], department='AI', isActivated=True)
+            .exclude(email='').order_by('username')
+        )
     return []
+
+
+@login_required
+def rules_management(request):
+    """Gestión de Reglas — starting with the CAVO corrector rosters (who gets
+    auto-assigned CAVO corrections, balanced by weekly count), one independent
+    roster per seguimiento type (BASIC/STD/FULL)."""
+    if not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    from intranet.models import CAVO_SEGUIMIENTO_TYPES
+
+    department = request.user.department
+    dept_users = (
+        User.objects.filter(isActivated=True, department=department)
+        .exclude(userType='Cliente')
+        .order_by('username')
+    )
+
+    cavo_types = []
+    for type_key, type_label in CAVO_SEGUIMIENTO_TYPES:
+        roster = list(
+            CavoCorrectorRoster.objects
+            .filter(department=department, seguimiento_type=type_key)
+            .select_related('user')
+            .order_by('order')
+        )
+        roster_user_ids = {r.user_id for r in roster}
+        cavo_types.append({
+            'type': type_key,
+            'label': type_label,
+            'roster': roster,
+            'available_users': [u for u in dept_users if u.id not in roster_user_ids],
+        })
+
+    return render(request, 'intranet/rules.html', {
+        'cavo_types': cavo_types,
+    })
+
+
+@login_required
+def rules_cavo_roster_add(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+    user_id = request.POST.get('user_id')
+    seguimiento_type = request.POST.get('seguimiento_type')
+    try:
+        target_user = User.objects.get(id=user_id, department=request.user.department)
+    except User.DoesNotExist:
+        return HttpResponseRedirect(reverse('rules_management'))
+
+    max_order = (
+        CavoCorrectorRoster.objects
+        .filter(department=request.user.department, seguimiento_type=seguimiento_type)
+        .aggregate(m=Max('order'))['m']
+    )
+    CavoCorrectorRoster.objects.get_or_create(
+        department=request.user.department,
+        seguimiento_type=seguimiento_type,
+        user=target_user,
+        defaults={'order': (max_order or 0) + 1},
+    )
+    return HttpResponseRedirect(reverse('rules_management') + '#cavo-roster')
+
+
+@login_required
+def rules_cavo_roster_remove(request):
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+    entry_id = request.POST.get('entry_id')
+    CavoCorrectorRoster.objects.filter(id=entry_id, department=request.user.department).delete()
+    return HttpResponseRedirect(reverse('rules_management') + '#cavo-roster')
+
+
+@login_required
+def rules_cavo_roster_move(request):
+    """Swap a roster entry's order with its neighbor above/below, within its
+    own seguimiento type's list."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+    entry_id = request.POST.get('entry_id')
+    direction = request.POST.get('direction')  # 'up' or 'down'
+
+    try:
+        entry = CavoCorrectorRoster.objects.get(id=entry_id, department=request.user.department)
+    except CavoCorrectorRoster.DoesNotExist:
+        return HttpResponseRedirect(reverse('rules_management') + '#cavo-roster')
+
+    roster = list(
+        CavoCorrectorRoster.objects
+        .filter(department=request.user.department, seguimiento_type=entry.seguimiento_type)
+        .order_by('order', 'id')
+    )
+    idx = next((i for i, r in enumerate(roster) if r.id == entry.id), None)
+    if idx is not None:
+        swap_idx = idx - 1 if direction == 'up' else idx + 1
+        if 0 <= swap_idx < len(roster):
+            a, b = roster[idx], roster[swap_idx]
+            a.order, b.order = b.order, a.order
+            a.save(update_fields=['order'])
+            b.save(update_fields=['order'])
+
+    return HttpResponseRedirect(reverse('rules_management') + '#cavo-roster')
 
 
 @login_required
@@ -8375,7 +9004,7 @@ def notifications_management(request):
 
     # Say Hueque DMC/Grupos solo usan estos tipos de mail por ahora;
     # el resto de las notificaciones son exclusivas de Aliwen.
-    SAY_HUEQUE_VISIBLE_TYPES = {'weekly_roster', 'holiday_reminder', 'margin_warning', 'closure_reminder'}
+    SAY_HUEQUE_VISIBLE_TYPES = {'weekly_roster', 'holiday_reminder', 'margin_warning', 'closure_reminder', 'vr_missing_reminder'}
 
     sections = []
     for type_key, type_label in NOTIFICATION_TYPES:
@@ -8452,8 +9081,22 @@ def notifications_management(request):
             'available_users': available_users,
         })
 
+    from intranet.models import ChatWebhook, CHAT_WEBHOOK_PURPOSES
+    webhook_by_purpose = {
+        w.purpose: w for w in ChatWebhook.objects.filter(department=admin_dept)
+    }
+    webhooks = [
+        {
+            'purpose': purpose_key,
+            'label': purpose_label,
+            'url': webhook_by_purpose[purpose_key].webhook_url if purpose_key in webhook_by_purpose else '',
+        }
+        for purpose_key, purpose_label in CHAT_WEBHOOK_PURPOSES
+    ]
+
     return render(request, 'intranet/notifications.html', {
         'sections': sections,
+        'webhooks': webhooks,
     })
 
 
@@ -8486,6 +9129,28 @@ def notification_toggle(request):
     pref.save()
 
     return HttpResponseRedirect(reverse('notifications_management') + f'#{notification_type}')
+
+
+@login_required
+def notification_webhook_set(request):
+    """Admin-only: save the Google Chat webhook URL for one purpose (entries
+    correction / CAVO), scoped to the admin's own department."""
+    if request.method != 'POST' or not request.user.isAdmin:
+        return HttpResponseRedirect(reverse('index'))
+
+    from intranet.models import ChatWebhook, CHAT_WEBHOOK_PURPOSES
+
+    purpose = request.POST.get('purpose')
+    webhook_url = request.POST.get('webhook_url', '').strip()
+    if purpose not in dict(CHAT_WEBHOOK_PURPOSES):
+        return HttpResponseRedirect(reverse('notifications_management'))
+
+    ChatWebhook.objects.update_or_create(
+        department=request.user.department,
+        purpose=purpose,
+        defaults={'webhook_url': webhook_url, 'updated_by': request.user},
+    )
+    return HttpResponseRedirect(reverse('notifications_management') + '#chat-webhooks')
 
 
 @login_required
@@ -8535,22 +9200,25 @@ def notification_unsubscribe(request, token):
 
 # ─── Revision / Correcciones ──────────────────────────────────────────────────
 
-def _send_gchat_notification(department, text, mention_user=None, thread_key=None):
+def _send_gchat_notification(department, text, mention_user=None, thread_key=None, purpose='entries_correction'):
     """Post a message to the department's Google Chat webhook space.
 
     thread_key, when given, keeps related messages (e.g. "asignado para corregir"
     and its later "revisión lista") together in the same Chat thread — Chat looks
     for an existing thread with that key and replies to it, or starts a new one.
+
+    purpose selects which independently-configured webhook to use (see
+    ChatWebhook / CHAT_WEBHOOK_PURPOSES, editable from Gestión de Notificaciones)
+    — e.g. 'cavo' for the separate CAVO chat space instead of the default
+    quote-corrections one.
     """
-    webhook_user = (
-        User.objects.filter(department=department)
-        .exclude(chat_webhook_url='').first()
-    )
-    if not webhook_user:
+    from intranet.models import ChatWebhook
+    webhook = ChatWebhook.objects.filter(department=department, purpose=purpose).exclude(webhook_url='').first()
+    if not webhook:
         return
     if mention_user and getattr(mention_user, 'chat_user_id', ''):
         text = f"<users/{mention_user.chat_user_id}> {text}"
-    url = webhook_user.chat_webhook_url
+    url = webhook.webhook_url
     payload = {'text': text}
     if thread_key:
         payload['thread'] = {'threadKey': thread_key}
@@ -8575,7 +9243,7 @@ def _revision_thread_key(entry_id):
 
 def _my_revision_pending_count(user):
     """How many itineraries this user currently has to review — the number shown
-    on the 'Correcciones' badge."""
+    on the 'Correcciones' badge, and on the admin nav 'Pendientes' badge."""
     return Entry.objects.filter(
         revising_user=user,
         is_revised=False,
@@ -8644,12 +9312,22 @@ def _auto_assign_reviewer(entry, department):
     )
 
     entry_user = entry.trip.responsable_user if entry.trip else None
-    worked_by_seniority = entry_user.seniority if entry_user else ''
+    # The seniority/difficulty rule is about who actually WORKED this specific
+    # entry (entry.user_working) — not the trip's VR (entry.trip.responsable_user),
+    # which can be a different person. Using the VR's seniority here let a Junior
+    # get auto-assigned to review a Principiante's quote whenever the trip's VR
+    # happened to not be a Principiante themself, even though it was a
+    # Principiante who actually wrote it.
+    worked_by_seniority = entry.user_working.seniority if entry.user_working_id else ''
     difficulty = entry.trip.difficulty if entry.trip else ''
 
+    # Never assign someone to review their own work — both the trip's VR
+    # (entry_user) and, separately, whoever actually worked this specific entry
+    # (entry.user_working can be a different person than the trip's VR).
+    excluded_self_ids = {entry_user.id if entry_user else None, entry.user_working_id}
     eligible = [
         s for s in schedule_qs
-        if s.user_id != (entry_user.id if entry_user else None)
+        if s.user_id not in excluded_self_ids
         and _reviewer_can_review(s.user.seniority, worked_by_seniority, difficulty)
     ]
     if not eligible:
@@ -8739,12 +9417,16 @@ def revising_itineraries(request):
     absent_ids = set(
         _absences_on_day(today, dept).values_list('absence_user_id', flat=True)
     )
+    # People not literally absent today but still excluded from auto-assignment
+    # because they're within the 2-business-day return buffer of a long absence.
+    buffer_ids = _revision_excluded_user_ids(today, dept) - absent_ids
 
     return render(request, 'intranet/revising_itineraries.html', {
         'grid_rows': grid_rows,
         'all_dept_users': dept_users,
         'pending_entries': pending_entries,
         'absent_ids': absent_ids,
+        'buffer_ids': buffer_ids,
         'today_weekday': today.weekday(),
         'scheduled_seniors': scheduled_seniors,
         'scheduled_juniors': scheduled_juniors,
@@ -8797,9 +9479,16 @@ def revision_toggle_block(request, user_id):
 
 @login_required
 def entry_my_revision_pending_count(request):
-    """Fresh count for the 'Correcciones' badge — polled/refreshed client-side so
-    it updates without a full page reload when a review gets (re)assigned."""
-    return JsonResponse({'ok': True, 'count': _my_revision_pending_count(request.user)})
+    """Fresh counts for the nav badges — polled/refreshed client-side so they
+    update without a full page reload. `count` is the 'Correcciones' badge
+    (pending reviews assigned to this user); `entries_count` is the red
+    'Pendientes' badge (this user's own open entries)."""
+    entries_count = Entry.objects.filter(user_working=request.user, isClosed=False).count()
+    return JsonResponse({
+        'ok': True,
+        'count': _my_revision_pending_count(request.user),
+        'entries_count': entries_count,
+    })
 
 
 @login_required
@@ -8808,7 +9497,7 @@ def entry_suggested_reviewer(request, entry_id):
     right now — used by the 'Mandar a revisar' modal to pre-fill its dropdown."""
     try:
         entry = Entry.objects.select_related(
-            'trip', 'trip__responsable_user'
+            'trip', 'trip__responsable_user', 'user_working'
         ).get(id=entry_id, trip__department=request.user.department)
     except Entry.DoesNotExist:
         return JsonResponse({'error': 'Entrada no encontrada'}, status=404)
@@ -8848,6 +9537,12 @@ def entry_send_for_revision(request, entry_id):
     entry_with_trip = Entry.objects.select_related(
         'trip', 'trip__responsable_user', 'user_working'
     ).get(id=entry.id)
+
+    try:
+        if reviewer_id and int(reviewer_id) == entry_with_trip.user_working_id:
+            return JsonResponse({'error': 'No se puede asignar a quien trabajó el itinerario como su propio revisor.'}, status=400)
+    except (ValueError, TypeError):
+        pass
 
     reviewer = None
     if reviewer_id:
@@ -8903,7 +9598,13 @@ def entry_update_revising_user(request, entry_id):
     old_reviewer = entry.revising_user
     if user_id:
         try:
-            reviewer = User.objects.get(id=int(user_id), department=request.user.department)
+            user_id_int = int(user_id)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
+        if user_id_int == entry.user_working_id:
+            return JsonResponse({'error': 'No se puede asignar a quien trabajó el itinerario como su propio revisor.'}, status=400)
+        try:
+            reviewer = User.objects.get(id=user_id_int, department=request.user.department)
             entry.revising_user = reviewer
         except User.DoesNotExist:
             return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
@@ -8954,9 +9655,11 @@ def entry_mark_revised(request, entry_id):
         body = {}
     comment = (body.get('comment') or '').strip()
     try:
-        entry = Entry.objects.select_related('user_working').get(id=entry_id, trip__department=request.user.department)
+        entry = Entry.objects.select_related('user_working', 'revising_user').get(id=entry_id, trip__department=request.user.department)
     except Entry.DoesNotExist:
         return JsonResponse({'error': 'Entrada no encontrada'}, status=404)
+    if entry.revising_user_id != request.user.id:
+        return JsonResponse({'error': 'Solo quien tiene asignada esta revisión puede marcarla como revisada.'}, status=403)
     entry.is_revised = True
     entry.revised_date = timezone_now()
     entry.save(update_fields=['is_revised', 'revised_date'])
